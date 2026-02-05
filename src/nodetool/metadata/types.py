@@ -2333,8 +2333,21 @@ class EmailSearchCriteria(BaseType):
     subject: Optional[str] = None
     body: Optional[str] = None
     cc: Optional[str] = None
-    bcc: Optional[str] = None
-    date_condition: Optional[DateSearchCondition] = None
+    label: Optional[str] = None
+    date_query: Optional[DateSearchCondition] = None
+
+
+class Email(BaseType):
+    type: Literal["email"] = "email"
+    id: str = ""
+    subject: str = ""
+    sender: str = ""
+    date: Datetime = Datetime()
+    body: str = ""
+    snippet: str = ""
+    thread_id: str = ""
+    labels: list[str] = Field(default_factory=list)
+
     flags: list[EmailFlag] = []
     keywords: list[str] = []
     folder: Optional[str] = None
