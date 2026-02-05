@@ -15,6 +15,15 @@ class Node(BaseModel):
     dynamic_outputs: dict[str, TypeMetadata] = Field(default_factory=dict)
     sync_mode: str = "on_any"
 
+    def get_node_type(self) -> str:
+        """Return the node type."""
+        return self.type
+
+    @property
+    def node_id(self) -> str:
+        """Alias for id property."""
+        return self.id
+
 
 class Edge(BaseModel):
     id: str | None = None
