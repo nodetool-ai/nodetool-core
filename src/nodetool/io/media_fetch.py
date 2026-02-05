@@ -140,6 +140,7 @@ def _fetch_local_storage_sync(uri: str) -> tuple[str, bytes]:
     """
     import asyncio
     import concurrent.futures
+    import contextvars
     import mimetypes
 
     key = _extract_storage_key_from_url(uri)
@@ -158,10 +159,17 @@ def _fetch_local_storage_sync(uri: str) -> tuple[str, bytes]:
         await storage.download(key, stream)
         return stream.getvalue()
 
+    def run_in_new_thread() -> bytes:
+        """Run the async code in a new thread with proper context propagation."""
+        # Capture the current context to propagate contextvars (including ResourceScope)
+        ctx = contextvars.copy_context()
+        # Run asyncio.run within the captured context
+        return ctx.run(asyncio.run, _do_fetch())  # type: ignore[return-value]
+
     # Run the async code in a separate thread to avoid event loop conflicts
     # when this sync function is called from an async context
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(asyncio.run, _do_fetch())  # type: ignore[arg-type]
+        future = executor.submit(run_in_new_thread)
         data: bytes = cast("bytes", future.result())
 
     # Guess mime type from the key
@@ -312,51 +320,59 @@ async def _fetch_asset_uri_async(uri: str) -> tuple[str, bytes]:
 
 def _fetch_asset_uri_sync(uri: str) -> tuple[str, bytes]:
     """Fetch content from an asset:// URI (sync version).
-    
+
     This function works correctly whether called from a sync or async context
     by running the async storage operations in a separate thread.
-    
+
     Args:
         uri: The asset:// URI to fetch
-        
+
     Returns:
         Tuple of (mime_type, data_bytes)
     """
     import asyncio
     import concurrent.futures
+    import contextvars
     from nodetool.models.asset import Asset
-    
+
     asset_id = _parse_asset_id_from_uri(uri)
-    
+
     async def _do_fetch() -> tuple[str, bytes]:
         """Helper to run async storage operations."""
         # Fetch the asset from the database
         asset = await Asset.get(asset_id)
         if not asset:
             raise ValueError(f"Asset not found: {asset_id}")
-        
+
         # Get storage and download the file
         scope = require_scope()
         storage = scope.get_asset_storage()
-        
+
         exists = await storage.file_exists(asset.file_name)
         if not exists:
             raise ValueError(f"Asset file not found in storage: {asset.file_name}")
-        
+
         stream = BytesIO()
         await storage.download(asset.file_name, stream)
         data = stream.getvalue()
-        
+
         # Use the asset's content type
         mime_type = asset.content_type if asset.content_type else "application/octet-stream"
-        
+
         return mime_type, data
-    
+
+    def run_in_new_thread() -> tuple[str, bytes]:
+        """Run the async code in a new thread with proper context propagation."""
+        # Capture the current context to propagate contextvars (including ResourceScope)
+        ctx = contextvars.copy_context()
+        # Run asyncio.run within the captured context
+        return ctx.run(asyncio.run, _do_fetch())  # type: ignore[return-value]
+
     # Run the async code in a separate thread to avoid event loop conflicts
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(asyncio.run, _do_fetch())  # type: ignore[arg-type]
+        future = executor.submit(run_in_new_thread)
         result = cast(tuple[str, bytes], future.result())
-    
+
     return result
 
 
