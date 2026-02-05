@@ -32,6 +32,7 @@ from nodetool.agents.tools.base import Tool
 from nodetool.agents.tools.code_tools import ExecutePythonTool
 from nodetool.code_runners.runtime_base import StreamRunnerBase
 from nodetool.config.logging_config import get_logger
+from nodetool.config.settings import get_system_data_path
 from nodetool.metadata.types import (
     Chunk,
     Task,
@@ -619,8 +620,19 @@ class Agent(BaseAgent):
                 )
                 span.add_event("planning_started")
 
-                assert context.workspace_dir is not None, "workspace_dir is required for TaskPlanner"
-                task_planner_workspace_dir = cast("str", context.workspace_dir)
+                # Ensure workspace_dir is always provided to TaskPlanner
+                task_planner_workspace_dir: str
+                if context.workspace_dir is None:
+                    # Create a default workspace directory using the same pattern as base_chat_runner
+                    user_id = context.user_id or "default"
+                    workflow_id = context.workflow_id or "default"
+                    workspace_path = get_system_data_path("agent_workspaces") / user_id / workflow_id
+                    workspace_path.mkdir(parents=True, exist_ok=True)
+                    task_planner_workspace_dir = str(workspace_path)
+                    # Update the context so it's available for other parts of the workflow
+                    context.workspace_dir = task_planner_workspace_dir
+                else:
+                    task_planner_workspace_dir = cast("str", context.workspace_dir)
                 task_planner_instance = TaskPlanner(
                     provider=self.provider,
                     model=self.planning_model,
