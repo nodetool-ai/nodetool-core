@@ -647,6 +647,10 @@ class MigrationRunner:
         For each migration, checks if the tables it creates already exist.
         If they do, marks the migration as applied without executing it.
         If they don't, executes the migration normally.
+
+        For migrations that MODIFY tables (ALTER TABLE), we always execute
+        them since the migration code has safeguards (e.g., checking if columns
+        exist before adding them). This ensures legacy databases get all schema updates.
         """
         migrations = self.discover_migrations()
         baselined = 0
@@ -666,13 +670,12 @@ class MigrationRunner:
                         break
                 should_baseline = all_exist
             elif migration.modifies_tables:
-                # For ALTER TABLE migrations, check if the table exists
-                all_exist = True
-                for table in migration.modifies_tables:
-                    if not await self._adapter.table_exists(table):
-                        all_exist = False
-                        break
-                should_baseline = all_exist
+                # For ALTER TABLE migrations, always execute them.
+                # The migration code has safeguards like checking if columns exist
+                # before adding them, so it's safe to run on legacy databases.
+                # We can't just check if the table exists because the table might
+                # be missing columns that this migration adds.
+                should_baseline = False
 
             if should_baseline:
                 # Mark as applied without executing
