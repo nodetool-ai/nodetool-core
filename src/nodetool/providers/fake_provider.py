@@ -120,6 +120,31 @@ def _generate_fake_audio(
     ).set_channels(channels)
 
 
+# Resolution mapping for video generation
+_RESOLUTION_MAP: dict[str, tuple[int, int]] = {
+    "360p": (640, 360),
+    "480p": (854, 480),
+    "720p": (1280, 720),
+    "1080p": (1920, 1080),
+}
+
+
+def _parse_resolution(resolution: str | None, default_width: int = 512, default_height: int = 512) -> tuple[int, int]:
+    """Parse resolution string to width/height tuple.
+
+    Args:
+        resolution: Resolution string (e.g., "720p", "1080p") or None
+        default_width: Default width if resolution is not specified
+        default_height: Default height if resolution is not specified
+
+    Returns:
+        Tuple of (width, height)
+    """
+    if resolution and resolution in _RESOLUTION_MAP:
+        return _RESOLUTION_MAP[resolution]
+    return (default_width, default_height)
+
+
 def _generate_fake_video(
     width: int = 512,
     height: int = 512,
@@ -396,8 +421,6 @@ class FakeProvider(BaseProvider):
 
     # ==================== Text Generation ====================
 
-    # ==================== Text Generation ====================
-
     async def generate_message(  # type: ignore[override]
         self,
         messages: Sequence[Message],
@@ -624,18 +647,7 @@ class FakeProvider(BaseProvider):
             Raw MP4 video bytes
         """
         self.video_generation_count += 1
-
-        # Parse resolution if specified (e.g., "720p", "1080p")
-        width, height = 512, 512
-        if params.resolution:
-            resolution_map = {
-                "360p": (640, 360),
-                "480p": (854, 480),
-                "720p": (1280, 720),
-                "1080p": (1920, 1080),
-            }
-            if params.resolution in resolution_map:
-                width, height = resolution_map[params.resolution]
+        width, height = _parse_resolution(params.resolution)
 
         return _generate_fake_video(
             width=width,
@@ -671,18 +683,7 @@ class FakeProvider(BaseProvider):
             Raw MP4 video bytes
         """
         self.video_generation_count += 1
-
-        # Parse resolution if specified
-        width, height = 512, 512
-        if params.resolution:
-            resolution_map = {
-                "360p": (640, 360),
-                "480p": (854, 480),
-                "720p": (1280, 720),
-                "1080p": (1920, 1080),
-            }
-            if params.resolution in resolution_map:
-                width, height = resolution_map[params.resolution]
+        width, height = _parse_resolution(params.resolution)
 
         return _generate_fake_video(
             width=width,
