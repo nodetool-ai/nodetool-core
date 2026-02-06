@@ -22,7 +22,7 @@ class MemcachedNodeCache(AbstractNodeCache):
     def move_to_device(self, value: Any, device: str) -> Any:
         torch = None
         try:
-            import torch as _torch
+            import torch as _torch  # type: ignore
 
             torch = _torch
         except ImportError:

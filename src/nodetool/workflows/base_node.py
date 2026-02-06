@@ -147,7 +147,7 @@ from nodetool.workflows.types import NodeUpdate
 
 def _is_torch_available() -> bool:
     try:
-        import torch
+        import torch  # type: ignore
         return True
     except ImportError:
         return False
@@ -792,7 +792,7 @@ class BaseNode(BaseModel):
             )
 
         # Convert models synchronously (without detailed model info from API)
-        return [
+        return [  # type: ignore
             unified_model(model, model_info=None)
             for model in recommended_models
         ]
@@ -1221,7 +1221,7 @@ class BaseNode(BaseModel):
             is_torch_tensor = False
             if _is_torch_available():
                 try:
-                    import torch
+                    import torch  # type: ignore
                     if isinstance(value, torch.Tensor):
                         is_torch_tensor = True
                 except ImportError:
@@ -1265,7 +1265,7 @@ class BaseNode(BaseModel):
                 is_torch_tensor = False
                 if _is_torch_available():
                     try:
-                        import torch
+                        import torch  # type: ignore
                         if isinstance(value, torch.Tensor):
                             is_torch_tensor = True
                     except ImportError:
@@ -1774,7 +1774,7 @@ class BaseNode(BaseModel):
         """
         if _is_torch_available():
             try:
-                import torch
+                import torch  # type: ignore
                 with torch.no_grad():  # type: ignore
                     return await self.process(context)
             except ImportError:

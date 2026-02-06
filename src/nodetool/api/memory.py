@@ -48,7 +48,7 @@ def _get_total_ram_mb() -> Optional[float]:
 def _get_total_gpu_memory_mb() -> Optional[float]:
     """Get total GPU memory in MB."""
     try:
-        import torch
+        import torch  # type: ignore
 
         if torch.cuda.is_available():
             props = torch.cuda.get_device_properties(0)
@@ -63,7 +63,7 @@ def _get_total_gpu_memory_mb() -> Optional[float]:
 def _clear_gpu_cache() -> bool:
     """Clear GPU cache. Returns True if successful."""
     try:
-        import torch
+        import torch  # type: ignore
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()

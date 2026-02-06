@@ -31,7 +31,7 @@ def get_gpu_memory_usage_mb() -> tuple[float, float] | None:
         Tuple of (allocated_mb, reserved_mb) or None if CUDA unavailable.
     """
     try:
-        import torch
+        import torch  # type: ignore
 
         if torch.cuda.is_available():
             allocated = torch.cuda.memory_allocated() / (1024 * 1024)
@@ -80,7 +80,7 @@ def run_gc(label: str = "", log_before_after: bool = True) -> float:
     gc.collect()
 
     try:
-        import torch
+        import torch  # type: ignore
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()

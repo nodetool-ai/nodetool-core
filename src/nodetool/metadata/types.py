@@ -1451,7 +1451,7 @@ class TorchTensor(BaseType):
         """
         Reconstruct as a CPU tensor and then (optionally) move to `self.device`.
         """
-        import torch
+        import torch  # type: ignore
         import numpy as np
 
         assert self.value is not None, "No bytes stored"
@@ -1476,7 +1476,7 @@ class TorchTensor(BaseType):
         """
         Stores raw bytes + NumPy dtype string + shape (+ device).
         """
-        import torch
+        import torch  # type: ignore
 
         if not isinstance(tensor, torch.Tensor):
             tensor = torch.as_tensor(tensor)
@@ -1494,7 +1494,7 @@ class TorchTensor(BaseType):
 
     @staticmethod
     def from_numpy(arr: "np.ndarray", **kwargs) -> "TorchTensor":
-        import torch
+        import torch  # type: ignore
 
         t = torch.from_numpy(arr)
         return TorchTensor.from_tensor(t, **kwargs)
@@ -2335,6 +2335,11 @@ class EmailSearchCriteria(BaseType):
     cc: Optional[str] = None
     label: Optional[str] = None
     date_query: Optional[DateSearchCondition] = None
+    date_condition: Optional[DateSearchCondition] = None  # Alias for date_query
+    flags: list[EmailFlag] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+    folder: Optional[str] = None
+    text: Optional[str] = None
 
 
 class Email(BaseType):

@@ -681,6 +681,7 @@ class MigrationRunner:
             )
 
             try:
+                assert self._adapter is not None, "Adapter is required"
                 await migration.up(self._adapter)
                 await self._adapter.commit()
 
