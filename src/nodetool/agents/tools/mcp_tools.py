@@ -132,8 +132,8 @@ Args:
                 "type": "object",
                 "description": "Workflow graph structure with nodes and edges",
                 "properties": {
-                    "nodes": {"type": "array"},
-                    "edges": {"type": "array"},
+                    "nodes": {"type": "array", "items": {"type": "object"}},
+                    "edges": {"type": "array", "items": {"type": "object"}},
                 },
             },
             "description": {
