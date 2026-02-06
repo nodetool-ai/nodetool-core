@@ -9,6 +9,11 @@ import logging
 from typing import TYPE_CHECKING, Optional
 from uuid import uuid4
 
+from pandas._libs.tslibs.offsets import BDay
+
+from nodetool.agents.tools.browser_tools import BrowserTool
+from nodetool.agents.tools.filesystem_tools import ReadFileTool, WriteFileTool
+from nodetool.agents.tools.serp_tools import GoogleSearchTool
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name
 from nodetool.chat.token_counter import count_json_tokens, get_default_encoding
 from nodetool.config.logging_config import get_logger
@@ -103,15 +108,28 @@ class AgentMessageProcessor(MessageProcessor):
         # Generate a unique execution ID for this agent session
         agent_execution_id = str(uuid4())
 
-        # Get selected tools based on message.tools
+        # Get selected tools based on message.tools, or use MCP tools for omnipotent mode
         selected_tools: list[Tool] = []
         if last_message.tools:
+            # User explicitly specified tools
             tool_names = set(last_message.tools)
             resolved_tools = await asyncio.gather(
                 *[resolve_tool_by_name(name, processing_context.user_id) for name in tool_names]
             )
             selected_tools = [t for t in resolved_tools if t is not None]
             log.debug(f"Selected tools for agent: {[tool.name for tool in selected_tools]}")
+        else:
+            # No tools specified - use MCP tools for omnipotent agent mode
+            # This gives the agent full control over nodetool capabilities
+            from nodetool.agents.tools.mcp_tools import get_all_mcp_tools
+
+            selected_tools: list[Tool] = [
+                ReadFileTool(),
+                WriteFileTool(),
+                BrowserTool(),
+                GoogleSearchTool(),
+            ] + get_all_mcp_tools()
+            log.debug(f"Using MCP tools for omnipotent agent mode: {[tool.name for tool in selected_tools]}")
 
         # Include UI proxy tools if client provided a manifest via tool bridge
         # This mirrors HelpMessageProcessor behavior so the Agent can call frontend tools.
@@ -184,6 +202,7 @@ class AgentMessageProcessor(MessageProcessor):
                             "type": "chunk",
                             "content": item.content,
                             "done": item.done if hasattr(item, "done") else False,
+                            "thinking": item.thinking if hasattr(item, "thinking") else False,
                             "thread_id": item.thread_id,
                         }
                     )

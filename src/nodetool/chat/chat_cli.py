@@ -9,7 +9,6 @@ Features:
 - Model selection and provider management
 - Chain of Thought reasoning with step-by-step output
 - Tool usage and execution
-- Debug mode to display tool calls and results
 - Workspace management with file system commands
 """
 
@@ -18,65 +17,39 @@ import json
 import os
 import re  # Add re for grep
 import shutil  # Add shutil for cp and mv
+import shlex
 import subprocess
 import sys
 import traceback
+from datetime import datetime
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion import NestedCompleter, PathCompleter, WordCompleter
 from prompt_toolkit.history import FileHistory
+from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style
 from pydantic import ValidationError
-from rich.align import Align
-from rich.columns import Columns  # Add Columns
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.markup import escape
-from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
+from rich.text import Text
+from textual.app import App, ComposeResult
+from textual.containers import Horizontal, Vertical
+from textual.suggester import SuggestFromList
+from textual.widgets import Input, RichLog, Static
 
-from nodetool.agents.tools.browser_tools import BrowserTool, ScreenshotTool
-from nodetool.agents.tools.email_tools import (
-    AddLabelToEmailTool,
-    ArchiveEmailTool,
-    SearchEmailTool,
-)
-from nodetool.agents.tools.filesystem_tools import (
-    ListDirectoryTool,
-    ReadFileTool,
-    WriteFileTool,
-)
-from nodetool.agents.tools.google_tools import (
-    GoogleGroundedSearchTool,
-    GoogleImageGenerationTool,
-)
-from nodetool.agents.tools.http_tools import DownloadFileTool
-from nodetool.agents.tools.openai_tools import (
-    OpenAIImageGenerationTool,
-    OpenAITextToSpeechTool,
-    OpenAIWebSearchTool,
-)
-from nodetool.agents.tools.pdf_tools import (
-    ConvertPDFToMarkdownTool,
-    ExtractPDFTablesTool,
-    ExtractPDFTextTool,
-)
-from nodetool.agents.tools.serp_tools import (
-    GoogleImagesTool,
-    GoogleNewsTool,
-    GoogleSearchTool,
-)
 from nodetool.config.logging_config import configure_logging, get_logger
 from nodetool.config.settings import get_log_path
 from nodetool.messaging.agent_message_processor import AgentMessageProcessor
 from nodetool.messaging.message_processor import MessageProcessor
 from nodetool.messaging.regular_chat_processor import RegularChatProcessor
-from nodetool.metadata.types import LanguageModel, Message, Provider
+from nodetool.metadata.types import LanguageModel, Message, MessageTextContent, Provider
 from nodetool.providers import get_provider
 from nodetool.runtime.resources import ResourceScope
 from nodetool.ui.console import AgentConsole
@@ -95,8 +68,6 @@ def _determine_chat_log_level(explicit_level: Optional[str] = None) -> str:
     1. Explicit `--log-level` argument passed into the CLI entrypoint
     2. `NODETOOL_CHAT_LOG_LEVEL` environment variable
     3. Generic `LOG_LEVEL` / `NODETOOL_LOG_LEVEL` environment variables
-    4. `DEBUG` environment toggle (truthy -> DEBUG)
-    5. Default to "ERROR" to keep interactive output tidy
     """
 
     def _normalize(value: str) -> str:
@@ -124,6 +95,493 @@ def _determine_chat_log_level(explicit_level: Optional[str] = None) -> str:
     return "ERROR"
 
 
+class _ConsoleProxy:
+    """Proxy Rich Console output into a callback (for Textual embedding)."""
+
+    def __init__(self, base_console: Console):
+        self._base = base_console
+        self._writer: Optional[Callable[[str], None]] = None
+        self._clear_cb: Optional[Callable[[], None]] = None
+
+    def set_writer(self, writer: Optional[Callable[[str], None]], clear_cb: Optional[Callable[[], None]] = None) -> None:
+        self._writer = writer
+        self._clear_cb = clear_cb
+
+    def print(self, *args: Any, **kwargs: Any) -> None:
+        if not self._writer:
+            self._base.print(*args, **kwargs)
+            return
+        with self._base.capture() as capture:
+            self._base.print(*args, **kwargs)
+        rendered = capture.get().rstrip("\n")
+        if rendered:
+            self._writer(rendered)
+
+    def clear(self, *args: Any, **kwargs: Any) -> None:
+        if self._writer and self._clear_cb:
+            self._clear_cb()
+            return
+        self._base.clear(*args, **kwargs)
+
+    def print_exception(self, *args: Any, **kwargs: Any) -> None:
+        if not self._writer:
+            self._base.print_exception(*args, **kwargs)
+            return
+        with self._base.capture() as capture:
+            self._base.print_exception(*args, **kwargs)
+        rendered = capture.get().rstrip("\n")
+        if rendered:
+            self._writer(rendered)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._base, name)
+
+
+class ChatTextualApp(App[None]):
+    """Textual host for the interactive NodeTool chat UI."""
+
+    CSS = """
+    Screen {
+        background: #0a0b0d;
+        color: #d7d7d7;
+        layout: vertical;
+        padding: 1;
+    }
+    #topbar {
+        height: auto;
+        border: round #1d1f23;
+        color: #f2f2f2;
+        background: #0d0f12;
+        padding: 0 1 0 1;
+        margin: 0 0 1 0;
+    }
+    #main {
+        height: 1fr;
+        width: 100%;
+    }
+    #left_pane {
+        width: 3fr;
+        border: round #1a1d22;
+        background: #090a0c;
+        margin: 0 1 0 0;
+    }
+    #agent_output {
+        height: 1fr;
+        border: none;
+        padding: 0 1 1 1;
+        color: #e6e6e6;
+    }
+    #input_row {
+        height: 3;
+        border-top: solid #1a1d22;
+        padding: 0 1;
+    }
+    #input {
+        border: none;
+        background: #111317;
+    }
+    #hint_row {
+        height: 1;
+        color: #7b7f86;
+        padding: 0 1;
+        margin: 0 0 1 0;
+    }
+    #sidebar {
+        width: 1fr;
+        min-width: 34;
+        border: round #1a1d22;
+        background: #0d0f12;
+        padding: 0 1;
+    }
+    #sidebar_title {
+        height: auto;
+        color: #f1f1f1;
+        text-style: bold;
+        margin: 0 0 1 0;
+    }
+    .sidebar_section {
+        height: auto;
+        margin: 0 0 1 0;
+        color: #c7c7c7;
+    }
+    #task_plan {
+        height: 1fr;
+        border: round #20242b;
+        padding: 0 1;
+        background: #0a0c0f;
+        color: #dfdfdf;
+    }
+    #sidebar_footer {
+        height: auto;
+        color: #8a8f98;
+        margin: 1 0 0 0;
+    }
+    """
+
+    def __init__(self, cli: "ChatCLI"):
+        super().__init__()
+        self.cli = cli
+        self._busy = False
+        self._processing_task: asyncio.Task[None] | None = None
+        self._last_output_key: Any = None
+        self._manual_output_buffer = ""
+        self._ansi_re = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+        self._rich_tag_re = re.compile(r"\[/?[a-zA-Z0-9 _=#.-]+\]")
+        self._input_history: list[str] = []
+        self._history_index: int | None = None
+        self._history_draft: str = ""
+        self._refresh_dirty: bool = True
+
+    def compose(self) -> ComposeResult:
+        yield Static("", id="topbar")
+        with Horizontal(id="main"):
+            with Vertical(id="left_pane"):
+                yield RichLog(id="agent_output", wrap=True, auto_scroll=False, markup=False, highlight=False)
+                with Vertical(id="input_row"):
+                    yield Input(placeholder="Type message or command", id="input")
+                yield Static("tab autocomplete   up/down history   /help commands", id="hint_row")
+            with Vertical(id="sidebar"):
+                yield Static("Session", id="sidebar_title")
+                yield Static("", classes="sidebar_section", id="sidebar_context")
+                yield Static("Task Plan\n\nidle", id="task_plan")
+                yield Static("nodetool chat", id="sidebar_footer")
+
+    async def on_mount(self) -> None:
+        self.cli.console.set_writer(self._write_chat_log, self._clear_chat_log)
+        self.cli.display_manager.set_external_update_callback(self._mark_refresh_dirty)
+        await self.cli.ensure_selected_model()
+        self._load_input_history()
+        self._refresh_input_suggester()
+        self._refresh_topbar()
+        self.set_interval(0.15, self._refresh_if_dirty)
+
+    def on_unmount(self) -> None:
+        if self._processing_task and not self._processing_task.done():
+            self._processing_task.cancel()
+        self.cli.console.set_writer(None, None)
+        self.cli.display_manager.set_external_update_callback(None)
+
+    def _mark_refresh_dirty(self) -> None:
+        self._refresh_dirty = True
+
+    def _refresh_if_dirty(self) -> None:
+        manager = self.cli.display_manager
+        if not self._refresh_dirty and not manager.has_running_activity():
+            return
+        self._refresh_dirty = False
+        self._refresh_agent_panel()
+
+    def _write_chat_log(self, text: str) -> None:
+        if not text:
+            return
+        cleaned = self._ansi_re.sub("", text).replace("\r", "")
+        cleaned = self._rich_tag_re.sub("", cleaned)
+        self._manual_output_buffer += (cleaned + "\n")
+        self._mark_refresh_dirty()
+
+    def _clear_chat_log(self) -> None:
+        self._manual_output_buffer = ""
+        self._mark_refresh_dirty()
+
+    def _refresh_topbar(self) -> None:
+        provider_display = (
+            self.cli.selected_model.provider.value
+            if self.cli.selected_model
+            else self.cli.selected_provider.value
+            if self.cli.selected_provider
+            else "None"
+        )
+        model_display = self.cli.selected_model.id if self.cli.selected_model else self.cli.model_id_from_settings or "None"
+        agent_display = "ON" if self.cli.agent_mode else "OFF"
+        topbar = self.query_one("#topbar", Static)
+        topbar.update(f"Provider: {provider_display}    Model: {model_display}    Agent: {agent_display} (/agent)")
+
+        sidebar_context = self.query_one("#sidebar_context", Static)
+        token_line = "tokens: n/a"
+        try:
+            usage = getattr(getattr(self.cli, "selected_model", None), "usage", None)
+            if usage:
+                token_line = f"tokens: {usage}"
+        except Exception:
+            pass
+        sidebar_context.update(
+            "Context\n"
+            f"{token_line}\n\n"
+            "MCP\n"
+            "• tools available"
+        )
+
+    def _load_input_history(self) -> None:
+        """Load history from prompt_toolkit FileHistory format or plain lines."""
+        history_path = Path(self.cli.history_file)
+        if not history_path.exists():
+            self._input_history = []
+            return
+
+        entries: list[str] = []
+        try:
+            text = history_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            self._input_history = []
+            return
+
+        # prompt_toolkit FileHistory stores entries as blocks of +prefixed lines.
+        current: list[str] = []
+        saw_plus = False
+        for raw in text.splitlines():
+            if raw.startswith("+"):
+                saw_plus = True
+                current.append(raw[1:])
+                continue
+            if current:
+                entry = "\n".join(current).strip()
+                if entry:
+                    entries.append(entry)
+                current = []
+            if raw and not raw.startswith("#") and not saw_plus:
+                entries.append(raw.strip())
+        if current:
+            entry = "\n".join(current).strip()
+            if entry:
+                entries.append(entry)
+
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for item in entries:
+            if item in seen:
+                continue
+            seen.add(item)
+            deduped.append(item)
+        self._input_history = deduped[-500:]
+
+    def _append_input_history(self, value: str) -> None:
+        """Persist input history in prompt_toolkit-compatible format."""
+        value = value.strip()
+        if not value:
+            return
+        if self._input_history and self._input_history[-1] == value:
+            return
+        self._input_history.append(value)
+        self._input_history = self._input_history[-500:]
+        self._refresh_input_suggester()
+
+        history_path = Path(self.cli.history_file)
+        try:
+            history_path.parent.mkdir(parents=True, exist_ok=True)
+            with history_path.open("a", encoding="utf-8") as f:
+                f.write(f"\n# {datetime.now().isoformat()}\n")
+                for line in value.splitlines():
+                    f.write(f"+{line}\n")
+        except Exception:
+            pass
+
+    def _refresh_input_suggester(self) -> None:
+        """Update inline suggestion candidates for the input box."""
+        commands = sorted({f"/{name}" for name in self.cli.commands.keys()})
+        workspace_cmds = ["pwd", "ls", "cd", "mkdir", "rm", "open", "cat", "cp", "mv", "grep", "cdw"]
+        candidates = commands + workspace_cmds + self._input_history[-100:]
+        input_widget = self.query_one("#input", Input)
+        input_widget.suggester = SuggestFromList(candidates, case_sensitive=False)
+
+    def _path_completion_candidates(self, current: str) -> list[str]:
+        try:
+            parts = shlex.split(current)
+        except ValueError:
+            parts = current.split()
+        if not parts:
+            return []
+
+        command = parts[0]
+        if command not in {"ls", "cd", "mkdir", "rm", "open", "cat", "cp", "mv", "grep"}:
+            return []
+
+        tokens = current.split()
+        last = tokens[-1] if len(tokens) > 1 else ""
+        if command in {"cp", "mv"} and len(tokens) > 2:
+            last = tokens[-1]
+        if command in {"grep"} and len(tokens) < 2:
+            return []
+
+        base = Path.cwd()
+        prefix = last or "."
+        expanded = Path(prefix).expanduser()
+        parent = expanded.parent if expanded.parent != Path("") else base
+        stem = expanded.name if expanded.name else ""
+
+        if not parent.is_absolute():
+            parent = (base / parent).resolve()
+        if not parent.exists():
+            return []
+
+        matches: list[str] = []
+        for child in sorted(parent.iterdir(), key=lambda p: p.name):
+            if stem and not child.name.startswith(stem):
+                continue
+            display = str(child)
+            if child.is_dir():
+                display += "/"
+            replacement = current[: len(current) - len(last)] + display if last else f"{current} {display}".strip()
+            matches.append(replacement)
+        return matches[:50]
+
+    def _apply_tab_completion(self) -> bool:
+        input_widget = self.query_one("#input", Input)
+        current = input_widget.value
+        if not current:
+            return False
+
+        prefix_matches = [h for h in self._input_history if h.startswith(current)]
+        command_matches = [f"/{name}" for name in self.cli.commands.keys() if f"/{name}".startswith(current)]
+        workspace_matches = [c for c in ["pwd", "ls", "cd", "mkdir", "rm", "open", "cat", "cp", "mv", "grep", "cdw"] if c.startswith(current)]
+        path_matches = self._path_completion_candidates(current)
+
+        candidates = []
+        for collection in (command_matches, workspace_matches, prefix_matches, path_matches):
+            for candidate in collection:
+                if candidate not in candidates:
+                    candidates.append(candidate)
+
+        if len(candidates) == 1:
+            completed = candidates[0]
+            if completed in {f"/{name}" for name in self.cli.commands.keys()}:
+                completed += " "
+            input_widget.value = completed
+            input_widget.cursor_position = len(completed)
+            return True
+
+        if len(candidates) > 1:
+            self._write_chat_log("[dim]Suggestions:[/dim] " + ", ".join(candidates[:8]))
+            return True
+        return False
+
+    def _refresh_agent_panel(self) -> None:
+        manager = self.cli.display_manager
+        status_widget = self.query_one("#task_plan", Static)
+        status_title = manager.live_title or "Task Plan"
+        status_body = manager._render_live_status_text() if manager.is_live_active() else "idle"
+        status_widget.update(f"{status_title}\n\n{status_body}")
+
+        if manager.is_live_active() and manager.show_agent_output_widget:
+            output_segments = manager.get_agent_output_segments()
+            output_key: Any = ("live", manager.agent_output_buffer)
+        else:
+            output_segments = [(False, self._manual_output_buffer)]
+            output_key = ("manual", self._manual_output_buffer)
+
+        if output_key == self._last_output_key:
+            return
+
+        output_widget = self.query_one("#agent_output", RichLog)
+        output_widget.clear()
+        for renderable in self._build_output_renderables(output_segments):
+            output_widget.write(renderable)
+        self._last_output_key = output_key
+
+    def _build_output_renderables(self, segments: list[tuple[bool, str]]) -> list[Any]:
+        """Build renderables: markdown for output, grey text for thinking chunks."""
+        renderables: list[Any] = []
+        for is_thinking, text in segments:
+            if not text:
+                continue
+            if is_thinking:
+                renderables.append(Text(text, style="grey62"))
+            else:
+                renderables.append(Markdown(text))
+        if not renderables:
+            return [Text("")]
+        return renderables
+
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        value = event.value.rstrip("\n")
+        event.input.value = ""
+        self._history_index = None
+        normalized = value.strip()
+        if not normalized:
+            return
+        self._append_input_history(normalized)
+        if self._busy:
+            self._write_chat_log("[yellow]Processing previous request...[/yellow]")
+            return
+        self._busy = True
+        self._write_chat_log(f"[bold cyan]>[/bold cyan] {escape(normalized)}")
+        self._processing_task = asyncio.create_task(self._process_submitted_input(normalized, value))
+
+    async def _process_submitted_input(self, normalized: str, value: str) -> None:
+        """Run chat/agent processing in background to keep UI responsive."""
+        try:
+            if normalized.startswith(
+                ("pwd", "ls", "cd", "mkdir", "rm", "open", "cat", "cp", "mv", "grep", "cdw")
+            ):
+                parts = normalized.split()
+                self.cli.handle_workspace_command(parts[0], parts[1:] if len(parts) > 1 else [])
+                return
+
+            if normalized.startswith("/"):
+                parts = normalized.lower().split()
+                should_exit = await self.cli.handle_command(parts[0], parts[1:] if len(parts) > 1 else [])
+                self._refresh_topbar()
+                if should_exit:
+                    self.exit()
+                return
+
+            if not self.cli.selected_model:
+                self._write_chat_log("[bold red]Error:[/bold red] No model selected")
+                return
+
+            if self.cli.agent_mode:
+                await self.cli.process_agent_response(value)
+            else:
+                await self.cli.process_regular_message(value)
+        except Exception as exc:
+            self._write_chat_log(f"[bold red]Error:[/bold red] {escape(str(exc))}")
+            self._write_chat_log(
+                Syntax(traceback.format_exc(), "python", theme="monokai", line_numbers=True).code
+            )
+        finally:
+            self._busy = False
+
+    async def on_key(self, event) -> None:
+        """Restore shell-like input history and tab completion in Textual input."""
+        input_widget = self.query_one("#input", Input)
+        if self.focused is not input_widget:
+            return
+
+        if event.key == "up":
+            if not self._input_history:
+                return
+            if self._history_index is None:
+                self._history_draft = input_widget.value
+                self._history_index = len(self._input_history) - 1
+            else:
+                self._history_index = max(0, self._history_index - 1)
+            value = self._input_history[self._history_index]
+            input_widget.value = value
+            input_widget.cursor_position = len(value)
+            event.prevent_default()
+            event.stop()
+            return
+
+        if event.key == "down":
+            if self._history_index is None:
+                return
+            if self._history_index < len(self._input_history) - 1:
+                self._history_index += 1
+                value = self._input_history[self._history_index]
+            else:
+                self._history_index = None
+                value = self._history_draft
+            input_widget.value = value
+            input_widget.cursor_position = len(value)
+            event.prevent_default()
+            event.stop()
+            return
+
+        if event.key == "tab":
+            if self._apply_tab_completion():
+                event.prevent_default()
+                event.stop()
+
+
 class ChatCLI:
     """Modern interactive command-line chat interface with rich UI and advanced features.
 
@@ -149,8 +607,8 @@ class ChatCLI:
 
         warnings.filterwarnings("ignore", category=UserWarning)
 
-        # Rich console for beautiful output
-        self.console = Console()
+        # Console proxy to route output either to terminal or Textual log widget.
+        self.console = _ConsoleProxy(Console())
         self.display_manager = AgentConsole(console=self.console)
 
         # Configure logging: all logs to file, nothing to console
@@ -164,8 +622,7 @@ class ChatCLI:
         # Initialize state
         self.context = ProcessingContext(user_id="1", auth_token="local_token")
         self.messages: list[Message] = []
-        self.agent_mode = False
-        self.debug_mode = False
+        self.agent_mode = True  # Default to agent mode ON - omnipotent agent
 
         # Store selected LanguageModel object and model ID preference
         self.language_models: list[LanguageModel] = []
@@ -181,11 +638,6 @@ class ChatCLI:
         self.planner_model_id: Optional[str] = None
         self.summarization_model_id: Optional[str] = None
         self.retrieval_model_id: Optional[str] = None
-
-        # Tool management
-        self.enabled_tools: dict[str, bool] = {}  # Track enabled/disabled tools
-        self.all_tools: list = []  # Store all available tools
-        self.tools: list = []
 
         self.settings_file = os.path.join(os.path.expanduser("~"), ".nodetool_settings")
         self.history_file = os.path.join(os.path.expanduser("~"), ".nodetool_history")
@@ -207,11 +659,6 @@ class ChatCLI:
         from nodetool.chat.commands.model import ModelCommand, ModelsCommand
         from nodetool.chat.commands.provider import ProviderCommand
         from nodetool.chat.commands.providers import ProvidersCommand
-        from nodetool.chat.commands.tools import (
-            ToolDisableCommand,
-            ToolEnableCommand,
-            ToolsCommand,
-        )
         from nodetool.chat.commands.usage import UsageCommand
         from nodetool.chat.commands.workflow import RunWorkflowCommand
 
@@ -226,9 +673,6 @@ class ChatCLI:
             UsageCommand(),
             ProviderCommand(),
             ProvidersCommand(),
-            ToolsCommand(),
-            ToolEnableCommand(),
-            ToolDisableCommand(),
             RunWorkflowCommand(),
         ]
 
@@ -238,114 +682,11 @@ class ChatCLI:
             for alias in command.aliases:
                 self.commands[alias] = command
 
-    def load_all_node_packages(self):
-        """Load all available node packages to populate NODE_BY_TYPE registry."""
-        try:
-            import importlib
-
-            from nodetool.metadata.node_metadata import get_node_classes_from_namespace
-            from nodetool.packages.registry import Registry
-
-            registry = Registry()
-            packages = registry.list_installed_packages()
-
-            total_loaded = 0
-            total_packages = len(packages)
-
-            for package in packages:
-                if package.nodes:
-                    # Collect unique namespaces from this package
-                    namespaces = set()
-                    for node_metadata in package.nodes:
-                        node_type = node_metadata.node_type
-                        # Extract namespace from node_type (e.g., "nodetool.text" from "nodetool.text.Concatenate")
-                        namespace_parts = node_type.split(".")[:-1]
-                        if len(namespace_parts) >= 2:  # Must have at least nodetool.something
-                            namespace = ".".join(namespace_parts)
-                            namespaces.add(namespace)
-
-                    # Load each unique namespace from this package
-                    for namespace in namespaces:
-                        try:
-                            # Try to import the module directly
-                            if namespace.startswith("nodetool.nodes."):
-                                module_path = namespace
-                            else:
-                                module_path = f"nodetool.nodes.{namespace}"
-
-                            importlib.import_module(module_path)
-                            total_loaded += 1
-                        except ImportError:
-                            # Try alternative approach using get_node_classes_from_namespace
-                            try:
-                                if namespace.startswith("nodetool."):
-                                    namespace_suffix = namespace[9:]  # Remove 'nodetool.'
-                                    get_node_classes_from_namespace(f"nodetool.nodes.{namespace_suffix}")
-                                    total_loaded += 1
-                                else:
-                                    get_node_classes_from_namespace(f"nodetool.nodes.{namespace}")
-                                    total_loaded += 1
-                            except Exception:
-                                # Silent fail for packages that can't be loaded
-                                pass
-
-            from nodetool.workflows.base_node import NODE_BY_TYPE
-
-            total_nodes = len(NODE_BY_TYPE)
-
-            self.console.print(
-                f"[bold green]Loaded {total_packages} packages with {total_nodes} available nodes[/bold green]"
-            )
-
-        except Exception as e:
-            self.console.print(f"[bold yellow]Warning:[/bold yellow] Failed to load all packages: {e}")
-            # Continue anyway - some nodes may still be available
-
-    async def initialize(self):
-        """Initialize async components and workspace with visual feedback."""
-        # Initialize standard tools (tool modules keep heavy deps lazy inside their methods)
-        self.all_tools = [
-            AddLabelToEmailTool(),
-            ArchiveEmailTool(),
-            BrowserTool(),
-            ConvertPDFToMarkdownTool(),
-            DownloadFileTool(),
-            ExtractPDFTablesTool(),
-            ExtractPDFTextTool(),
-            GoogleGroundedSearchTool(),
-            GoogleImageGenerationTool(),
-            GoogleImagesTool(),
-            GoogleNewsTool(),
-            GoogleSearchTool(),
-            ListDirectoryTool(),
-            ReadFileTool(),
-            WriteFileTool(),
-            ScreenshotTool(),
-            SearchEmailTool(),
-            OpenAIImageGenerationTool(),
-            OpenAITextToSpeechTool(),
-            OpenAIWebSearchTool(),
-        ]
-
-        # Initialize enabled_tools tracking if not already set
-        for tool in self.all_tools:
-            tool_name = tool.name
-            if tool_name not in self.enabled_tools:
-                self.enabled_tools[tool_name] = False  # Default to disabled
-
-        # Filter tools based on enabled status
-        self.refresh_tools()
-
-    def refresh_tools(self):
-        """Refresh the tools list based on current enabled status."""
-        self.tools = [tool for tool in self.all_tools if self.enabled_tools.get(tool.name, False)]
-
     def _build_command_completer(self) -> NestedCompleter:
         """Construct the nested completer with provider/model/tool suggestions."""
         command_completer: dict[str, Optional[WordCompleter]] = dict.fromkeys(self.commands.keys())
         provider_names = [provider.value for provider in Provider]
         model_ids = [model.id for model in self.language_models]
-        all_tool_names = [tool.name for tool in self.all_tools]
 
         command_completer["agent"] = WordCompleter(["on", "off"])
         command_completer["a"] = command_completer["agent"]
@@ -355,13 +696,6 @@ class ChatCLI:
         command_completer["pr"] = command_completer["provider"]
         command_completer["model"] = WordCompleter(model_ids, ignore_case=True)
         command_completer["m"] = command_completer["model"]
-        command_completer["tools"] = WordCompleter(all_tool_names, match_middle=True)
-        command_completer["t"] = command_completer["tools"]
-        enable_disable_completer = WordCompleter([*all_tool_names, "all"], match_middle=True)
-        command_completer["enable"] = enable_disable_completer
-        command_completer["en"] = enable_disable_completer
-        command_completer["disable"] = enable_disable_completer
-        command_completer["dis"] = enable_disable_completer
 
         prefixed_command_completer = {f"/{cmd}": completer for cmd, completer in command_completer.items()}
         return NestedCompleter(
@@ -391,8 +725,14 @@ class ChatCLI:
         if provider in self._models_by_provider:
             models = self._models_by_provider[provider]
         else:
-            provider_instance = await get_provider(provider, user_id="1")
-            models = await provider_instance.get_available_language_models()
+            try:
+                provider_instance = await get_provider(provider, user_id="1")
+                models = await provider_instance.get_available_language_models()
+            except Exception as e:
+                self.console.print(
+                    f"[bold yellow]Warning:[/bold yellow] Provider '{provider.value}' is unavailable: {e}"
+                )
+                models = []
             self._models_by_provider[provider] = models
 
         if self.selected_provider == provider:
@@ -428,6 +768,17 @@ class ChatCLI:
 
         models = await self.load_models_for_provider(self.selected_provider)
         if not models:
+            # Try other providers if the selected one is unavailable/misconfigured.
+            for fallback_provider in Provider:
+                if fallback_provider == self.selected_provider:
+                    continue
+                fallback_models = await self.load_models_for_provider(fallback_provider)
+                if fallback_models:
+                    self.console.print(
+                        f"[bold yellow]Warning:[/bold yellow] Falling back to provider '{fallback_provider.value}'."
+                    )
+                    self.set_selected_model(fallback_models[0])
+                    return
             raise ValueError(f"No models available for provider {self.selected_provider.value}")
 
         target_id = self.model_id_from_settings
@@ -461,8 +812,23 @@ class ChatCLI:
         style = Style.from_dict(
             {
                 "prompt": "ansicyan bold",
+                "toolbar": "ansiblack bg:ansiwhite",
             }
         )
+
+        key_bindings = KeyBindings()
+
+        @key_bindings.add("enter")
+        def submit_on_enter(event):
+            event.current_buffer.validate_and_handle()
+
+        @key_bindings.add("escape", "enter")
+        def newline_on_alt_enter(event):
+            event.current_buffer.insert_text("\n")
+
+        @key_bindings.add("c-j")
+        def submit_buffer(event):
+            event.current_buffer.validate_and_handle()
 
         # Create session with history and auto-suggest
         self.session = PromptSession(
@@ -471,31 +837,51 @@ class ChatCLI:
             completer=completer,
             style=style,
             complete_in_thread=True,
+            key_bindings=key_bindings,
         )
-
-    def _get_enabled_tool_names(self) -> list[str]:
-        """Return the names of currently enabled tools."""
-        return [tool.name for tool in self.tools]
 
     def _create_user_message(self, content: str, *, agent_mode: bool) -> Message:
         """Create a Message instance for user input with current configuration."""
         if not self.selected_model:
             raise ValueError("No model selected")
-
-        tool_names = self._get_enabled_tool_names()
-
         return Message(
             role="user",
             content=content,
             provider=self.selected_model.provider,
             model=self.selected_model.id,
             agent_mode=agent_mode,
-            tools=tool_names if tool_names else None,
+            tools=None,
         )
 
     def _should_store_message(self, message: Message) -> bool:
         """Determine whether a processor message should be added to history."""
         return message.role in {"assistant", "tool", "system", "user"}
+
+    def _extract_display_text(self, message: Message) -> str:
+        """Extract text content from a message for terminal rendering."""
+        if isinstance(message.content, str):
+            return message.content
+
+        if isinstance(message.content, list):
+            parts = [item.text for item in message.content if isinstance(item, MessageTextContent) and item.text]
+            return "".join(parts)
+
+        return ""
+
+    def _render_message_content(self, message: Message, stream_buffer: list[str]) -> None:
+        """Render assistant content unless it was already streamed via chunk events."""
+        if message.role != "assistant":
+            return
+
+        text_content = self._extract_display_text(message)
+        if not text_content.strip():
+            return
+
+        streamed_content = "".join(stream_buffer).strip()
+        if streamed_content and streamed_content == text_content.strip():
+            return
+
+        self.console.print(Markdown(text_content))
 
     async def _run_message_processor(
         self,
@@ -523,6 +909,7 @@ class ChatCLI:
 
         processor_task = asyncio.create_task(process())
         stream_buffer: list[str] = []
+        display_manager = kwargs.get("display_manager")
 
         try:
             while processor.has_messages() or processor.is_processing:
@@ -532,156 +919,36 @@ class ChatCLI:
 
                     if message_type == "chunk":
                         content = message.get("content") or ""
+                        is_thinking = bool(message.get("thinking", False))
                         if content:
-                            self.console.print(content, end="")
+                            if display_manager and display_manager.is_live_active():
+                                display_manager.append_agent_output(content, thinking=is_thinking)
+                            else:
+                                self.console.print(content, end="")
                             stream_buffer.append(content)
                         if message.get("done"):
-                            self.console.print()  # Final newline
-                            stream_buffer.clear()
+                            if not (display_manager and display_manager.is_live_active()):
+                                self.console.print()  # Final newline
 
                     elif message_type == "tool_call_update":
-                        name = message.get("name")
-                        msg = message.get("message")
-                        if self.debug_mode:
-                            args = message.get("args")
-                            self.console.print(
-                                f"\n[bold cyan]Tool Call ({escape(str(name))}):[/bold cyan] {escape(str(args))}"
-                            )
-                        elif self.display_manager:
-                            # Skip if display_manager is present, as it handles tool calls in its tree view
-                            pass
-                        else:
-                            self.console.print(f"\n[italic cyan]{escape(str(msg))}[/italic cyan]")
+                        pass
 
                     elif message_type == "message":
                         try:
-                            # Check if this is an special agent execution event
-                            if message.get("role") == "agent_execution":
-                                event_type = message.get("execution_event_type")
-                                content = message.get("content") or {}
-
-                                if event_type == "planning_update":
-                                    log.info(
-                                        f"[Planning] Phase: {content.get('phase')}, Status: {content.get('status')}"
-                                    )
-                                    if self.display_manager and not self.debug_mode:
-                                        # When display_manager is active, it handles planning updates
-                                        pass
-                                    else:
-                                        phase = content.get("phase")
-                                        status = content.get("status")
-                                        inner_content = content.get("content")
-                                        self.console.print(
-                                            f"[bold blue]Planning Phase [{escape(str(phase))}]:[/bold blue] {escape(str(status))}"
-                                        )
-                                        if inner_content and self.debug_mode:
-                                            self.console.print(f"  {escape(str(inner_content))}")
-
-                                elif event_type == "task_update":
-                                    log.debug(f"[Task Event] {content.get('event')}")
-                                    if self.display_manager and not self.debug_mode:
-                                        # When display_manager is active, it handles task and step updates
-                                        pass
-                                    else:
-                                        event = content.get("event")
-                                        step = content.get("step")
-                                        if event == "SUBTASK_STARTED" and step:
-                                            instructions = step.get("instructions")
-                                            self.console.print(
-                                                f"\n[bold green]➜ {escape(str(instructions))}[/bold green]"
-                                            )
-                                        elif event == "ENTERED_CONCLUSION_STAGE":
-                                            self.console.print(
-                                                "[bold yellow]Entering conclusion stage...[/bold yellow]"
-                                            )
-                                        elif self.debug_mode:
-                                            self.console.print(f"[dim]Task Event: {escape(str(event))}[/dim]")
-
-                                elif event_type == "log_update":
-                                    log_content = content.get("content")
-                                    severity = content.get("severity", "info")
-                                    # Log to file regardless of console suppression
-                                    log_func = getattr(log, severity.lower(), log.info)
-                                    log_func(f"[Agent Log] {log_content}")
-
-                                    if self.display_manager and not self.debug_mode:
-                                        # Consistently skip technical logs in CLI unless in debug mode,
-                                        # matching the frontend refinement.
-                                        pass
-                                    else:
-                                        color = (
-                                            "red"
-                                            if severity == "error"
-                                            else "yellow"
-                                            if severity == "warning"
-                                            else "white"
-                                        )
-                                        self.console.print(
-                                            f"[bold {color}]Log:[/bold {color}] {escape(str(log_content))}"
-                                        )
-
-                                elif event_type == "step_result":
-                                    log.info(f"[Step Result] {content.get('result')}")
-                                    if self.display_manager and not self.debug_mode:
-                                        # display_manager handles step results
-                                        pass
-                                    else:
-                                        result = content.get("result")
-                                        if self.debug_mode:
-                                            self.console.print(
-                                                f"[bold green]Step Result:[/bold green] {escape(str(result))}"
-                                            )
-
-                                continue  # Already handled this special message
-
                             parsed = Message.model_validate(message)
                         except ValidationError as validation_error:
-                            if self.debug_mode:
-                                self.console.print(f"[bold red]Failed to parse message:[/bold red] {validation_error}")
+                            self.console.print(f"[bold red]Failed to parse message:[/bold red] {validation_error}")
                             continue
-
-                        if self.debug_mode and parsed.tool_calls and parsed.role == "assistant":
-                            for tool_call in parsed.tool_calls:
-                                args_preview = json.dumps(tool_call.args)
-                                if len(args_preview) > 120:
-                                    args_preview = args_preview[:120] + "..."
-                                self.console.print(
-                                    f"\n[bold cyan][{escape(str(tool_call.name))}]:[/bold cyan] {escape(str(args_preview))}"
-                                )
-                        elif self.debug_mode and parsed.role == "tool":
-                            preview = parsed.content
-                            if isinstance(preview, str) and len(preview) > 200:
-                                preview = preview[:200] + "..."
-                            self.console.print(
-                                f"\n[bold magenta][Tool Result: {escape(str(parsed.name))}][/bold magenta] {escape(str(preview))}"
-                            )
-
-                        has_streaming_output = bool(stream_buffer)
-
-                        if (
-                            parsed.role == "assistant"
-                            and isinstance(parsed.content, str)
-                            and parsed.content
-                            and not has_streaming_output
-                        ):
-                            self.console.print(Markdown(parsed.content))
-                        elif (
-                            parsed.role == "assistant" and isinstance(parsed.content, dict) and not has_streaming_output
-                        ):
-                            # If assistant returned structured content, pretty-print as Markdown code block
-                            self.console.print(Markdown(f"```json\n{json.dumps(parsed.content, indent=2)}\n```"))
 
                         if self._should_store_message(parsed):
                             self.messages.append(parsed)
 
+                        self._render_message_content(parsed, stream_buffer)
                         stream_buffer.clear()
 
                     elif message_type == "error":
                         error_msg = message.get("message", "Unknown error")
                         self.console.print(f"[bold red]Error:[/bold red] {error_msg}")
-                    else:
-                        if self.debug_mode:
-                            self.console.print(f"[yellow]Unhandled processor message:[/yellow] {message}")
                 else:
                     await asyncio.sleep(0.01)
 
@@ -709,7 +976,6 @@ class ChatCLI:
             chat_history=list(self.messages),
             processing_context=self.context,
             display_manager=self.display_manager,
-            verbose=not self.debug_mode,
         )
 
     async def process_regular_message(self, user_input: str) -> None:
@@ -1038,8 +1304,6 @@ class ChatCLI:
             "model_id": self.selected_model.id,
             "provider": self.selected_model.provider.value,
             "agent_mode": self.agent_mode,
-            "debug_mode": self.debug_mode,
-            "enabled_tools": self.enabled_tools,  # Save tool enable/disable states
         }
 
         try:
@@ -1064,9 +1328,6 @@ class ChatCLI:
 
                 # Load other settings
                 self.agent_mode = settings.get("agent_mode", False)
-                self.debug_mode = settings.get("debug_mode", False)
-                # Load tool enable/disable states
-                self.enabled_tools = settings.get("enabled_tools", {})
 
         except Exception as e:
             self.console.print(f"[bold yellow]Warning:[/bold yellow] Failed to load settings: {e}")
@@ -1087,136 +1348,9 @@ class ChatCLI:
         return False
 
     async def run(self):
-        """Run the chat CLI main loop with rich UI and improved input handling."""
-        # Initialize components with progress indication
-        await self.initialize()
-        await self.setup_prompt_session()
-
-        # Display welcome message and settings with rich formatting
-        settings_list = []
-        provider_display = (
-            self.selected_model.provider.value
-            if self.selected_model
-            else self.selected_provider.value
-            if self.selected_provider
-            else "None"
-        )
-        model_display = self.selected_model.id if self.selected_model else self.model_id_from_settings or "None"
-        settings_list.extend(
-            [
-                f"[bold cyan]Provider:[/bold cyan] {provider_display}",
-                f"[bold cyan]Model:[/bold cyan] {model_display}",
-            ]
-        )
-
-        enabled_tools_count = len([t for t in self.enabled_tools.values() if t])
-        total_tools_count = len(self.all_tools)
-
-        settings_list.extend(
-            [
-                f"[bold cyan]Agent:[/bold cyan] {'ON' if self.agent_mode else 'OFF'} (/agent)",
-                f"[bold cyan]Debug:[/bold cyan] {'ON' if self.debug_mode else 'OFF'} (/debug)",
-                f"[bold cyan]Tools:[/bold cyan] {enabled_tools_count}/{total_tools_count} enabled (/tools)",
-                # Span workspace across full width potentially, or keep it separate
-                # f"[bold cyan]Workspace:[/bold cyan] {str(self.context.workspace_dir)}"
-            ]
-        )
-
-        settings_columns = Columns(settings_list, equal=True, expand=True)
-
-        # Center the welcome panel
-        welcome_panel = Panel(
-            Columns(
-                [  # Use Columns to arrange elements
-                    "[bold green]Welcome to NodeTool Chat CLI[/bold green]",
-                    settings_columns,  # Add the settings columns here
-                    "Type [bold cyan]/help[/bold cyan] for application commands (/help)",
-                ],
-                equal=True,
-            ),  # Make columns equal width
-            title="NodeTool",
-            border_style="green",
-            width=100,  # Adjust width as needed
-        )
-        self.console.print(Align.center(welcome_panel))  # Apply centering
-
-        while True:
-            try:
-                # Create prompt with current directory info
-                cwd = os.getcwd()
-                home_dir = str(Path.home())
-                # Show ~ for home directory, otherwise show full path
-                display_path = cwd.replace(home_dir, "~", 1) if cwd.startswith(home_dir) else cwd
-                prompt = f"[{display_path}]> "
-
-                # Get input with prompt_toolkit (supports multi-line input and better completion)
-                user_input = await self.session.prompt_async(prompt)
-
-                if not user_input:
-                    continue
-
-                # Handle workspace commands
-                if user_input.startswith(
-                    (
-                        "pwd",
-                        "ls",
-                        "cd",
-                        "mkdir",
-                        "rm",
-                        "open",
-                        "cat",
-                        "cp",
-                        "mv",
-                        "grep",
-                        "cdw",
-                    )
-                ):
-                    cmd_parts = user_input.split()
-                    cmd = cmd_parts[0]
-                    args = cmd_parts[1:] if len(cmd_parts) > 1 else []
-                    self.handle_workspace_command(cmd, args)
-                    continue
-
-                # Handle CLI commands
-                if user_input.startswith("/"):
-                    cmd_parts = user_input.lower().split()
-                    cmd = cmd_parts[0]
-                    args = cmd_parts[1:] if len(cmd_parts) > 1 else []
-                    if await self.handle_command(cmd, args):
-                        break
-                    continue
-
-                # Process chat input
-                if not self.selected_model:
-                    self.console.print("[bold red]Error:[/bold red] No model selected")
-                    continue
-
-                if self.agent_mode:
-                    await self.process_agent_response(user_input)
-                else:
-                    await self.process_regular_message(user_input)
-
-            except KeyboardInterrupt:
-                self.console.print("\n[bold yellow]Interrupted. Press Ctrl+C again to exit.[/bold yellow]")
-                try:
-                    # Wait for a moment to see if the user presses Ctrl+C again
-                    await asyncio.sleep(1)
-                except KeyboardInterrupt:
-                    self.console.print("[bold yellow]Exiting...[/bold yellow]")
-                return
-            except EOFError:
-                self.console.print("[bold yellow]Exiting...[/bold yellow]")
-                return
-            except Exception as e:
-                self.console.print(f"[bold red]Error:[/bold red] {e}")
-                self.console.print(
-                    Syntax(
-                        traceback.format_exc(),
-                        "python",
-                        theme="monokai",
-                        line_numbers=True,
-                    )
-                )
+        """Run the chat CLI as a Textual application."""
+        app = ChatTextualApp(self)
+        await app.run_async()
 
 
 async def chat_cli():

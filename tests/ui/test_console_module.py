@@ -1,4 +1,6 @@
+from rich.spinner import Spinner
 from rich.table import Table
+from rich.text import Text
 
 from nodetool.metadata.types import Step, Task, ToolCall
 from nodetool.ui.console import AgentConsole
@@ -43,9 +45,33 @@ def test_update_planning_display(monkeypatch):
     console.start_live(tree)
     console.update_planning_display("phase1", "Running", "work")
     node = console.phase_nodes["phase1"]
-    assert "phase1" in node.label
+    # Running phase uses a Spinner label
+    assert isinstance(node.label, Spinner)
     console.update_planning_display("phase1", "Success", "done")
-    assert "Success" in node.label
+    # Success phase uses a Text label with ✓
+    assert isinstance(node.label, Text)
+    assert "✓" in str(node.label)
+    assert "phase1" in str(node.label)
+
+
+def test_update_planning_display_without_phase(monkeypatch):
+    console = AgentConsole(verbose=True)
+    monkeypatch.setattr("nodetool.ui.console.Live", FakeLive)
+    tree = console.create_planning_tree("Plan")
+    console.start_live(tree)
+
+    console.update_planning_display("phase1", "Running", "work", show_phase=False)
+    node = console.phase_nodes["__planner_status__"]
+    assert isinstance(node.label, Spinner)
+    assert len(node.children) == 1
+    assert "work" in str(node.children[0].label)
+
+    console.update_planning_display("phase2", "Success", "done", show_phase=False)
+    assert isinstance(node.label, Text)
+    assert "phase1" not in str(node.label)
+    assert "phase2" not in str(node.label)
+    assert len(node.children) == 1
+    assert "done" in str(node.children[0].label)
 
 
 def test_create_execution_table(monkeypatch):
@@ -63,14 +89,30 @@ def test_create_execution_table(monkeypatch):
     call = ToolCall(step_id=sub1.id, name="tool", message="m" * 80)
     tree = console.create_execution_tree("Exec", task, [call])
     node1 = console.step_nodes[sub1.id]
-    assert "task1" in node1.label
-    # Check that tool calls are displayed with truncated message
-    assert len(node1.children) > 0  # Should have tool calls
-    tool_section = node1.children[0]  # Should be the "Tools" section
-    assert len(tool_section.children) > 0  # Should have at least one tool call
-    tool_call_label = str(tool_section.children[0].label)
-    assert "..." in tool_call_label  # message truncated
+    # Completed steps use Text labels with ✓
+    assert isinstance(node1.label, Text)
+    assert "task1" in str(node1.label)
+    # Completed step shows compact tool count summary
+    assert len(node1.children) == 1
+    assert "1 tool calls" in str(node1.children[0].label)
     assert len(tree.children) == 2
+
+
+def test_running_step_uses_spinner():
+    """Test that running steps use animated Spinner labels."""
+    console = AgentConsole(verbose=True)
+    done = Step(id="s1", instructions="done step", start_time=1, completed=True)
+    running = Step(id="s2", instructions="running step", start_time=1, completed=False)
+    pending = Step(id="s3", instructions="pending step", completed=False)
+    task = Task(title="t", steps=[done, running, pending])
+    tree = console.create_execution_tree("Test", task, [])
+
+    assert isinstance(console.step_nodes["s1"].label, Text)
+    assert "✓" in str(console.step_nodes["s1"].label)
+    assert isinstance(console.step_nodes["s2"].label, Spinner)
+    assert isinstance(console.step_nodes["s3"].label, Text)
+    assert "○" in str(console.step_nodes["s3"].label)
+    assert len(tree.children) == 3
 
 
 def test_phase_logging():

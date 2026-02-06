@@ -18,10 +18,12 @@ import asyncio
 import json
 import os
 import platform
+import re
 import shutil
 import sys
 import tempfile
 from collections.abc import AsyncGenerator, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -32,6 +34,7 @@ from nodetool.agents.tools.base import Tool
 from nodetool.agents.tools.code_tools import ExecutePythonTool
 from nodetool.code_runners.runtime_base import StreamRunnerBase
 from nodetool.config.logging_config import get_logger
+from nodetool.config.settings import get_system_data_path
 from nodetool.metadata.types import (
     Chunk,
     Task,
@@ -50,6 +53,99 @@ from nodetool.workflows.types import (
 )
 
 log = get_logger(__name__)
+
+_INVALID_SKILL_NAME_RE = re.compile(r"[^a-z0-9-]")
+_XML_TAG_RE = re.compile(r"<[^>]+>")
+_SKILL_RESERVED_TERMS = ("anthropic", "claude")
+
+
+@dataclass
+class AgentSkill:
+    """Filesystem-backed skill metadata and instructions."""
+
+    name: str
+    description: str
+    instructions: str
+    path: Path
+
+
+def _parse_frontmatter(frontmatter: str) -> dict[str, str]:
+    """Parse minimal YAML frontmatter (key: value pairs)."""
+    parsed: dict[str, str] = {}
+    for raw_line in frontmatter.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        parsed[key.strip()] = value.strip().strip('"').strip("'")
+    return parsed
+
+
+def _is_valid_skill_name(name: str) -> bool:
+    if not name or len(name) > 64:
+        return False
+    if _INVALID_SKILL_NAME_RE.search(name):
+        return False
+    lowered = name.lower()
+    if any(term in lowered for term in _SKILL_RESERVED_TERMS):
+        return False
+    return True
+
+
+def _is_valid_skill_description(description: str) -> bool:
+    if not description or len(description) > 1024:
+        return False
+    if _XML_TAG_RE.search(description):
+        return False
+    return True
+
+
+def _load_skill_from_file(skill_file: Path) -> AgentSkill | None:
+    """Load and validate a Skill from SKILL.md."""
+    try:
+        content = skill_file.read_text(encoding="utf-8")
+    except Exception as exc:
+        log.warning("Failed reading skill file %s: %s", skill_file, exc)
+        return None
+
+    if not content.startswith("---"):
+        log.warning("Skipping skill without YAML frontmatter: %s", skill_file)
+        return None
+
+    parts = content.split("---", 2)
+    if len(parts) < 3:
+        log.warning("Skipping malformed skill frontmatter: %s", skill_file)
+        return None
+
+    metadata = _parse_frontmatter(parts[1])
+    name = metadata.get("name", "").strip()
+    description = metadata.get("description", "").strip()
+    instructions = parts[2].strip()
+
+    if not _is_valid_skill_name(name):
+        log.warning("Skipping skill with invalid name '%s' in %s", name, skill_file)
+        return None
+    if not _is_valid_skill_description(description):
+        log.warning("Skipping skill with invalid description in %s", skill_file)
+        return None
+    if not instructions:
+        log.warning("Skipping skill with empty instructions in %s", skill_file)
+        return None
+
+    return AgentSkill(name=name, description=description, instructions=instructions, path=skill_file)
+
+
+def _dedupe_preserve_order(items: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        deduped.append(item)
+    return deduped
 
 
 def _create_macos_sandbox_profile(
@@ -513,6 +609,8 @@ class Agent(BaseAgent):
         use_sandbox: bool = False,
         resource_limits: ResourceLimits | None = None,
         display_manager: AgentConsole | None = None,
+        skills: Sequence[str] | None = None,
+        skill_dirs: Sequence[str] | None = None,
     ) -> None:
         """
         Initialize the base agent.
@@ -562,6 +660,96 @@ class Agent(BaseAgent):
         self.use_sandbox = use_sandbox
         self.resource_limits = resource_limits
         self.display_manager = display_manager
+        self.skill_dirs = self._resolve_skill_dirs(skill_dirs)
+        self.available_skills = self._discover_available_skills(self.skill_dirs)
+        self.active_skills = self._resolve_active_skills(skills)
+        self.skill_system_prompt = self._build_skill_system_prompt()
+        self.effective_objective = self._build_effective_objective()
+
+    def _resolve_skill_dirs(self, skill_dirs: Sequence[str] | None) -> list[Path]:
+        """Resolve skill directories from args + environment + defaults."""
+        resolved: list[Path] = []
+        if skill_dirs:
+            resolved.extend(Path(path).expanduser() for path in skill_dirs)
+
+        env_dirs = os.environ.get("NODETOOL_AGENT_SKILL_DIRS")
+        if env_dirs:
+            resolved.extend(Path(path).expanduser() for path in env_dirs.split(os.pathsep) if path.strip())
+
+        resolved.extend(
+            [
+                Path.cwd() / ".claude" / "skills",
+                Path.home() / ".claude" / "skills",
+                Path.home() / ".codex" / "skills",
+            ]
+        )
+        ordered = [Path(path) for path in _dedupe_preserve_order([str(path) for path in resolved])]
+        return [path for path in ordered if path.exists()]
+
+    def _discover_available_skills(self, skill_dirs: Sequence[Path]) -> dict[str, AgentSkill]:
+        """Discover valid skills from configured directories."""
+        discovered: dict[str, AgentSkill] = {}
+        for base_dir in skill_dirs:
+            for skill_file in base_dir.rglob("SKILL.md"):
+                skill = _load_skill_from_file(skill_file)
+                if not skill:
+                    continue
+                if skill.name in discovered:
+                    log.warning("Duplicate skill '%s' found at %s; keeping first definition", skill.name, skill_file)
+                    continue
+                discovered[skill.name] = skill
+        return discovered
+
+    def _resolve_active_skills(self, requested_skills: Sequence[str] | None) -> list[AgentSkill]:
+        """Resolve active skills from explicit names or objective-driven auto-selection."""
+        env_requested = os.environ.get("NODETOOL_AGENT_SKILLS", "")
+        env_skill_names = [name.strip() for name in env_requested.split(",") if name.strip()]
+        explicit_names = _dedupe_preserve_order([*(requested_skills or []), *env_skill_names])
+
+        if explicit_names:
+            active: list[AgentSkill] = []
+            for name in explicit_names:
+                skill = self.available_skills.get(name)
+                if not skill:
+                    log.warning("Requested skill '%s' not found in skill directories", name)
+                    continue
+                active.append(skill)
+            return active
+
+        auto_enabled = os.environ.get("NODETOOL_AGENT_AUTO_SKILLS", "1").lower() not in {"0", "false", "no", "off"}
+        if not auto_enabled:
+            return []
+
+        objective_words = {word for word in re.findall(r"[a-z0-9]+", self.objective.lower()) if len(word) >= 4}
+        active = []
+        for skill in self.available_skills.values():
+            desc_words = {word for word in re.findall(r"[a-z0-9]+", skill.description.lower()) if len(word) >= 4}
+            if objective_words.intersection(desc_words):
+                active.append(skill)
+        return active
+
+    def _build_skill_system_prompt(self) -> str | None:
+        """Build appended system prompt segment from active skills."""
+        if not self.active_skills:
+            return None
+
+        sections = ["# Agent Skills", "Use these Skill instructions when relevant to the objective:"]
+        for skill in self.active_skills:
+            sections.append(f"\n## {skill.name}\n{skill.instructions}")
+        return "\n".join(sections)
+
+    def _build_effective_objective(self) -> str:
+        """Create objective text enriched with selected skill summaries."""
+        if not self.active_skills:
+            return self.objective
+        summaries = "\n".join(f"- {skill.name}: {skill.description}" for skill in self.active_skills)
+        return f"{self.objective}\n\nRelevant Skills:\n{summaries}"
+
+    def _merge_system_prompt(self) -> str | None:
+        """Merge user-provided system prompt with skill system prompt."""
+        if self.system_prompt and self.skill_system_prompt:
+            return f"{self.system_prompt}\n\n{self.skill_system_prompt}"
+        return self.system_prompt or self.skill_system_prompt
 
     async def execute(
         self,
@@ -589,7 +777,7 @@ class Agent(BaseAgent):
         # Wrap execution in tracing context
         async with trace_agent_task(
             agent_type=self.__class__.__name__,
-            task_description=self.objective,
+            task_description=self.effective_objective,
             tools=[t.name for t in self.tools],
         ) as span:
             span.set_attribute("nodetool.agent.name", self.name)
@@ -608,7 +796,7 @@ class Agent(BaseAgent):
                     log.debug(
                         "Agent '%s' planning task for objective: %s",
                         self.name,
-                        self.objective,
+                        self.effective_objective,
                     )
 
                 yield LogUpdate(
@@ -619,13 +807,24 @@ class Agent(BaseAgent):
                 )
                 span.add_event("planning_started")
 
-                assert context.workspace_dir is not None, "workspace_dir is required for TaskPlanner"
-                task_planner_workspace_dir = cast("str", context.workspace_dir)
+                # Ensure workspace_dir is always provided to TaskPlanner
+                task_planner_workspace_dir: str
+                if context.workspace_dir is None:
+                    # Create a default workspace directory using the same pattern as base_chat_runner
+                    user_id = context.user_id or "default"
+                    workflow_id = context.workflow_id or "default"
+                    workspace_path = get_system_data_path("agent_workspaces") / user_id / workflow_id
+                    workspace_path.mkdir(parents=True, exist_ok=True)
+                    task_planner_workspace_dir = str(workspace_path)
+                    # Update the context so it's available for other parts of the workflow
+                    context.workspace_dir = task_planner_workspace_dir
+                else:
+                    task_planner_workspace_dir = cast("str", context.workspace_dir)
                 task_planner_instance = TaskPlanner(
                     provider=self.provider,
                     model=self.planning_model,
                     reasoning_model=self.reasoning_model,
-                    objective=self.objective,
+                    objective=self.effective_objective,
                     workspace_dir=task_planner_workspace_dir,
                     execution_tools=tools,
                     inputs=self.inputs,
@@ -634,7 +833,7 @@ class Agent(BaseAgent):
                     display_manager=self.display_manager,
                 )
 
-                async for chunk in task_planner_instance.create_task(context, self.objective):
+                async for chunk in task_planner_instance.create_task(context, self.effective_objective):
                     yield chunk
 
                 if task_planner_instance.task_plan and task_planner_instance.task_plan.tasks:
@@ -660,7 +859,9 @@ class Agent(BaseAgent):
             # Start live display managed by AgentConsole
             if self.display_manager:
                 self.display_manager.start_live(
-                    self.display_manager.create_execution_tree(title=self.name, task=task, tool_calls=tool_calls)
+                    self.display_manager.create_execution_tree(title=self.name, task=task, tool_calls=tool_calls),
+                    show_agent_output_widget=True,
+                    agent_output_title="Agent Response",
                 )
 
             try:
@@ -670,7 +871,7 @@ class Agent(BaseAgent):
                     processing_context=context,
                     tools=list(self.tools),  # Ensure it's a list of Tool
                     task=task,
-                    system_prompt=self.system_prompt,
+                    system_prompt=self._merge_system_prompt(),
                     inputs=self.inputs,
                     max_steps=self.max_steps,
                     max_step_iterations=self.max_step_iterations,
@@ -697,7 +898,7 @@ class Agent(BaseAgent):
                     # Create the updated table and update the live display
                     if self.display_manager:
                         new_table = self.display_manager.create_execution_tree(
-                            title=f"Task:\\n{self.objective}",
+                            title=f"Task: {self.objective}",
                             task=task,
                             tool_calls=tool_calls,
                         )
@@ -776,6 +977,8 @@ class Agent(BaseAgent):
         config = {
             "name": self.name,
             "objective": self.objective,
+            "skills": [skill.name for skill in self.active_skills],
+            "skill_dirs": [str(path) for path in self.skill_dirs],
             "provider": self.provider.provider_name,
             "model": self.model,
             "planning_model": self.planning_model,

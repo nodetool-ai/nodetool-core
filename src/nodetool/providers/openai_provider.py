@@ -1138,23 +1138,24 @@ class OpenAIProvider(BaseProvider):
         chunk_count = 0
 
         try:
+            log.debug("Starting to iterate over completion stream")
             async for chunk in completion:
                 chunk: ChatCompletionChunk = chunk
                 chunk_count += 1
-    
+
                 if not chunk.choices:
                     log.debug("Chunk has no choices, skipping")
                     continue
-    
+
                 delta = chunk.choices[0].delta
-    
+
                 if hasattr(delta, "audio") and "data" in delta.audio:  # type: ignore
                     log.debug("Yielding audio chunk")
                     yield Chunk(
                         content=delta.audio["data"],  # type: ignore
                         content_type="audio",
                     )
-    
+
                 # Process tool call deltas before checking finish_reason
                 if delta.tool_calls:
                     for tool_call in delta.tool_calls:
@@ -1165,7 +1166,7 @@ class OpenAIProvider(BaseProvider):
                             tc = {"id": tool_call.id}
                             delta_tool_calls[tool_call.index] = tc
                         assert tc is not None, "Tool call must not be None"
-    
+
                         if tool_call.id:
                             tc["id"] = tool_call.id
                         if tool_call.function and tool_call.function.name:
@@ -1176,11 +1177,11 @@ class OpenAIProvider(BaseProvider):
                             if "arguments" not in tc["function"]:
                                 tc["function"]["arguments"] = ""
                             tc["function"]["arguments"] += tool_call.function.arguments
-    
+
                 if delta.content or chunk.choices[0].finish_reason == "stop":
                     current_chunk += delta.content or ""
                     finish_reason = chunk.choices[0].finish_reason
-    
+
                     if finish_reason == "stop":
                         self._log_api_response(
                             "chat_stream",
@@ -1189,13 +1190,13 @@ class OpenAIProvider(BaseProvider):
                                 content=current_chunk,
                             ),
                         )
-    
+
                     content_to_yield = delta.content or ""
                     yield Chunk(
                         content=content_to_yield,
                         done=finish_reason == "stop",
                     )
-    
+
                 if chunk.choices[0].finish_reason == "tool_calls":
                     log.debug("Processing tool calls completion")
                     if delta_tool_calls:
@@ -1212,15 +1213,18 @@ class OpenAIProvider(BaseProvider):
                     else:
                         log.error("No tool call found in delta_tool_calls")
                         raise ValueError("No tool call found")
-    
+
+            log.debug(f"Completed iteration over stream. Total chunks: {chunk_count}")
+
         except asyncio.CancelledError:
             log.info("OpenAI streaming cancelled by user")
             raise
         finally:
             # Close the stream to terminate the HTTP connection
+            # AsyncStream.close() is async and must be awaited
             if hasattr(completion, 'close'):
                 try:
-                    completion.close()
+                    await completion.close()
                 except Exception:
                     pass
             elif hasattr(completion, 'response') and hasattr(completion.response, 'close'):

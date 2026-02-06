@@ -147,7 +147,8 @@ from nodetool.workflows.types import NodeUpdate
 
 def _is_torch_available() -> bool:
     try:
-        import torch  # type: ignore
+        import torch
+
         return True
     except ImportError:
         return False
@@ -1229,7 +1230,6 @@ class BaseNode(BaseModel):
                     pass
 
             if is_torch_tensor:
-
                 continue
             elif isinstance(value, ComfyData):
                 res_for_update[o.name] = value.serialize()
