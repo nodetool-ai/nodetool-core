@@ -222,6 +222,7 @@ class ChatTextualApp(App[None]):
         super().__init__()
         self.cli = cli
         self._busy = False
+        self._processing_task: asyncio.Task[None] | None = None
         self._last_output_key: Any = None
         self._manual_output_buffer = ""
         self._ansi_re = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
@@ -255,6 +256,8 @@ class ChatTextualApp(App[None]):
         self.set_interval(0.15, self._refresh_if_dirty)
 
     def on_unmount(self) -> None:
+        if self._processing_task and not self._processing_task.done():
+            self._processing_task.cancel()
         self.cli.console.set_writer(None, None)
         self.cli.display_manager.set_external_update_callback(None)
 
@@ -501,6 +504,10 @@ class ChatTextualApp(App[None]):
             return
         self._busy = True
         self._write_chat_log(f"[bold cyan]>[/bold cyan] {escape(normalized)}")
+        self._processing_task = asyncio.create_task(self._process_submitted_input(normalized, value))
+
+    async def _process_submitted_input(self, normalized: str, value: str) -> None:
+        """Run chat/agent processing in background to keep UI responsive."""
         try:
             if normalized.startswith(
                 ("pwd", "ls", "cd", "mkdir", "rm", "open", "cat", "cp", "mv", "grep", "cdw")
