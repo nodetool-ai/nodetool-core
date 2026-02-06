@@ -143,6 +143,10 @@ class SelfHostedDeployer:
     def _container_name(self) -> str:
         return self._container_generator().get_container_name()
 
+    def _app_host_port(self) -> int:
+        """Return host port for direct app mode (matches DockerRunGenerator)."""
+        return 8000 if self.deployment.container.port == 7777 else self.deployment.container.port
+
     def plan(self) -> dict[str, Any]:
         """
         Generate a deployment plan showing what changes will be made.
@@ -628,7 +632,7 @@ class SelfHostedDeployer:
         if self.use_proxy and self.deployment.proxy:
             health_url = f"http://127.0.0.1:{self.deployment.proxy.listen_http}/healthz"
         else:
-            health_url = f"http://127.0.0.1:{self.deployment.container.port}/health"
+            health_url = f"http://127.0.0.1:{self._app_host_port()}/health"
         try:
             ssh.execute(f"curl -fsS {health_url}", check=True, timeout=20)
             results["steps"].append(f"  Health endpoint OK: {health_url}")

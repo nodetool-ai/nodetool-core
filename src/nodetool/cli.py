@@ -2854,21 +2854,23 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
 
 async def _export_encrypted_secrets_payload(limit: int = 1000) -> list[dict[str, Any]]:
     from nodetool.models.secret import Secret
+    from nodetool.runtime.resources import ResourceScope
 
-    secrets = await Secret.list_all(limit=limit)
-    payload: list[dict[str, Any]] = []
-    for secret in secrets:
-        payload.append(
-            {
-                "user_id": secret.user_id,
-                "key": secret.key,
-                "encrypted_value": secret.encrypted_value,
-                "description": secret.description,
-                "created_at": secret.created_at.isoformat() if secret.created_at else None,
-                "updated_at": secret.updated_at.isoformat() if secret.updated_at else None,
-            }
-        )
-    return payload
+    async with ResourceScope():
+        secrets = await Secret.list_all(limit=limit)
+        payload: list[dict[str, Any]] = []
+        for secret in secrets:
+            payload.append(
+                {
+                    "user_id": secret.user_id,
+                    "key": secret.key,
+                    "encrypted_value": secret.encrypted_value,
+                    "description": secret.description,
+                    "created_at": secret.created_at.isoformat() if secret.created_at else None,
+                    "updated_at": secret.updated_at.isoformat() if secret.updated_at else None,
+                }
+            )
+        return payload
 
 
 async def _import_secrets_to_worker(server_url: str, auth_token: str, payload: list[dict[str, Any]]) -> dict[str, Any]:

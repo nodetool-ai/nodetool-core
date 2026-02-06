@@ -620,6 +620,29 @@ class TestSelfHostedDeployer:
 
             assert any("not running" in step for step in results["steps"])
 
+    def test_check_health_without_proxy_uses_mapped_port(self, no_proxy_deployment, mock_state_manager):
+        """Test direct app health check uses host-mapped port (7777 -> 8000)."""
+        mock_ssh = Mock()
+        mock_ssh.execute = Mock(
+            side_effect=[
+                (0, "nodetool-default Up 2 minutes 0.0.0.0:8000->7777/tcp", ""),  # status
+                (0, "ok", ""),  # health curl
+            ]
+        )
+
+        with patch("nodetool.deploy.self_hosted.time.sleep"):
+            deployer = SelfHostedDeployer(
+                deployment_name="test",
+                deployment=no_proxy_deployment,
+                state_manager=mock_state_manager,
+            )
+
+            results = {"steps": []}
+            deployer._check_health(mock_ssh, results, "token-123")
+
+            health_cmd = mock_ssh.execute.call_args_list[1][0][0]
+            assert "127.0.0.1:8000/health" in health_cmd
+
     def test_destroy_success(self, basic_deployment, mock_state_manager):
         """Test successful deployment destruction."""
         mock_ssh = Mock()

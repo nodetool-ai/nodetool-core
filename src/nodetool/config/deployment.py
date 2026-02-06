@@ -99,6 +99,11 @@ class ImageConfig(BaseModel):
     @property
     def full_name(self) -> str:
         """Get full image name with tag."""
+        if "@" in self.name:
+            return self.name
+        last_segment = self.name.rsplit("/", 1)[-1]
+        if ":" in last_segment:
+            return self.name
         return f"{self.name}:{self.tag}"
 
 
@@ -215,7 +220,9 @@ class SelfHostedDeployment(BaseModel):
             if (scheme == "https" and port == 443) or (scheme == "http" and port == 80):
                 return f"{scheme}://{host}"
             return f"{scheme}://{host}:{port}"
-        return f"http://{self.host}:{self.container.port}"
+        # Keep URL aligned with docker run host-port remapping (7777 -> 8000).
+        host_port = 8000 if self.container.port == 7777 else self.container.port
+        return f"http://{self.host}:{host_port}"
 
 
 # ============================================================================

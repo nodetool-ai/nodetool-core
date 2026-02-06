@@ -23,7 +23,13 @@ def create_http_auth_middleware(
     user_provider: Optional[AuthProvider],
     exempt_paths: Iterable[str] = ("/health", "/ping"),
     enforce_auth: bool = True,
+    use_remote_auth: Optional[bool] = None,
 ):
+    # Backward compatibility: older callers passed use_remote_auth to control
+    # whether user_provider fallback auth should be attempted.
+    if use_remote_auth is False:
+        user_provider = None
+
     exempt_paths = set(exempt_paths)
 
     async def middleware(request: Request, call_next):

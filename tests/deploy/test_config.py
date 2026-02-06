@@ -56,6 +56,11 @@ class TestImageConfig:
         config = ImageConfig(name="myuser/myimage", tag="v1.0.0")
         assert config.full_name == "myuser/myimage:v1.0.0"
 
+    def test_image_full_name_already_tagged(self):
+        """Test full image name does not double-append tag."""
+        config = ImageConfig(name="ghcr.io/nodetool-ai/nodetool:latest", tag="latest")
+        assert config.full_name == "ghcr.io/nodetool-ai/nodetool:latest"
+
 
 class TestContainerConfig:
     """Tests for ContainerConfig model."""
@@ -119,6 +124,17 @@ class TestSelfHostedDeployment:
         assert deployment.use_proxy is False
         assert deployment.proxy is None
         assert deployment.get_server_url() == "http://192.168.1.100:8001"
+
+    def test_self_hosted_without_proxy_port_7777_maps_to_8000(self):
+        """Test non-proxy URL follows host port remap used by docker run."""
+        deployment = SelfHostedDeployment(
+            host="192.168.1.100",
+            ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
+            image=ImageConfig(name="nodetool/nodetool", tag="latest"),
+            container=ContainerConfig(name="wf1", port=7777),
+            use_proxy=False,
+        )
+        assert deployment.get_server_url() == "http://192.168.1.100:8000"
 
 
 class TestDeploymentConfig:
