@@ -210,8 +210,9 @@ def split_camel_case(text: str) -> str:
         A string with words separated by spaces.
     """
     # Split the string into parts, keeping uppercase sequences together.
-    # Special-case digit+acronym chunks like "3D" so we don't render them as "3 D".
-    parts = re.findall(r"\d+[A-Z]+(?![a-z])|[A-Z]+[a-z]*|\d+|[a-z]+", text)
+    # Special-case digit+acronym chunks like "3D" so we don't render them as "3 D",
+    # and letter+digit tokens like "V3" or "O3" so we don't render them as "V 3".
+    parts = re.findall(r"\d+[A-Z]+(?![a-z])|[A-Z]+\d+|[A-Z]+[a-z]*|\d+|[a-z]+", text)
 
     # Join the parts with spaces
     return " ".join(parts)
