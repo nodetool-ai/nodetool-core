@@ -1083,9 +1083,16 @@ class WorkflowRunner:
         is_valid = True
         all_errors = []
 
+        # Build a lookup map for input edges by target node (O(m) instead of O(n*m))
+        input_edges_by_target: dict[str, list[Edge]] = {}
+        for edge in graph.edges:
+            if edge.target not in input_edges_by_target:
+                input_edges_by_target[edge.target] = []
+            input_edges_by_target[edge.target].append(edge)
+
         # First validate node inputs
         for node in graph.nodes:
-            input_edges = [edge for edge in graph.edges if edge.target == node.id]
+            input_edges = input_edges_by_target.get(node.id, [])
             log.debug("Validating node %s", node.get_title())
             errors = node.validate_inputs(input_edges)
             if len(errors) > 0:

@@ -57,6 +57,8 @@ log = get_logger(__name__)
 _INVALID_SKILL_NAME_RE = re.compile(r"[^a-z0-9-]")
 _XML_TAG_RE = re.compile(r"<[^>]+>")
 _SKILL_RESERVED_TERMS = ("anthropic", "claude")
+# Pre-compiled regex for extracting words in skill matching (optimization)
+_SKILL_WORD_RE = re.compile(r"[a-z0-9]+")
 
 
 @dataclass
@@ -720,10 +722,17 @@ class Agent(BaseAgent):
         if not auto_enabled:
             return []
 
-        objective_words = {word for word in re.findall(r"[a-z0-9]+", self.objective.lower()) if len(word) >= 4}
+        # Extract objective words once using pre-compiled regex
+        objective_words = {word for word in _SKILL_WORD_RE.findall(self.objective.lower()) if len(word) >= 4}
+
+        # Pre-compute description word sets for all skills to avoid repeated regex operations
+        skill_desc_words: dict[AgentSkill, set[str]] = {
+            skill: {word for word in _SKILL_WORD_RE.findall(skill.description.lower()) if len(word) >= 4}
+            for skill in self.available_skills.values()
+        }
+
         active = []
-        for skill in self.available_skills.values():
-            desc_words = {word for word in re.findall(r"[a-z0-9]+", skill.description.lower()) if len(word) >= 4}
+        for skill, desc_words in skill_desc_words.items():
             if objective_words.intersection(desc_words):
                 active.append(skill)
         return active
