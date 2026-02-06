@@ -574,6 +574,12 @@ class MigrationRunner:
                         "Continuing since this is a development environment."
                     )
 
+            # Repair incorrectly baselined ALTER TABLE migrations
+            # This fixes databases where an older version incorrectly baselined
+            # ALTER TABLE migrations without actually executing them.
+            if not dry_run:
+                await self._repair_baselined_alter_migrations()
+
             # Get pending migrations
             applied = await self._get_applied_migrations()
             migrations = self.discover_migrations()
@@ -636,6 +642,70 @@ class MigrationRunner:
                 f"Migration {migration.version} failed: {e}",
                 migration_version=migration.version,
             ) from e
+
+    # -------------------------------------------------------------------------
+    # Repair incorrectly baselined migrations
+    # -------------------------------------------------------------------------
+
+    async def _repair_baselined_alter_migrations(self) -> None:
+        """Repair ALTER TABLE migrations that were incorrectly baselined.
+
+        Earlier versions of the migration runner would baseline ALTER TABLE
+        migrations if the target table existed, without checking whether the
+        actual column changes had been applied. This left databases with
+        missing columns but the migration marked as applied.
+
+        This method detects such cases and re-executes the migrations.
+        The individual migration scripts contain safeguards (e.g., checking
+        if a column exists before adding it), so it is safe to re-run them.
+        """
+        applied = await self._get_applied_migrations()
+        migrations_map = {m.version: m for m in self.discover_migrations()}
+        repaired = 0
+
+        for version, applied_migration in applied.items():
+            if not applied_migration.baselined:
+                continue
+
+            migration = migrations_map.get(version)
+            if migration is None:
+                continue
+
+            if not migration.modifies_tables:
+                continue
+
+            # This ALTER TABLE migration was baselined — re-execute it
+            log.info(
+                f"Repairing incorrectly baselined ALTER TABLE migration: "
+                f"{migration.version} ({migration.name})"
+            )
+
+            try:
+                await migration.up(self._adapter)
+                await self._adapter.commit()
+
+                # Update the tracking record: mark as no longer baselined
+                await self._adapter.execute(
+                    f"""
+                    UPDATE {MIGRATION_TRACKING_TABLE}
+                    SET baselined = 0, applied_at = ?
+                    WHERE version = ?
+                    """,
+                    (datetime.now(UTC).isoformat(), migration.version),
+                )
+                await self._adapter.commit()
+                repaired += 1
+
+            except Exception as e:
+                await self._adapter.rollback()
+                log.error(
+                    f"Failed to repair migration {migration.version}: {e}. "
+                    "The migration's own safeguards should prevent this — "
+                    "please report this as a bug."
+                )
+
+        if repaired:
+            log.info(f"Repaired {repaired} incorrectly baselined ALTER TABLE migration(s)")
 
     # -------------------------------------------------------------------------
     # Baselining
@@ -727,26 +797,27 @@ class MigrationRunner:
 
             for migration in migrations:
                 # Check if tables exist
-                tables_exist = False
+                should_baseline = False
                 if migration.creates_tables:
                     all_exist = True
                     for table in migration.creates_tables:
                         if not await self._adapter.table_exists(table):
                             all_exist = False
                             break
-                    tables_exist = all_exist
+                    should_baseline = all_exist
                 elif migration.modifies_tables:
-                    all_exist = True
-                    for table in migration.modifies_tables:
-                        if not await self._adapter.table_exists(table):
-                            all_exist = False
-                            break
-                    tables_exist = all_exist
+                    # For ALTER TABLE migrations, always execute them.
+                    # The migration code has safeguards like checking if columns
+                    # exist before adding them, so it's safe to re-run.
+                    should_baseline = False
 
-                if tables_exist:
+                if should_baseline:
                     await self._record_migration(migration, 0, baselined=True)
                     baselined += 1
                     log.info(f"Baselined: {migration.version} ({migration.name})")
+                else:
+                    await self._apply_migration(migration)
+                    log.info(f"Executed: {migration.version} ({migration.name})")
 
             return baselined
 
