@@ -1,12 +1,12 @@
-name: OpenCode Coverage Improvement
+name: Assistant Documentation Quality
 
 on:
   schedule:
-    - cron: "0 9 * * 6" # Weekly on Saturdays at 9 AM UTC
+    - cron: "0 8 * * 1" # Weekly on Mondays at 8 AM UTC
   workflow_dispatch:
 
 jobs:
-  opencode-coverage:
+  assistant-docs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -38,21 +38,20 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
-      - name: Run tests with coverage
-        run: |
-          pytest --cov=src --cov-report=json:coverage.json || true
-          cat coverage.json || true
-
-      - name: Run OpenCode
-        uses: anomalyco/opencode/github@latest
+      - name: Run Assistant
+        uses: anthropics/claude-code-action@v1
         env:
-          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          ANTHROPIC_BASE_URL: https://api.z.ai/api/anthropic
         with:
-          model: minimax/MiniMax-M2.1
+          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          additional_permissions: |
+            actions: read
+          claude_args: |
+            --allowedTools "Bash,WebFetch,Edit,Read,Replace"
           prompt: |
-            # NodeTool Core Coverage Improvement
+            # NodeTool Core Documentation Quality
 
-            You are an autonomous testing agent improving coverage in **nodetool-core**.
+            You are an autonomous agent improving documentation in **nodetool-core**.
 
             ## Step 0: Avoid Duplicate Work
             1. Run `git branch -a` to check existing branches
@@ -64,19 +63,17 @@ jobs:
             - `.github/opencode-memory/features.md`
             - List `issues/` and `insights/` to find descriptive files
 
-            ## Step 2: Analyze Coverage
-            Coverage data is in `coverage.json` (if generated).
+            ## Step 2: Documentation Audit Areas
+            - `AGENTS.md` accuracy and completeness
+            - README files for setup and usage
+            - Public API docstrings and module docs
+            - Configuration docs and environment variables
+            - Examples and troubleshooting sections
 
-            Focus on critical areas:
-            - Workflow execution and nodes
-            - API routes and request validation
-            - Agent/LLM orchestration
-            - Storage backends and persistence
-
-            ## Step 3: Add Focused Tests
-            - Add tests only for meaningful behavior
-            - Follow `tests/` structure and existing patterns
-            - Prefer unit tests over heavy integration tests
+            ## Step 3: Make Focused Improvements
+            - Keep edits minimal and accurate
+            - Avoid adding new docs unless required
+            - Verify code samples match current APIs
 
             ## Step 4: Validate
             ```bash
@@ -86,5 +83,5 @@ jobs:
             ```
 
             ## Step 5: Update Memory
-            - Add insight files under `insights/testing/`
-            - Add issue files under `issues/testing/`
+            - Add issue files under `issues/<topic>/`
+            - Add insight files under `insights/<topic>/`

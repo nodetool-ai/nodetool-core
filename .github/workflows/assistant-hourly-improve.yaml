@@ -1,0 +1,104 @@
+name: Hourly Assistant Improve
+
+on:
+  schedule:
+    - cron: "30 */6 * * *" # Every 6 hours
+  workflow_dispatch:
+
+jobs:
+  assistant:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for all branches
+
+      - name: Merge main if necessary
+        run: |
+          git fetch origin main
+          git merge origin/main --no-edit || echo "Already up to date or merge not needed"
+ 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libgl1 libglib2.0-0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+        
+      - name: Run Assistant
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: https://api.z.ai/api/anthropic
+        with:
+          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          additional_permissions: |
+            actions: read
+          claude_args: |
+            --allowedTools "Bash,WebFetch,Edit,Read,Replace"
+          prompt: |
+            # NodeTool Core Code Quality Improvement (Scheduled)
+            
+            You are an autonomous agent improving code quality in **nodetool-core**, a Python 3.11+ async workflow engine.
+            
+            ## Step 0: Avoid Duplicate Work
+            1. Run `git branch -a` to check existing branches
+            2. Continue related branches instead of duplicating work
+            
+            ## Step 1: Read Memory (Required)
+            - `.github/opencode-memory/README.md`
+            - `.github/opencode-memory/repository-context.md`
+            - `.github/opencode-memory/features.md`
+            - List `issues/` and `insights/` to find descriptive files
+            
+            ## Step 2: Scan for Issues
+            Focus on high-impact problems:
+            - Missing type hints or unsafe typing
+            - Blocking calls inside async code
+            - Weak error handling or swallowed exceptions
+            - Missing context managers for files/connections
+            - Dead code, unused imports, or TODO/FIXME debt
+            - Performance hot spots or unnecessary allocations
+            - Security issues (hardcoded secrets, unsafe inputs)
+            - Missing tests for critical behavior
+            
+            ## Step 3: Make Focused Improvements
+            - Keep changes minimal and targeted
+            - Follow existing patterns (DI, factories, async workflows)
+            - Add tests only when fixing a bug or adding behavior
+            - Avoid refactors unrelated to the issue
+            
+            ## Step 4: Validate
+            All of these must pass:
+            ```bash
+            make typecheck
+            make lint
+            make test
+            ```
+            
+            ## Step 5: Update Memory
+            - Add issue files under `issues/<topic>/`
+            - Add insight files under `insights/<topic>/`
+            
+            ## PR Requirements
+            - One coherent improvement per PR
+            - Clear Conventional Commit title
+            - Describe the issue, fix, and verification
+            
+            ## Environment Notes
+            - Dependencies installed via `uv sync --all-extras --dev`
+            - System dependencies (ffmpeg, libgl1, libglib2.0-0) are pre-installed
+            - GitHub CI uses Python 3.11 (not conda)
+            - Tests use `ENV=test` with in-memory storage automatically
