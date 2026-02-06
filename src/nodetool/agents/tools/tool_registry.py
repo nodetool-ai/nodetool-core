@@ -93,6 +93,37 @@ def _ensure_builtin_tools_registered() -> None:
                 register_tool_class(tool_cls)
 
 
+async def get_all_available_tools() -> list[Tool]:
+    """
+    Get all available tools including built-in tools and MCP tools.
+    
+    Returns:
+        List of all Tool instances available to the agent
+    """
+    tools: list[Tool] = []
+    
+    # Ensure built-in tools are registered
+    _ensure_builtin_tools_registered()
+    
+    # Get all built-in tool instances
+    for tool_class in _tool_class_registry.values():
+        try:
+            tools.append(tool_class())
+        except Exception as e:
+            tool_name = getattr(tool_class, '__name__', str(tool_class))
+            log.warning(f"Failed to instantiate tool {tool_name}: {e}")
+    
+    # Get all MCP tools
+    try:
+        from nodetool.agents.tools.mcp_tools import get_all_mcp_tools
+        mcp_tools = await get_all_mcp_tools()
+        tools.extend(mcp_tools)
+    except Exception as e:
+        log.warning(f"Failed to load MCP tools: {e}")
+    
+    return tools
+
+
 def load_all_nodes():
     from nodetool.packages.registry import Registry
 
@@ -112,10 +143,11 @@ async def resolve_tool_by_name(
     Resolve a tool instance by name using the following precedence:
     1) match using sanitized node name
     2) match using workflow tool name
+    3) match MCP tools
 
     Args:
         name: The requested tool name (from model/tool call or message)
-        available_tools: Optional sequence of already-instantiated tools to search first
+        user_id: The user ID for workflow lookup
 
     Returns:
         Tool: An instantiated tool ready for use
@@ -154,6 +186,15 @@ async def resolve_tool_by_name(
             return WorkflowTool(from_model(workflow))
         else:
             raise ValueError(f"Workflow tool with tool name {name} not found")
+    
+    # Try to resolve MCP tool
+    try:
+        from nodetool.agents.tools.mcp_tools import get_mcp_tool_by_name
+        mcp_tool = await get_mcp_tool_by_name(name)
+        if mcp_tool:
+            return mcp_tool
+    except Exception as e:
+        log.debug(f"Failed to resolve MCP tool '{name}': {e}")
 
     log.warning(f"Tool {name} not found in registry")
     return None

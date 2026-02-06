@@ -326,6 +326,15 @@ class ChatCLI:
             OpenAITextToSpeechTool(),
             OpenAIWebSearchTool(),
         ]
+        
+        # Add MCP tools to make all nodetool functionality available
+        try:
+            from nodetool.agents.tools.mcp_tools import get_all_mcp_tools
+            mcp_tools = await get_all_mcp_tools()
+            self.all_tools.extend(mcp_tools)
+            self.console.print(f"[dim]Loaded {len(mcp_tools)} MCP tools[/dim]")
+        except Exception as e:
+            self.console.print(f"[yellow]Warning: Failed to load MCP tools: {e}[/yellow]")
 
         # Initialize enabled_tools tracking if not already set
         for tool in self.all_tools:
