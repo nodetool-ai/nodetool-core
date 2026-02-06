@@ -21,6 +21,7 @@ from nodetool.config.deployment import (
     DeploymentStatus,
     SelfHostedDeployment,
 )
+from nodetool.deploy.docker_run import DockerRunGenerator
 from nodetool.deploy.proxy_run import ProxyRunGenerator
 from nodetool.deploy.ssh import SSHCommandError, SSHConnection
 from nodetool.deploy.state import StateManager
@@ -119,6 +120,7 @@ class SelfHostedDeployer:
         self.deployment = deployment
         self.state_manager = state_manager or StateManager()
         self.is_localhost = is_localhost(deployment.host)
+        self.use_proxy = deployment.use_proxy and deployment.proxy is not None
 
     def _get_executor(self):
         """Get appropriate executor (SSH or local) based on host."""
@@ -132,6 +134,14 @@ class SelfHostedDeployer:
                 password=self.deployment.ssh.password,
                 port=self.deployment.ssh.port,
             )
+
+    def _container_generator(self) -> ProxyRunGenerator | DockerRunGenerator:
+        if self.use_proxy:
+            return ProxyRunGenerator(self.deployment)
+        return DockerRunGenerator(self.deployment)
+
+    def _container_name(self) -> str:
+        return self._container_generator().get_container_name()
 
     def plan(self) -> dict[str, Any]:
         """
@@ -152,8 +162,8 @@ class SelfHostedDeployer:
             "will_destroy": [],
         }
 
-        proxy_generator = ProxyRunGenerator(self.deployment)
-        container_name = proxy_generator.get_container_name()
+        generator = self._container_generator()
+        container_name = generator.get_container_name()
 
         # Get current state
         current_state = self.state_manager.read_state(self.deployment_name)
@@ -161,14 +171,21 @@ class SelfHostedDeployer:
         if current_state:
             current_hash = current_state.get("proxy_run_hash")
 
-        new_hash = proxy_generator.generate_hash()
+        new_hash = generator.generate_hash()
 
         if not current_state or not current_state.get("last_deployed"):
             plan["changes"].append("Initial deployment - will create all resources")
-            plan["will_create"].append(f"Proxy container: {container_name}")
+            if self.use_proxy:
+                plan["will_create"].append(f"Proxy container: {container_name}")
+            else:
+                plan["will_create"].append(f"App container: {container_name}")
         elif current_hash != new_hash:
-            plan["changes"].append("Proxy container configuration has changed")
-            plan["will_update"].append("Proxy container")
+            if self.use_proxy:
+                plan["changes"].append("Proxy container configuration has changed")
+                plan["will_update"].append("Proxy container")
+            else:
+                plan["changes"].append("Container configuration has changed")
+                plan["will_update"].append("App container")
 
         plan["will_create"].extend(
             [
@@ -176,10 +193,11 @@ class SelfHostedDeployer:
                 f"Directory: {self.deployment.paths.hf_cache}",
                 f"Directory: {self.deployment.paths.workspace}/proxy",
                 f"Directory: {self.deployment.paths.workspace}/acme",
-                f"Docker network: {self.deployment.proxy.docker_network}",
                 f"Container: {container_name}",
             ]
         )
+        if self.use_proxy and self.deployment.proxy:
+            plan["will_create"].append(f"Docker network: {self.deployment.proxy.docker_network}")
 
         return plan
 
@@ -214,28 +232,30 @@ class SelfHostedDeployer:
                 # Step 1: Create directories
                 self._create_directories(executor, results)
 
-                # Step 2: Render proxy configuration and ensure network
-                bearer_token = self._write_proxy_yaml(executor, results)
-                self._ensure_network(executor, results)
-                self._sync_tls_files(executor, results)
-                self._ensure_proxy_image(executor, results)
+                bearer_token = None
+                if self.use_proxy:
+                    # Step 2: Render proxy configuration and ensure network
+                    bearer_token = self._write_proxy_yaml(executor, results)
+                    self._ensure_network(executor, results)
+                    self._sync_tls_files(executor, results)
+                    self._ensure_proxy_image(executor, results)
 
-                # Step 3: Stop existing proxy container if present
-                self._stop_existing_proxy(executor, results)
+                # Step 3: Stop existing container if present
+                self._stop_existing_container(executor, results)
 
-                # Step 4: Start proxy container
-                proxy_run_hash = self._start_proxy_container(executor, results)
+                # Step 4: Start container
+                container_run_hash = self._start_container(executor, results)
 
                 # Step 5: Check health endpoints
                 self._check_health(executor, results, bearer_token)
 
                 # Update state with success
-                container_name = ProxyRunGenerator(self.deployment).get_container_name()
+                container_name = self._container_name()
                 self.state_manager.write_state(
                     self.deployment_name,
                     {
                         "status": DeploymentStatus.RUNNING.value,
-                        "proxy_run_hash": proxy_run_hash,
+                        "proxy_run_hash": container_run_hash,
                         "proxy_bearer_token": bearer_token,
                         "container_name": container_name,
                         "container_id": None,  # Will be populated on next status check
@@ -428,6 +448,8 @@ class SelfHostedDeployer:
 
     def _ensure_network(self, ssh, results: dict[str, Any]) -> None:
         """Ensure the proxy network exists."""
+        if not self.deployment.proxy:
+            return
         network = self.deployment.proxy.docker_network
         command = f"docker network inspect {network} >/dev/null 2>&1 || docker network create {network}"
         ssh.execute(command, check=False, timeout=30)
@@ -435,6 +457,8 @@ class SelfHostedDeployer:
 
     def _ensure_proxy_image(self, ssh, results: dict[str, Any]) -> None:
         """Ensure the proxy image exists on the target host, pushing it if necessary."""
+        if not self.deployment.proxy:
+            return
         image = self.deployment.proxy.image
         if not image:
             return
@@ -500,50 +524,88 @@ class SelfHostedDeployer:
         if load_proc.returncode != 0:
             raise RuntimeError(f"Failed to push proxy image to remote host: {stderr.decode().strip()}")
 
-    def _stop_existing_proxy(self, ssh, results: dict[str, Any]) -> None:
-        """Stop and remove the existing proxy container if present."""
-        results["steps"].append("Checking for existing proxy container...")
+    def _stop_existing_container(self, ssh, results: dict[str, Any]) -> None:
+        """Stop and remove the existing deployment container if present."""
+        if self.use_proxy:
+            results["steps"].append("Checking for existing proxy container...")
+        else:
+            results["steps"].append("Checking for existing app container...")
 
-        container_name = ProxyRunGenerator(self.deployment).get_container_name()
+        container_name = self._container_name()
         check_command = f"docker ps -a -q -f name={container_name}"
 
         try:
             _exit_code, stdout, _ = ssh.execute(check_command, check=False)
             if stdout.strip():
-                results["steps"].append(f"  Found existing proxy: {container_name}")
+                if self.use_proxy:
+                    results["steps"].append(f"  Found existing proxy: {container_name}")
+                else:
+                    results["steps"].append(f"  Found existing app container: {container_name}")
                 ssh.execute(f"docker stop {container_name}", check=False, timeout=60)
-                results["steps"].append(f"  Stopped proxy: {container_name}")
+                if self.use_proxy:
+                    results["steps"].append(f"  Stopped proxy: {container_name}")
+                else:
+                    results["steps"].append(f"  Stopped app container: {container_name}")
                 ssh.execute(f"docker rm {container_name}", check=False, timeout=60)
-                results["steps"].append(f"  Removed proxy: {container_name}")
+                if self.use_proxy:
+                    results["steps"].append(f"  Removed proxy: {container_name}")
+                else:
+                    results["steps"].append(f"  Removed app container: {container_name}")
             else:
-                results["steps"].append("  No existing proxy container found")
+                if self.use_proxy:
+                    results["steps"].append("  No existing proxy container found")
+                else:
+                    results["steps"].append("  No existing app container found")
         except Exception as exc:
-            results["steps"].append(f"  Warning: could not inspect proxy container: {exc}")
+            if self.use_proxy:
+                results["steps"].append(f"  Warning: could not inspect proxy container: {exc}")
+            else:
+                results["steps"].append(f"  Warning: could not inspect app container: {exc}")
 
-    def _start_proxy_container(self, ssh, results: dict[str, Any]) -> str:
-        """Start the proxy container."""
-        results["steps"].append("Starting proxy container...")
+    def _stop_existing_proxy(self, ssh, results: dict[str, Any]) -> None:
+        """Backward-compatible wrapper for older tests/callers."""
+        self._stop_existing_container(ssh, results)
 
-        generator = ProxyRunGenerator(self.deployment)
+    def _start_container(self, ssh, results: dict[str, Any]) -> str:
+        """Start the deployment container."""
+        if self.use_proxy:
+            results["steps"].append("Starting proxy container...")
+        else:
+            results["steps"].append("Starting app container...")
+
+        generator = self._container_generator()
         command = generator.generate_command()
-        proxy_hash = generator.generate_hash()
+        container_hash = generator.generate_hash()
         results["steps"].append(f"  Command: {command[:120]}...")
 
         try:
             _exit_code, stdout, _stderr = ssh.execute(command, check=True, timeout=300)
             container_id = stdout.strip() or "<unknown>"
-            results["steps"].append(f"  Proxy container started: {container_id[:12]}")
+            if self.use_proxy:
+                results["steps"].append(f"  Proxy container started: {container_id[:12]}")
+            else:
+                results["steps"].append(f"  App container started: {container_id[:12]}")
         except SSHCommandError as exc:
-            results["errors"].append(f"Failed to start proxy container: {exc.stderr}")
+            if self.use_proxy:
+                results["errors"].append(f"Failed to start proxy container: {exc.stderr}")
+            else:
+                results["errors"].append(f"Failed to start app container: {exc.stderr}")
             raise
 
-        return proxy_hash
+        return container_hash
+
+    def _start_proxy_container(self, ssh, results: dict[str, Any]) -> str:
+        """Backward-compatible wrapper for older tests/callers."""
+        return self._start_container(ssh, results)
 
     def _check_health(self, ssh, results: dict[str, Any], bearer_token: Optional[str]) -> None:
-        """Check proxy container health and HTTP endpoints."""
-        results["steps"].append("Checking proxy health...")
+        """Check container health and HTTP endpoints."""
+        if self.use_proxy:
+            results["steps"].append("Checking proxy health...")
+        else:
+            results["steps"].append("Checking app health...")
 
-        container_name = ProxyRunGenerator(self.deployment).get_container_name()
+        container_name = self._container_name()
         time.sleep(5)
 
         status_cmd = (
@@ -556,11 +618,17 @@ class SelfHostedDeployer:
             if stdout.strip():
                 results["steps"].append(f"  Container status: {stdout.strip()}")
             else:
-                results["steps"].append("  Warning: proxy container not running")
+                if self.use_proxy:
+                    results["steps"].append("  Warning: proxy container not running")
+                else:
+                    results["steps"].append("  Warning: app container not running")
         except Exception as exc:
             results["steps"].append(f"  Warning: could not retrieve status: {exc}")
 
-        health_url = f"http://127.0.0.1:{self.deployment.proxy.listen_http}/healthz"
+        if self.use_proxy and self.deployment.proxy:
+            health_url = f"http://127.0.0.1:{self.deployment.proxy.listen_http}/healthz"
+        else:
+            health_url = f"http://127.0.0.1:{self.deployment.container.port}/health"
         try:
             ssh.execute(f"curl -fsS {health_url}", check=True, timeout=20)
             results["steps"].append(f"  Health endpoint OK: {health_url}")
@@ -568,7 +636,12 @@ class SelfHostedDeployer:
             results["steps"].append(f"  Warning: health check failed: {exc.stderr.strip()}")
 
         # Check HTTPS status endpoint when TLS configured
-        if self.deployment.proxy.tls_certfile and self.deployment.proxy.tls_keyfile:
+        if (
+            self.use_proxy
+            and self.deployment.proxy
+            and self.deployment.proxy.tls_certfile
+            and self.deployment.proxy.tls_keyfile
+        ):
             token = bearer_token or ""
             status_url = f"https://{self.deployment.proxy.domain}/status"
             curl_cmd = (
@@ -598,7 +671,7 @@ class SelfHostedDeployer:
 
         try:
             with self._get_executor() as ssh:
-                container_name = ProxyRunGenerator(self.deployment).get_container_name()
+                container_name = self._container_name()
 
                 # Stop container
                 stop_command = f"docker stop {container_name}"
@@ -637,7 +710,7 @@ class SelfHostedDeployer:
         status_info = {
             "deployment_name": self.deployment_name,
             "host": self.deployment.host,
-            "container_name": ProxyRunGenerator(self.deployment).get_container_name(),
+            "container_name": self._container_name(),
         }
 
         # Get state from state manager
@@ -650,7 +723,7 @@ class SelfHostedDeployer:
         # Try to get live status from host (remote or local)
         try:
             with self._get_executor() as ssh:
-                container_name = ProxyRunGenerator(self.deployment).get_container_name()
+                container_name = self._container_name()
 
                 # Get container status
                 command = f"docker ps -a -f name={container_name} --format '{{{{.Status}}}}'"
@@ -686,7 +759,7 @@ class SelfHostedDeployer:
             Log output as string
         """
         with self._get_executor() as ssh:
-            container_name = ProxyRunGenerator(self.deployment).get_container_name()
+            container_name = self._container_name()
 
             command = f"docker logs --tail={tail}"
 

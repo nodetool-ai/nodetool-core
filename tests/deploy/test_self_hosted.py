@@ -14,6 +14,7 @@ from nodetool.config.deployment import (
     SelfHostedPaths,
     SSHConfig,
 )
+from nodetool.deploy.docker_run import DockerRunGenerator
 from nodetool.deploy.proxy_run import ProxyRunGenerator
 from nodetool.deploy.self_hosted import (
     LocalExecutor,
@@ -117,6 +118,17 @@ class TestSelfHostedDeployer:
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="gpu1", port=8001, gpu="0"),
+        )
+
+    @pytest.fixture
+    def no_proxy_deployment(self):
+        """Create a deployment that skips the proxy container."""
+        return SelfHostedDeployment(
+            host="192.168.1.100",
+            ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
+            image=ImageConfig(name="nodetool/nodetool", tag="latest"),
+            container=ContainerConfig(name="default", port=7777),
+            use_proxy=False,
         )
 
     @pytest.fixture
@@ -229,6 +241,22 @@ class TestSelfHostedDeployer:
         assert "configuration has changed" in plan["changes"][0]
         assert "Proxy container" in plan["will_update"][0]
 
+    def test_plan_initial_deployment_without_proxy(self, no_proxy_deployment, mock_state_manager):
+        """Test plan generation for direct-container mode."""
+        mock_state_manager.read_state.return_value = None
+
+        deployer = SelfHostedDeployer(
+            deployment_name="test",
+            deployment=no_proxy_deployment,
+            state_manager=mock_state_manager,
+        )
+
+        plan = deployer.plan()
+        expected_container = DockerRunGenerator(no_proxy_deployment).get_container_name()
+
+        assert f"App container: {expected_container}" in plan["will_create"]
+        assert not any("Docker network:" in item for item in plan["will_create"])
+
     def test_apply_dry_run(self, basic_deployment, mock_state_manager):
         """Test apply with dry_run=True returns plan."""
         deployer = SelfHostedDeployer(
@@ -338,6 +366,46 @@ class TestSelfHostedDeployer:
 
             # Should update status to error
             mock_state_manager.update_deployment_status.assert_any_call("test", DeploymentStatus.ERROR.value)
+
+    def test_apply_success_without_proxy(self, no_proxy_deployment, mock_state_manager):
+        """Test successful deploy in direct-container mode."""
+        mock_ssh = Mock()
+        mock_ssh.__enter__ = Mock(return_value=mock_ssh)
+        mock_ssh.__exit__ = Mock(return_value=False)
+        mock_ssh.mkdir = Mock()
+        mock_ssh.execute = Mock(
+            side_effect=[
+                (0, "", ""),  # stop_existing: check
+                (0, "container_id_123", ""),  # start container
+                (0, "nodetool-default Up 1 second", ""),  # check status
+                (0, "ok", ""),  # health curl
+            ]
+        )
+
+        with (
+            patch("nodetool.deploy.self_hosted.SSHConnection") as mock_ssh_cls,
+            patch("nodetool.deploy.self_hosted.DockerRunGenerator") as mock_gen_cls,
+            patch("nodetool.deploy.self_hosted.time.sleep"),
+        ):
+            mock_ssh_cls.return_value = mock_ssh
+
+            mock_gen = Mock()
+            mock_gen.generate_command.return_value = "docker run ..."
+            mock_gen.generate_hash.return_value = "hash123"
+            mock_gen.get_container_name.return_value = "nodetool-default"
+            mock_gen_cls.return_value = mock_gen
+
+            deployer = SelfHostedDeployer(
+                deployment_name="test",
+                deployment=no_proxy_deployment,
+                state_manager=mock_state_manager,
+            )
+
+            result = deployer.apply(dry_run=False)
+
+            assert result["status"] == "success"
+            assert len(result["errors"]) == 0
+            mock_state_manager.write_state.assert_called_once()
 
     def test_create_directories(self, basic_deployment, mock_state_manager):
         """Test directory creation."""

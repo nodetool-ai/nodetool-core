@@ -177,12 +177,20 @@ class SelfHostedDeployment(BaseModel):
         None,
         description="Authentication token for worker API (auto-generated if not set)",
     )
+    use_proxy: bool = Field(
+        True,
+        description="Whether to deploy and route traffic through the self-hosted proxy container",
+    )
     proxy: Optional[ProxySpec] = Field(default=None, description="Proxy container specification")
     state: SelfHostedState = Field(default_factory=SelfHostedState)
 
     @model_validator(mode="after")
     def _ensure_proxy(self) -> "SelfHostedDeployment":
         """Provide a minimal proxy specification when omitted for backward compatibility."""
+        if not self.use_proxy:
+            self.proxy = None
+            return self
+
         if self.proxy is None:
             default_service = ServiceSpec(
                 name=self.container.name,

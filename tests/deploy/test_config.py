@@ -107,6 +107,19 @@ class TestSelfHostedDeployment:
         assert deployment.container.port == 8001
         assert deployment.container.gpu == "0"
 
+    def test_self_hosted_without_proxy(self):
+        """Test self-hosted deployment configured without proxy."""
+        deployment = SelfHostedDeployment(
+            host="192.168.1.100",
+            ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
+            image=ImageConfig(name="nodetool/nodetool", tag="latest"),
+            container=ContainerConfig(name="wf1", port=8001),
+            use_proxy=False,
+        )
+        assert deployment.use_proxy is False
+        assert deployment.proxy is None
+        assert deployment.get_server_url() == "http://192.168.1.100:8001"
+
 
 class TestDeploymentConfig:
     """Tests for DeploymentConfig model."""
