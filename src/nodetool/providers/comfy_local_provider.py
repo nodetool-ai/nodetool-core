@@ -25,7 +25,7 @@ from nodetool.providers.comfy_api import (
 )
 
 if TYPE_CHECKING:
-    from websockets.client import WebSocketClientProtocol
+    from websockets.client import WebSocketClientProtocol  # type: ignore
 
     from nodetool.providers.types import ImageBytes, ImageToImageParams, TextToImageParams
 

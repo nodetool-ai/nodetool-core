@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     import PIL.ImageOps
     from chromadb.api import ClientAPI
     from pydub import AudioSegment
-    from sklearn.base import BaseEstimator
+    from sklearn.base import BaseEstimator  # type: ignore
 
     from nodetool.providers.base import BaseProvider, ProviderCapability
     from nodetool.types.message_types import MessageCreateRequest

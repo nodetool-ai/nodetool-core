@@ -1842,7 +1842,7 @@ def list_all_hf_models(limit: int | None, as_json: bool, repo_only: bool):
 def list_hf_types():
     """List hf.* types supported by the local HuggingFace cache search."""
     from nodetool.integrations.huggingface.huggingface_models import (
-        get_supported_hf_types,
+        get_supported_hf_types,  # type: ignore
     )
 
     supported = get_supported_hf_types()
@@ -3889,7 +3889,7 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
                 console.print(f"[yellow]⚠️ Remote response: {result}[/]")
 
             # Close database connections
-            from nodetool.models.base_model import close_all_database_adapters
+            from nodetool.models.base_model import close_all_database_adapters  # type: ignore
 
             with suppress(Exception):
                 await close_all_database_adapters()
