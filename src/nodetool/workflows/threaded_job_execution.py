@@ -251,9 +251,9 @@ class ThreadedJobExecution(JobExecution):
             # the threaded event loop is stopped, preventing WAL lock hangs.
             if pool is not None:
                 try:
-                    await pool.close_all()
-                    loop_id = id(asyncio.get_running_loop())
-                    SQLiteConnectionPool._pools.pop((loop_id, pool.db_path), None)
+                    from nodetool.runtime.db_sqlite import shutdown_all_sqlite_pools
+
+                    await shutdown_all_sqlite_pools()
                 except Exception as e:
                     log.warning(f"Error closing thread-local pool: {e}")
 
