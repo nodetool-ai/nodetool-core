@@ -2,6 +2,8 @@ from typing import Any
 
 from pydantic import Field
 
+from nodetool.dsl.graph import GraphNode, SingleOutputGraphNode
+from nodetool.dsl.handles import Connect, OutputHandle, connect_field
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 
 
@@ -68,3 +70,54 @@ class FormatText(BaseNode):
         result = self.template
         result = result.replace("{{ text }}", str(self.text))
         return result
+
+
+# ------------------------------------------------------------------
+# DSL Graph Node Wrappers for Testing
+# ------------------------------------------------------------------
+
+
+class StringInputDSL(SingleOutputGraphNode[str], GraphNode[str]):
+    """DSL wrapper for StringInput node."""
+
+    name: Connect[str] = connect_field(default="input", description="The parameter name for the workflow")
+    value: Connect[str] = connect_field(default="", description="The input string value")
+
+    @classmethod
+    def get_node_class(cls) -> type[BaseNode]:
+        return StringInput
+
+
+class FloatInputDSL(SingleOutputGraphNode[float], GraphNode[float]):
+    """DSL wrapper for FloatInput node."""
+
+    name: Connect[str] = connect_field(default="float_input", description="The parameter name for the workflow")
+    default: Connect[float] = connect_field(default=0.0, description="The input float value")
+
+    @classmethod
+    def get_node_class(cls) -> type[BaseNode]:
+        return FloatInput
+
+
+class IntInputDSL(SingleOutputGraphNode[int], GraphNode[int]):
+    """DSL wrapper for IntInput node."""
+
+    name: Connect[str] = connect_field(default="int_input", description="The parameter name for the workflow")
+    default: Connect[int] = connect_field(default=0, description="The input int value")
+
+    @classmethod
+    def get_node_class(cls) -> type[BaseNode]:
+        return IntInput
+
+
+class FormatTextDSL(SingleOutputGraphNode[str], GraphNode[str]):
+    """DSL wrapper for FormatText node."""
+
+    template: Connect[str] = connect_field(
+        default="Hello, {{ text }}", description="The template string with placeholders"
+    )
+    text: Connect[str] = connect_field(default="", description="The text value to insert into the template")
+
+    @classmethod
+    def get_node_class(cls) -> type[BaseNode]:
+        return FormatText
