@@ -1,12 +1,12 @@
-name: OpenCode Documentation Quality
+name: Assistant Coverage Improvement
 
 on:
   schedule:
-    - cron: "0 8 * * 1" # Weekly on Mondays at 8 AM UTC
+    - cron: "0 9 * * 6" # Weekly on Saturdays at 9 AM UTC
   workflow_dispatch:
 
 jobs:
-  opencode-docs:
+  assistant-coverage:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -38,16 +38,25 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
-      - name: Run OpenCode
-        uses: anomalyco/opencode/github@latest
-        env:
-          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
-        with:
-          model: minimax/MiniMax-M2.1
-          prompt: |
-            # NodeTool Core Documentation Quality
+      - name: Run tests with coverage
+        run: |
+          pytest --cov=src --cov-report=json:coverage.json || true
+          cat coverage.json || true
 
-            You are an autonomous agent improving documentation in **nodetool-core**.
+      - name: Run Assistant
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: https://api.z.ai/api/anthropic
+        with:
+          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          additional_permissions: |
+            actions: read
+          claude_args: |
+            --allowedTools "Bash,WebFetch,Edit,Read,Replace"
+          prompt: |
+            # NodeTool Core Coverage Improvement
+
+            You are an autonomous testing agent improving coverage in **nodetool-core**.
 
             ## Step 0: Avoid Duplicate Work
             1. Run `git branch -a` to check existing branches
@@ -59,17 +68,19 @@ jobs:
             - `.github/opencode-memory/features.md`
             - List `issues/` and `insights/` to find descriptive files
 
-            ## Step 2: Documentation Audit Areas
-            - `AGENTS.md` accuracy and completeness
-            - README files for setup and usage
-            - Public API docstrings and module docs
-            - Configuration docs and environment variables
-            - Examples and troubleshooting sections
+            ## Step 2: Analyze Coverage
+            Coverage data is in `coverage.json` (if generated).
 
-            ## Step 3: Make Focused Improvements
-            - Keep edits minimal and accurate
-            - Avoid adding new docs unless required
-            - Verify code samples match current APIs
+            Focus on critical areas:
+            - Workflow execution and nodes
+            - API routes and request validation
+            - Agent/LLM orchestration
+            - Storage backends and persistence
+
+            ## Step 3: Add Focused Tests
+            - Add tests only for meaningful behavior
+            - Follow `tests/` structure and existing patterns
+            - Prefer unit tests over heavy integration tests
 
             ## Step 4: Validate
             ```bash
@@ -79,5 +90,5 @@ jobs:
             ```
 
             ## Step 5: Update Memory
-            - Add issue files under `issues/<topic>/`
-            - Add insight files under `insights/<topic>/`
+            - Add insight files under `insights/testing/`
+            - Add issue files under `issues/testing/`
