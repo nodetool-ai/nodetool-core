@@ -20,6 +20,7 @@ router = APIRouter(prefix="/api/messages", tags=["messages"])
 @router.post("/")
 async def create(req: MessageCreateRequest, user: str = Depends(current_user)) -> Message:
     thread_id = (await Thread.create(user_id=user)).id if req.thread_id is None else req.thread_id
+    # Use from_model for newly created messages since content is still in memory
     return Message.from_model(
         await MessageModel.create(
             user_id=user,
@@ -56,7 +57,8 @@ async def get(message_id: str, user: str = Depends(current_user)) -> Message:
         raise HTTPException(status_code=404, detail="Message not found")
     if message.user_id != user:
         raise HTTPException(status_code=404, detail="Message not found")
-    return Message.from_model(message)
+    # Use async version to decrypt content loaded from database
+    return await Message.from_model_async(message)
 
 
 @router.get("/")
@@ -72,4 +74,6 @@ async def index(
         if message.user_id != user:
             raise HTTPException(status_code=404, detail="Message not found")
 
-    return MessageList(next=cursor, messages=[Message.from_model(message) for message in messages])
+    # Use async version to decrypt content loaded from database
+    decrypted_messages = [await Message.from_model_async(message) for message in messages]
+    return MessageList(next=cursor, messages=decrypted_messages)
