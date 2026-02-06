@@ -2327,6 +2327,23 @@ class DateSearchCondition(BaseType):
 
 
 class EmailSearchCriteria(BaseType):
+    """
+    Criteria for searching emails via IMAP.
+    
+    Attributes:
+        from_address: Filter by sender email address
+        to_address: Filter by recipient email address
+        subject: Filter by subject line
+        body: Filter by email body content
+        cc: Filter by CC recipients
+        label: Filter by email label/folder
+        date_query: Date search condition (preferred name)
+        date_condition: Date search condition (alias for date_query, used in imap.py)
+        flags: IMAP flags to filter by (SEEN, UNSEEN, etc.)
+        keywords: Custom IMAP keywords to filter by
+        folder: IMAP folder to search in (defaults to INBOX)
+        text: Full-text search across all email fields
+    """
     type: Literal["email_search_criteria"] = "email_search_criteria"
     from_address: Optional[str] = None
     to_address: Optional[str] = None
@@ -2335,7 +2352,7 @@ class EmailSearchCriteria(BaseType):
     cc: Optional[str] = None
     label: Optional[str] = None
     date_query: Optional[DateSearchCondition] = None
-    date_condition: Optional[DateSearchCondition] = None  # Alias for date_query
+    date_condition: Optional[DateSearchCondition] = None  # Alias for date_query for backwards compatibility
     flags: list[EmailFlag] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
     folder: Optional[str] = None
