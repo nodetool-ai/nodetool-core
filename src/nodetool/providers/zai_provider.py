@@ -1,5 +1,5 @@
 """
-Z.AI provider implementation for chat completions.
+Z.AI provider implementation for chat completions and image generation.
 
 This module implements the ChatProvider interface for Z.AI,
 which provides access to GLM models through an OpenAI-compatible API.
@@ -9,23 +9,26 @@ Z.AI supports two endpoints:
 - Coding Plan: https://api.z.ai/api/coding/paas/v4 (for coding-specific features)
 
 Z.AI API Documentation: https://docs.z.ai/api-reference/llm/chat-completion
+Z.AI Image Generation: https://docs.z.ai/api-reference/image/generate-image
 Z.AI Models: https://docs.z.ai/devpack/overview
 Authentication: Uses ZHIPU_API_KEY
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 import openai
 
 if TYPE_CHECKING:
+    from nodetool.providers.types import TextToImageParams
     from nodetool.workflows.processing_context import ProcessingContext
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
+    ImageModel,
     LanguageModel,
     Provider,
 )
@@ -190,3 +193,178 @@ class ZAIProvider(OpenAIProvider):
         except Exception as e:
             log.error(f"Error fetching Z.AI models: {e}")
             return []
+
+    async def get_available_image_models(self) -> list[ImageModel]:
+        """
+        Get available Z.AI image generation models.
+
+        Returns GLM-Image model for text-to-image generation.
+        Returns an empty list if no API key is configured.
+
+        GLM-Image features:
+        - Hybrid architecture: autoregressive + diffusion decoder
+        - Excellent text rendering in images
+        - Supports various aspect ratios
+        - Resolution range: 512px–2048px (multiples of 32)
+
+        Returns:
+            List of ImageModel instances for Z.AI
+        """
+        if not self.api_key:
+            log.debug("No Z.AI API key configured, returning empty image model list")
+            return []
+
+        models = [
+            ImageModel(
+                id="glm-image",
+                name="GLM-Image",
+                provider=Provider.ZAI,
+                supported_tasks=["text_to_image"],
+            ),
+        ]
+
+        log.debug(f"Returning {len(models)} Z.AI image models")
+        return models
+
+    def _resolve_zai_image_size(self, width: int | None, height: int | None) -> str:
+        """Convert requested dimensions to Z.AI-supported image sizes.
+
+        Z.AI GLM-Image API constraints:
+        - Both width and height must be within 512px–2048px
+        - Each dimension must be a multiple of 32
+        - Recommended sizes: 1280×1280, 1568×1056, 1056×1568, 1472×1088,
+          1088×1472, 1728×960, 960×1728
+
+        Args:
+            width: Requested width
+            height: Requested height
+
+        Returns:
+            Z.AI-compatible size string (e.g., "1280x1280")
+        """
+        if not width or not height:
+            return "1280x1280"  # Default size
+
+        # Clamp to Z.AI limits (512-2048)
+        width = max(512, min(2048, width))
+        height = max(512, min(2048, height))
+
+        # Round to nearest multiple of 32
+        width = round(width / 32) * 32
+        height = round(height / 32) * 32
+
+        # Ensure still within bounds after rounding
+        width = max(512, min(2048, width))
+        height = max(512, min(2048, height))
+
+        return f"{width}x{height}"
+
+    async def text_to_image(
+        self,
+        params: Any,  # TextToImageParams, but imported later to avoid circular deps
+        timeout_s: int | None = None,
+        context: Any = None,  # ProcessingContext, but imported later
+        node_id: str | None = None,
+    ) -> bytes:
+        """Generate an image from a text prompt using Z.AI's GLM-Image API.
+
+        Uses the images/generations endpoint which supports the GLM-Image model.
+        GLM-Image uses a hybrid architecture of "autoregressive + diffusion decoder"
+        for high-quality image generation with excellent text rendering.
+
+        Args:
+            params: Text-to-image generation parameters including:
+                - model: ImageModel with model ID (e.g., "glm-image")
+                - prompt: Text description of the desired image
+                - width/height: Desired dimensions (mapped to supported sizes)
+            timeout_s: Optional timeout in seconds
+            context: Processing context (unused, reserved)
+            node_id: Node ID for progress reporting (unused)
+
+        Returns:
+            Raw image bytes
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If generation fails
+        """
+        if not params.prompt:
+            raise ValueError("The input prompt cannot be empty.")
+
+        if not self.api_key:
+            raise ValueError("ZHIPU_API_KEY is required for image generation.")
+
+        model_id = params.model.id
+        if not model_id:
+            raise ValueError("A text-to-image model with a valid id must be specified for image generation.")
+
+        prompt = params.prompt.strip()
+        if params.negative_prompt:
+            prompt = f"{prompt}\n\nDo not include: {params.negative_prompt.strip()}"
+
+        # Resolve size from width/height parameters
+        size = self._resolve_zai_image_size(params.width, params.height)
+
+        log.debug(f"Generating image with Z.AI model={model_id}, size={size}")
+
+        try:
+            request_timeout = timeout_s if timeout_s and timeout_s > 0 else 120
+
+            # Build API request
+            api_url = f"{self.base_url}/images/generations"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+            payload: dict[str, Any] = {
+                "model": model_id,
+                "prompt": prompt,
+                "size": size,
+            }
+
+            log.debug(f"Z.AI image generation request to {api_url}")
+
+            timeout = aiohttp.ClientTimeout(total=request_timeout)
+            async with (
+                aiohttp.ClientSession(timeout=timeout) as session,
+                session.post(api_url, headers=headers, json=payload) as response,
+            ):
+                if response.status != 200:
+                    error_text = await response.text()
+                    log.error(f"Z.AI image generation failed: HTTP {response.status}: {error_text}")
+                    raise RuntimeError(
+                        f"Z.AI image generation failed with status {response.status}: {error_text}"
+                    )
+
+                result = await response.json()
+
+                # Extract image URL from response
+                # Z.AI returns: {"data": [{"url": "..."}]}
+                data = result.get("data", [])
+                if not data:
+                    raise RuntimeError("Z.AI image generation returned no image data.")
+
+                image_url = data[0].get("url")
+                if not image_url:
+                    raise RuntimeError("Z.AI image generation returned no image URL.")
+
+                log.debug(f"Z.AI returned image URL: {image_url[:100]}...")
+
+            # Download the image from the URL
+            async with (
+                aiohttp.ClientSession(timeout=timeout) as session,
+                session.get(image_url) as img_response,
+            ):
+                if img_response.status != 200:
+                    raise RuntimeError(f"Failed to download image from Z.AI URL: HTTP {img_response.status}")
+                image_bytes = await img_response.read()
+
+            log.debug(f"Generated image, size: {len(image_bytes)} bytes")
+            return image_bytes
+
+        except aiohttp.ClientError as e:
+            log.error(f"Z.AI text-to-image generation failed (network error): {e}")
+            raise RuntimeError(f"Z.AI text-to-image generation failed: {e}") from e
+        except Exception as exc:
+            log.error(f"Z.AI text-to-image generation failed: {exc}")
+            raise RuntimeError(f"Z.AI text-to-image generation failed: {exc}") from exc
