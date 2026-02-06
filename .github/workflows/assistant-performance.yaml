@@ -89,3 +89,7 @@ jobs:
             ## Step 5: Update Memory
             - Add issue files under `issues/<topic>/`
             - Add insight files under `insights/performance/`
+
+            ## Pull Request Rule
+            - If `git status --porcelain` shows changed files, commit, push, and create or update a PR.
+            - If there are no file changes, do not commit, do not push, and do not create or update a PR.
