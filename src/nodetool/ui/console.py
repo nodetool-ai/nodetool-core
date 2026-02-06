@@ -2,15 +2,18 @@
 UI Console for displaying Agent progress using Rich.
 """
 
+from __future__ import annotations
+
 import json
 import time
 from typing import TYPE_CHECKING, Any, Optional
 
 from rich.columns import Columns
-from rich.console import Console
+from rich.console import Console, RenderableType
 from rich.live import Live
 from rich.panel import Panel
 from rich.rule import Rule
+from rich.spinner import Spinner
 from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
@@ -19,6 +22,18 @@ from rich.tree import Tree
 # Use TYPE_CHECKING to avoid circular imports at runtime
 if TYPE_CHECKING:
     from nodetool.metadata.types import LogEntry, Step, Task, ToolCall
+
+# Display constants
+_SPINNER_NAME = "dots"
+_MAX_INSTRUCTION_LEN = 100
+_REFRESH_PER_SECOND = 8
+
+
+def _truncate(text: str, max_len: int = _MAX_INSTRUCTION_LEN) -> str:
+    """Truncate text with ellipsis if it exceeds max_len."""
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1] + "…"
 
 
 class AgentConsole:
@@ -43,6 +58,7 @@ class AgentConsole:
         self.step_nodes: dict[str, Any] = {}
         self.current_step: Optional[Step] = None
         self.task: Optional[Task] = None
+        self.tool_calls: list[ToolCall] = []
 
         # Phase-specific logging storage
         self.phase_logs: dict[str, list[dict[str, Any]]] = {}
@@ -68,7 +84,7 @@ class AgentConsole:
         self.live = Live(
             initial_content,
             console=self.console,
-            refresh_per_second=4,
+            refresh_per_second=_REFRESH_PER_SECOND,
             vertical_overflow="visible",
         )
         self.live.start()
@@ -84,6 +100,7 @@ class AgentConsole:
         self.step_nodes = {}
         self.current_phase = None
         self.task = None
+        self.tool_calls = []
 
     def update_live(self, new_content: Table | Tree) -> None:
         """
@@ -133,84 +150,85 @@ class AgentConsole:
             is_error (bool): Flag indicating if the status represents an error.
         """
         if self.live and self.current_tree and self.live.is_started:
-            status_style = "bold red" if is_error else "bold green" if status == "Success" else "bold yellow"
-            # Truncate long content for better display
-            content_str = str(content)
-            if len(content_str) > 1000:
-                content_str = content_str[:1000] + "..."
+            content_str = _truncate(str(content), 200)
 
-            # Create the node label with phase and status
-            status_icon = "❌" if is_error else "✓" if status == "Success" else "⏳"
-            node_label = f"[cyan]{phase_name}[/] [{status_style}]{status_icon} {status}[/]"
-
-            # Check if we already have a node for this phase
-            if phase_name in self.phase_nodes:
-                # Update existing node
-                node = self.phase_nodes[phase_name]
-                node.label = node_label
-
-                # Replace or add the content as a child node
-                if len(node.children) > 0:
-                    # Remove the old content child node
-                    node.children.clear()
-
-                # Add the new content
-                node.add(f"[dim]{content_str}[/]")
+            # Build label based on status
+            label: RenderableType
+            if is_error:
+                label = Text(f"✗ {phase_name}", style="bold red")
+            elif status == "Success":
+                label = Text(f"✓ {phase_name}", style="green")
+            elif status == "Running":
+                label = Spinner(
+                    _SPINNER_NAME,
+                    text=Text(f" {phase_name}", style="bold"),
+                )
             else:
-                # Create a new node
-                node = self.current_tree.add(node_label)
-                node.add(f"[dim]{content_str}[/]")
+                label = Text(f"○ {phase_name}", style="dim")
+
+            if phase_name in self.phase_nodes:
+                node = self.phase_nodes[phase_name]
+                node.label = label
+                node.children.clear()
+                # Only show detail for running/error phases
+                if status == "Running" or is_error:
+                    node.add(Text(content_str, style="dim"))
+            else:
+                node = self.current_tree.add(label)
+                if status == "Running" or is_error:
+                    node.add(Text(content_str, style="dim"))
                 self.phase_nodes[phase_name] = node
 
-    def create_execution_tree(self, title: str, task: "Task", tool_calls: list["ToolCall"]) -> Tree:
-        """Create a rich tree for displaying steps and their tool calls."""
-        tree = Tree(f"[bold magenta]{title}[/]", guide_style="dim")
+    def create_execution_tree(self, title: str, task: Task, tool_calls: list[ToolCall]) -> Tree:
+        """Create a compact rich tree for displaying steps with animated spinners."""
+        tree = Tree(f"[bold]{title}[/]", guide_style="dim")
         self.step_nodes = {}
         self.task = task
+        self.tool_calls = tool_calls or []
 
-        # Guard against task or steps being None
         if not task or not task.steps:
             return tree
 
         for step in task.steps:
-            status_symbol = "✅" if step.completed else "🔄" if step.is_running() else "⏳"
-            ("green" if step.completed else "yellow" if step.is_running() else "white")
+            instr = _truncate(step.instructions)
 
-            # Create step node with status and content
-            node_label = f"{status_symbol} [green]{step.instructions}[/]"
-            step_node = tree.add(node_label)
+            # Build label with animated spinner for running steps
+            label: RenderableType
+            if step.completed:
+                label = Text(f"✓ {instr}", style="dim green")
+            elif step.is_running():
+                label = Spinner(_SPINNER_NAME, text=Text(f" {instr}", style="bold"))
+            else:
+                label = Text(f"○ {instr}", style="dim")
+
+            step_node = tree.add(label)
             self.step_nodes[step.id] = step_node
 
-            # Add files information as child nodes
-            if step.depends_on:
-                input_str = ", ".join(step.depends_on)
-                step_node.add(f"[blue]📁 Inputs:[/] {input_str}")
+            # Show details only for the running step
+            if step.is_running():
+                if step.depends_on:
+                    step_node.add(Text(f"← {', '.join(step.depends_on)}", style="dim"))
 
-            # Show logs for all steps
-            if step.logs:
-                log_limit = 3
-                for log in reversed(step.logs[-log_limit:]):
-                    formatted_log = self._format_log_entry(log)
-                    step_node.add(formatted_log)
-                if len(step.logs) > log_limit:
-                    step_node.add(f"[dim]+ {len(step.logs) - log_limit} more logs[/]")
+                # Show latest log entry only
+                if step.logs:
+                    step_node.add(self._format_log_entry(step.logs[-1]))
 
-            # Add tool calls as child nodes if there are any relevant ones
-            if True:
-                # Ensure tool_calls is not None before filtering
-                step_tool_calls = [call for call in (tool_calls or []) if call.step_id == step.id]
-
+                # Show latest tool call compactly
+                step_tool_calls = [c for c in self.tool_calls if c.step_id == step.id]
                 if step_tool_calls:
-                    tool_node = step_node.add("[cyan]🔧 Tools[/]")
-                    for _i, call in enumerate(step_tool_calls[-3:]):  # Show last 3 tool calls
-                        tool_name = call.name
-                        message = str(call.message)
-                        if len(message) > 70:
-                            message = message[:67] + "..."
-                        tool_node.add(f"[dim]{tool_name}: {message}[/]")
-
-                    if len(step_tool_calls) > 3:
-                        tool_node.add(f"[dim]+ {len(step_tool_calls) - 3} more tool calls[/]")
+                    last = step_tool_calls[-1]
+                    msg = _truncate(str(last.message or ""), 60)
+                    count_info = f" (+{len(step_tool_calls) - 1})" if len(step_tool_calls) > 1 else ""
+                    step_node.add(
+                        Text(f"↳ {last.name}: {msg}{count_info}", style="dim cyan")
+                    )
+            elif step.completed:
+                # Compact summary for completed steps
+                step_tool_calls = [c for c in self.tool_calls if c.step_id == step.id]
+                if step_tool_calls:
+                    step_node.add(
+                        Text(f"{len(step_tool_calls)} tool calls", style="dim")
+                    )
 
         return tree
 
@@ -296,7 +314,7 @@ class AgentConsole:
         else:
             self.phase_logs.pop(phase_name, None)
 
-    def set_current_step(self, step: "Step") -> None:
+    def set_current_step(self, step: Step) -> None:
         """
         Set the current step that is being executed.
 
@@ -369,60 +387,62 @@ class AgentConsole:
 
     def update_execution_display(self) -> None:
         """
-        Refresh the execution tree with logs for all steps.
+        Refresh the execution tree with logs for the running step only.
         """
         if self.live and self.current_tree and self.live.is_started and self.task and self.task.steps:
-            # Iterate through all steps and update their logs
             for step in self.task.steps:
-                if step.id in self.step_nodes:
+                if step.id in self.step_nodes and step.is_running():
                     step_node = self.step_nodes[step.id]
+                    instr = _truncate(step.instructions)
 
-                    # Remove existing log children (keep other children like inputs and tools)
-                    children_to_keep = []
-                    for child in step_node.children:
-                        # Keep non-log children (inputs and tools sections)
-                        child_label = str(child.label)
-                        if child_label.startswith("[blue]📁 Inputs:[/]") or child_label.startswith("[cyan]🔧 Tools[/]"):
-                            children_to_keep.append(child)
+                    # Keep spinner label fresh
+                    step_node.label = Spinner(
+                        _SPINNER_NAME, text=Text(f" {instr}", style="bold")
+                    )
 
-                    step_node.children = children_to_keep
+                    # Rebuild children: deps + latest log + latest tool
+                    step_node.children.clear()
 
-                    # Add current logs
+                    if step.depends_on:
+                        step_node.add(Text(f"← {', '.join(step.depends_on)}", style="dim"))
+
                     if step.logs:
-                        log_limit = 3
-                        for log in reversed(step.logs[-log_limit:]):
-                            formatted_log = self._format_log_entry(log)
-                            step_node.add(formatted_log)
-                        if len(step.logs) > log_limit:
-                            step_node.add(f"[dim]+ {len(step.logs) - log_limit} more logs[/]")
+                        step_node.add(self._format_log_entry(step.logs[-1]))
+
+                    step_tool_calls = [c for c in self.tool_calls if c.step_id == step.id]
+                    if step_tool_calls:
+                        last = step_tool_calls[-1]
+                        msg = _truncate(str(last.message or ""), 60)
+                        count_info = f" (+{len(step_tool_calls) - 1})" if len(step_tool_calls) > 1 else ""
+                        step_node.add(
+                            Text(f"↳ {last.name}: {msg}{count_info}", style="dim cyan")
+                        )
 
             self.live.update(self.current_tree)
 
-    def _format_log_entry(self, log: "LogEntry") -> str:
+    def _format_log_entry(self, log: LogEntry) -> Text:
         """
-        Format a log entry with appropriate colors.
+        Format a log entry with minimal styling.
 
         Args:
             log (LogEntry): The log entry to format.
 
         Returns:
-            str: The formatted log entry string.
+            Text: The formatted log entry.
         """
-        # Color coding for log levels
-        color_map = {
+        style_map = {
             "debug": "dim",
-            "info": "blue",
+            "info": "dim cyan",
             "warning": "yellow",
             "error": "bold red",
         }
+        icon_map = {"debug": "·", "info": "›", "warning": "⚠", "error": "✗"}  # noqa: RUF001
 
-        # Icon mapping for log levels
-        icon_map = {"debug": "🐛", "info": "🔧", "warning": "⚠️", "error": "❌"}
+        style = style_map.get(log.level, "white")
+        icon = icon_map.get(log.level, "·")
+        msg = _truncate(log.message, 120)
 
-        color = color_map.get(log.level, "white")
-        icon = icon_map.get(log.level, "📝")
-
-        return f"[{color}]{icon} {log.message}[/]"
+        return Text(f"{icon} {msg}", style=style)
 
     def debug(self, message: object, style: Optional[str] = None) -> None:
         """
@@ -475,7 +495,7 @@ class AgentConsole:
         if exc_info and self.console:
             self.print_exception()
 
-    def display_step_start(self, step: "Step") -> None:
+    def display_step_start(self, step: Step) -> None:
         """
         Display the beginning of a step with beautiful formatting.
 
@@ -580,7 +600,7 @@ class AgentConsole:
             panel = Panel(result_display, title=title, border_style="green", expand=False)
             self.console.print(panel)
 
-    def display_completion_event(self, step: "Step", success: bool, result: Any = None) -> None:
+    def display_completion_event(self, step: Step, success: bool, result: Any = None) -> None:
         """
         Display step completion with nice formatting.
 
