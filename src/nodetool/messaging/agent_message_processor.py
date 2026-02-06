@@ -9,6 +9,11 @@ import logging
 from typing import TYPE_CHECKING, Optional
 from uuid import uuid4
 
+from pandas._libs.tslibs.offsets import BDay
+
+from nodetool.agents.tools.browser_tools import BrowserTool
+from nodetool.agents.tools.filesystem_tools import ReadFileTool, WriteFileTool
+from nodetool.agents.tools.serp_tools import GoogleSearchTool
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name
 from nodetool.chat.token_counter import count_json_tokens, get_default_encoding
 from nodetool.config.logging_config import get_logger
@@ -118,7 +123,12 @@ class AgentMessageProcessor(MessageProcessor):
             # This gives the agent full control over nodetool capabilities
             from nodetool.agents.tools.mcp_tools import get_all_mcp_tools
 
-            selected_tools = get_all_mcp_tools()
+            selected_tools: list[Tool] = [
+                ReadFileTool(),
+                WriteFileTool(),
+                BrowserTool(),
+                GoogleSearchTool(),
+            ] + get_all_mcp_tools()
             log.debug(f"Using MCP tools for omnipotent agent mode: {[tool.name for tool in selected_tools]}")
 
         # Include UI proxy tools if client provided a manifest via tool bridge
@@ -192,6 +202,7 @@ class AgentMessageProcessor(MessageProcessor):
                             "type": "chunk",
                             "content": item.content,
                             "done": item.done if hasattr(item, "done") else False,
+                            "thinking": item.thinking if hasattr(item, "thinking") else False,
                             "thread_id": item.thread_id,
                         }
                     )

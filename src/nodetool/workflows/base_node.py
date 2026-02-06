@@ -148,6 +148,7 @@ from nodetool.workflows.types import NodeUpdate
 def _is_torch_available() -> bool:
     try:
         import torch
+
         return True
     except ImportError:
         return False
@@ -792,10 +793,7 @@ class BaseNode(BaseModel):
             )
 
         # Convert models synchronously (without detailed model info from API)
-        return [
-            unified_model(model, model_info=None)
-            for model in recommended_models
-        ]
+        return [unified_model(model, model_info=None) for model in recommended_models]
 
     @classmethod
     async def unified_recommended_models_async(cls, include_model_info: bool = False) -> list[UnifiedModel]:
@@ -1222,13 +1220,13 @@ class BaseNode(BaseModel):
             if _is_torch_available():
                 try:
                     import torch
+
                     if isinstance(value, torch.Tensor):
                         is_torch_tensor = True
                 except ImportError:
                     pass
 
             if is_torch_tensor:
-
                 continue
             elif isinstance(value, ComfyData):
                 res_for_update[o.name] = value.serialize()
@@ -1266,6 +1264,7 @@ class BaseNode(BaseModel):
                 if _is_torch_available():
                     try:
                         import torch
+
                         if isinstance(value, torch.Tensor):
                             is_torch_tensor = True
                     except ImportError:
@@ -1775,6 +1774,7 @@ class BaseNode(BaseModel):
         if _is_torch_available():
             try:
                 import torch
+
                 with torch.no_grad():  # type: ignore
                     return await self.process(context)
             except ImportError:

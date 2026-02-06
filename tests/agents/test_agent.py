@@ -132,3 +132,58 @@ async def test_agent_execute_with_initial_task(monkeypatch, tmp_path):
     assert any(isinstance(i, StepResult) for i in items)
     assert any(isinstance(i, TaskUpdate) and i.event == TaskUpdateEvent.TASK_COMPLETED for i in items)
     assert agent.get_results() == "done"
+
+
+@pytest.mark.asyncio
+async def test_agent_skills_are_loaded_and_applied_to_system_prompt(monkeypatch, tmp_path):
+    skill_dir = tmp_path / "data-review"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: data-review
+description: Analyze datasets and summarize anomalies
+---
+# Data Review
+
+Always compute aggregate statistics before final conclusions.
+""",
+        encoding="utf-8",
+    )
+
+    captured: dict[str, str | None] = {}
+
+    class CaptureExecutor:
+        def __init__(self, *, task, system_prompt, **kwargs):
+            self.task = task
+            captured["system_prompt"] = system_prompt
+
+        async def execute_tasks(self, context):
+            step = self.task.steps[0]
+            yield StepResult(step=step, result="done", is_task_result=True)
+
+    monkeypatch.setattr("nodetool.agents.agent.TaskExecutor", CaptureExecutor)
+
+    provider = MockProvider([])
+    task = Task(title="t", steps=[Step(id="s1", instructions="do")])
+    agent = Agent(
+        name="skill-agent",
+        objective="Review this dataset for anomalies",
+        provider=provider,
+        model="m",
+        task=task,
+        skills=["data-review"],
+        skill_dirs=[str(tmp_path)],
+        verbose=False,
+    )
+
+    context = ProcessingContext(workspace_dir=str(tmp_path))
+    async for _ in agent.execute(context):
+        pass
+
+    assert len(agent.active_skills) == 1
+    assert agent.active_skills[0].name == "data-review"
+    assert "Relevant Skills:" in agent.effective_objective
+    assert "Analyze datasets and summarize anomalies" in agent.effective_objective
+    assert captured["system_prompt"] is not None
+    assert "# Agent Skills" in str(captured["system_prompt"])
+    assert "Always compute aggregate statistics" in str(captured["system_prompt"])

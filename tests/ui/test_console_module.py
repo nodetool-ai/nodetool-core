@@ -54,6 +54,26 @@ def test_update_planning_display(monkeypatch):
     assert "phase1" in str(node.label)
 
 
+def test_update_planning_display_without_phase(monkeypatch):
+    console = AgentConsole(verbose=True)
+    monkeypatch.setattr("nodetool.ui.console.Live", FakeLive)
+    tree = console.create_planning_tree("Plan")
+    console.start_live(tree)
+
+    console.update_planning_display("phase1", "Running", "work", show_phase=False)
+    node = console.phase_nodes["__planner_status__"]
+    assert isinstance(node.label, Spinner)
+    assert len(node.children) == 1
+    assert "work" in str(node.children[0].label)
+
+    console.update_planning_display("phase2", "Success", "done", show_phase=False)
+    assert isinstance(node.label, Text)
+    assert "phase1" not in str(node.label)
+    assert "phase2" not in str(node.label)
+    assert len(node.children) == 1
+    assert "done" in str(node.children[0].label)
+
+
 def test_create_execution_table(monkeypatch):
     console = AgentConsole(verbose=True)
     sub1 = Step(

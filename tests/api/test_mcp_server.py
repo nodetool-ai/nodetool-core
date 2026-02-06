@@ -193,6 +193,29 @@ class TestWorkflowOperations:
         assert any("circular" in error.lower() for error in result["errors"])
 
     @pytest.mark.asyncio
+    async def test_validate_workflow_input_node_missing_name(self):
+        """Input nodes must provide a non-empty name property."""
+        workflow = await Workflow.create(
+            user_id="1",
+            name="Missing Input Name Workflow",
+            graph={
+                "nodes": [
+                    {
+                        "id": "input1",
+                        "type": "nodetool.input.IntegerInput",
+                        "data": {"value": 42},
+                    }
+                ],
+                "edges": [],
+            },
+        )
+
+        result = await validate_workflow(workflow.id)
+
+        assert result["valid"] is False
+        assert any("missing required 'name' property" in error for error in result["errors"])
+
+    @pytest.mark.asyncio
     async def test_list_workflows(self, workflow: Workflow):
         """Test listing workflows with pagination."""
         await workflow.save()

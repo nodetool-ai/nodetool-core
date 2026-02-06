@@ -4,29 +4,115 @@ UI Console for displaying Agent progress using Rich.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
-from typing import TYPE_CHECKING, Any, Optional
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from rich.columns import Columns
 from rich.console import Console, RenderableType
-from rich.live import Live
 from rich.panel import Panel
 from rich.rule import Rule
-from rich.spinner import Spinner
 from rich.syntax import Syntax
-from rich.table import Table
 from rich.text import Text
-from rich.tree import Tree
+from textual.app import App, ComposeResult
+from textual.containers import Vertical
+from textual.widgets import RichLog, Static
 
 # Use TYPE_CHECKING to avoid circular imports at runtime
 if TYPE_CHECKING:
     from nodetool.metadata.types import LogEntry, Step, Task, ToolCall
 
 # Display constants
-_SPINNER_NAME = "dots"
 _MAX_INSTRUCTION_LEN = 100
-_REFRESH_PER_SECOND = 8
+_MAX_AGENT_OUTPUT_CHARS = 12000
+_SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+
+
+@dataclass
+class _LiveContent:
+    """Internal representation of live screen content."""
+
+    kind: str
+    title: str
+    body: str = ""
+
+
+class _AgentLiveApp(App[None]):
+    """Textual app for rendering agent status and output panes."""
+
+    CSS = """
+    Screen {
+        layout: vertical;
+    }
+    #status {
+        height: 1fr;
+        border: round $primary;
+        padding: 0 1;
+    }
+    #output_log {
+        height: 3fr;
+        border: round cyan;
+    }
+    .hidden {
+        display: none;
+    }
+    """
+
+    def __init__(self, manager: AgentConsole):
+        super().__init__()
+        self.manager = manager
+        self._last_status = ""
+        self._last_output = ""
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static("", id="status")
+            yield RichLog(id="output_log", auto_scroll=True, wrap=True, highlight=False, markup=False)
+
+    def on_mount(self) -> None:
+        self.set_interval(0.15, self._refresh_from_state)
+        self._refresh_from_state()
+
+    def _refresh_from_state(self) -> None:
+        status_widget = self.query_one("#status", Static)
+        output_widget = self.query_one("#output_log", RichLog)
+
+        status_title = self.manager.live_title or "Agent"
+        status_text = self.manager._render_live_status_text()
+        full_status = f"{status_title}\n\n{status_text}" if status_text else status_title
+
+        if full_status != self._last_status:
+            status_widget.update(full_status)
+            self._last_status = full_status
+
+        if self.manager.show_agent_output_widget:
+            output_widget.remove_class("hidden")
+        else:
+            output_widget.add_class("hidden")
+
+        output_text = self.manager.agent_output_buffer
+        if output_text == self._last_output:
+            return
+
+        if not output_text:
+            output_widget.clear()
+            self._last_output = ""
+            return
+
+        if not output_text.startswith(self._last_output):
+            output_widget.clear()
+            output_widget.write(output_text)
+            self._last_output = output_text
+            return
+
+        delta = output_text[len(self._last_output) :]
+        if not delta:
+            return
+
+        output_widget.write(delta)
+        self._last_output = output_text
 
 
 def _truncate(text: str, max_len: int = _MAX_INSTRUCTION_LEN) -> str:
@@ -51,87 +137,152 @@ class AgentConsole:
         """
         self.verbose: bool = verbose
         self.console: Optional[Console] = console or (Console() if verbose else None)
-        self.live: Optional[Live] = None
-        self.current_table: Optional[Table] = None
-        self.current_tree: Optional[Tree] = None
-        self.phase_nodes: dict[str, Any] = {}
-        self.step_nodes: dict[str, Any] = {}
+        self.live_title: str = ""
+        self.live: Optional[_AgentLiveApp] = None
+        self.live_task: Optional[asyncio.Task[Any]] = None
+        self.live_active: bool = False
+        self._external_update_callback: Optional[Callable[[], None]] = None
         self.current_step: Optional[Step] = None
         self.task: Optional[Task] = None
         self.tool_calls: list[ToolCall] = []
+        self.current_live_content: Optional[_LiveContent] = None
+        self._planning_nodes: dict[str, tuple[str, str, str, bool]] = {}
+        self._planning_order: list[str] = []
+        self.show_agent_output_widget: bool = False
+        self.agent_output_buffer: str = ""
+        self.agent_output_segments: list[tuple[bool, str]] = []
+        self.agent_output_title: str = "Agent Output"
+        self._spinner_index: int = 0
 
         # Phase-specific logging storage
         self.phase_logs: dict[str, list[dict[str, Any]]] = {}
         self.current_phase: Optional[str] = None
 
-    def start_live(self, initial_content: Table | Tree) -> None:
+    def set_external_update_callback(self, callback: Optional[Callable[[], None]]) -> None:
+        """Attach a callback for embedded Textual hosts that render AgentConsole state."""
+        self._external_update_callback = callback
+
+    def _notify_external_update(self) -> None:
+        if self._external_update_callback:
+            self._external_update_callback()
+
+    def start_live(self, initial_content: Any, show_agent_output_widget: bool = False, agent_output_title: str = "Agent Output") -> None:
         """
         Start the Rich Live display with initial content (table or tree).
 
         Args:
-            initial_content (Union[Table, Tree]): The content to display initially.
+            initial_content: Internal live content object.
         """
-        if not self.verbose or self.live or not self.console:
+        if not self.verbose or self.live_active:
             return
 
-        if isinstance(initial_content, Table):
-            self.current_table = initial_content
-            self.current_tree = None
-        else:  # Tree
-            self.current_tree = initial_content
-            self.current_table = None
+        if isinstance(initial_content, _LiveContent):
+            self.current_live_content = initial_content
+            self.live_title = initial_content.title
+        else:
+            self.current_live_content = _LiveContent(kind="execution", title="Agent", body=str(initial_content))
+            self.live_title = "Agent"
 
-        self.live = Live(
-            initial_content,
-            console=self.console,
-            refresh_per_second=_REFRESH_PER_SECOND,
-            vertical_overflow="visible",
-        )
-        self.live.start()
+        self.show_agent_output_widget = show_agent_output_widget
+        self.agent_output_title = agent_output_title
+        self.agent_output_buffer = ""
+        self.agent_output_segments = []
+        self.live_active = True
+        self._notify_external_update()
+
+        # Embedded mode: outer app owns the screen and renders our state.
+        if self._external_update_callback:
+            return
+
+        self.live = _AgentLiveApp(self)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.live = None
+            self.live_active = False
+            return
+        self.live_task = loop.create_task(self.live.run_async(inline=True, inline_no_clear=True))
 
     def stop_live(self) -> None:
         """Stop the Rich Live display if it is active."""
-        if self.live and self.live.is_started:
-            self.live.stop()
+        if self.live:
+            self.live.exit()
         self.live = None
-        self.current_table = None
-        self.current_tree = None
-        self.phase_nodes = {}
-        self.step_nodes = {}
+        self.live_task = None
+        self.live_active = False
+        self.live_title = ""
+        self.current_live_content = None
+        self._planning_nodes = {}
+        self._planning_order = []
         self.current_phase = None
         self.task = None
         self.tool_calls = []
+        self.show_agent_output_widget = False
+        self.agent_output_buffer = ""
+        self.agent_output_segments = []
+        self.agent_output_title = "Agent Output"
+        self._notify_external_update()
 
-    def update_live(self, new_content: Table | Tree) -> None:
+    def update_live(self, new_content: Any) -> None:
         """
         Update the Rich Live display with new content.
 
         Args:
-            new_content (Union[Table, Tree]): The new content to display.
+            new_content: Internal live content object.
         """
-        if self.live and self.live.is_started:
-            if isinstance(new_content, Table):
-                self.current_table = new_content
-                self.current_tree = None
-            else:  # Tree
-                self.current_tree = new_content
-                self.current_table = None
+        if isinstance(new_content, _LiveContent):
+            self.current_live_content = new_content
+            self.live_title = new_content.title
+            self._notify_external_update()
 
-            self.live.update(new_content)
+    def is_live_active(self) -> bool:
+        """Return whether the live renderer is currently active."""
+        return self.live_active
 
-    def create_planning_tree(self, title: str) -> Tree:
+    def append_agent_output(self, content: str, *, thinking: bool = False) -> None:
+        """Append text to the reserved live output panel used during execution."""
+        if not content:
+            return
+
+        if self.agent_output_segments and self.agent_output_segments[-1][0] == thinking:
+            prev_thinking, prev_text = self.agent_output_segments[-1]
+            self.agent_output_segments[-1] = (prev_thinking, prev_text + content)
+        else:
+            self.agent_output_segments.append((thinking, content))
+
+        self.agent_output_buffer = "".join(text for _, text in self.agent_output_segments)
+        if len(self.agent_output_buffer) > _MAX_AGENT_OUTPUT_CHARS:
+            self.agent_output_buffer = self.agent_output_buffer[-_MAX_AGENT_OUTPUT_CHARS :]
+            # Keep segment list consistent with truncated buffer.
+            rebuilt: list[tuple[bool, str]] = []
+            remaining = self.agent_output_buffer
+            for is_thinking, text in reversed(self.agent_output_segments):
+                if not remaining:
+                    break
+                keep_len = min(len(text), len(remaining))
+                kept = text[-keep_len:]
+                rebuilt.append((is_thinking, kept))
+                remaining = remaining[:-keep_len]
+            rebuilt.reverse()
+            self.agent_output_segments = rebuilt
+        self._notify_external_update()
+
+    def get_agent_output_segments(self) -> list[tuple[bool, str]]:
+        """Return agent output segmented by thinking/non-thinking chunks."""
+        return list(self.agent_output_segments)
+
+    def create_planning_tree(self, title: str) -> _LiveContent:
         """
-        Create a Rich Tree configured for displaying planning phases.
-
-        Args:
-            title (str): The title for the tree.
+        Create content for displaying planning phases.
 
         Returns:
-            Tree: The configured Rich tree.
+            _LiveContent: Internal live content object.
         """
-        tree = Tree(f"[bold magenta]{title}[/]", guide_style="dim")
-        self.phase_nodes = {}
-        return tree
+        self._planning_nodes = {}
+        self._planning_order = []
+        content = _LiveContent(kind="planning", title=title)
+        self.current_live_content = content
+        return content
 
     def update_planning_display(
         self,
@@ -139,6 +290,7 @@ class AgentConsole:
         status: str,
         content: str | Text,
         is_error: bool = False,
+        show_phase: bool = True,
     ) -> None:
         """
         Add a node to the current planning tree in the live display.
@@ -149,88 +301,56 @@ class AgentConsole:
             content (Union[str, Text]): Details or output for the phase.
             is_error (bool): Flag indicating if the status represents an error.
         """
-        if self.live and self.current_tree and self.live.is_started:
-            content_str = _truncate(str(content), 200)
+        content_str = _truncate(str(content), 200)
+        node_key = phase_name if show_phase else "__planner_status__"
+        if node_key not in self._planning_nodes:
+            self._planning_order.append(node_key)
+        self._planning_nodes[node_key] = (status, phase_name if show_phase else "", content_str, is_error)
+        self.current_live_content = _LiveContent(kind="planning", title=self.live_title or "Task Planner")
+        self._notify_external_update()
 
-            # Build label based on status
-            label: RenderableType
-            if is_error:
-                label = Text(f"✗ {phase_name}", style="bold red")
-            elif status == "Success":
-                label = Text(f"✓ {phase_name}", style="green")
-            elif status == "Running":
-                label = Spinner(
-                    _SPINNER_NAME,
-                    text=Text(f" {phase_name}", style="bold"),
-                )
-            else:
-                label = Text(f"○ {phase_name}", style="dim")
-
-            if phase_name in self.phase_nodes:
-                node = self.phase_nodes[phase_name]
-                node.label = label
-                node.children.clear()
-                # Only show detail for running/error phases
-                if status == "Running" or is_error:
-                    node.add(Text(content_str, style="dim"))
-            else:
-                node = self.current_tree.add(label)
-                if status == "Running" or is_error:
-                    node.add(Text(content_str, style="dim"))
-                self.phase_nodes[phase_name] = node
-
-    def create_execution_tree(self, title: str, task: Task, tool_calls: list[ToolCall]) -> Tree:
-        """Create a compact rich tree for displaying steps with animated spinners."""
-        tree = Tree(f"[bold]{title}[/]", guide_style="dim")
-        self.step_nodes = {}
+    def create_execution_tree(self, title: str, task: Task, tool_calls: list[ToolCall]) -> _LiveContent:
+        """Create textual execution status content."""
         self.task = task
         self.tool_calls = tool_calls or []
+        body = self._render_execution_body()
+        content = _LiveContent(kind="execution", title=title, body=body)
+        self.current_live_content = content
+        self._notify_external_update()
+        return content
 
-        if not task or not task.steps:
-            return tree
-
-        for step in task.steps:
+    def _render_execution_body(self) -> str:
+        """Render execution state as text for Textual status pane."""
+        if not self.task or not self.task.steps:
+            return ""
+        spinner = _SPINNER_FRAMES[self._spinner_index % len(_SPINNER_FRAMES)]
+        self._spinner_index += 1
+        lines: list[str] = []
+        for step in self.task.steps:
             instr = _truncate(step.instructions)
-
-            # Build label with animated spinner for running steps
-            label: RenderableType
             if step.completed:
-                label = Text(f"✓ {instr}", style="dim green")
+                prefix = "✓"
             elif step.is_running():
-                label = Spinner(_SPINNER_NAME, text=Text(f" {instr}", style="bold"))
+                prefix = spinner
             else:
-                label = Text(f"○ {instr}", style="dim")
-
-            step_node = tree.add(label)
-            self.step_nodes[step.id] = step_node
-
-            # Show details only for the running step
+                prefix = "○"
+            lines.append(f"{prefix} {instr}")
             if step.is_running():
                 if step.depends_on:
-                    step_node.add(Text(f"← {', '.join(step.depends_on)}", style="dim"))
-
-                # Show latest log entry only
+                    lines.append(f"  ← {', '.join(step.depends_on)}")
                 if step.logs:
-                    step_node.add(self._format_log_entry(step.logs[-1]))
-
-                # Show latest tool call compactly
+                    lines.append(f"  {self._format_log_entry(step.logs[-1]).plain}")
                 step_tool_calls = [c for c in self.tool_calls if c.step_id == step.id]
                 if step_tool_calls:
                     last = step_tool_calls[-1]
                     msg = _truncate(str(last.message or ""), 60)
                     count_info = f" (+{len(step_tool_calls) - 1})" if len(step_tool_calls) > 1 else ""
-                    step_node.add(
-                        Text(f"↳ {last.name}: {msg}{count_info}", style="dim cyan")
-                    )
+                    lines.append(f"  ↳ {last.name}: {msg}{count_info}")
             elif step.completed:
-                # Compact summary for completed steps
                 step_tool_calls = [c for c in self.tool_calls if c.step_id == step.id]
                 if step_tool_calls:
-                    step_node.add(
-                        Text(f"{len(step_tool_calls)} tool calls", style="dim")
-                    )
-
-        return tree
+                    lines.append(f"  {len(step_tool_calls)} tool calls")
+        return "\n".join(lines)
 
     def print(self, message: object, style: Optional[str] = None) -> None:
         """
@@ -322,8 +442,8 @@ class AgentConsole:
             step (Step): The step currently being executed.
         """
         self.current_step = step
-        # Refresh the tree display to show the new current step's logs
-        if self.live and self.current_tree and self.live.is_started:
+        # Refresh live state to show the new current step's logs.
+        if self.is_live_active():
             self.update_execution_display()
 
     def log_to_step(self, level: str, message: str) -> None:
@@ -389,36 +509,41 @@ class AgentConsole:
         """
         Refresh the execution tree with logs for the running step only.
         """
-        if self.live and self.current_tree and self.live.is_started and self.task and self.task.steps:
-            for step in self.task.steps:
-                if step.id in self.step_nodes and step.is_running():
-                    step_node = self.step_nodes[step.id]
-                    instr = _truncate(step.instructions)
+        if self.task and self.current_live_content and self.current_live_content.kind == "execution":
+            self.current_live_content.body = self._render_execution_body()
+            self._notify_external_update()
 
-                    # Keep spinner label fresh
-                    step_node.label = Spinner(
-                        _SPINNER_NAME, text=Text(f" {instr}", style="bold")
-                    )
+    def _render_live_status_text(self) -> str:
+        """Render current live status text for Textual status pane."""
+        if not self.current_live_content:
+            return ""
+        if self.current_live_content.kind == "planning":
+            lines: list[str] = []
+            for key in self._planning_order:
+                status, label_text, content, is_error = self._planning_nodes[key]
+                if is_error:
+                    prefix = "✗"
+                elif status == "Success":
+                    prefix = "✓"
+                elif status == "Running":
+                    prefix = _SPINNER_FRAMES[self._spinner_index % len(_SPINNER_FRAMES)]
+                    self._spinner_index += 1
+                else:
+                    prefix = "○"
+                header = f"{prefix} {label_text}".strip()
+                lines.append(header)
+                if status == "Running" or is_error or key == "__planner_status__":
+                    lines.append(f"  {content}")
+            return "\n".join(lines)
+        return self.current_live_content.body
 
-                    # Rebuild children: deps + latest log + latest tool
-                    step_node.children.clear()
-
-                    if step.depends_on:
-                        step_node.add(Text(f"← {', '.join(step.depends_on)}", style="dim"))
-
-                    if step.logs:
-                        step_node.add(self._format_log_entry(step.logs[-1]))
-
-                    step_tool_calls = [c for c in self.tool_calls if c.step_id == step.id]
-                    if step_tool_calls:
-                        last = step_tool_calls[-1]
-                        msg = _truncate(str(last.message or ""), 60)
-                        count_info = f" (+{len(step_tool_calls) - 1})" if len(step_tool_calls) > 1 else ""
-                        step_node.add(
-                            Text(f"↳ {last.name}: {msg}{count_info}", style="dim cyan")
-                        )
-
-            self.live.update(self.current_tree)
+    def has_running_activity(self) -> bool:
+        """Return True when planner/task execution has active running items."""
+        if self.current_live_content and self.current_live_content.kind == "planning":
+            return any(status == "Running" for status, _, _, _ in self._planning_nodes.values())
+        if self.task and self.task.steps:
+            return any(step.is_running() for step in self.task.steps)
+        return False
 
     def _format_log_entry(self, log: LogEntry) -> Text:
         """
@@ -502,7 +627,7 @@ class AgentConsole:
         Args:
             step (Step): The step being started.
         """
-        if self.console and not (self.live and self.live.is_started):
+        if self.console and not self.is_live_active():
             panel = Panel(
                 f"[bold cyan]Content:[/] {step.instructions}\n"
                 f"[bold cyan]ID:[/] {step.id}\n"
@@ -523,7 +648,7 @@ class AgentConsole:
             token_count (int): Current token count.
             max_tokens (int): Maximum allowed tokens.
         """
-        if self.console and not (self.live and self.live.is_started):
+        if self.console and not self.is_live_active():
             # Create progress bars for iterations and tokens
             iteration_progress = f"[cyan]Iteration:[/] {iteration}/{max_iterations}"
             token_progress = f"[cyan]Tokens:[/] {token_count}/{max_tokens}"
@@ -553,7 +678,7 @@ class AgentConsole:
             tool_name (str): Name of the tool being executed.
             args (dict): Arguments passed to the tool.
         """
-        if self.console and not (self.live and self.live.is_started):
+        if self.console and not self.is_live_active():
             # Format arguments as JSON with syntax highlighting
             args_json = Syntax(
                 json.dumps(args, indent=2, ensure_ascii=False),
@@ -579,7 +704,7 @@ class AgentConsole:
             result (Any): The result returned by the tool.
             compressed (bool): Whether the result was compressed.
         """
-        if self.console and not (self.live and self.live.is_started):
+        if self.console and not self.is_live_active():
             # Format result based on type
             if isinstance(result, dict):
                 # Pretty format JSON results
@@ -609,7 +734,7 @@ class AgentConsole:
             success (bool): Whether the step completed successfully.
             result (Any): The final result of the step.
         """
-        if self.console and not (self.live and self.live.is_started):
+        if self.console and not self.is_live_active():
             status = "[bold green]✅ Success[/]" if success else "[bold red]❌ Failed[/]"
             border_style = "green" if success else "red"
 
@@ -643,7 +768,7 @@ class AgentConsole:
             current (int): Current token count.
             limit (int): Token limit.
         """
-        if self.console and not (self.live and self.live.is_started):
+        if self.console and not self.is_live_active():
             percentage = (current / limit) * 100
             warning_text = "[bold yellow]⚠️  Token Usage Warning[/]\n\n"
             warning_text += f"Current tokens: [bold]{current:,}[/] / {limit:,} ([bold red]{percentage:.1f}%[/])\n"
@@ -654,7 +779,7 @@ class AgentConsole:
 
     def display_conclusion_stage(self) -> None:
         """Display entering conclusion stage with special formatting."""
-        if self.console and not (self.live and self.live.is_started):
+        if self.console and not self.is_live_active():
             self.console.print(Rule("[bold magenta]🎯 Entering Conclusion Stage[/]", style="magenta"))
             panel = Panel(
                 "[yellow]The conversation history is approaching the token limit.\n"
@@ -692,7 +817,7 @@ class AgentConsole:
             event (str): The event type.
             details (Optional[str]): Additional details about the event.
         """
-        if self.console and not (self.live and self.live.is_started):
+        if self.console and not self.is_live_active():
             event_styles = {
                 "SUBTASK_STARTED": ("🚀", "green"),
                 "SUBTASK_COMPLETED": ("✅", "green"),

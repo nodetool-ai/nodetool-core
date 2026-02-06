@@ -203,7 +203,7 @@ class Environment:
         return cls.settings
 
     @classmethod
-    def get_environment(cls):
+    def get_environment(cls) -> dict[str, Any]:
         settings = cls.get_settings()
 
         env = DEFAULT_ENV.copy()
@@ -313,15 +313,11 @@ class Environment:
                 f"⚠️  SECURITY WARNING: Server is binding to '{host}' (all network interfaces) "
                 f"with AUTH_PROVIDER='{auth_provider}' which does NOT enforce authentication."
             )
-            warnings.append(
-                "   This configuration allows unauthenticated access from any network host."
-            )
+            warnings.append("   This configuration allows unauthenticated access from any network host.")
             warnings.append(
                 "   For production or network-exposed deployments, set AUTH_PROVIDER to 'static' or 'supabase'."
             )
-            warnings.append(
-                "   Example: AUTH_PROVIDER=static or use --auth-provider static"
-            )
+            warnings.append("   Example: AUTH_PROVIDER=static or use --auth-provider static")
 
         return warnings
 
