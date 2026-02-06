@@ -13,6 +13,7 @@ from .circuit_breaker import (
     CircuitState,
     MultiCircuitBreaker,
 )
+from .parallel_map import parallel_map
 from .rate_limit import AsyncRateLimiter, AsyncTokenBucket
 from .retry import RetryPolicy, retry_with_exponential_backoff
 from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_timeout
@@ -40,6 +41,7 @@ __all__ = [
     "TimeoutPolicy",
     "batched_async_iterable",
     "gather_with_concurrency",
+    "parallel_map",
     "process_in_batches",
     "retry_with_exponential_backoff",
     "timeout",
