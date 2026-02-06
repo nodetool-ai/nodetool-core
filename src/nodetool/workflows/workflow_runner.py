@@ -154,9 +154,25 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext):
             # Timeout after GPU_LOCK_TIMEOUT seconds
             if elapsed > GPU_LOCK_TIMEOUT:
                 holder_info = f" (held by: {_gpu_lock_holder})" if _gpu_lock_holder else ""
+                log.error(
+                    f"GPU lock acquisition timed out after {GPU_LOCK_TIMEOUT}s for node "
+                    f"{node.get_title()}{holder_info}. Force-releasing stale lock."
+                )
+                # Force-release the stale lock and retry once
+                if force_release_gpu_lock():
+                    log.warning("Stale GPU lock force-released, retrying acquisition")
+                    try:
+                        acquired = await loop.run_in_executor(None, lambda: gpu_lock.acquire(timeout=2.0))
+                    except asyncio.CancelledError:
+                        raise
+                    if acquired:
+                        _gpu_lock_holder = f"{node.get_title()} ({node.id})"
+                        _gpu_lock_holder_time = time.time()
+                        break
+                # If force-release failed or retry failed, raise
                 error_msg = (
                     f"GPU lock acquisition timed out after {GPU_LOCK_TIMEOUT}s for node "
-                    f"{node.get_title()}{holder_info}. This may indicate a stuck previous run. "
+                    f"{node.get_title()}{holder_info}. Could not recover stale lock. "
                     f"Try restarting the nodetool server."
                 )
                 log.error(error_msg)
@@ -1150,7 +1166,13 @@ class WorkflowRunner:
         log.debug(f"Edges: {graph.edges}")
         log.debug("Graph initialization completed")
 
-    async def send_messages(self, node: BaseNode, result: dict[str, Any], context: ProcessingContext):
+    async def send_messages(
+        self,
+        node: BaseNode,
+        result: dict[str, Any],
+        context: ProcessingContext,
+        metadata: dict[str, Any] | None = None,
+    ):
         """
         Sends messages from a completed node or streaming node to connected target nodes.
 
@@ -1160,6 +1182,9 @@ class WorkflowRunner:
                                      (handles) and values are the data to be sent.
             context (ProcessingContext): The processing context, containing the graph
                                      to find target nodes and edges.
+            metadata (dict[str, Any] | None): Optional metadata to attach to the message
+                                     envelope. This metadata will be available to downstream
+                                     nodes that consume messages with envelope access.
         """
         for key, value_to_send in result.items():
             if not node.should_route_output(key):
@@ -1183,15 +1208,16 @@ class WorkflowRunner:
                 inbox = self.node_inboxes.get(edge.target)
                 if inbox is not None:
                     log.debug(
-                        "Enqueue output: node=%s (%s) slot=%s edge=%s target=%s handle=%s",
+                        "Enqueue output: node=%s (%s) slot=%s edge=%s target=%s handle=%s metadata=%s",
                         node.get_title(),
                         node.id,
                         key,
                         edge.id,
                         edge.target,
                         edge.targetHandle,
+                        metadata is not None,
                     )
-                    await inbox.put(edge.targetHandle, value_to_send)
+                    await inbox.put(edge.targetHandle, value_to_send, metadata)
                 edge_id = edge.id or ""
                 self._edge_counters[edge_id] += 1
                 context.post_message(

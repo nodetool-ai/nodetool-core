@@ -24,7 +24,7 @@ from anthropic.types.tool_param import ToolParam
 from pydantic import BaseModel
 
 from nodetool.config.logging_config import get_logger
-from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
+from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_async
 from nodetool.metadata.types import (
     LanguageModel,
     Message,
@@ -261,7 +261,7 @@ class AnthropicProvider(BaseProvider):
         log.error(f"Failed to fetch Anthropic models after {max_retries} attempts: {last_error}")
         return []
 
-    def convert_message(self, message: Message) -> MessageParam | None:
+    async def convert_message(self, message: Message) -> MessageParam | None:
         """Convert an internal message to Anthropic's format."""
         log.debug(f"Converting message with role: {message.role}")
 
@@ -324,7 +324,7 @@ class AnthropicProvider(BaseProvider):
                             # Fetch image from URI and convert to base64
                             log.debug(f"Fetching image and converting to base64: {uri[:50]}...")
                             try:
-                                mime_type, data_bytes = fetch_uri_bytes_and_mime_sync(uri)
+                                mime_type, data_bytes = await fetch_uri_bytes_and_mime_async(uri)
                                 data = base64.b64encode(data_bytes).decode("utf-8")
                                 media_type = mime_type or "image/png"
                             except Exception as e:
@@ -442,9 +442,8 @@ class AnthropicProvider(BaseProvider):
 
         # Convert messages and tools to Anthropic format
         log.debug("Converting messages to Anthropic format")
-        anthropic_messages = [
-            msg for msg in [self.convert_message(msg) for msg in messages if msg.role != "system"] if msg is not None
-        ]
+        converted = await asyncio.gather(*[self.convert_message(msg) for msg in messages if msg.role != "system"])
+        anthropic_messages = [msg for msg in converted if msg is not None]
         log.debug(f"Converted to {len(anthropic_messages)} Anthropic messages")
 
         # Use the potentially modified local_tools list
@@ -553,9 +552,8 @@ class AnthropicProvider(BaseProvider):
 
         # Convert messages and tools to Anthropic format
         log.debug("Converting messages to Anthropic format")
-        anthropic_messages = [
-            msg for msg in [self.convert_message(msg) for msg in messages if msg.role != "system"] if msg is not None
-        ]
+        converted = await asyncio.gather(*[self.convert_message(msg) for msg in messages if msg.role != "system"])
+        anthropic_messages = [msg for msg in converted if msg is not None]
         log.debug(f"Converted to {len(anthropic_messages)} Anthropic messages")
 
         # Use the tools from parameter, or format the local tools

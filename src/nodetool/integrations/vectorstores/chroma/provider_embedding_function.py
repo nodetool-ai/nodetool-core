@@ -6,7 +6,6 @@ allowing collections to use OpenAI, Ollama, or other provider APIs for embedding
 """
 
 import asyncio
-import concurrent.futures
 
 from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
 
@@ -15,22 +14,6 @@ from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import Provider
 
 log = get_logger(__name__)
-
-# Module-level thread pool for running async code in sync contexts
-# This avoids creating a new ThreadPoolExecutor for each embedding call
-# Lazily initialized to avoid creating threads at import time
-_THREAD_POOL: concurrent.futures.ThreadPoolExecutor | None = None
-
-
-def _get_thread_pool() -> concurrent.futures.ThreadPoolExecutor:
-    """Get or create the module-level thread pool (lazy initialization)."""
-    global _THREAD_POOL
-    if _THREAD_POOL is None:
-        _THREAD_POOL = concurrent.futures.ThreadPoolExecutor(
-            max_workers=4, thread_name_prefix="embedding-"
-        )
-    return _THREAD_POOL
-
 
 # Default fallback model for SentenceTransformer
 DEFAULT_SENTENCE_TRANSFORMER_MODEL = "all-MiniLM-L6-v2"
@@ -95,23 +78,34 @@ class ProviderEmbeddingFunction(EmbeddingFunction[Documents]):
         # Run the async generate_embedding in a sync context
         try:
             loop = asyncio.get_running_loop()
+            # We're in an async context - try nest_asyncio to preserve ResourceScope
+            try:
+                import nest_asyncio
+                nest_asyncio.apply()
+                # Use the running loop with nest_asyncio to preserve context
+                embeddings = loop.run_until_complete(
+                    provider.generate_embedding(
+                        text=list(input),
+                        model=self._model,
+                        **self._kwargs,
+                    )
+                )
+            except ImportError:
+                log.warning(
+                    "Running in async context but nest_asyncio not available. "
+                    "Embeddings will be generated in a new loop without ResourceScope. "
+                    "Install nest_asyncio for proper context propagation."
+                )
+                # Fall back to new loop (loses ResourceScope but works)
+                embeddings = asyncio.run(
+                    provider.generate_embedding(
+                        text=list(input),
+                        model=self._model,
+                        **self._kwargs,
+                    )
+                )
         except RuntimeError:
-            loop = None
-
-        if loop is not None and loop.is_running():
-            # We're in an async context but need to run sync
-            # Use the module-level thread pool to avoid overhead of creating new threads
-            future = _get_thread_pool().submit(
-                asyncio.run,
-                provider.generate_embedding(
-                    text=list(input),
-                    model=self._model,
-                    **self._kwargs,
-                ),
-            )
-            embeddings = future.result()
-        else:
-            # We're not in an async context, run directly
+            # No running event loop, safe to use asyncio.run()
             embeddings = asyncio.run(
                 provider.generate_embedding(
                     text=list(input),

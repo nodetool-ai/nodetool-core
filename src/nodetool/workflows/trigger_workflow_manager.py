@@ -9,7 +9,7 @@ run in the background indefinitely until explicitly stopped.
 
 import asyncio
 import threading
-from typing import Optional
+from typing import Any, Optional
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.workflow import Workflow as WorkflowModel
@@ -25,7 +25,7 @@ log = get_logger(__name__)
 DEFAULT_WATCHDOG_INTERVAL = 30
 
 
-def workflow_has_trigger_nodes(workflow: WorkflowModel) -> bool:
+def workflow_has_trigger_nodes(workflow: Any) -> bool:
     """
     Check if a workflow contains any trigger nodes.
 

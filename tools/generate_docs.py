@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import Any, List
 
 import nodetool.cli
 import nodetool.workflows
@@ -14,8 +14,10 @@ def generate_cli_docs(output_path: str) -> None:
     for cmd_name, cmd in nodetool.cli.cli.commands.items():
         lines.append(f"- **{cmd_name}**: {cmd.help}")
         if hasattr(cmd, "commands"):
-            for sub_name, sub_cmd in cmd.commands.items():
-                lines.append(f"  - **{cmd_name} {sub_name}**: {sub_cmd.help}")
+            cmd_commands: Any = getattr(cmd, "commands", {})
+            if isinstance(cmd_commands, dict):
+                for sub_name, sub_cmd in cmd_commands.items():
+                    lines.append(f"  - **{cmd_name} {sub_name}**: {sub_cmd.help}")
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
@@ -23,7 +25,7 @@ def generate_cli_docs(output_path: str) -> None:
 def generate_workflow_docs(output_dir: str) -> None:
     """Generate documentation for the workflow modules."""
     os.makedirs(output_dir, exist_ok=True)
-    process_module(nodetool.workflows, output_dir, "nodetool")
+    process_module(nodetool.workflows, output_dir, "nodetool")  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":

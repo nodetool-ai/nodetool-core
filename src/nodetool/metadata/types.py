@@ -1451,7 +1451,7 @@ class TorchTensor(BaseType):
         """
         Reconstruct as a CPU tensor and then (optionally) move to `self.device`.
         """
-        import torch
+        import torch  # type: ignore
         import numpy as np
 
         assert self.value is not None, "No bytes stored"
@@ -1476,7 +1476,7 @@ class TorchTensor(BaseType):
         """
         Stores raw bytes + NumPy dtype string + shape (+ device).
         """
-        import torch
+        import torch  # type: ignore
 
         if not isinstance(tensor, torch.Tensor):
             tensor = torch.as_tensor(tensor)
@@ -1494,7 +1494,7 @@ class TorchTensor(BaseType):
 
     @staticmethod
     def from_numpy(arr: "np.ndarray", **kwargs) -> "TorchTensor":
-        import torch
+        import torch  # type: ignore
 
         t = torch.from_numpy(arr)
         return TorchTensor.from_tensor(t, **kwargs)
@@ -2327,14 +2327,49 @@ class DateSearchCondition(BaseType):
 
 
 class EmailSearchCriteria(BaseType):
+    """
+    Criteria for searching emails via IMAP.
+    
+    Attributes:
+        from_address: Filter by sender email address
+        to_address: Filter by recipient email address
+        subject: Filter by subject line
+        body: Filter by email body content
+        cc: Filter by CC recipients
+        label: Filter by email label/folder
+        date_query: Date search condition (preferred name)
+        date_condition: Date search condition (alias for date_query, used in imap.py)
+        flags: IMAP flags to filter by (SEEN, UNSEEN, etc.)
+        keywords: Custom IMAP keywords to filter by
+        folder: IMAP folder to search in (defaults to INBOX)
+        text: Full-text search across all email fields
+    """
     type: Literal["email_search_criteria"] = "email_search_criteria"
     from_address: Optional[str] = None
     to_address: Optional[str] = None
     subject: Optional[str] = None
     body: Optional[str] = None
     cc: Optional[str] = None
-    bcc: Optional[str] = None
-    date_condition: Optional[DateSearchCondition] = None
+    label: Optional[str] = None
+    date_query: Optional[DateSearchCondition] = None
+    date_condition: Optional[DateSearchCondition] = None  # Alias for date_query for backwards compatibility
+    flags: list[EmailFlag] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+    folder: Optional[str] = None
+    text: Optional[str] = None
+
+
+class Email(BaseType):
+    type: Literal["email"] = "email"
+    id: str = ""
+    subject: str = ""
+    sender: str = ""
+    date: Datetime = Datetime()
+    body: str = ""
+    snippet: str = ""
+    thread_id: str = ""
+    labels: list[str] = Field(default_factory=list)
+
     flags: list[EmailFlag] = []
     keywords: list[str] = []
     folder: Optional[str] = None

@@ -84,6 +84,12 @@ class ThreadedJobExecution(JobExecution):
                 if task and loop and loop.is_running():
                     loop.call_soon_threadsafe(task.cancel)
 
+            # Force-release the GPU lock if it's stuck from this job.
+            # When a GPU node's inference thread is blocked (e.g. nunchaku hang),
+            # the CancelledError may not reach the finally block that releases the lock.
+            from nodetool.workflows.workflow_runner import force_release_gpu_lock
+            force_release_gpu_lock()
+
             self._set_status("cancelled")
             return True
         return False

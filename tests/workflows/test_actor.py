@@ -297,11 +297,11 @@ async def test_run_streaming_happy_path_sends_updates_and_messages():
 
     sent = []
 
-    def capture_send(node, result, context):
+    def capture_send(node, result, context, metadata=None):
         sent.append((node.id, result))
 
-    async def capture_send_async(node, result, context):
-        capture_send(node, result, context)
+    async def capture_send_async(node, result, context, metadata=None):
+        capture_send(node, result, context, metadata)
 
     runner.send_messages = capture_send_async  # type: ignore
 
@@ -403,7 +403,7 @@ async def test_should_route_output_suppresses_routing():
 
     routed = {"count": 0}
 
-    def capture(node, result, context):
+    def capture(node, result, context, metadata=None):
         routed["count"] += 1
 
     runner.send_messages = capture  # type: ignore
@@ -1046,11 +1046,11 @@ async def test_run_streaming_output_batched_respects_sync_mode_zip_all():
 
     routed = []
 
-    def capture_send(node, result, context):
+    def capture_send(node, result, context, metadata=None):
         routed.append((node.id, result))
 
-    async def capture_send_async(node, result, context):
-        capture_send(node, result, context)
+    async def capture_send_async(node, result, context, metadata=None):
+        capture_send(node, result, context, metadata)
 
     runner.send_messages = capture_send_async  # type: ignore
 

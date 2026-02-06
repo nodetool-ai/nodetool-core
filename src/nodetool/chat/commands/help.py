@@ -13,7 +13,14 @@ class HelpCommand(Command):
         super().__init__("help", "Display available commands", ["h"])
 
     async def execute(self, cli: ChatCLI, args: list[str]) -> bool:
-        cli.console.print("\n[bold]Available Commands[/bold]", style="cyan")
+        cli.console.print("\n[bold]NodeTool Omnipotent Agent[/bold]", style="green")
+        cli.console.print(
+            "The agent has full control over NodeTool via MCP tools. "
+            "It can create, run, debug, and manage workflows autonomously.\n",
+            style="dim",
+        )
+
+        cli.console.print("[bold]Available Commands[/bold]", style="cyan")
 
         table = Table(show_header=True, header_style="bold magenta")
         table.add_column("Command", style="cyan")
@@ -27,6 +34,26 @@ class HelpCommand(Command):
             table.add_row(f"/{cmd.name}{aliases}", cmd.description)
 
         cli.console.print(table)
+
+        # Show MCP tools if in agent mode
+        if cli.agent_mode:
+            from nodetool.agents.tools.mcp_tools import get_all_mcp_tools
+
+            mcp_tools = get_all_mcp_tools()
+            cli.console.print(f"\n[bold]MCP Tools Available ({len(mcp_tools)})[/bold]", style="cyan")
+            cli.console.print(
+                "These tools are automatically available to the agent for controlling NodeTool:",
+                style="dim",
+            )
+            tools_table = Table(show_header=True, header_style="bold magenta")
+            tools_table.add_column("Tool", style="cyan")
+            tools_table.add_column("Description", style="green", max_width=60)
+            for tool in mcp_tools:
+                # Get first line of description
+                desc = tool.description.strip().split("\n")[0][:60]
+                tools_table.add_row(tool.name, desc)
+            cli.console.print(tools_table)
+
         cli.console.print("\n[bold]File System Commands[/bold]", style="cyan")
 
         workspace_table = Table(show_header=True, header_style="bold magenta")

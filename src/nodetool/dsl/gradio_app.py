@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
-import gradio as gr
+import gradio as gr  # type: ignore
 
 
 @dataclass(slots=True)

@@ -1180,7 +1180,7 @@ def get_nodetool_package_source_folders() -> list[Path]:
     return source_folders
 
 
-def scan_for_package_nodes(verbose: bool = False, fetch_model_info: bool = True) -> PackageModel:
+async def scan_for_package_nodes(verbose: bool = False, fetch_model_info: bool = True) -> PackageModel:
     """Scan current directory for nodes and create package metadata.
 
     Args:
@@ -1318,30 +1318,11 @@ def scan_for_package_nodes(verbose: bool = False, fetch_model_info: bool = True)
                     )
 
         if fetch_model_info and package.nodes:
-            # Handle async execution properly - check if we're in an event loop first
-            try:
-                # Check if there's already a running event loop
-                asyncio.get_running_loop()
-                # If we get here, we're in an async context
-                # Create a new loop in a separate thread to avoid nesting
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(
-                        asyncio.run,
-                        _enrich_nodes_with_model_info(
-                            package.nodes,
-                            verbose=verbose,  # type: ignore[arg-type]
-                        )
-                    )
-                    future.result()
-            except RuntimeError:
-                # No running event loop, safe to use asyncio.run()
-                asyncio.run(
-                    _enrich_nodes_with_model_info(
-                        package.nodes,
-                        verbose=verbose,  # type: ignore[arg-type]
-                    )
-                )
+            # Proper async: await directly since this function is now async
+            await _enrich_nodes_with_model_info(
+                package.nodes,
+                verbose=verbose,
+            )
 
         # Write the single nodes.json file in the root directory
         os.makedirs("src/nodetool/package_metadata", exist_ok=True)
@@ -1418,6 +1399,9 @@ def update_pyproject_include(package: PackageModel, verbose: bool = False) -> No
     - `[tool.poetry.include]` for legacy Poetry projects
 
     Provides backward compatibility for both package management systems.
+
+    Note: This function now skips modifying the artifacts/include sections to allow
+    manual configuration by package maintainers.
     """
     pyproject_path = "pyproject.toml"
     if not os.path.exists(pyproject_path):
@@ -1425,85 +1409,12 @@ def update_pyproject_include(package: PackageModel, verbose: bool = False) -> No
             log.info("pyproject.toml not found, skipping update")
         return
 
-    # Read the pyproject.toml file
-    with open(pyproject_path, encoding="utf-8") as f:
-        content = f.read()
-
-    # Parse with tomlkit to preserve formatting and comments
-    data = tomlkit.parse(content)
-
-    # Handle both Poetry and uv/hatchling formats
-    if "project" in data:
-        # New PEP 621 + Hatch format - use [tool.hatch.build.targets.wheel]
-        if "tool" not in data:
-            data["tool"] = tomlkit.table()  # type: ignore
-
-        tool_section = data["tool"]  # type: ignore
-        if "hatch" not in tool_section:  # type: ignore
-            tool_section["hatch"] = tomlkit.table()  # type: ignore
-
-        hatch_section = tool_section["hatch"]  # type: ignore
-        if "build" not in hatch_section:  # type: ignore
-            hatch_section["build"] = tomlkit.table()  # type: ignore
-
-        build_section = hatch_section["build"]  # type: ignore
-        if "targets" not in build_section:  # type: ignore
-            build_section["targets"] = tomlkit.table()  # type: ignore
-
-        targets_section = build_section["targets"]  # type: ignore
-        if "wheel" not in targets_section:  # type: ignore
-            targets_section["wheel"] = tomlkit.table()  # type: ignore
-
-        wheel_section = targets_section["wheel"]  # type: ignore
-
-        # Get existing artifacts list or create new one
-        if "artifacts" not in wheel_section:  # type: ignore
-            wheel_section["artifacts"] = tomlkit.array()  # type: ignore
-            patterns = wheel_section["artifacts"]  # type: ignore
-        else:
-            patterns = wheel_section["artifacts"]  # type: ignore
-    else:
-        # Legacy Poetry format - use [tool.poetry.include]
-        if "tool" not in data:
-            data["tool"] = tomlkit.table()  # type: ignore
-
-        tool_section = data["tool"]  # type: ignore
-        if "poetry" not in tool_section:  # type: ignore
-            tool_section["poetry"] = tomlkit.table()  # type: ignore
-
-        poetry = tool_section["poetry"]  # type: ignore
-
-        # Get existing include list or create new one
-        if "include" not in poetry:  # type: ignore
-            poetry["include"] = tomlkit.array()  # type: ignore
-            patterns = poetry["include"]  # type: ignore
-        else:
-            include_item = poetry["include"]  # type: ignore
-            # Convert to list if it's a single string
-            if isinstance(include_item, str):
-                poetry["include"] = tomlkit.array()  # type: ignore
-                poetry["include"].append(include_item)  # type: ignore
-                patterns = poetry["include"]  # type: ignore
-            else:
-                patterns = include_item
-
-    # Convert absolute source paths to patterns relative to package root
-    metadata_rel = f"package_metadata/{package.name}.json"
-    asset_rels = [f"assets/{package.name}/{asset.name}" for asset in package.assets or []]
-
-    for rel in [metadata_rel, *asset_rels]:
-        if rel not in patterns:  # type: ignore
-            patterns.append(rel)  # type: ignore
-            if verbose:
-                log.info(f"Added package-data pattern: {rel}")
-
-    # Write back the file
-    with open(pyproject_path, "w", encoding="utf-8") as f:
-        f.write(tomlkit.dumps(data))
-
     if verbose:
-        build_tool = "hatch.build.targets.wheel.artifacts" if "project" in data else "poetry.include"
-        log.info(f"Updated {pyproject_path} {build_tool} with asset files")
+        log.info("Skipping automatic update of pyproject.toml artifacts/include sections")
+        log.info("Package maintainers should manually configure these sections")
+
+    # The artifacts/include sections are now managed manually by package maintainers
+    # This allows for more flexible configuration with patterns and avoids duplication
 
 
 def load_node_packages():

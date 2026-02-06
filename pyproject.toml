@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nodetool-core"
-version = "0.6.3-rc.11"
+version = "0.6.3-rc.17"
 description = "Nodetool Core is the core library for Nodetool, providing the necessary functionality for building and running AI workflows."
 readme = "README.md"
 authors = [{ name = "Matthias Georgi", email = "matti.georgi@gmail.com" }]
-requires-python = ">=3.10.13"
+requires-python = ">=3.11"
 
 dependencies = [
 
@@ -96,7 +96,7 @@ dependencies = [
     "opencv-python-headless>=4.11.0.86",
 
     # Data dependencies
-    "numpy>=2.0.0",
+    "numpy>=2.0.0,<2.4",  # numba (librosa) requires numpy<2.4
     "pandas>=2.2.3",
     "llama-index-core>=0.14.4",
     "llama-index-embeddings-ollama>=0.8.3",
@@ -156,9 +156,11 @@ nodetool = "nodetool.cli:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/nodetool"]
+include = [
+    "src/nodetool/package_metadata/*.json",
+]
 
 # Ruff configuration for linting and formatting
-artifacts = ["package_metadata/nodetool-core.json"]
 [tool.ruff]
 # Python version
 target-version = "py311"

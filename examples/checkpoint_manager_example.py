@@ -70,11 +70,11 @@ async def example_basic_checkpoint():
     print("\n=== Example 1: Basic Checkpoint API ===\n")
 
     # Create a simple graph
-    input1 = NumberInput(_id="input1", name="input1", value=5.0)
-    input2 = NumberInput(_id="input2", name="input2", value=10.0)
-    add_node = Add(_id="add1")
-    multiply_node = Multiply(_id="multiply1")
-    output_node = NumberOutput(_id="output1", name="output")
+    input1 = NumberInput(id="input1", name="input1", value=5.0)  # type: ignore[call-arg]
+    input2 = NumberInput(id="input2", name="input2", value=10.0)  # type: ignore[call-arg]
+    add_node = Add(id="add1")  # type: ignore[call-arg]
+    multiply_node = Multiply(id="multiply1")  # type: ignore[call-arg]
+    output_node = NumberOutput(id="output1", name="output")  # type: ignore[call-arg]
 
     graph = Graph(
         nodes=[input1, input2, add_node, multiply_node, output_node],
@@ -141,7 +141,7 @@ async def example_zero_overhead():
     print(f"   Runtime overhead: Zero (single boolean check)")
 
     # Create a simple graph
-    input1 = NumberInput(_id="input1", name="input1", value=42.0)
+    input1 = NumberInput(id="input1", name="input1", value=42.0)  # type: ignore[call-arg]
     graph = Graph(nodes=[input1], edges=[])
 
     # Show that disabled operations have no effect
@@ -176,11 +176,11 @@ async def example_incremental_checkpoints():
     checkpoint_mgr = CheckpointManager(run_id=run_id, enabled=True)
 
     # Create a pipeline of nodes
-    input1 = NumberInput(_id="input1", name="input1", value=2.0)
-    add1 = Add(_id="add1")
-    multiply1 = Multiply(_id="multiply1")
-    add2 = Add(_id="add2")
-    output1 = NumberOutput(_id="output1", name="output")
+    input1 = NumberInput(id="input1", name="input1", value=2.0)  # type: ignore[call-arg]
+    add1 = Add(id="add1")  # type: ignore[call-arg]
+    multiply1 = Multiply(id="multiply1")  # type: ignore[call-arg]
+    add2 = Add(id="add2")  # type: ignore[call-arg]
+    output1 = NumberOutput(id="output1", name="output")  # type: ignore[call-arg]
 
     graph = Graph(
         nodes=[input1, add1, multiply1, add2, output1],

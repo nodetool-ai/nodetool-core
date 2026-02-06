@@ -726,6 +726,7 @@ class TaskPlanner:
                     phase_display_name,
                     "Skipped",
                     skip_reason or "Phase disabled by global flag.",
+                    show_phase=False,
                 )
             planning_update = PlanningUpdate(
                 phase=phase_result_name,
@@ -746,7 +747,12 @@ class TaskPlanner:
 
         # Update display before LLM call
         if self.display_manager:
-            self.display_manager.update_planning_display(phase_display_name, "Running", f"Generating {phase_name}...")
+            self.display_manager.update_planning_display(
+                phase_display_name,
+                "Running",
+                f"Generating {phase_name}...",
+                show_phase=False,
+            )
 
         log.debug("Calling LLM for %s using model: %s", phase_name, self.model)
         available_tools: Sequence[Tool] = self.execution_tools
@@ -814,7 +820,12 @@ class TaskPlanner:
         log.debug("%s phase completed with status: %s", phase_name.capitalize(), phase_status)
 
         if self.display_manager:
-            self.display_manager.update_planning_display(phase_display_name, phase_status, phase_content)
+            self.display_manager.update_planning_display(
+                phase_display_name,
+                phase_status,
+                phase_content,
+                show_phase=False,
+            )
 
         log.info(f"{phase_result_name} phase completed with status: {phase_status}")
         log.info(f"{phase_result_name} phase content: {phase_content}")
@@ -867,7 +878,7 @@ class TaskPlanner:
         plan_creation_error: Exception | None = None
         phase_status: str = "Failed"
         phase_content: str | Text = "N/A"
-        current_phase_name: str = "3. Plan Creation"
+        current_phase_name: str = "Create Plan"
 
         # Generate plan using JSON output instead of tool calls
         if self.display_manager:
@@ -894,6 +905,7 @@ class TaskPlanner:
                 current_phase_name,
                 "Running",
                 "Generating task plan...",
+                show_phase=False,
             )
 
         create_task_tool = CreateTaskTool()
@@ -1057,6 +1069,7 @@ class TaskPlanner:
                     style=("bold red" if phase_status == "Failed" else "default"),
                 ),  # Use Text with style
                 is_error=(phase_status == "Failed"),
+                show_phase=False,
             )
 
         planning_update = PlanningUpdate(
@@ -1164,6 +1177,7 @@ class TaskPlanner:
                                 "Failed",
                                 Text(full_error_message, style="bold red"),
                                 is_error=True,
+                                show_phase=False,
                             )
                         raise ValueError(full_error_message) from plan_creation_error
                     else:
@@ -1179,6 +1193,7 @@ class TaskPlanner:
                                 "Failed",
                                 Text(error_message, style="bold red"),
                                 is_error=True,
+                                show_phase=False,
                             )
                         raise ValueError(error_message)
 
@@ -1209,6 +1224,7 @@ class TaskPlanner:
                             style="bold red",
                         ),
                         is_error=True,
+                        show_phase=False,
                     )
                 # Print error to console otherwise (handled by display_manager if verbose is off)
                 if self.display_manager:

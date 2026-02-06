@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Sequence, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import torch
+    import torch  # type: ignore
     from nodetool.integrations.huggingface.safetensors_inspector import (
         DetectionResult as STFDetectionResult,
     )
@@ -206,7 +206,7 @@ def detect_torch_bin(paths: Sequence[str | Path]) -> ArtifactDetection | None:
 def _sample_torch_keys(path: Path, limit: int = 200) -> list[str]:
     """Load only state_dict metadata and return a sample of keys."""
     try:
-        import torch
+        import torch  # type: ignore
     except ImportError:
         raise RuntimeError("torch not available for bin inspection")
 

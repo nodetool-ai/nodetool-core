@@ -12,6 +12,7 @@ These tools provide functionality for managing NodeTool workflows including:
 from __future__ import annotations
 
 import asyncio
+import tempfile
 from typing import Any, Optional
 
 from nodetool.models.workflow import Workflow as WorkflowModel
@@ -22,6 +23,7 @@ from nodetool.types.api_graph import (
     get_output_schema,
     remove_connected_slots,
 )
+from nodetool.workflows.base_node import InputNode, get_node_class
 from nodetool.workflows.processing_context import (
     AssetOutputMode,
     ProcessingContext,
@@ -158,7 +160,11 @@ class WorkflowTools:
         result = {}
         preview = {}
         save = {}
-        context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
+        workspace_dir = tempfile.mkdtemp(prefix="nodetool_workspace_")
+        context = ProcessingContext(
+            asset_output_mode=AssetOutputMode.TEMP_URL,
+            workspace_dir=workspace_dir,
+        )
 
         async for msg in run_workflow(request, context=context):
             from nodetool.workflows.types import PreviewUpdate, SaveUpdate, OutputUpdate, LogUpdate
@@ -219,7 +225,11 @@ class WorkflowTools:
         )
 
         result = {}
-        context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
+        workspace_dir = tempfile.mkdtemp(prefix="nodetool_workspace_")
+        context = ProcessingContext(
+            asset_output_mode=AssetOutputMode.TEMP_URL,
+            workspace_dir=workspace_dir,
+        )
 
         async for msg in run_workflow(request, context=context):
             from nodetool.workflows.types import OutputUpdate
@@ -477,6 +487,17 @@ class WorkflowTools:
                 errors.append(f"Node type not found: {node.type} (node: {node.id})")
             else:
                 node_types_found[node.id] = node_metadata
+
+            node_class = get_node_class(node.type)
+            is_input_node = bool(node_class and issubclass(node_class, InputNode))
+            if not is_input_node and node.type.startswith(("nodetool.input.", "nodetool.workflows.test_helper.")):
+                is_input_node = True
+
+            if is_input_node:
+                node_data = node.data if isinstance(node.data, dict) else {}
+                name_value = node_data.get("name")
+                if not isinstance(name_value, str) or not name_value.strip():
+                    errors.append(f"Input node '{node.id}' ({node.type}) is missing required 'name' property")
 
         adjacency = {node.id: [] for node in graph.nodes}
         edges_by_target = {}

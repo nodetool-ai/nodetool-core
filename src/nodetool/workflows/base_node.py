@@ -141,13 +141,14 @@ from nodetool.metadata.utils import (
 )
 from nodetool.types.api_graph import Edge
 from nodetool.types.model import UnifiedModel
-from nodetool.workflows.inbox import NodeInbox
+from nodetool.workflows.inbox import MessageEnvelope, NodeInbox
 from nodetool.workflows.types import NodeUpdate
 
 
 def _is_torch_available() -> bool:
     try:
         import torch
+
         return True
     except ImportError:
         return False
@@ -210,8 +211,9 @@ def split_camel_case(text: str) -> str:
         A string with words separated by spaces.
     """
     # Split the string into parts, keeping uppercase sequences together.
-    # Special-case digit+acronym chunks like "3D" so we don't render them as "3 D".
-    parts = re.findall(r"\d+[A-Z]+(?![a-z])|[A-Z]+[a-z]*|\d+|[a-z]+", text)
+    # Special-case digit+acronym chunks like "3D" so we don't render them as "3 D",
+    # and letter+digit tokens like "V3" or "O3" so we don't render them as "V 3".
+    parts = re.findall(r"\d+[A-Z]+(?![a-z])|[A-Z]+\d+|[A-Z]+[a-z]*|\d+|[a-z]+", text)
 
     # Join the parts with spaces
     return " ".join(parts)
@@ -509,6 +511,47 @@ class BaseNode(BaseModel):
                     log.debug(f"on_input_item callback failed for handle {handle}: {e}")
             yield handle, item
 
+    async def iter_input_with_envelope(self, handle: str) -> AsyncIterator[MessageEnvelope]:
+        """Iterate envelopes for a specific input handle until EOS.
+
+        Use this when your node needs access to message metadata, timestamp, or event_id.
+        The envelope contains the data along with its associated metadata.
+
+        Args:
+            handle: Input handle name to read from.
+
+        Yields:
+            MessageEnvelope objects from the per-handle buffer in FIFO order.
+        """
+        if not self._inbox:
+            raise RuntimeError("Inbox not attached to node; iter_input_with_envelope unavailable")
+        async for envelope in self._inbox.iter_input_with_envelope(handle):
+            if self._on_input_item is not None:
+                try:
+                    self._on_input_item(handle)
+                except Exception as e:
+                    log.debug(f"on_input_item callback failed for handle {handle}: {e}")
+            yield envelope
+
+    async def iter_any_input_with_envelope(self) -> AsyncIterator[tuple[str, MessageEnvelope]]:
+        """Iterate (handle, envelope) across all inputs in arrival order until EOS.
+
+        Use this when your node needs access to message metadata, timestamp, or event_id.
+        This multiplexes all inbound handles by arrival order.
+
+        Yields:
+            Tuples of (handle, MessageEnvelope) in cross-handle arrival order.
+        """
+        if not self._inbox:
+            raise RuntimeError("Inbox not attached to node; iter_any_input_with_envelope unavailable")
+        async for handle, envelope in self._inbox.iter_any_with_envelope():
+            if self._on_input_item is not None:
+                try:
+                    self._on_input_item(handle)
+                except Exception as e:
+                    log.debug(f"on_input_item callback failed for handle {handle}: {e}")
+            yield handle, envelope
+
     @classmethod
     def is_streaming_input(cls) -> bool:
         """Nodes can override to opt-in to streaming input via inbox.
@@ -722,6 +765,53 @@ class BaseNode(BaseModel):
 
     @classmethod
     def unified_recommended_models(cls, include_model_info: bool = False) -> list[UnifiedModel]:
+        """
+        Get recommended models for this node.
+
+        Note: If include_model_info=True, use unified_recommended_models_async() instead
+        to avoid async/sync context issues.
+
+        Args:
+            include_model_info: Whether to fetch detailed model info (requires async)
+
+        Returns:
+            List of unified model metadata (without detailed info if called from sync context)
+        """
+        from nodetool.integrations.huggingface.huggingface_models import (
+            unified_model,
+        )
+
+        recommended_models = cls.get_recommended_models()
+        if not recommended_models:
+            return []
+
+        # If include_model_info is requested from sync context, log a warning
+        # and return basic models without detailed info
+        if include_model_info:
+            log.warning(
+                "include_model_info=True was requested from sync context. "
+                "Model info will not be fetched. Use unified_recommended_models_async() instead."
+            )
+
+        # Convert models synchronously (without detailed model info from API)
+        return [  # type: ignore
+            unified_model(model, model_info=None)
+            for model in recommended_models
+        ]
+
+    @classmethod
+    async def unified_recommended_models_async(cls, include_model_info: bool = False) -> list[UnifiedModel]:
+        """
+        Get recommended models for this node (async version).
+
+        Fetches detailed model info when include_model_info=True.
+
+        Args:
+            include_model_info: Whether to fetch detailed model info from HuggingFace API
+
+        Returns:
+            List of unified model metadata
+        """
         from nodetool.integrations.huggingface.huggingface_models import (
             fetch_model_info,
             unified_model,
@@ -738,29 +828,11 @@ class BaseNode(BaseModel):
                     info = await fetch_model_info(model.repo_id)
                 except Exception as e:
                     log.debug("Failed to fetch model info for %s: %s", model.repo_id, e)
-                    info = None
             return await unified_model(model, model_info=info)
 
-        async def fetch_all_models():
-            return await asyncio.gather(*(build_model(model) for model in recommended_models))
-
-        try:
-            asyncio.get_running_loop()
-            import concurrent.futures
-
-            future = concurrent.futures.Future()
-
-            async def run_and_set_result():
-                try:
-                    result = await fetch_all_models()
-                    future.set_result(result)
-                except Exception as e:
-                    future.set_exception(e)
-
-            cls._fetch_models_task = asyncio.create_task(run_and_set_result())
-            return future.result()
-        except RuntimeError:
-            return asyncio.run(fetch_all_models())  # type: ignore
+        # Proper async: use asyncio.gather directly, no threading
+        results = await asyncio.gather(*(build_model(model) for model in recommended_models))
+        return [m for m in results if m is not None]
 
     @classmethod
     def get_basic_fields(cls) -> list[str]:
@@ -1151,14 +1223,13 @@ class BaseNode(BaseModel):
             is_torch_tensor = False
             if _is_torch_available():
                 try:
-                    import torch
+                    import torch  # type: ignore
                     if isinstance(value, torch.Tensor):
                         is_torch_tensor = True
                 except ImportError:
                     pass
 
             if is_torch_tensor:
-
                 continue
             elif isinstance(value, ComfyData):
                 res_for_update[o.name] = value.serialize()
@@ -1195,7 +1266,7 @@ class BaseNode(BaseModel):
                 is_torch_tensor = False
                 if _is_torch_available():
                     try:
-                        import torch
+                        import torch  # type: ignore
                         if isinstance(value, torch.Tensor):
                             is_torch_tensor = True
                     except ImportError:
@@ -1704,7 +1775,7 @@ class BaseNode(BaseModel):
         """
         if _is_torch_available():
             try:
-                import torch
+                import torch  # type: ignore
                 with torch.no_grad():  # type: ignore
                     return await self.process(context)
             except ImportError:

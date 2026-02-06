@@ -132,46 +132,6 @@ def _extract_storage_key_from_url(uri: str) -> str:
     raise ValueError(f"Could not extract storage key from URL: {uri}")
 
 
-def _fetch_local_storage_sync(uri: str) -> tuple[str, bytes]:
-    """Read directly from local storage instead of making HTTP request.
-
-    This function works correctly whether called from a sync or async context
-    by running the async storage operations in a separate thread.
-    """
-    import asyncio
-    import concurrent.futures
-    import mimetypes
-
-    key = _extract_storage_key_from_url(uri)
-
-    # Get storage from the current scope
-    scope = require_scope()
-    storage = scope.get_asset_storage()
-
-    async def _do_fetch() -> bytes:
-        """Helper to run async storage operations."""
-        exists = await storage.file_exists(key)
-        if not exists:
-            raise ValueError(f"Storage file not found: {key}")
-
-        stream = BytesIO()
-        await storage.download(key, stream)
-        return stream.getvalue()
-
-    # Run the async code in a separate thread to avoid event loop conflicts
-    # when this sync function is called from an async context
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(asyncio.run, _do_fetch())  # type: ignore[arg-type]
-        data: bytes = cast("bytes", future.result())
-
-    # Guess mime type from the key
-    mime_type, _ = mimetypes.guess_type(key)
-    if not mime_type:
-        mime_type = "application/octet-stream"
-
-    return mime_type, data
-
-
 async def _fetch_local_storage_async(uri: str) -> tuple[str, bytes]:
     """Read directly from local storage instead of making HTTP request (async version)."""
     import mimetypes
@@ -196,32 +156,6 @@ async def _fetch_local_storage_async(uri: str) -> tuple[str, bytes]:
     if not mime_type:
         mime_type = "application/octet-stream"
 
-    return mime_type, data
-
-
-def _fetch_http_uri_sync(uri: str) -> tuple[str, bytes]:
-    # Check for local storage URLs first - read directly instead of HTTP call
-    if _is_local_storage_url(uri):
-        return _fetch_local_storage_sync(uri)
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-    }
-    resp = httpx.get(uri, headers=headers, follow_redirects=True)
-    resp.raise_for_status()
-    data = resp.content
-    content_type = resp.headers.get("Content-Type")
-    mime_type: str | None = None
-    if content_type:
-        mime_type = content_type.split(";", 1)[0]
-    if not mime_type:
-        import mimetypes
-
-        mime_type, _ = mimetypes.guess_type(uri)
-    if not mime_type:
-        mime_type = "application/octet-stream"
     return mime_type, data
 
 
@@ -310,56 +244,6 @@ async def _fetch_asset_uri_async(uri: str) -> tuple[str, bytes]:
     return mime_type, data
 
 
-def _fetch_asset_uri_sync(uri: str) -> tuple[str, bytes]:
-    """Fetch content from an asset:// URI (sync version).
-    
-    This function works correctly whether called from a sync or async context
-    by running the async storage operations in a separate thread.
-    
-    Args:
-        uri: The asset:// URI to fetch
-        
-    Returns:
-        Tuple of (mime_type, data_bytes)
-    """
-    import asyncio
-    import concurrent.futures
-    from nodetool.models.asset import Asset
-    
-    asset_id = _parse_asset_id_from_uri(uri)
-    
-    async def _do_fetch() -> tuple[str, bytes]:
-        """Helper to run async storage operations."""
-        # Fetch the asset from the database
-        asset = await Asset.get(asset_id)
-        if not asset:
-            raise ValueError(f"Asset not found: {asset_id}")
-        
-        # Get storage and download the file
-        scope = require_scope()
-        storage = scope.get_asset_storage()
-        
-        exists = await storage.file_exists(asset.file_name)
-        if not exists:
-            raise ValueError(f"Asset file not found in storage: {asset.file_name}")
-        
-        stream = BytesIO()
-        await storage.download(asset.file_name, stream)
-        data = stream.getvalue()
-        
-        # Use the asset's content type
-        mime_type = asset.content_type if asset.content_type else "application/octet-stream"
-        
-        return mime_type, data
-    
-    # Run the async code in a separate thread to avoid event loop conflicts
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(asyncio.run, _do_fetch())  # type: ignore[arg-type]
-        result = cast(tuple[str, bytes], future.result())
-    
-    return result
-
-
 async def fetch_uri_bytes_and_mime_async(uri: str) -> tuple[str, bytes]:
     """
     Fetch content from a URI and return (mime_type, data_bytes).
@@ -378,23 +262,5 @@ async def fetch_uri_bytes_and_mime_async(uri: str) -> tuple[str, bytes]:
         if _is_local_storage_url(uri):
             return await _fetch_local_storage_async(uri)
         return await _fetch_http_uri_async(uri)
-    # Explicitly reject unsupported schemes (e.g., ftp)
-    raise ValueError(f"Unsupported URI scheme: {uri.split(':', 1)[0]}://")
-
-
-def fetch_uri_bytes_and_mime_sync(uri: str) -> tuple[str, bytes]:
-    """
-    Synchronous variant of fetch_uri_bytes_and_mime_async using httpx for http(s).
-    """
-    if uri.startswith("data:"):
-        return _parse_data_uri(uri)
-    if uri.startswith("memory://"):
-        return _fetch_memory_uri(uri)
-    if uri.startswith("file://"):
-        return _fetch_file_uri(uri)
-    if uri.startswith("asset://"):
-        return _fetch_asset_uri_sync(uri)
-    if uri.startswith("http://") or uri.startswith("https://"):
-        return _fetch_http_uri_sync(uri)
     # Explicitly reject unsupported schemes (e.g., ftp)
     raise ValueError(f"Unsupported URI scheme: {uri.split(':', 1)[0]}://")

@@ -1975,7 +1975,7 @@ def list_all_hf_models(limit: int | None, as_json: bool, repo_only: bool):
 def list_hf_types():
     """List hf.* types supported by the local HuggingFace cache search."""
     from nodetool.integrations.huggingface.huggingface_models import (
-        get_supported_hf_types,
+        get_supported_hf_types,  # type: ignore
     )
 
     supported = get_supported_hf_types()
@@ -2099,14 +2099,18 @@ def scan(verbose):
 
     from nodetool.packages.registry import (
         save_package_metadata,
-        scan_for_package_nodes,
         update_pyproject_include,
     )
 
     try:
         print("Scanning for package nodes")
-        # Scan for nodes and create package model
-        package = scan_for_package_nodes(verbose=verbose)
+        # Import here to avoid circular import
+        from nodetool.packages.registry import scan_for_package_nodes
+
+        # Scan for nodes and create package model (async)
+        # Use asyncio.run() at the CLI entry point (top level, safe)
+        import asyncio
+        package = asyncio.run(scan_for_package_nodes(verbose=verbose))
 
         # Save package metadata
         save_package_metadata(package, verbose=verbose)
@@ -4090,7 +4094,7 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
                 console.print(f"[yellow]⚠️ Remote response: {result}[/]")
 
             # Close database connections
-            from nodetool.models.base_model import close_all_database_adapters
+            from nodetool.models.base_model import close_all_database_adapters  # type: ignore
 
             with suppress(Exception):
                 await close_all_database_adapters()

@@ -5,10 +5,13 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from typing import IO, TYPE_CHECKING, AsyncIterator
 
+from nodetool.config.logging_config import get_logger
 from .abstract_storage import AbstractStorage
 
 if TYPE_CHECKING:
     from nodetool.models.supabase_adapter import SupabaseAsyncClient
+
+log = get_logger(__name__)
 
 
 class SupabaseStorage(AbstractStorage):
@@ -114,7 +117,29 @@ class SupabaseStorage(AbstractStorage):
         return tmp_path
 
     def upload_sync(self, key: str, content: IO) -> str:
-        return asyncio.run(self.upload(key, content))
+        """Synchronous wrapper for upload (for use from sync contexts).
+
+        Note: If called from an async context, this will use nest_asyncio to preserve ResourceScope.
+        For best performance in async contexts, use await upload() directly.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            # In async context - try nest_asyncio to preserve ResourceScope
+            try:
+                import nest_asyncio
+                nest_asyncio.apply()
+                return loop.run_until_complete(self.upload(key, content))
+            except ImportError:
+                log.warning(
+                    "upload_sync called from async context but nest_asyncio not available. "
+                    "Upload will be in a new loop without ResourceScope. "
+                    "Install nest_asyncio or use 'await upload()' directly in async code."
+                )
+                # Fall back to new loop (loses ResourceScope but works)
+                return asyncio.run(self.upload(key, content))
+        except RuntimeError:
+            # No running loop, safe to use asyncio.run()
+            return asyncio.run(self.upload(key, content))
 
     async def delete(self, file_name: str):
         await self.bucket.remove([file_name])

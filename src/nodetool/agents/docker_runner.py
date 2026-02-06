@@ -38,6 +38,8 @@ async def _run(cfg: dict[str, Any]) -> None:
         max_token_limit=cfg.get("max_token_limit"),
         output_schema=cfg.get("output_schema"),
         verbose=cfg.get("verbose", True),
+        skills=cfg.get("skills"),
+        skill_dirs=cfg.get("skill_dirs"),
     )
 
     context = ProcessingContext(workspace_dir=cfg["workspace_dir"])

@@ -204,7 +204,7 @@ class Environment:
         return cls.settings
 
     @classmethod
-    def get_environment(cls):
+    def get_environment(cls) -> dict[str, Any]:
         settings = cls.get_settings()
 
         env = DEFAULT_ENV.copy()
@@ -646,13 +646,13 @@ class Environment:
         Returns None if torch is not installed.
         """
         try:
-            import torch
+            import torch  # type: ignore
         except Exception:
             return None
 
         try:
             if torch.backends.mps.is_available():
-                import torch.mps
+                import torch.mps  # type: ignore
 
                 return torch.device("mps")
         except Exception:
