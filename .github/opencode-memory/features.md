@@ -16,3 +16,4 @@
 - **Task Group Management**: `AsyncTaskGroup` for managing groups of related async tasks with spawn, run, cancel, and result collection
 - **Priority Queue**: `AsyncPriorityQueue` for priority-based async task scheduling with configurable max size and timeout support
 - **Async Event**: `AsyncEvent` for inter-task signaling with one-shot and auto-reset modes, supports value passing and predicate-based waiting
+- **Debounce**: `DebouncedFunc` and `debounce` decorator for limiting function call frequency by waiting for a quiet period before execution
