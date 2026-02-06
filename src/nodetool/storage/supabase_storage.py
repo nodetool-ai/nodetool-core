@@ -5,10 +5,13 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from typing import IO, TYPE_CHECKING, AsyncIterator
 
+from nodetool.config.logging_config import get_logger
 from .abstract_storage import AbstractStorage
 
 if TYPE_CHECKING:
     from nodetool.models.supabase_adapter import SupabaseAsyncClient
+
+log = get_logger(__name__)
 
 
 class SupabaseStorage(AbstractStorage):

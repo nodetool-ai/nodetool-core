@@ -645,13 +645,13 @@ class Environment:
         Returns None if torch is not installed.
         """
         try:
-            import torch
+            import torch  # type: ignore
         except Exception:
             return None
 
         try:
             if torch.backends.mps.is_available():
-                import torch.mps
+                import torch.mps  # type: ignore
 
                 return torch.device("mps")
         except Exception:

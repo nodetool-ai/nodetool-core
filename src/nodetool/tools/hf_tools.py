@@ -96,7 +96,7 @@ class HfTools:
         Returns:
             List of files in repository with metadata
         """
-        from nodetool.api.mcp_server import get_hf_token
+        from nodetool.api.mcp_server import get_hf_token  # type: ignore
 
         try:
             from huggingface_hub import HfApi
@@ -161,7 +161,7 @@ class HfTools:
         if limit > 50:
             limit = 50
 
-        from nodetool.api.mcp_server import get_hf_token
+        from nodetool.api.mcp_server import get_hf_token  # type: ignore
 
         try:
             from huggingface_hub import HfApi
@@ -206,7 +206,7 @@ class HfTools:
         Returns:
             Detailed model information including README, tags, metrics
         """
-        from nodetool.api.mcp_server import get_hf_token
+        from nodetool.api.mcp_server import get_hf_token  # type: ignore
 
         try:
             from huggingface_hub import HfApi

@@ -211,8 +211,9 @@ def split_camel_case(text: str) -> str:
         A string with words separated by spaces.
     """
     # Split the string into parts, keeping uppercase sequences together.
-    # Special-case digit+acronym chunks like "3D" so we don't render them as "3 D".
-    parts = re.findall(r"\d+[A-Z]+(?![a-z])|[A-Z]+[a-z]*|\d+|[a-z]+", text)
+    # Special-case digit+acronym chunks like "3D" so we don't render them as "3 D",
+    # and letter+digit tokens like "V3" or "O3" so we don't render them as "V 3".
+    parts = re.findall(r"\d+[A-Z]+(?![a-z])|[A-Z]+\d+|[A-Z]+[a-z]*|\d+|[a-z]+", text)
 
     # Join the parts with spaces
     return " ".join(parts)
@@ -793,7 +794,10 @@ class BaseNode(BaseModel):
             )
 
         # Convert models synchronously (without detailed model info from API)
-        return [unified_model(model, model_info=None) for model in recommended_models]
+        return [  # type: ignore
+            unified_model(model, model_info=None)
+            for model in recommended_models
+        ]
 
     @classmethod
     async def unified_recommended_models_async(cls, include_model_info: bool = False) -> list[UnifiedModel]:
@@ -1219,8 +1223,7 @@ class BaseNode(BaseModel):
             is_torch_tensor = False
             if _is_torch_available():
                 try:
-                    import torch
-
+                    import torch  # type: ignore
                     if isinstance(value, torch.Tensor):
                         is_torch_tensor = True
                 except ImportError:
@@ -1263,8 +1266,7 @@ class BaseNode(BaseModel):
                 is_torch_tensor = False
                 if _is_torch_available():
                     try:
-                        import torch
-
+                        import torch  # type: ignore
                         if isinstance(value, torch.Tensor):
                             is_torch_tensor = True
                     except ImportError:
@@ -1773,8 +1775,7 @@ class BaseNode(BaseModel):
         """
         if _is_torch_available():
             try:
-                import torch
-
+                import torch  # type: ignore
                 with torch.no_grad():  # type: ignore
                     return await self.process(context)
             except ImportError:
