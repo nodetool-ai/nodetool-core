@@ -233,6 +233,7 @@ MODEL_3D_FORMAT_MAPPING: dict[str, tuple[str, str]] = {
     "glb": ("model/gltf-binary", "glb"),
     "gltf": ("model/gltf+json", "gltf"),
     "obj": ("model/obj", "obj"),
+    "mtl": ("model/mtl", "mtl"),  # Material file for OBJ models
     "stl": ("model/stl", "stl"),
     "ply": ("application/x-ply", "ply"),
     "fbx": ("application/octet-stream", "fbx"),

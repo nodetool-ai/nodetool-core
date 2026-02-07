@@ -358,10 +358,17 @@ class Model3DRef(AssetRef):
     """
     A reference to a 3D model asset.
     Supports common 3D formats like GLB, GLTF, OBJ, FBX, STL, PLY, USDZ.
+
+    For formats that require multiple files (e.g., OBJ with MTL and textures):
+    - format: The primary 3D model format (e.g., "obj")
+    - material_file: Reference to material file (e.g., MTL file for OBJ models)
+    - texture_files: List of texture image references used by the model
     """
 
     type: Literal["model_3d"] = "model_3d"
-    format: Optional[str] = None  # The 3D format (glb, gltf, obj, fbx, stl, ply, usdz)
+    format: Optional[str] = None  # The 3D format (glb, gltf, obj, mtl, fbx, stl, ply, usdz)
+    material_file: Optional["AssetRef"] = None  # Material file (e.g., MTL for OBJ)
+    texture_files: list["ImageRef"] = []  # Associated texture images
 
 
 class RSSEntry(BaseType):
