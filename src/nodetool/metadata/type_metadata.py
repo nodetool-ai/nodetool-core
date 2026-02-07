@@ -254,6 +254,18 @@ class TypeMetadata(BaseModel):
                 "items": [t.get_json_schema() for t in self.type_args],
             }
 
+
+        if self.type == "image_size":
+            return {
+                "type": "object",
+                "properties": {
+                    "width": {"type": "integer", "minimum": 1},
+                    "height": {"type": "integer", "minimum": 1},
+                    "preset": {"type": "string"},
+                },
+                "widget": "ImageSizeInput",
+            }
+
         if self.type == "object":
             return {
                 "type": "object",

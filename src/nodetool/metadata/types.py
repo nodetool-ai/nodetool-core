@@ -102,7 +102,23 @@ class BaseType(BaseModel):
             raise ValueError("Type name is missing. Types must derive from BaseType")
         if type_name not in NameToType:
             raise ValueError(f"Unknown type name: {type_name}. Types must derive from BaseType. Data: {data}")
-        return NameToType[type_name](**data)
+
+class ImageSize(BaseType):
+    """
+    Represents image dimensions with optional preset.
+    Canonical JSON: {"type": "image_size", "width": 1024, "height": 1024, "preset": "square"}
+    """
+
+    type: Literal["image_size"] = "image_size"
+    width: int = Field(default=1024, description="Image width")
+    height: int = Field(default=1024, description="Image height")
+    preset: Optional[str] = Field(None, description="Aspect ratio preset name (e.g. 'square_hd')")
+
+    def __str__(self):
+        if self.preset:
+            return f"{self.preset} ({self.width}x{self.height})"
+        return f"{self.width}x{self.height}"
+
 
 
 class Collection(BaseType):
