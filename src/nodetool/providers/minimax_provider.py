@@ -806,13 +806,13 @@ class MiniMaxProvider(AnthropicProvider):
 
         try:
             # Upload the image first to get a file_id
-            file_id = await self._upload_image(image)
-            log.debug(f"Uploaded image, file_id: {file_id}")
+            image_file_id = await self._upload_image(image)
+            log.debug(f"Uploaded image, file_id: {image_file_id}")
 
             payload: dict[str, Any] = {
                 "model": model_id,
                 "prompt": prompt,
-                "first_frame_image_id": file_id,
+                "first_frame_image_id": image_file_id,
             }
 
             if hasattr(params, "aspect_ratio") and params.aspect_ratio:
@@ -845,9 +845,9 @@ class MiniMaxProvider(AnthropicProvider):
 
             video_url = completed.get("video_url") or completed.get("file", {}).get("download_url")
             if not video_url:
-                vid_file_id = completed.get("file_id")
-                if vid_file_id:
-                    video_url = f"https://api.minimaxi.com/v1/files/{vid_file_id}/content"
+                file_id = completed.get("file_id")
+                if file_id:
+                    video_url = f"https://api.minimaxi.com/v1/files/{file_id}/content"
                 else:
                     raise RuntimeError("No video URL or file_id in completed task response")
 
