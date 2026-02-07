@@ -368,7 +368,7 @@ class Model3DRef(AssetRef):
     type: Literal["model_3d"] = "model_3d"
     format: Optional[str] = None  # The 3D format (glb, gltf, obj, mtl, fbx, stl, ply, usdz)
     material_file: Optional["AssetRef"] = None  # Material file (e.g., MTL for OBJ)
-    texture_files: list["ImageRef"] = []  # Associated texture images
+    texture_files: list["ImageRef"] = Field(default_factory=list)  # Associated texture images
 
 
 class RSSEntry(BaseType):
