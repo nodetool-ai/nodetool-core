@@ -273,4 +273,5 @@ reportShadowedImports = "none"
 [dependency-groups]
 dev = [
     "basedpyright>=1.37.1",
+    "pytest-cov>=7.0.0",
 ]
