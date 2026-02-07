@@ -18,3 +18,4 @@
 - **Async Event**: `AsyncEvent` for inter-task signaling with one-shot and auto-reset modes, supports value passing and predicate-based waiting
 - **Async Barrier**: `AsyncBarrier` for synchronizing multiple coroutines at a synchronization point, useful for phased concurrent operations
 - **Async Condition**: `AsyncCondition` for condition variables allowing tasks to wait until notified by another task, with lock-based coordination to prevent race conditions
+- **Async Reader-Writer Lock**: `AsyncReaderWriterLock` for multiple concurrent readers with exclusive writer access, using writer-preference semantics to prevent starvation
