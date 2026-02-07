@@ -13,11 +13,13 @@ This is particularly useful for:
 
 from __future__ import annotations
 
-import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    import logging
 
 from nodetool.config.configuration import get_secrets_registry, get_settings_registry
 from nodetool.config.env_guard import get_system_env_value
@@ -368,7 +370,7 @@ def format_env_diagnostics(
                     lines.append(f"      ⚠️  Permission issue: {perms['error']}")
                 elif not perms.get("exists"):
                     if perms.get("writable"):
-                        lines.append("      ℹ️  Path does not exist yet (parent writable)")
+                        lines.append("      i️  Path does not exist yet (parent writable)")
                     else:
                         lines.append("      ⚠️  Path does not exist (parent not writable)")
                 else:

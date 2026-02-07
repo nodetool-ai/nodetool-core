@@ -51,15 +51,15 @@ get_documents_from_collection = mcp_server.get_documents_from_collection.fn
 try:
     list_threads = mcp_server.list_threads.fn
 except AttributeError:
-    list_threads = None  # noqa: F811
+    list_threads = None
 try:
     get_thread = mcp_server.get_thread.fn
 except AttributeError:
-    get_thread = None  # noqa: F811
+    get_thread = None
 try:
     get_thread_messages = mcp_server.get_thread_messages.fn
 except AttributeError:
-    get_thread_messages = None  # noqa: F811
+    get_thread_messages = None
 download_file_from_storage = mcp_server.download_file_from_storage.fn
 get_file_metadata = mcp_server.get_file_metadata.fn
 list_storage_files = mcp_server.list_storage_files.fn

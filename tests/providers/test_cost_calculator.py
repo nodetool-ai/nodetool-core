@@ -253,7 +253,7 @@ class TestPricingTiersCompleteness:
 
     def test_all_entries_are_provider_keyed(self):
         """Verify all entries in MODEL_TO_TIER are (provider, model) tuples."""
-        for key in MODEL_TO_TIER.keys():
+        for key in MODEL_TO_TIER:
             assert isinstance(key, tuple), f"Key {key} should be a tuple"
             assert len(key) == 2, f"Key {key} should have 2 elements"
             assert isinstance(key[0], str), f"Provider in {key} should be a string"

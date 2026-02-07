@@ -24,7 +24,6 @@ import asyncio
 import json
 import os
 import shutil
-from collections.abc import AsyncIterator
 from enum import Enum
 from fnmatch import fnmatch
 from pathlib import Path
@@ -33,6 +32,8 @@ from typing import TYPE_CHECKING, Any, Sequence
 import aiofiles
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from huggingface_hub import HfApi, ModelInfo
 
     from nodetool.integrations.huggingface.artifact_inspector import (

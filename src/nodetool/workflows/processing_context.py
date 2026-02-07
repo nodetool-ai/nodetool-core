@@ -875,10 +875,7 @@ class ProcessingContext:
             params = {}
 
         # Convert string provider to enum if needed
-        if isinstance(provider, str):
-            provider_enum = Provider(provider)
-        else:
-            provider_enum = provider
+        provider_enum = Provider(provider) if isinstance(provider, str) else provider
 
         # Get provider instance
         provider_instance = await self.get_provider(provider_enum)
@@ -1052,10 +1049,7 @@ class ProcessingContext:
         if params is None:
             params = {}
 
-        if isinstance(provider, str):
-            provider_enum = Provider(provider)
-        else:
-            provider_enum = provider
+        provider_enum = Provider(provider) if isinstance(provider, str) else provider
 
         provider_instance = await self.get_provider(provider_enum)
 

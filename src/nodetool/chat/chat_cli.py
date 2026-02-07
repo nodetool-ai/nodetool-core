@@ -377,7 +377,7 @@ class ChatTextualApp(App[None]):
 
     def _refresh_input_suggester(self) -> None:
         """Update inline suggestion candidates for the input box."""
-        commands = sorted({f"/{name}" for name in self.cli.commands.keys()})
+        commands = sorted({f"/{name}" for name in self.cli.commands})
         workspace_cmds = ["pwd", "ls", "cd", "mkdir", "rm", "open", "cat", "cp", "mv", "grep", "cdw"]
         candidates = commands + workspace_cmds + self._input_history[-100:]
         input_widget = self.query_one("#input", Input)
@@ -431,7 +431,7 @@ class ChatTextualApp(App[None]):
             return False
 
         prefix_matches = [h for h in self._input_history if h.startswith(current)]
-        command_matches = [f"/{name}" for name in self.cli.commands.keys() if f"/{name}".startswith(current)]
+        command_matches = [f"/{name}" for name in self.cli.commands if f"/{name}".startswith(current)]
         workspace_matches = [c for c in ["pwd", "ls", "cd", "mkdir", "rm", "open", "cat", "cp", "mv", "grep", "cdw"] if c.startswith(current)]
         path_matches = self._path_completion_candidates(current)
 
@@ -443,7 +443,7 @@ class ChatTextualApp(App[None]):
 
         if len(candidates) == 1:
             completed = candidates[0]
-            if completed in {f"/{name}" for name in self.cli.commands.keys()}:
+            if completed in {f"/{name}" for name in self.cli.commands}:
                 completed += " "
             input_widget.value = completed
             input_widget.cursor_position = len(completed)

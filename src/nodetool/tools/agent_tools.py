@@ -5,9 +5,10 @@ These tools provide functionality for running autonomous AI agents with various 
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from fastmcp import Context
+if TYPE_CHECKING:
+    from fastmcp import Context
 
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool

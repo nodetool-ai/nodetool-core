@@ -98,11 +98,7 @@ class HfTools:
         try:
             from huggingface_hub import HfApi
             token = await get_hf_token()
-            if token:
-                api = HfApi(token=token)
-
-            else:
-                api = HfApi()
+            api = HfApi(token=token) if token else HfApi()
             file_infos = api.list_repo_files(repo_id=repo_id, repo_type=repo_type, revision=revision)
 
             if patterns:
@@ -163,11 +159,7 @@ class HfTools:
         try:
             from huggingface_hub import HfApi
             token = await get_hf_token()
-            if token:
-                api = HfApi(token=token)
-
-            else:
-                api = HfApi()
+            api = HfApi(token=token) if token else HfApi()
 
             filter_dict = {}
             if model_filter and ":" in model_filter:
@@ -208,11 +200,7 @@ class HfTools:
         try:
             from huggingface_hub import HfApi
             token = await get_hf_token()
-            if token:
-                api = HfApi(token=token)
-
-            else:
-                api = HfApi()
+            api = HfApi(token=token) if token else HfApi()
 
             return asdict(api.model_info(repo_id))
         except Exception as e:
