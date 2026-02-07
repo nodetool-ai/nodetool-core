@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nodetool-core"
-version = "0.6.3-rc.17"
+version = "0.6.3-rc.18"
 description = "Nodetool Core is the core library for Nodetool, providing the necessary functionality for building and running AI workflows."
 readme = "README.md"
 authors = [{ name = "Matthias Georgi", email = "matti.georgi@gmail.com" }]
@@ -207,6 +207,7 @@ ignore = [
     "RUF010", # explicit conversion flag in f-strings
     "SIM102", # combine nested ifs
     "SIM105", # prefer contextlib.suppress over try/except/pass
+    "SIM117", # use single with statement with multiple contexts
     "ARG002", # unused method/function argument
     "ARG001", # unused function argument (API handlers)
 ]
@@ -272,4 +273,5 @@ reportShadowedImports = "none"
 [dependency-groups]
 dev = [
     "basedpyright>=1.37.1",
+    "pytest-cov>=7.0.0",
 ]

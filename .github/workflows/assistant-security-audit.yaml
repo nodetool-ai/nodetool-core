@@ -1,18 +1,19 @@
-name: OpenCode Documentation Quality
+name: Assistant Security Audit
 
 on:
   schedule:
-    - cron: "0 8 * * 1" # Weekly on Mondays at 8 AM UTC
+    - cron: "0 10 * * 3" # Weekly on Wednesdays at 10 AM UTC
   workflow_dispatch:
 
 jobs:
-  opencode-docs:
+  assistant-security:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: write
       pull-requests: write
       issues: write
+      security-events: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -38,16 +39,29 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
-      - name: Run OpenCode
-        uses: anomalyco/opencode/github@latest
-        env:
-          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
-        with:
-          model: minimax/MiniMax-M2.1
-          prompt: |
-            # NodeTool Core Documentation Quality
+      - name: Run pip checks
+        run: |
+          python -m pip check || true
 
-            You are an autonomous agent improving documentation in **nodetool-core**.
+      - name: Run pip-audit
+        run: |
+          pip-audit --format json > pip-audit.json || true
+          cat pip-audit.json || true
+
+      - name: Run Assistant
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: https://api.z.ai/api/anthropic
+        with:
+          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          additional_permissions: |
+            actions: read
+          claude_args: |
+            --allowedTools "Bash,WebFetch,Edit,Read,Replace"
+          prompt: |
+            # NodeTool Core Security Audit
+
+            You are an autonomous security agent auditing **nodetool-core**.
 
             ## Step 0: Avoid Duplicate Work
             1. Run `git branch -a` to check existing branches
@@ -59,17 +73,17 @@ jobs:
             - `.github/opencode-memory/features.md`
             - List `issues/` and `insights/` to find descriptive files
 
-            ## Step 2: Documentation Audit Areas
-            - `AGENTS.md` accuracy and completeness
-            - README files for setup and usage
-            - Public API docstrings and module docs
-            - Configuration docs and environment variables
-            - Examples and troubleshooting sections
+            ## Step 2: Security Audit Areas
+            - Secrets in code or logs
+            - Unsafe input handling or validation gaps
+            - Insecure defaults in configuration
+            - Injection risks in database or shell calls
+            - Dependency vulnerabilities (see `pip-audit.json` if present)
 
-            ## Step 3: Make Focused Improvements
-            - Keep edits minimal and accurate
-            - Avoid adding new docs unless required
-            - Verify code samples match current APIs
+            ## Step 3: Fix Security Issues
+            - Make minimal, targeted changes
+            - Prefer explicit validation and error handling
+            - Avoid introducing new dependencies
 
             ## Step 4: Validate
             ```bash
@@ -81,3 +95,7 @@ jobs:
             ## Step 5: Update Memory
             - Add issue files under `issues/<topic>/`
             - Add insight files under `insights/<topic>/`
+
+            ## Pull Request Rule
+            - If `git status --porcelain` shows changed files, commit, push, and create or update a PR.
+            - If there are no file changes, do not commit, do not push, and do not create or update a PR.

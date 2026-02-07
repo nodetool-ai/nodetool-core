@@ -294,7 +294,7 @@ def read_file_uri(uri: str, path: str) -> BytesIO | None:
         file_path = unquote(parsed.path)
         with open(file_path, "rb") as f:
             return BytesIO(f.read())
-    except (OSError, IOError) as file_err:
+    except OSError as file_err:
         logger.warning("Failed to read file from %s at %s: %s", uri, path, file_err)
         return None
 
@@ -312,11 +312,7 @@ def decode_data_uri(uri: str, path: str) -> BytesIO | None:
     try:
         # Format: data:[<mediatype>][;base64],<data>
         header, encoded_data = uri.split(",", 1)
-        if ";base64" in header:
-            data_bytes = base64.b64decode(encoded_data)
-        else:
-            # URL-encoded data
-            data_bytes = unquote(encoded_data).encode("utf-8")
+        data_bytes = base64.b64decode(encoded_data) if ";base64" in header else unquote(encoded_data).encode("utf-8")
         return BytesIO(data_bytes)
     except (ValueError, binascii.Error) as data_err:
         logger.warning("Failed to decode data URI at %s: %s", path, data_err)

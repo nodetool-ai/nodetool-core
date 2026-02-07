@@ -36,7 +36,7 @@ class TestIntervalTrigger(TriggerNode):
                 }
             )
             # Unreachable - suspend_for_inactivity raises WorkflowSuspendedException
-            raise AssertionError("suspend_for_inactivity should raise")
+            raise AssertionError("suspend_for_inactivity should raise") from None
 
 
 def test_trigger_node_is_trigger():

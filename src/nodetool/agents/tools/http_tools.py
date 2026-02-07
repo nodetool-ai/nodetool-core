@@ -72,7 +72,9 @@ class DownloadFileTool(Tool):
 
             # Ensure the directory exists
             full_path = context.resolve_workspace_path(output_file)
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            parent_dir = os.path.dirname(full_path)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
 
             async with (
                 aiohttp.ClientSession() as session,

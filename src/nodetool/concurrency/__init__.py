@@ -1,7 +1,18 @@
+from .async_barrier import AsyncBarrier
+from .async_channel import (
+    AsyncChannel,
+    AsyncChannelIterator,
+    ChannelClosedError,
+    create_channel,
+    fan_in,
+    fan_out,
+)
+from .async_condition import AsyncCondition
 from .async_event import AsyncEvent
 from .async_iterators import AsyncByteStream
 from .async_lock import AsyncLock
 from .async_priority_queue import AsyncPriorityQueue
+from .async_rwlock import AsyncReaderWriterLock
 from .async_task_group import AsyncTaskGroup, TaskExecutionError, TaskResult, TaskStats
 from .async_utils import AsyncSemaphore, gather_with_concurrency
 from .batching import batched_async_iterable, process_in_batches
@@ -18,14 +29,20 @@ from .retry import RetryPolicy, retry_with_exponential_backoff
 from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_timeout
 
 __all__ = [
+    "AsyncBarrier",
     "AsyncByteStream",
+    "AsyncChannel",
+    "AsyncChannelIterator",
+    "AsyncCondition",
     "AsyncEvent",
     "AsyncLock",
     "AsyncPriorityQueue",
     "AsyncRateLimiter",
+    "AsyncReaderWriterLock",
     "AsyncSemaphore",
     "AsyncTaskGroup",
     "AsyncTokenBucket",
+    "ChannelClosedError",
     "CircuitBreaker",
     "CircuitBreakerConfig",
     "CircuitBreakerError",
@@ -39,6 +56,9 @@ __all__ = [
     "TimeoutError",
     "TimeoutPolicy",
     "batched_async_iterable",
+    "create_channel",
+    "fan_in",
+    "fan_out",
     "gather_with_concurrency",
     "process_in_batches",
     "retry_with_exponential_backoff",

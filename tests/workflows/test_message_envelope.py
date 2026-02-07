@@ -9,7 +9,7 @@ These tests verify that:
 """
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import pytest
 
@@ -27,7 +27,7 @@ class TestMessageEnvelope:
         assert envelope.data == "test_data"
         assert envelope.metadata == {}
         assert isinstance(envelope.timestamp, datetime)
-        assert envelope.timestamp.tzinfo == timezone.utc
+        assert envelope.timestamp.tzinfo == UTC
         assert isinstance(envelope.event_id, str)
         assert len(envelope.event_id) > 0
 

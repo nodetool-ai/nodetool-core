@@ -15,17 +15,16 @@ if TYPE_CHECKING:
 
 from nodetool.api.mcp_server import mcp
 from nodetool.tools import (
-    WorkflowTools,
-    AssetTools,
-    NodeTools,
-    ModelTools,
-    CollectionTools,
-    JobTools,
     AgentTools,
-    StorageTools,
+    AssetTools,
+    CollectionTools,
     HfTools,
+    JobTools,
+    ModelTools,
+    NodeTools,
+    StorageTools,
+    WorkflowTools,
 )
-
 
 # Register all workflow tools
 if TYPE_CHECKING:
@@ -87,8 +86,6 @@ if TYPE_CHECKING:
         """Export a workflow as a simple Graphviz Digraph (DOT format) for LLM parsing."""
         return await WorkflowTools.export_workflow_digraph(workflow_id, descriptive_names, user_id)
 else:
-    from fastmcp import Context
-
     @mcp.tool()
     async def get_workflow(workflow_id: str, user_id: str = "1") -> dict:
         """Get detailed information about a specific workflow."""

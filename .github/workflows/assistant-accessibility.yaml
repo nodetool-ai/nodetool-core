@@ -1,19 +1,18 @@
-name: OpenCode Security Audit
+name: Assistant Accessibility Audit
 
 on:
   schedule:
-    - cron: "0 10 * * 3" # Weekly on Wednesdays at 10 AM UTC
+    - cron: "0 12 * * 2" # Weekly on Tuesdays at noon UTC
   workflow_dispatch:
 
 jobs:
-  opencode-security:
+  assistant-accessibility:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: write
       pull-requests: write
       issues: write
-      security-events: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,25 +38,20 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
-      - name: Run pip checks
-        run: |
-          python -m pip check || true
-
-      - name: Run pip-audit
-        run: |
-          pip-audit --format json > pip-audit.json || true
-          cat pip-audit.json || true
-
-      - name: Run OpenCode
-        uses: anomalyco/opencode/github@latest
+      - name: Run Assistant
+        uses: anthropics/claude-code-action@v1
         env:
-          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          ANTHROPIC_BASE_URL: https://api.z.ai/api/anthropic
         with:
-          model: minimax/MiniMax-M2.1
+          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          additional_permissions: |
+            actions: read
+          claude_args: |
+            --allowedTools "Bash,WebFetch,Edit,Read,Replace"
           prompt: |
-            # NodeTool Core Security Audit
+            # NodeTool Core Accessibility Audit
 
-            You are an autonomous security agent auditing **nodetool-core**.
+            You are an autonomous agent improving developer accessibility and usability in **nodetool-core**.
 
             ## Step 0: Avoid Duplicate Work
             1. Run `git branch -a` to check existing branches
@@ -69,17 +63,17 @@ jobs:
             - `.github/opencode-memory/features.md`
             - List `issues/` and `insights/` to find descriptive files
 
-            ## Step 2: Security Audit Areas
-            - Secrets in code or logs
-            - Unsafe input handling or validation gaps
-            - Insecure defaults in configuration
-            - Injection risks in database or shell calls
-            - Dependency vulnerabilities (see `pip-audit.json` if present)
+            ## Step 2: Accessibility Audit Areas
+            - CLI commands: help text, error messages, exit codes
+            - API responses: status codes, validation errors, clarity
+            - Logs: actionable messages, consistent formatting
+            - Configuration: defaults and env var descriptions
+            - Docs: `AGENTS.md`, README files, and docstrings
 
-            ## Step 3: Fix Security Issues
-            - Make minimal, targeted changes
-            - Prefer explicit validation and error handling
-            - Avoid introducing new dependencies
+            ## Step 3: Make Focused Improvements
+            - Keep changes minimal and targeted
+            - Follow existing patterns and async conventions
+            - Do not refactor unrelated code
 
             ## Step 4: Validate
             ```bash
@@ -91,3 +85,7 @@ jobs:
             ## Step 5: Update Memory
             - Add issue files under `issues/<topic>/`
             - Add insight files under `insights/<topic>/`
+
+            ## Pull Request Rule
+            - If `git status --porcelain` shows changed files, commit, push, and create or update a PR.
+            - If there are no file changes, do not commit, do not push, and do not create or update a PR.

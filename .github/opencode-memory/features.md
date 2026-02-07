@@ -16,3 +16,7 @@
 - **Task Group Management**: `AsyncTaskGroup` for managing groups of related async tasks with spawn, run, cancel, and result collection
 - **Priority Queue**: `AsyncPriorityQueue` for priority-based async task scheduling with configurable max size and timeout support
 - **Async Event**: `AsyncEvent` for inter-task signaling with one-shot and auto-reset modes, supports value passing and predicate-based waiting
+- **Async Barrier**: `AsyncBarrier` for synchronizing multiple coroutines at a synchronization point, useful for phased concurrent operations
+- **Async Condition**: `AsyncCondition` for condition variables allowing tasks to wait until notified by another task, with lock-based coordination to prevent race conditions
+- **Async Reader-Writer Lock**: `AsyncReaderWriterLock` for multiple concurrent readers with exclusive writer access, using writer-preference semantics to prevent starvation
+- **Async Channel**: `AsyncChannel` for producer-consumer patterns with send/receive/close operations, async iteration, and fan-in/fan-out utilities for channel composition

@@ -1,7 +1,6 @@
 """
 Unit tests for RunPodDeployer.
 """
-# ruff: noqa: SIM117
 
 from unittest.mock import Mock, patch
 
@@ -703,4 +702,3 @@ class TestRunPodDeployerEdgeCases:
 
 
 #!/usr/bin/env python3
-# ruff: noqa: SIM117

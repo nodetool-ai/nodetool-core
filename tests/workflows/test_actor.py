@@ -1143,7 +1143,7 @@ async def test_always_on_streaming_sticky_inputs():
         ),
     ]
     graph = Graph(nodes=[producer_a, producer_c, target_b], edges=edges)
-    actor, runner, ctx = await make_actor_for_target_async(graph, target_b)
+    actor, _runner, _ctx = await make_actor_for_target_async(graph, target_b)
 
     # Non-streaming producer C provides a single sticky value for handle 'b'
     await actor.inbox.put("b", 100)
@@ -1196,7 +1196,7 @@ async def test_always_on_streaming_triggers_on_every_input():
         ),
     ]
     graph = Graph(nodes=[producer_a, producer_b, target], edges=edges)
-    actor, runner, ctx = await make_actor_for_target_async(graph, target)
+    actor, _runner, _ctx = await make_actor_for_target_async(graph, target)
 
     # Both handles are non-streaming but treated as streaming
     # First provide initial values for both handles

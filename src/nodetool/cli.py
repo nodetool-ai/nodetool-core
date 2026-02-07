@@ -1307,8 +1307,10 @@ def vibecoding(
             elif output:
                 # Save to file
                 try:
-                    with open(output, "w", encoding="utf-8") as f:
-                        f.write(html_content)
+                    import aiofiles
+
+                    async with aiofiles.open(output, "w", encoding="utf-8") as f:
+                        await f.write(html_content)
                     console.print(f"\n[green]✅ Saved HTML app to {output}[/green]")
                 except Exception as e:
                     console.print(f"[red]Error writing file: {e}[/red]")
@@ -2105,11 +2107,11 @@ def scan(verbose):
     try:
         print("Scanning for package nodes")
         # Import here to avoid circular import
-        from nodetool.packages.registry import scan_for_package_nodes
-
         # Scan for nodes and create package model (async)
         # Use asyncio.run() at the CLI entry point (top level, safe)
         import asyncio
+
+        from nodetool.packages.registry import scan_for_package_nodes
         package = asyncio.run(scan_for_package_nodes(verbose=verbose))
 
         # Save package metadata

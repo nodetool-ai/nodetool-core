@@ -1268,7 +1268,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 # Wait briefly for the task to actually cancel
                 try:
                     await asyncio.wait_for(self.current_task, timeout=0.5)
-                except (asyncio.CancelledError, asyncio.TimeoutError):
+                except (TimeoutError, asyncio.CancelledError):
                     pass  # Expected - task was cancelled or timed out
                 except Exception as e:
                     log.warning(f"Error waiting for previous task to cancel: {e}")

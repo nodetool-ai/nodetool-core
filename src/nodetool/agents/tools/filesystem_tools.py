@@ -42,7 +42,9 @@ class WriteFileTool(Tool):
             full_path = os.path.abspath(path)
 
             # Create parent directories if they don't exist
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            parent_dir = os.path.dirname(full_path)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
 
             mode = "a" if append else "w"
             async with aiofiles.open(full_path, mode, encoding="utf-8") as f:

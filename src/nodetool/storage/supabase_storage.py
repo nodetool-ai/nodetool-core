@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import IO, TYPE_CHECKING, AsyncIterator
 
 from nodetool.config.logging_config import get_logger
-from .abstract_storage import AbstractStorage
+from nodetool.storage.abstract_storage import AbstractStorage, FileMetadata
 
 if TYPE_CHECKING:
     from nodetool.models.supabase_adapter import SupabaseAsyncClient
@@ -143,3 +143,23 @@ class SupabaseStorage(AbstractStorage):
 
     async def delete(self, file_name: str):
         await self.bucket.remove([file_name])
+
+    async def get_file_metadata(self, key: str) -> FileMetadata:
+        """Optimized metadata retrieval using single info() call."""
+        exists = await self.file_exists(key)
+        if not exists:
+            return FileMetadata(exists=False)
+
+        info = await self._info(key)
+        last_modified = info.get("last_modified")
+        if last_modified:
+            dt = datetime.strptime(last_modified, "%Y-%m-%dT%H:%M:%S.%fZ")
+            mtime = dt.replace(tzinfo=UTC)
+        else:
+            mtime = None
+
+        return FileMetadata(
+            exists=True,
+            size=info.get("size"),
+            mtime=mtime,
+        )

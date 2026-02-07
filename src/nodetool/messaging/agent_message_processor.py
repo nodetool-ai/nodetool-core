@@ -128,7 +128,8 @@ class AgentMessageProcessor(MessageProcessor):
                 WriteFileTool(),
                 BrowserTool(),
                 GoogleSearchTool(),
-            ] + get_all_mcp_tools()
+                *get_all_mcp_tools(),
+            ]
             log.debug(f"Using MCP tools for omnipotent agent mode: {[tool.name for tool in selected_tools]}")
 
         # Include UI proxy tools if client provided a manifest via tool bridge

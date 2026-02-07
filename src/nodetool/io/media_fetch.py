@@ -184,63 +184,63 @@ def _fetch_memory_uri(uri: str) -> tuple[str, bytes]:
 
 def _parse_asset_id_from_uri(uri: str) -> str:
     """Parse asset ID from asset:// URI.
-    
+
     Format: asset://{asset_id} or asset://{asset_id}.{extension}
-    
+
     Args:
         uri: The asset:// URI to parse
-        
+
     Returns:
         The asset ID
     """
     if not uri.startswith("asset://"):
         raise ValueError(f"Invalid asset URI: {uri}")
-    
+
     # Remove the asset:// prefix
     path = uri[len("asset://"):]
-    
+
     # Remove extension if present (everything after the first dot)
     asset_id = path.split(".")[0] if "." in path else path
-    
+
     if not asset_id:
         raise ValueError(f"Invalid asset URI - no asset ID: {uri}")
-    
+
     return asset_id
 
 
 async def _fetch_asset_uri_async(uri: str) -> tuple[str, bytes]:
     """Fetch content from an asset:// URI (async version).
-    
+
     Args:
         uri: The asset:// URI to fetch
-        
+
     Returns:
         Tuple of (mime_type, data_bytes)
     """
     from nodetool.models.asset import Asset
-    
+
     asset_id = _parse_asset_id_from_uri(uri)
-    
+
     # Fetch the asset from the database
     asset = await Asset.get(asset_id)
     if not asset:
         raise ValueError(f"Asset not found: {asset_id}")
-    
+
     # Get storage and download the file
     scope = require_scope()
     storage = scope.get_asset_storage()
-    
+
     exists = await storage.file_exists(asset.file_name)
     if not exists:
         raise ValueError(f"Asset file not found in storage: {asset.file_name}")
-    
+
     stream = BytesIO()
     await storage.download(asset.file_name, stream)
     data = stream.getvalue()
-    
+
     # Use the asset's content type
     mime_type = asset.content_type if asset.content_type else "application/octet-stream"
-    
+
     return mime_type, data
 
 

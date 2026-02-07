@@ -15,6 +15,8 @@ from nodetool.config.deployment import (
     ServerPaths,
     SSHConfig,
 )
+from nodetool.deploy.docker_run import DockerRunGenerator
+from nodetool.deploy.proxy_run import ProxyRunGenerator
 from nodetool.deploy.self_hosted import (
     LocalExecutor,
     DockerDeployer,
@@ -118,6 +120,17 @@ class TestDockerDeployer:
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="gpu1", port=8001, gpu="0"),
+        )
+
+    @pytest.fixture
+    def no_proxy_deployment(self):
+        """Create a deployment that skips the proxy container."""
+        return SelfHostedDeployment(
+            host="192.168.1.100",
+            ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
+            image=ImageConfig(name="nodetool/nodetool", tag="latest"),
+            container=ContainerConfig(name="default", port=7777),
+            use_proxy=False,
         )
 
     @pytest.fixture
@@ -231,6 +244,22 @@ class TestDockerDeployer:
         assert "Container configuration has changed" in plan["changes"][0]
         assert "Container" in plan["will_update"][0]
 
+    def test_plan_initial_deployment_without_proxy(self, no_proxy_deployment, mock_state_manager):
+        """Test plan generation for direct-container mode."""
+        mock_state_manager.read_state.return_value = None
+
+        deployer = SelfHostedDeployer(
+            deployment_name="test",
+            deployment=no_proxy_deployment,
+            state_manager=mock_state_manager,
+        )
+
+        plan = deployer.plan()
+        expected_container = DockerRunGenerator(no_proxy_deployment).get_container_name()
+
+        assert f"App container: {expected_container}" in plan["will_create"]
+        assert not any("Docker network:" in item for item in plan["will_create"])
+
     def test_apply_dry_run(self, basic_deployment, mock_state_manager):
         """Test apply with dry_run=True returns plan."""
         deployer = DockerDeployer(
@@ -332,6 +361,73 @@ class TestDockerDeployer:
 
             # Should update status to error
             mock_state_manager.update_deployment_status.assert_any_call("test", DeploymentStatus.ERROR.value)
+
+    def test_apply_success_without_proxy(self, no_proxy_deployment, mock_state_manager):
+        """Test successful deploy in direct-container mode."""
+        mock_ssh = Mock()
+        mock_ssh.__enter__ = Mock(return_value=mock_ssh)
+        mock_ssh.__exit__ = Mock(return_value=False)
+        mock_ssh.mkdir = Mock()
+        mock_ssh.execute = Mock(
+            side_effect=[
+                (0, "pulled", ""),  # docker pull
+                (0, "", ""),  # stop_existing: check
+                (0, "container_id_123", ""),  # start container
+                (0, "nodetool-default Up 1 second", ""),  # check status
+                (0, "ok", ""),  # health curl
+            ]
+        )
+
+        with (
+            patch("nodetool.deploy.self_hosted.SSHConnection") as mock_ssh_cls,
+            patch("nodetool.deploy.self_hosted.DockerRunGenerator") as mock_gen_cls,
+            patch("nodetool.deploy.self_hosted.time.sleep"),
+        ):
+            mock_ssh_cls.return_value = mock_ssh
+
+            mock_gen = Mock()
+            mock_gen.generate_command.return_value = "docker run ..."
+            mock_gen.generate_hash.return_value = "hash123"
+            mock_gen.get_container_name.return_value = "nodetool-default"
+            mock_gen_cls.return_value = mock_gen
+
+            deployer = SelfHostedDeployer(
+                deployment_name="test",
+                deployment=no_proxy_deployment,
+                state_manager=mock_state_manager,
+            )
+
+            result = deployer.apply(dry_run=False)
+
+            assert result["status"] == "success"
+            assert len(result["errors"]) == 0
+            mock_state_manager.write_state.assert_called_once()
+            assert any(
+                call[0][0].startswith("docker pull nodetool/nodetool:latest")
+                for call in mock_ssh.execute.call_args_list
+            )
+
+    def test_pull_app_image(self, no_proxy_deployment, mock_state_manager):
+        """Test app image is always pulled in direct-container mode."""
+        mock_ssh = Mock()
+        mock_ssh.execute = Mock(return_value=(0, "ok", ""))
+
+        deployer = SelfHostedDeployer(
+            deployment_name="test",
+            deployment=no_proxy_deployment,
+            state_manager=mock_state_manager,
+        )
+
+        results = {"steps": []}
+        deployer._pull_app_image(mock_ssh, results)
+
+        mock_ssh.execute.assert_called_once_with(
+            "docker pull nodetool/nodetool:latest",
+            check=True,
+            timeout=600,
+        )
+        assert "Pulling app image: nodetool/nodetool:latest" in results["steps"]
+        assert "  App image pull complete." in results["steps"]
 
     def test_create_directories(self, basic_deployment, mock_state_manager):
         """Test directory creation."""
@@ -520,7 +616,12 @@ class TestDockerDeployer:
     def test_check_health_container_not_running(self, basic_deployment, mock_state_manager):
         """Test health check when container not running."""
         mock_ssh = Mock()
-        mock_ssh.execute = Mock(return_value=(0, "", ""))
+        mock_ssh.execute = Mock(
+            side_effect=[
+                (0, "", ""),  # status
+                (0, "ok", ""),  # health curl
+            ]
+        )
 
         with patch("nodetool.deploy.self_hosted.time.sleep"):
             deployer = DockerDeployer(
@@ -529,10 +630,35 @@ class TestDockerDeployer:
                 state_manager=mock_state_manager,
             )
 
+            results = {"steps": [], "errors": []}
+            with pytest.raises(RuntimeError, match="Deployment health check failed"):
+                deployer._check_health(mock_ssh, results, "token-123")
+
+            assert any("not running" in step for step in results["steps"])
+            assert any("not running" in err for err in results["errors"])
+
+    def test_check_health_without_proxy_uses_mapped_port(self, no_proxy_deployment, mock_state_manager):
+        """Test direct app health check uses host-mapped port (7777 -> 8000)."""
+        mock_ssh = Mock()
+        mock_ssh.execute = Mock(
+            side_effect=[
+                (0, "nodetool-default Up 2 minutes 0.0.0.0:8000->7777/tcp", ""),  # status
+                (0, "ok", ""),  # health curl
+            ]
+        )
+
+        with patch("nodetool.deploy.self_hosted.time.sleep"):
+            deployer = SelfHostedDeployer(
+                deployment_name="test",
+                deployment=no_proxy_deployment,
+                state_manager=mock_state_manager,
+            )
+
             results = {"steps": []}
             deployer._check_health(mock_ssh, results)
 
-            assert any("not running" in step for step in results["steps"])
+            health_cmd = mock_ssh.execute.call_args_list[1][0][0]
+            assert "127.0.0.1:8000/health" in health_cmd
 
     def test_destroy_success(self, basic_deployment, mock_state_manager):
         """Test successful deployment destruction."""

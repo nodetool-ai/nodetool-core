@@ -5,7 +5,7 @@ from typing import IO, AsyncIterator
 
 import aiofiles
 
-from nodetool.storage.abstract_storage import AbstractStorage
+from nodetool.storage.abstract_storage import AbstractStorage, FileMetadata
 
 
 class FileStorage(AbstractStorage):
@@ -80,3 +80,20 @@ class FileStorage(AbstractStorage):
 
     async def delete(self, file_name: str):
         await asyncio.to_thread(os.remove, os.path.join(self.base_path, file_name))
+
+    async def get_file_metadata(self, key: str) -> FileMetadata:
+        """Optimized metadata retrieval using a single stat() call."""
+        full_path = os.path.join(self.base_path, key)
+
+        def _stat():
+            try:
+                stat_result = os.stat(full_path)
+                return FileMetadata(
+                    exists=True,
+                    size=stat_result.st_size,
+                    mtime=datetime.fromtimestamp(stat_result.st_mtime, tz=datetime.now().astimezone().tzinfo),
+                )
+            except FileNotFoundError:
+                return FileMetadata(exists=False)
+
+        return await asyncio.to_thread(_stat)

@@ -193,7 +193,9 @@ class ConvertPDFToMarkdownTool(Tool):
                 end = end_page if end_page != -1 else len(pages) - 1
                 md_text = "\f".join(pages[start_page : end + 1])
 
-            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            parent_dir = os.path.dirname(output_file)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
             async with aiofiles.open(output_file, "w") as f:
                 await f.write(md_text)
 
@@ -237,7 +239,9 @@ class ConvertMarkdownToPDFTool(Tool):
             input_file = context.resolve_workspace_path(params["input_file"])
             output_file = context.resolve_workspace_path(params["output_file"])
 
-            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            parent_dir = os.path.dirname(output_file)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
 
             # Convert using pypandoc
             pypandoc.convert_file(
@@ -304,7 +308,9 @@ class ConvertDocumentTool(Tool):
             input_file = context.resolve_workspace_path(params["input_file"])
             output_file = context.resolve_workspace_path(params["output_file"])
 
-            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            parent_dir = os.path.dirname(output_file)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
 
             extra_args = params.get("extra_args", [])
             if isinstance(extra_args, str):

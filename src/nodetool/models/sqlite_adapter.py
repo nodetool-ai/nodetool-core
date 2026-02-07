@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from enum import EnumMeta as EnumType
 from types import UnionType
-from typing import Any, Optional, Union, get_args, get_origin, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional, Union, get_args, get_origin
 
 import aiosqlite
 from pydantic.fields import FieldInfo

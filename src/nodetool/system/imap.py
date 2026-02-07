@@ -1,11 +1,11 @@
 import email
 import imaplib
+import logging
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
 
 from nodetool.html.convert_html import convert_html_to_text
 from nodetool.metadata.types import Datetime, EmailSearchCriteria, IMAPConnection
-import logging
 
 logger = logging.getLogger(__name__)
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from nodetool.models.workflow import Workflow as WorkflowModel
+
 # NOTE: ChromaDB imports are done lazily in methods to avoid
 # heavy initialization of chromadb/langchain during CLI startup
 

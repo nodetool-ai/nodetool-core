@@ -1,12 +1,12 @@
-name: OpenCode Accessibility Audit
+name: Assistant Performance Monitor
 
 on:
   schedule:
-    - cron: "0 12 * * 2" # Weekly on Tuesdays at noon UTC
+    - cron: "0 14 * * 5" # Weekly on Fridays at 2 PM UTC
   workflow_dispatch:
 
 jobs:
-  opencode-accessibility:
+  assistant-performance:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -38,16 +38,24 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
-      - name: Run OpenCode
-        uses: anomalyco/opencode/github@latest
-        env:
-          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
-        with:
-          model: minimax/MiniMax-M2.1
-          prompt: |
-            # NodeTool Core Accessibility Audit
+      - name: Capture slow tests
+        run: |
+          pytest --durations=20 --durations-min=1 || true
 
-            You are an autonomous agent improving developer accessibility and usability in **nodetool-core**.
+      - name: Run Assistant
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: https://api.z.ai/api/anthropic
+        with:
+          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          additional_permissions: |
+            actions: read
+          claude_args: |
+            --allowedTools "Bash,WebFetch,Edit,Read,Replace"
+          prompt: |
+            # NodeTool Core Performance Monitoring
+
+            You are an autonomous performance optimization agent for **nodetool-core**.
 
             ## Step 0: Avoid Duplicate Work
             1. Run `git branch -a` to check existing branches
@@ -59,17 +67,17 @@ jobs:
             - `.github/opencode-memory/features.md`
             - List `issues/` and `insights/` to find descriptive files
 
-            ## Step 2: Accessibility Audit Areas
-            - CLI commands: help text, error messages, exit codes
-            - API responses: status codes, validation errors, clarity
-            - Logs: actionable messages, consistent formatting
-            - Configuration: defaults and env var descriptions
-            - Docs: `AGENTS.md`, README files, and docstrings
+            ## Step 2: Performance Audit Areas
+            - Slow workflow execution or blocking calls
+            - Inefficient database or storage access
+            - Excessive serialization or large payloads
+            - Inefficient loops in hot paths
+            - Slow tests reported by `pytest --durations`
 
-            ## Step 3: Make Focused Improvements
+            ## Step 3: Make Focused Optimizations
+            - Measure before/after where possible
             - Keep changes minimal and targeted
-            - Follow existing patterns and async conventions
-            - Do not refactor unrelated code
+            - Avoid unrelated refactors
 
             ## Step 4: Validate
             ```bash
@@ -80,4 +88,8 @@ jobs:
 
             ## Step 5: Update Memory
             - Add issue files under `issues/<topic>/`
-            - Add insight files under `insights/<topic>/`
+            - Add insight files under `insights/performance/`
+
+            ## Pull Request Rule
+            - If `git status --porcelain` shows changed files, commit, push, and create or update a PR.
+            - If there are no file changes, do not commit, do not push, and do not create or update a PR.

@@ -1,11 +1,12 @@
 """Tests for ProcessingContext provider-based prediction methods."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from nodetool.workflows.processing_context import ProcessingContext
+import pytest
+
+from nodetool.metadata.types import Message, Provider
 from nodetool.providers.base import BaseProvider, ProviderCapability
-from nodetool.metadata.types import Provider, Message
+from nodetool.workflows.processing_context import ProcessingContext
 
 
 class MockProvider(BaseProvider):
@@ -179,24 +180,23 @@ class TestRunProviderPrediction:
 
         mock_provider = MockProvider()
 
-        with patch.object(ctx, "get_provider", return_value=mock_provider):
-            with patch(
-                "nodetool.models.prediction.Prediction.create", new_callable=AsyncMock
-            ) as mock_create:
-                await ctx.run_provider_prediction(
-                    node_id="test_node",
-                    provider=Provider.OpenAI,
-                    model="gpt-4o-mini",
-                    capability=ProviderCapability.GENERATE_MESSAGE,
-                    params={"messages": []},
-                )
+        with patch.object(ctx, "get_provider", return_value=mock_provider), patch(
+            "nodetool.models.prediction.Prediction.create", new_callable=AsyncMock
+        ) as mock_create:
+            await ctx.run_provider_prediction(
+                node_id="test_node",
+                provider=Provider.OpenAI,
+                model="gpt-4o-mini",
+                capability=ProviderCapability.GENERATE_MESSAGE,
+                params={"messages": []},
+            )
 
-                # Verify Prediction.create was called with cost
-                mock_create.assert_called_once()
-                call_kwargs = mock_create.call_args[1]
-                assert call_kwargs["status"] == "completed"
-                assert "cost" in call_kwargs
-                assert call_kwargs["cost"] > 0
+            # Verify Prediction.create was called with cost
+            mock_create.assert_called_once()
+            call_kwargs = mock_create.call_args[1]
+            assert call_kwargs["status"] == "completed"
+            assert "cost" in call_kwargs
+            assert call_kwargs["cost"] > 0
 
     @pytest.mark.asyncio
     async def test_run_provider_prediction_logs_failure(self):
@@ -206,24 +206,23 @@ class TestRunProviderPrediction:
         mock_provider = MockProvider()
         mock_provider._generate_message_mock.side_effect = RuntimeError("API error")
 
-        with patch.object(ctx, "get_provider", return_value=mock_provider):
-            with patch(
-                "nodetool.models.prediction.Prediction.create", new_callable=AsyncMock
-            ) as mock_create:
-                with pytest.raises(RuntimeError, match="API error"):
-                    await ctx.run_provider_prediction(
-                        node_id="test_node",
-                        provider=Provider.OpenAI,
-                        model="gpt-4o-mini",
-                        capability=ProviderCapability.GENERATE_MESSAGE,
-                        params={"messages": []},
-                    )
+        with patch.object(ctx, "get_provider", return_value=mock_provider), patch(
+            "nodetool.models.prediction.Prediction.create", new_callable=AsyncMock
+        ) as mock_create:
+            with pytest.raises(RuntimeError, match="API error"):
+                await ctx.run_provider_prediction(
+                    node_id="test_node",
+                    provider=Provider.OpenAI,
+                    model="gpt-4o-mini",
+                    capability=ProviderCapability.GENERATE_MESSAGE,
+                    params={"messages": []},
+                )
 
-                # Verify failure was logged
-                mock_create.assert_called_once()
-                call_kwargs = mock_create.call_args[1]
-                assert call_kwargs["status"] == "failed"
-                assert "API error" in call_kwargs["error"]
+            # Verify failure was logged
+            mock_create.assert_called_once()
+            call_kwargs = mock_create.call_args[1]
+            assert call_kwargs["status"] == "failed"
+            assert "API error" in call_kwargs["error"]
 
 
 class TestDispatchCapability:
@@ -234,7 +233,7 @@ class TestDispatchCapability:
         """Test dispatching GENERATE_MESSAGE capability."""
         ctx = ProcessingContext(user_id="test")
         mock_provider = MockProvider()
-        
+
         # Set up mock return value before the call
         expected_message = Message(role="assistant", content="Test response")
         mock_provider._generate_message_mock.return_value = expected_message
@@ -255,7 +254,7 @@ class TestDispatchCapability:
         """Test dispatching GENERATE_EMBEDDING capability."""
         ctx = ProcessingContext(user_id="test")
         mock_provider = MockProvider()
-        
+
         # Set up mock return value before the call
         expected_embedding = [[0.1, 0.2, 0.3]]
         mock_provider._generate_embedding_mock.return_value = expected_embedding

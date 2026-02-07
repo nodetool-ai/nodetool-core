@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -238,10 +239,10 @@ class TestWorkflowsListDiagnostics:
         from nodetool.tools.workflow_tools import WorkflowTools
 
         class DummyScope:
-            async def __aenter__(self):  # noqa: D401
+            async def __aenter__(self):
                 return self
 
-            async def __aexit__(self, exc_type, exc, tb):  # noqa: D401
+            async def __aexit__(self, exc_type, exc, tb):
                 return None
 
         async def fake_list_workflows(workflow_type: str, query: str | None, limit: int, user_id: str):
@@ -265,6 +266,44 @@ class TestWorkflowsListDiagnostics:
         assert result.exit_code == 0
         assert "[diagnostics] FAKE" in result.output
         assert shutdown_called["value"] is True
+
+
+class TestDeploySecretSync:
+    def test_export_encrypted_secrets_payload_uses_resource_scope(self, monkeypatch: pytest.MonkeyPatch):
+        import nodetool.cli as cli_mod
+        import nodetool.models.secret as secret_mod
+        import nodetool.runtime.resources as resources_mod
+
+        entered = {"value": False}
+
+        class DummyScope:
+            async def __aenter__(self):
+                entered["value"] = True
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+        class DummySecret:
+            user_id = "1"
+            key = "OPENAI_API_KEY"
+            encrypted_value = "enc"
+            description = "test"
+            created_at = datetime.now(UTC)
+            updated_at = datetime.now(UTC)
+
+        async def fake_list_all(limit: int = 1000):
+            assert limit == 123
+            return [DummySecret()]
+
+        monkeypatch.setattr(resources_mod, "ResourceScope", DummyScope)
+        monkeypatch.setattr(secret_mod.Secret, "list_all", staticmethod(fake_list_all))
+
+        payload = cli_mod._run_async(cli_mod._export_encrypted_secrets_payload(limit=123))
+
+        assert entered["value"] is True
+        assert len(payload) == 1
+        assert payload[0]["key"] == "OPENAI_API_KEY"
 
 
 class TestCliAsyncRunnerCleanup:

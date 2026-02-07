@@ -1,4 +1,4 @@
-name: OpenCode Coverage Improvement
+name: Assistant Coverage Improvement
 
 on:
   schedule:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  opencode-coverage:
+  assistant-coverage:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -43,12 +43,16 @@ jobs:
           pytest --cov=src --cov-report=json:coverage.json || true
           cat coverage.json || true
 
-      - name: Run OpenCode
-        uses: anomalyco/opencode/github@latest
+      - name: Run Assistant
+        uses: anthropics/claude-code-action@v1
         env:
-          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          ANTHROPIC_BASE_URL: https://api.z.ai/api/anthropic
         with:
-          model: minimax/MiniMax-M2.1
+          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          additional_permissions: |
+            actions: read
+          claude_args: |
+            --allowedTools "Bash,WebFetch,Edit,Read,Replace"
           prompt: |
             # NodeTool Core Coverage Improvement
 
@@ -88,3 +92,7 @@ jobs:
             ## Step 5: Update Memory
             - Add insight files under `insights/testing/`
             - Add issue files under `issues/testing/`
+
+            ## Pull Request Rule
+            - If `git status --porcelain` shows changed files, commit, push, and create or update a PR.
+            - If there are no file changes, do not commit, do not push, and do not create or update a PR.

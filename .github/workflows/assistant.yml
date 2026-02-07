@@ -1,5 +1,4 @@
-name: opencode
-
+name: assistant
 on:
   issue_comment:
     types: [created]
@@ -7,15 +6,13 @@ on:
     types: [created]
 
 jobs:
-  opencode:
+  assistant:
     if: |
       contains(github.event.comment.body, ' /oc') ||
       startsWith(github.event.comment.body, '/oc') ||
       contains(github.event.comment.body, ' /opencode') ||
       startsWith(github.event.comment.body, '/opencode')
     runs-on: ubuntu-latest
-    env:
-      MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
     permissions:
       id-token: write
       contents: read
@@ -46,15 +43,18 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
-      - name: Print MINIMAX_API_KEY length
-        run: 'echo "MINIMAX_API_KEY length: ${#MINIMAX_API_KEY}"'
-
-      - name: Run opencode
-        uses: sst/opencode/github@latest
+      - name: Run Assistant
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: https://api.z.ai/api/anthropic
         with:
-          model: minimax/MiniMax-M2.1
-          system_prompt: |
-            # NodeTool Core OpenCode Assistant
+          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          additional_permissions: |
+            actions: read
+          claude_args: |
+            --allowedTools "Bash,WebFetch,Edit,Read,Replace"
+          prompt: |
+            # NodeTool Core Assistant Assistant
             
             You are helping with **nodetool-core**, a Python 3.11+ async-first workflow engine.
             
@@ -99,3 +99,7 @@ jobs:
             - Add insight files under `insights/<topic>/`
             
             Now proceed with the user's requested task while following all guidance above.
+
+            ## Pull Request Rule
+            - If `git status --porcelain` shows changed files, commit, push, and create or update a PR.
+            - If there are no file changes, do not commit, do not push, and do not create or update a PR.

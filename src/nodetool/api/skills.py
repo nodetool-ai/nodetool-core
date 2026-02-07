@@ -49,17 +49,13 @@ def _is_valid_skill_name(name: str) -> bool:
     if _INVALID_SKILL_NAME_RE.search(name):
         return False
     lowered = name.lower()
-    if any(term in lowered for term in _SKILL_RESERVED_TERMS):
-        return False
-    return True
+    return not any(term in lowered for term in _SKILL_RESERVED_TERMS)
 
 
 def _is_valid_skill_description(description: str) -> bool:
     if not description or len(description) > 1024:
         return False
-    if _XML_TAG_RE.search(description):
-        return False
-    return True
+    return not _XML_TAG_RE.search(description)
 
 
 def _resolve_skill_dirs(skill_dirs: list[str] | None = None) -> list[Path]:

@@ -129,7 +129,73 @@ class ImageConfig(BaseModel):
     @property
     def full_name(self) -> str:
         """Get full image name with tag."""
+        if "@" in self.name:
+            return self.name
+        last_segment = self.name.rsplit("/", 1)[-1]
+        if ":" in last_segment:
+            return self.name
         return f"{self.name}:{self.tag}"
+
+
+class ServiceSpec(BaseModel):
+    """Service definition managed by the self-hosted proxy."""
+
+    name: str = Field(..., description="Unique service identifier")
+    path: str = Field(..., description="Path prefix to proxy (e.g., /app)")
+    image: str = Field(..., description="Docker image for the service")
+    auth_token: Optional[str] = Field(default=None, description="Bearer token for upstream service authentication")
+    environment: Optional[dict[str, str]] = Field(default=None, description="Environment variables for the service")
+    volumes: Optional[dict[str, str | dict[str, str]]] = Field(
+        default=None,
+        description="Volume mounts (host -> container or detailed dict with bind/mode)",
+    )
+    mem_limit: Optional[str] = Field(default=None, description="Memory limit (e.g., 512m, 1g)")
+    cpus: Optional[float] = Field(default=None, description="CPU quota in cores (e.g., 0.5, 1.0)")
+
+
+class ProxySpec(BaseModel):
+    """Proxy container specification for self-hosted deployments."""
+
+    image: str = Field(..., description="Proxy image (e.g., nodetool/proxy:1.0.0)")
+    listen_http: int = Field(80, ge=1, le=65535, description="HTTP port for ACME and health checks")
+    listen_https: int = Field(443, ge=1, le=65535, description="HTTPS port for proxied traffic")
+    domain: str = Field(..., description="Public domain served by the proxy")
+    email: str = Field(..., description="Email for ACME/Let's Encrypt registration")
+    tls_certfile: Optional[str] = Field(default=None, description="Path to TLS certificate (inside container)")
+    tls_keyfile: Optional[str] = Field(default=None, description="Path to TLS private key (inside container)")
+    local_tls_certfile: Optional[str] = Field(
+        default=None,
+        description="Local path to TLS certificate copied to remote host before deployment",
+    )
+    local_tls_keyfile: Optional[str] = Field(
+        default=None,
+        description="Local path to TLS private key copied to remote host before deployment",
+    )
+    acme_webroot: str = Field(
+        "/var/www/acme",
+        description="Webroot directory for HTTP-01 challenges (inside container)",
+    )
+    docker_network: str = Field("nodetool-net", description="Docker network shared between proxy and services")
+    connect_mode: Literal["docker_dns", "host_port"] = Field(
+        "docker_dns",
+        description="How the proxy connects to services",
+    )
+    http_redirect_to_https: bool = Field(True, description="Redirect HTTP traffic to HTTPS (except ACME)")
+    bearer_token: Optional[str] = Field(
+        default=None,
+        description="Bearer token for proxy authentication (auto-generated if omitted)",
+    )
+    idle_timeout: int = Field(
+        300,
+        ge=30,
+        description="Seconds before idle services are stopped by the proxy",
+    )
+    log_level: str = Field("INFO", description="Log level for proxy process")
+    services: list[ServiceSpec] = Field(..., description="List of services managed by the proxy")
+    auto_certbot: bool = Field(
+        False,
+        description="When true, run certbot on the remote host to obtain/renew TLS certificates",
+    )
 
 
 class DockerDeployment(BaseModel):
@@ -150,11 +216,47 @@ class DockerDeployment(BaseModel):
         None,
         description="Authentication token for worker API (auto-generated if not set)",
     )
+    use_proxy: bool = Field(
+        True,
+        description="Whether to deploy and route traffic through the self-hosted proxy container",
+    )
+    proxy: Optional[ProxySpec] = Field(default=None, description="Proxy container specification")
     state: SelfHostedState = Field(default_factory=SelfHostedState)
+
+    @model_validator(mode="after")
+    def _ensure_proxy(self) -> "SelfHostedDeployment":
+        """Provide a minimal proxy specification when omitted for backward compatibility."""
+        if not self.use_proxy:
+            self.proxy = None
+            return self
+
+        if self.proxy is None:
+            default_service = ServiceSpec(
+                name=self.container.name,
+                path="/",
+                image="nodetool/nodetool:latest",
+            )
+            self.proxy = ProxySpec(
+                image="nodetool/proxy:latest",
+                domain=self.host,
+                email="admin@example.com",
+                services=[default_service],
+            )
+        return self
 
     def get_server_url(self) -> str:
         """Get the server URL for this deployment."""
-        return f"http://{self.host}:{self.container.port}"
+        if self.proxy:
+            has_tls = bool(self.proxy.tls_certfile and self.proxy.tls_keyfile)
+            scheme = "https" if has_tls else "http"
+            port = self.proxy.listen_https if has_tls else self.proxy.listen_http
+            host = self.proxy.domain or self.host
+            if (scheme == "https" and port == 443) or (scheme == "http" and port == 80):
+                return f"{scheme}://{host}"
+            return f"{scheme}://{host}:{port}"
+        # Keep URL aligned with docker run host-port remapping (7777 -> 8000).
+        host_port = 8000 if self.container.port == 7777 else self.container.port
+        return f"http://{self.host}:{host_port}"
 
 
 class RootDeployment(BaseModel):

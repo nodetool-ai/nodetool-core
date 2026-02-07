@@ -6,14 +6,13 @@ language models (OpenAI, Anthropic, Ollama) and image generation services
 (DALL-E, Gemini, FAL, etc.). Providers declare their capabilities and
 implement the corresponding methods.
 """
-import traceback
-
 import asyncio
 import os
 import shutil
 import subprocess
 import sys
 import threading
+import traceback
 from typing import Optional
 
 from nodetool.config.env_guard import RUNNING_PYTEST
@@ -115,7 +114,6 @@ def import_providers():
     # Optional providers that may have missing dependencies
     # These are imported with better error handling and logging
 
-    fal_module = "nodetool.fal.fal_provider"
     if RUNNING_PYTEST:
         log.debug("Skipping FAL provider import under pytest")
     else:
@@ -129,7 +127,6 @@ def import_providers():
             traceback.print_exc()
             log.warning(f"Unexpected error importing FAL provider: {e}")
 
-    mlx_module = "nodetool.mlx.mlx_provider"
     if RUNNING_PYTEST:
         log.debug("Skipping MLX provider import under pytest")
     else:
@@ -284,10 +281,10 @@ async def list_providers(user_id: str) -> list["BaseProvider"]:
 __all__ = [
     "BaseProvider",
     "Chunk",
-    "clear_provider_cache",
     "FakeProvider",
     "MockProvider",
     "ProviderCapability",
+    "clear_provider_cache",
     "create_fake_tool_call",
     "create_simple_fake_provider",
     "create_streaming_fake_provider",
