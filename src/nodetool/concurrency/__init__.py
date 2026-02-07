@@ -1,4 +1,5 @@
 from .async_barrier import AsyncBarrier
+from .async_condition import AsyncCondition
 from .async_event import AsyncEvent
 from .async_iterators import AsyncByteStream
 from .async_lock import AsyncLock
@@ -21,6 +22,7 @@ from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_
 __all__ = [
     "AsyncBarrier",
     "AsyncByteStream",
+    "AsyncCondition",
     "AsyncEvent",
     "AsyncLock",
     "AsyncPriorityQueue",

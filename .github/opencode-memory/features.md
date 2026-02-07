@@ -17,3 +17,4 @@
 - **Priority Queue**: `AsyncPriorityQueue` for priority-based async task scheduling with configurable max size and timeout support
 - **Async Event**: `AsyncEvent` for inter-task signaling with one-shot and auto-reset modes, supports value passing and predicate-based waiting
 - **Async Barrier**: `AsyncBarrier` for synchronizing multiple coroutines at a synchronization point, useful for phased concurrent operations
+- **Async Condition**: `AsyncCondition` for condition variables allowing tasks to wait until notified by another task, with lock-based coordination to prevent race conditions
