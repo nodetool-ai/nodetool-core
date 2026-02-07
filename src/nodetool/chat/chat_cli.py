@@ -306,8 +306,10 @@ class ChatTextualApp(App[None]):
             usage = getattr(getattr(self.cli, "selected_model", None), "usage", None)
             if usage:
                 token_line = f"tokens: {usage}"
-        except Exception:
-            pass
+        except Exception as e:
+            # Silently use default if usage attribute is not available
+            # This can happen during initialization or with certain model providers
+            log.debug("Could not get token usage: %s", e)
         sidebar_context.update(
             "Context\n"
             f"{token_line}\n\n"
@@ -325,7 +327,8 @@ class ChatTextualApp(App[None]):
         entries: list[str] = []
         try:
             text = history_path.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
+        except Exception as e:
+            log.debug("Could not read history file %s: %s", history_path, e)
             self._input_history = []
             return
 
@@ -376,8 +379,8 @@ class ChatTextualApp(App[None]):
                 f.write(f"\n# {datetime.now().isoformat()}\n")
                 for line in value.splitlines():
                     f.write(f"+{line}\n")
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Could not write to history file %s: %s", history_path, e)
 
     def _refresh_input_suggester(self) -> None:
         """Update inline suggestion candidates for the input box."""
