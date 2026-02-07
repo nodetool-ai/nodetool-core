@@ -9,9 +9,9 @@ resumable workflows with zero overhead when disabled.
 import asyncio
 from typing import Any
 
+from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.checkpoint_manager import CheckpointManager
 from nodetool.workflows.graph import Graph
-from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.processing_context import ProcessingContext
 
 
@@ -63,7 +63,7 @@ async def example_basic_checkpoint():
     - Creating a checkpoint manager (disabled by default)
     - Enabling checkpointing
     - Conceptual workflow for saving/restoring checkpoints
-    
+
     NOTE: This example shows the API but doesn't actually save to database
     since that requires a ResourceScope (available during workflow execution).
     """
@@ -76,7 +76,7 @@ async def example_basic_checkpoint():
     multiply_node = Multiply(id="multiply1")  # type: ignore[call-arg]
     output_node = NumberOutput(id="output1", name="output")  # type: ignore[call-arg]
 
-    graph = Graph(
+    graph = Graph(  # noqa: F841
         nodes=[input1, input2, add_node, multiply_node, output_node],
         edges=[],
     )
@@ -88,7 +88,7 @@ async def example_basic_checkpoint():
     print("1. Creating checkpoint manager (disabled by default)")
     checkpoint_mgr = CheckpointManager(run_id=run_id, enabled=False)
     print(f"   Stats: {checkpoint_mgr.get_stats()}")
-    print(f"   Overhead: Zero (single boolean check)")
+    print("   Overhead: Zero (single boolean check)")
 
     # Enable checkpointing for this workflow
     print("\n2. Enabling checkpointing for this workflow")
@@ -138,11 +138,11 @@ async def example_zero_overhead():
     print("1. Creating checkpoint manager (disabled)")
     checkpoint_mgr = CheckpointManager(run_id=run_id, enabled=False)
     print(f"   Enabled: {checkpoint_mgr.enabled}")
-    print(f"   Runtime overhead: Zero (single boolean check)")
+    print("   Runtime overhead: Zero (single boolean check)")
 
     # Create a simple graph
     input1 = NumberInput(id="input1", name="input1", value=42.0)  # type: ignore[call-arg]
-    graph = Graph(nodes=[input1], edges=[])
+    graph = Graph(nodes=[input1], edges=[])  # noqa: F841
 
     # Show that disabled operations have no effect
     print("\n2. Operations with disabled checkpoint manager:")
@@ -173,7 +173,7 @@ async def example_incremental_checkpoints():
 
     # Create checkpoint manager
     print("1. Creating checkpoint manager (enabled)")
-    checkpoint_mgr = CheckpointManager(run_id=run_id, enabled=True)
+    checkpoint_mgr = CheckpointManager(run_id=run_id, enabled=True)  # noqa: F841
 
     # Create a pipeline of nodes
     input1 = NumberInput(id="input1", name="input1", value=2.0)  # type: ignore[call-arg]
@@ -182,7 +182,7 @@ async def example_incremental_checkpoints():
     add2 = Add(id="add2")  # type: ignore[call-arg]
     output1 = NumberOutput(id="output1", name="output")  # type: ignore[call-arg]
 
-    graph = Graph(
+    graph = Graph(  # noqa: F841
         nodes=[input1, add1, multiply1, add2, output1],
         edges=[],
     )

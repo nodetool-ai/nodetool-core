@@ -239,10 +239,10 @@ class TestWorkflowsListDiagnostics:
         from nodetool.tools.workflow_tools import WorkflowTools
 
         class DummyScope:
-            async def __aenter__(self):  # noqa: D401
+            async def __aenter__(self):
                 return self
 
-            async def __aexit__(self, exc_type, exc, tb):  # noqa: D401
+            async def __aexit__(self, exc_type, exc, tb):
                 return None
 
         async def fake_list_workflows(workflow_type: str, query: str | None, limit: int, user_id: str):

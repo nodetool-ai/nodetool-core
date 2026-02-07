@@ -372,7 +372,7 @@ async def test_create_asset_with_node_and_job_id(client: TestClient, headers: di
 async def test_filter_assets_by_node_id(client: TestClient, headers: dict[str, str], user_id: str):
     """Test filtering assets by node_id via API."""
     node_id = "test_node_filter"
-    
+
     # Create asset with node_id
     asset_with_node = await Asset.create(
         user_id=user_id,
@@ -380,21 +380,21 @@ async def test_filter_assets_by_node_id(client: TestClient, headers: dict[str, s
         content_type="image/jpeg",
         node_id=node_id,
     )
-    
+
     # Create asset without node_id
     await Asset.create(
         user_id=user_id,
         name="asset_without_node",
         content_type="image/jpeg",
     )
-    
+
     # Filter by node_id
     response = client.get(
         "/api/assets",
         params={"node_id": node_id},
         headers=headers,
     )
-    
+
     assert response.status_code == 200
     data = response.json()
     assert len(data["assets"]) == 1
@@ -406,7 +406,7 @@ async def test_filter_assets_by_node_id(client: TestClient, headers: dict[str, s
 async def test_filter_assets_by_job_id(client: TestClient, headers: dict[str, str], user_id: str):
     """Test filtering assets by job_id via API."""
     job_id = "test_job_filter"
-    
+
     # Create asset with job_id
     asset_with_job = await Asset.create(
         user_id=user_id,
@@ -414,21 +414,21 @@ async def test_filter_assets_by_job_id(client: TestClient, headers: dict[str, st
         content_type="image/jpeg",
         job_id=job_id,
     )
-    
+
     # Create asset without job_id
     await Asset.create(
         user_id=user_id,
         name="asset_without_job",
         content_type="image/jpeg",
     )
-    
+
     # Filter by job_id
     response = client.get(
         "/api/assets",
         params={"job_id": job_id},
         headers=headers,
     )
-    
+
     assert response.status_code == 200
     data = response.json()
     assert len(data["assets"]) == 1
@@ -440,7 +440,7 @@ async def test_filter_assets_by_job_id(client: TestClient, headers: dict[str, st
 async def test_filter_assets_by_workflow_id(client: TestClient, headers: dict[str, str], user_id: str):
     """Test filtering assets by workflow_id via API."""
     workflow_id = "test_workflow_filter"
-    
+
     # Create asset with workflow_id
     asset_with_workflow = await Asset.create(
         user_id=user_id,
@@ -448,21 +448,21 @@ async def test_filter_assets_by_workflow_id(client: TestClient, headers: dict[st
         content_type="image/jpeg",
         workflow_id=workflow_id,
     )
-    
+
     # Create asset without workflow_id
     await Asset.create(
         user_id=user_id,
         name="asset_without_workflow",
         content_type="image/jpeg",
     )
-    
+
     # Filter by workflow_id
     response = client.get(
         "/api/assets",
         params={"workflow_id": workflow_id},
         headers=headers,
     )
-    
+
     assert response.status_code == 200
     data = response.json()
     assert len(data["assets"]) == 1
@@ -476,7 +476,7 @@ async def test_filter_assets_by_multiple_criteria(client: TestClient, headers: d
     workflow_id = "test_workflow_multi"
     node_id = "test_node_multi"
     job_id = "test_job_multi"
-    
+
     # Create asset matching all criteria
     asset_match = await Asset.create(
         user_id=user_id,
@@ -486,7 +486,7 @@ async def test_filter_assets_by_multiple_criteria(client: TestClient, headers: d
         node_id=node_id,
         job_id=job_id,
     )
-    
+
     # Create assets matching only some criteria
     await Asset.create(
         user_id=user_id,
@@ -495,7 +495,7 @@ async def test_filter_assets_by_multiple_criteria(client: TestClient, headers: d
         workflow_id=workflow_id,
         node_id=node_id,
     )
-    
+
     # Filter by all criteria
     response = client.get(
         "/api/assets",
@@ -506,7 +506,7 @@ async def test_filter_assets_by_multiple_criteria(client: TestClient, headers: d
         },
         headers=headers,
     )
-    
+
     assert response.status_code == 200
     data = response.json()
     assert len(data["assets"]) == 1

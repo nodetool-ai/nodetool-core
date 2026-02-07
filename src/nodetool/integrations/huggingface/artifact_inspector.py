@@ -11,10 +11,11 @@ import json
 import struct
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence, TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
 if TYPE_CHECKING:
     import torch  # type: ignore
+
     from nodetool.integrations.huggingface.safetensors_inspector import (
         DetectionResult as STFDetectionResult,
     )
@@ -207,8 +208,8 @@ def _sample_torch_keys(path: Path, limit: int = 200) -> list[str]:
     """Load only state_dict metadata and return a sample of keys."""
     try:
         import torch  # type: ignore
-    except ImportError:
-        raise RuntimeError("torch not available for bin inspection")
+    except ImportError as err:
+        raise RuntimeError("torch not available for bin inspection") from err
 
     # torch.load with weights_only avoids materializing tensors on PyTorch>=2.3
     sd = torch.load(path, map_location="meta", weights_only=True)

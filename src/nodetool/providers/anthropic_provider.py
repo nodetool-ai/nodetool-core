@@ -5,12 +5,11 @@ This module implements the ChatProvider interface for Anthropic Claude models,
 handling message conversion, streaming, and tool integration.
 """
 
+import asyncio
 import base64
 import json
 from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence, cast
 from weakref import WeakKeyDictionary
-
-import asyncio
 
 if TYPE_CHECKING:
     import httpx
@@ -242,7 +241,7 @@ class AnthropicProvider(BaseProvider):
                         log.debug(f"Fetched {len(models)} Anthropic models")
                         return models
 
-            except asyncio.TimeoutError as e:
+            except TimeoutError as e:
                 last_error = e
                 log.warning(f"Anthropic API timeout, attempt {attempt + 1}/{max_retries}")
                 if attempt < max_retries - 1:

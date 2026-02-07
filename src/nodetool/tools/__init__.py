@@ -16,27 +16,27 @@ import importlib
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .workflow_tools import WorkflowTools
-    from .asset_tools import AssetTools
-    from .node_tools import NodeTools
-    from .model_tools import ModelTools
-    from .collection_tools import CollectionTools
-    from .job_tools import JobTools
     from .agent_tools import AgentTools
-    from .storage_tools import StorageTools
+    from .asset_tools import AssetTools
+    from .collection_tools import CollectionTools
     from .hf_tools import HfTools
+    from .job_tools import JobTools
+    from .model_tools import ModelTools
+    from .node_tools import NodeTools
+    from .storage_tools import StorageTools
+    from .workflow_tools import WorkflowTools
 
 # Re-export all tool categories for easy importing
 __all__ = [
-    "WorkflowTools",
-    "AssetTools",
-    "NodeTools",
-    "ModelTools",
-    "CollectionTools",
-    "JobTools",
     "AgentTools",
-    "StorageTools",
+    "AssetTools",
+    "CollectionTools",
     "HfTools",
+    "JobTools",
+    "ModelTools",
+    "NodeTools",
+    "StorageTools",
+    "WorkflowTools",
     "get_all_tool_functions",
 ]
 
@@ -75,7 +75,7 @@ def get_all_tool_functions() -> dict[str, Any]:
             module = importlib.import_module(f".{module_name}", __package__)
             if hasattr(module, "get_tool_functions"):
                 all_tools.update(module.get_tool_functions())
-        except ImportError as e:
+        except ImportError:
             # Log error but don't fail if a tool module is broken
             # We can't use logger here easily without potentially circular imports or eager logging init
             pass

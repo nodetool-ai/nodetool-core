@@ -167,7 +167,7 @@ class WorkflowTools:
         )
 
         async for msg in run_workflow(request, context=context):
-            from nodetool.workflows.types import PreviewUpdate, SaveUpdate, OutputUpdate, LogUpdate
+            from nodetool.workflows.types import LogUpdate, OutputUpdate, PreviewUpdate, SaveUpdate
 
             if isinstance(msg, PreviewUpdate):
                 value = msg.value

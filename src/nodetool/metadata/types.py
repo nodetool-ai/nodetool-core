@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from types import NoneType
-from typing import Any, Literal, Optional, TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Any, Literal, Optional, Union
 
 if TYPE_CHECKING:
     import numpy as np
@@ -1451,8 +1451,8 @@ class TorchTensor(BaseType):
         """
         Reconstruct as a CPU tensor and then (optionally) move to `self.device`.
         """
-        import torch  # type: ignore
         import numpy as np
+        import torch  # type: ignore
 
         assert self.value is not None, "No bytes stored"
         self._validate_nbytes()
@@ -2329,7 +2329,7 @@ class DateSearchCondition(BaseType):
 class EmailSearchCriteria(BaseType):
     """
     Criteria for searching emails via IMAP.
-    
+
     Attributes:
         from_address: Filter by sender email address
         to_address: Filter by recipient email address

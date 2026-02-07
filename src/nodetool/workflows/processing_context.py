@@ -50,6 +50,7 @@ from typing import IO, Any, AsyncGenerator, Callable
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
+
 # NOTE: ChromaDB imports are done lazily in get_chroma_client() to avoid
 # heavy initialization of chromadb/langchain during CLI startup
 from nodetool.io.uri_utils import create_file_uri as _create_file_uri
@@ -843,7 +844,7 @@ class ProcessingContext:
         node_id: str,
         provider: Provider | str,
         model: str,
-        capability: "ProviderCapability",
+        capability: ProviderCapability,
         params: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> Any:
@@ -937,8 +938,8 @@ class ProcessingContext:
 
     async def _dispatch_capability(
         self,
-        provider: "BaseProvider",
-        capability: "ProviderCapability",
+        provider: BaseProvider,
+        capability: ProviderCapability,
         model: str,
         params: dict[str, Any],
         **kwargs: Any,

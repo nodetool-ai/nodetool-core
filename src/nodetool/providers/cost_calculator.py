@@ -16,8 +16,8 @@ Usage:
     cost = await calculate_chat_cost("gpt-4o-mini", input_tokens=1000, output_tokens=500)
 """
 
-from enum import Enum
 from dataclasses import dataclass
+from enum import Enum
 
 from nodetool.config.logging_config import get_logger
 
@@ -343,7 +343,7 @@ class CostCalculator:
         # Try prefix match with provider key - sort by model length descending
         # Only look at tuple keys that match the provider
         provider_prefixes = [
-            key for key in MODEL_TO_TIER.keys()
+            key for key in MODEL_TO_TIER
             if isinstance(key, tuple) and len(key) == 2 and key[0] == provider_lower
         ]
         sorted_provider_prefixes = sorted(

@@ -1,4 +1,8 @@
 import pytest
+
+# Skip tests if textual is not available
+pytest.importorskip("textual")
+
 from rich.console import Console
 
 from nodetool.chat.chat_cli import ChatCLI

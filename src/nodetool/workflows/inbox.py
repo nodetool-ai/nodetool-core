@@ -32,7 +32,7 @@ import asyncio
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, AsyncIterator
 
 from nodetool.config.logging_config import get_logger
@@ -60,7 +60,7 @@ class MessageEnvelope:
     metadata: dict[str, Any] = field(default_factory=dict)
     """User-defined metadata attached to the message."""
 
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     """Timestamp when the envelope was created."""
 
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))

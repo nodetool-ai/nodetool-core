@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastmcp import Context
+
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
 from nodetool.agents.tools.email_tools import SearchEmailTool
@@ -20,9 +21,9 @@ from nodetool.workflows.processing_context import (
 )
 from nodetool.workflows.types import (
     Chunk,
+    LogUpdate,
     PlanningUpdate,
     TaskUpdate,
-    LogUpdate,
 )
 
 

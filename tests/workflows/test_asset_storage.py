@@ -1,9 +1,10 @@
 """Tests for the asset_storage module."""
 
 import base64
-import pytest
 from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from nodetool.metadata.types import (
     AssetRef,
@@ -16,15 +17,15 @@ from nodetool.metadata.types import (
     VideoRef,
 )
 from nodetool.workflows.asset_storage import (
+    auto_save_assets,
+    convert_asset_data_to_bytes,
+    decode_data_uri,
+    download_http_uri,
     find_asset_refs,
     get_content_type_for_asset_ref,
     object_to_bytes,
-    convert_asset_data_to_bytes,
-    decode_data_uri,
     read_file_uri,
-    download_http_uri,
     resolve_asset_content,
-    auto_save_assets,
 )
 
 

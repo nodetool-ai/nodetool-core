@@ -294,7 +294,7 @@ def read_file_uri(uri: str, path: str) -> BytesIO | None:
         file_path = unquote(parsed.path)
         with open(file_path, "rb") as f:
             return BytesIO(f.read())
-    except (OSError, IOError) as file_err:
+    except OSError as file_err:
         logger.warning("Failed to read file from %s at %s: %s", uri, path, file_err)
         return None
 

@@ -1,18 +1,19 @@
 """Tests for the centralized cost calculator module."""
 
 import pytest
+
 from nodetool.providers.cost_calculator import (
+    MODEL_TO_TIER,
+    PRICING_TIERS,
     CostCalculator,
     CostType,
     PricingTier,
     UsageInfo,
-    PRICING_TIERS,
-    MODEL_TO_TIER,
     calculate_chat_cost,
     calculate_embedding_cost,
+    calculate_image_cost,
     calculate_speech_cost,
     calculate_whisper_cost,
-    calculate_image_cost,
 )
 
 
@@ -145,7 +146,7 @@ class TestCostCalculator:
         # gpt-5.2: input=0.002625, output=0.021, cached=0.0002625
         usage = UsageInfo(input_tokens=1000, output_tokens=500, cached_tokens=200)
         cost = CostCalculator.calculate("gpt-5.2", usage, "openai")
-        # Expected: 
+        # Expected:
         # non_cached_input = 1000 - 200 = 800
         # input_cost = (800/1000 * 0.002625) = 0.0021
         # cached_cost = (200/1000 * 0.0002625) = 0.0000525

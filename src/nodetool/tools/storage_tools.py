@@ -5,9 +5,9 @@ These tools provide functionality for managing NodeTool storage.
 
 from __future__ import annotations
 
+from io import BytesIO
 from typing import Any
 
-from io import BytesIO
 from nodetool.runtime.resources import require_scope
 
 

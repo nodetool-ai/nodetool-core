@@ -92,7 +92,7 @@ async def test_create_asset_with_node_and_job_id(user_id: str):
     """Test creating an asset with node_id and job_id."""
     node_id = "test_node_123"
     job_id = "test_job_456"
-    
+
     asset = await Asset.create(
         user_id=user_id,
         name="test_asset_with_ids",
@@ -110,7 +110,7 @@ async def test_create_asset_with_node_and_job_id(user_id: str):
 async def test_paginate_assets_by_node_id(user_id: str):
     """Test filtering assets by node_id."""
     node_id = "test_node_789"
-    
+
     # Create assets with and without node_id
     await Asset.create(
         user_id=user_id,
@@ -126,7 +126,7 @@ async def test_paginate_assets_by_node_id(user_id: str):
 
     # Query by node_id
     assets, _last_key = await Asset.paginate(user_id=user_id, node_id=node_id, limit=10)
-    
+
     assert len(assets) == 1
     assert assets[0].name == "asset_with_node"
     assert assets[0].node_id == node_id
@@ -136,7 +136,7 @@ async def test_paginate_assets_by_node_id(user_id: str):
 async def test_paginate_assets_by_job_id(user_id: str):
     """Test filtering assets by job_id."""
     job_id = "test_job_999"
-    
+
     # Create assets with and without job_id
     await Asset.create(
         user_id=user_id,
@@ -152,7 +152,7 @@ async def test_paginate_assets_by_job_id(user_id: str):
 
     # Query by job_id
     assets, _last_key = await Asset.paginate(user_id=user_id, job_id=job_id, limit=10)
-    
+
     assert len(assets) == 1
     assert assets[0].name == "asset_with_job"
     assert assets[0].job_id == job_id
@@ -163,7 +163,7 @@ async def test_paginate_assets_by_node_and_job_id(user_id: str):
     """Test filtering assets by both node_id and job_id."""
     node_id = "test_node_combined"
     job_id = "test_job_combined"
-    
+
     # Create various combinations
     await Asset.create(
         user_id=user_id,
@@ -187,12 +187,12 @@ async def test_paginate_assets_by_node_and_job_id(user_id: str):
 
     # Query by both node_id and job_id
     assets, _last_key = await Asset.paginate(
-        user_id=user_id, 
-        node_id=node_id, 
-        job_id=job_id, 
+        user_id=user_id,
+        node_id=node_id,
+        job_id=job_id,
         limit=10
     )
-    
+
     assert len(assets) == 1
     assert assets[0].name == "asset_both_ids"
     assert assets[0].node_id == node_id

@@ -207,6 +207,7 @@ ignore = [
     "RUF010", # explicit conversion flag in f-strings
     "SIM102", # combine nested ifs
     "SIM105", # prefer contextlib.suppress over try/except/pass
+    "SIM117", # use single with statement with multiple contexts
     "ARG002", # unused method/function argument
     "ARG001", # unused function argument (API handlers)
 ]

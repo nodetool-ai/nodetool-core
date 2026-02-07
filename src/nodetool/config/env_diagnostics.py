@@ -22,9 +22,6 @@ from typing import TYPE_CHECKING, Literal
 from nodetool.config.configuration import get_secrets_registry, get_settings_registry
 from nodetool.config.env_guard import get_system_env_value
 
-if TYPE_CHECKING:
-    pass
-
 
 @dataclass
 class EnvVarInfo:

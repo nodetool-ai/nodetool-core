@@ -9,8 +9,8 @@ from nodetool.workflows.checkpoint_manager import (
 )
 
 __all__ = [
-    "CheckpointManager",
     "CheckpointData",
+    "CheckpointManager",
     "NodeStateSnapshot",
     "create_checkpoint_hook",
     "restore_checkpoint_hook",

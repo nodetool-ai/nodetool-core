@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from nodetool.packages.registry import Registry
 from nodetool.chat.search_nodes import search_nodes as search_nodes_tool
+from nodetool.packages.registry import Registry
 
 
 class NodeTools:

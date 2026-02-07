@@ -129,11 +129,11 @@ class JobTools:
             Job information including job_id and status
         """
         from nodetool.models.workflow import Workflow as WorkflowModel
-        from nodetool.workflows.run_job_request import RunJobRequest, ExecutionStrategy
         from nodetool.workflows.processing_context import (
             AssetOutputMode,
             ProcessingContext,
         )
+        from nodetool.workflows.run_job_request import ExecutionStrategy, RunJobRequest
 
         workflow = await WorkflowModel.find(user_id, workflow_id)
         if not workflow:

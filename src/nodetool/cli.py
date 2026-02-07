@@ -1972,11 +1972,11 @@ def scan(verbose):
     try:
         print("Scanning for package nodes")
         # Import here to avoid circular import
-        from nodetool.packages.registry import scan_for_package_nodes
-
         # Scan for nodes and create package model (async)
         # Use asyncio.run() at the CLI entry point (top level, safe)
         import asyncio
+
+        from nodetool.packages.registry import scan_for_package_nodes
         package = asyncio.run(scan_for_package_nodes(verbose=verbose))
 
         # Save package metadata

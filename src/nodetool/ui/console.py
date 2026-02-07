@@ -7,8 +7,9 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Optional
 
 from rich.columns import Columns
 from rich.console import Console, RenderableType
@@ -16,9 +17,35 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.syntax import Syntax
 from rich.text import Text
-from textual.app import App, ComposeResult
-from textual.containers import Vertical
-from textual.widgets import RichLog, Static
+
+# Try to import textual - it's an optional dependency
+try:
+    from textual.app import App, ComposeResult
+    from textual.containers import Vertical
+    from textual.widgets import RichLog, Static
+
+    TEXTUAL_AVAILABLE = True
+except ImportError:
+    # textual is not installed, create stub types
+    TEXTUAL_AVAILABLE = False
+
+    # Create stub types for runtime when textual is not available
+    class App:  # type: ignore[no-redef]
+        pass
+
+    class Vertical:  # type: ignore[no-redef]
+        @contextmanager
+        def __call__(self) -> Iterator[None]:
+            yield
+
+    class ComposeResult:  # type: ignore[no-redef]
+        pass
+
+    class RichLog:  # type: ignore[no-redef]
+        pass
+
+    class Static:  # type: ignore[no-redef]
+        pass
 
 # Use TYPE_CHECKING to avoid circular imports at runtime
 if TYPE_CHECKING:
@@ -39,80 +66,82 @@ class _LiveContent:
     body: str = ""
 
 
-class _AgentLiveApp(App[None]):
-    """Textual app for rendering agent status and output panes."""
+if TEXTUAL_AVAILABLE:
 
-    CSS = """
-    Screen {
-        layout: vertical;
-    }
-    #status {
-        height: 1fr;
-        border: round $primary;
-        padding: 0 1;
-    }
-    #output_log {
-        height: 3fr;
-        border: round cyan;
-    }
-    .hidden {
-        display: none;
-    }
-    """
+    class _AgentLiveApp(App[None]):  # type: ignore[misc]
+        """Textual app for rendering agent status and output panes."""
 
-    def __init__(self, manager: AgentConsole):
-        super().__init__()
-        self.manager = manager
-        self._last_status = ""
-        self._last_output = ""
+        CSS = """
+        Screen {
+            layout: vertical;
+        }
+        #status {
+            height: 1fr;
+            border: round $primary;
+            padding: 0 1;
+        }
+        #output_log {
+            height: 3fr;
+            border: round cyan;
+        }
+        .hidden {
+            display: none;
+        }
+        """
 
-    def compose(self) -> ComposeResult:
-        with Vertical():
-            yield Static("", id="status")
-            yield RichLog(id="output_log", auto_scroll=True, wrap=True, highlight=False, markup=False)
-
-    def on_mount(self) -> None:
-        self.set_interval(0.15, self._refresh_from_state)
-        self._refresh_from_state()
-
-    def _refresh_from_state(self) -> None:
-        status_widget = self.query_one("#status", Static)
-        output_widget = self.query_one("#output_log", RichLog)
-
-        status_title = self.manager.live_title or "Agent"
-        status_text = self.manager._render_live_status_text()
-        full_status = f"{status_title}\n\n{status_text}" if status_text else status_title
-
-        if full_status != self._last_status:
-            status_widget.update(full_status)
-            self._last_status = full_status
-
-        if self.manager.show_agent_output_widget:
-            output_widget.remove_class("hidden")
-        else:
-            output_widget.add_class("hidden")
-
-        output_text = self.manager.agent_output_buffer
-        if output_text == self._last_output:
-            return
-
-        if not output_text:
-            output_widget.clear()
+        def __init__(self, manager: AgentConsole):
+            super().__init__()
+            self.manager = manager
+            self._last_status = ""
             self._last_output = ""
-            return
 
-        if not output_text.startswith(self._last_output):
-            output_widget.clear()
-            output_widget.write(output_text)
+        def compose(self) -> ComposeResult:
+            with Vertical():  # type: ignore[misc]
+                yield Static("", id="status")
+                yield RichLog(id="output_log", auto_scroll=True, wrap=True, highlight=False, markup=False)
+
+        def on_mount(self) -> None:
+            self.set_interval(0.15, self._refresh_from_state)
+            self._refresh_from_state()
+
+        def _refresh_from_state(self) -> None:
+            status_widget = self.query_one("#status", Static)
+            output_widget = self.query_one("#output_log", RichLog)
+
+            status_title = self.manager.live_title or "Agent"
+            status_text = self.manager._render_live_status_text()
+            full_status = f"{status_title}\n\n{status_text}" if status_text else status_title
+
+            if full_status != self._last_status:
+                status_widget.update(full_status)
+                self._last_status = full_status
+
+            if self.manager.show_agent_output_widget:
+                output_widget.remove_class("hidden")
+            else:
+                output_widget.add_class("hidden")
+
+            output_text = self.manager.agent_output_buffer
+            if output_text == self._last_output:
+                return
+
+            if not output_text:
+                output_widget.clear()
+                self._last_output = ""
+                return
+
+            if not output_text.startswith(self._last_output):
+                output_widget.clear()
+                output_widget.write(output_text)
+                self._last_output = output_text
+                return
+
+            delta = output_text[len(self._last_output) :]
+            if not delta:
+                return
+
+            output_widget.write(delta)
             self._last_output = output_text
-            return
-
-        delta = output_text[len(self._last_output) :]
-        if not delta:
-            return
-
-        output_widget.write(delta)
-        self._last_output = output_text
 
 
 def _truncate(text: str, max_len: int = _MAX_INSTRUCTION_LEN) -> str:
@@ -138,7 +167,7 @@ class AgentConsole:
         self.verbose: bool = verbose
         self.console: Optional[Console] = console or (Console() if verbose else None)
         self.live_title: str = ""
-        self.live: Optional[_AgentLiveApp] = None
+        self.live: Optional[Any] = None  # _AgentLiveApp if TEXTUAL_AVAILABLE
         self.live_task: Optional[asyncio.Task[Any]] = None
         self.live_active: bool = False
         self._external_update_callback: Optional[Callable[[], None]] = None
@@ -192,6 +221,11 @@ class AgentConsole:
 
         # Embedded mode: outer app owns the screen and renders our state.
         if self._external_update_callback:
+            return
+
+        # Textual is required for live display
+        if not TEXTUAL_AVAILABLE:
+            self.live_active = False
             return
 
         self.live = _AgentLiveApp(self)

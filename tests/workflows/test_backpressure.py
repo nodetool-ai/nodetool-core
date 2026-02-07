@@ -15,7 +15,7 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.workflow_runner import WorkflowRunner
 
 # Import test node classes to register them
-from tests.workflows.test_graph_module import InNode, OutNode  # noqa: F401
+from tests.workflows.test_graph_module import InNode, OutNode
 
 
 @pytest.mark.asyncio
