@@ -24,7 +24,7 @@ import traceback
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
@@ -44,6 +44,7 @@ from textual.containers import Horizontal, Vertical
 from textual.suggester import SuggestFromList
 from textual.widgets import Input, RichLog, Static
 
+from nodetool.chat.regular_chat import create_tools
 from nodetool.config.logging_config import configure_logging, get_logger
 from nodetool.config.settings import get_log_path
 from nodetool.messaging.agent_message_processor import AgentMessageProcessor
@@ -54,6 +55,9 @@ from nodetool.providers import get_provider
 from nodetool.runtime.resources import ResourceScope
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
+
+if TYPE_CHECKING:
+    from nodetool.agents.tools.base import Tool
 
 log = get_logger(__name__)
 
@@ -98,12 +102,12 @@ def _determine_chat_log_level(explicit_level: Optional[str] = None) -> str:
 class _ConsoleProxy:
     """Proxy Rich Console output into a callback (for Textual embedding)."""
 
-    def __init__(self, base_console: Console):
+    def __init__(self, base_console: Console) -> None:
         self._base = base_console
         self._writer: Optional[Callable[[str], None]] = None
         self._clear_cb: Optional[Callable[[], None]] = None
 
-    def set_writer(self, writer: Optional[Callable[[str], None]], clear_cb: Optional[Callable[[], None]] = None) -> None:
+    def set_writer(self, writer: Optional[Callable[[str], None]] = None, clear_cb: Optional[Callable[[], None]] = None) -> None:
         self._writer = writer
         self._clear_cb = clear_cb
 
@@ -608,8 +612,9 @@ class ChatCLI:
         warnings.filterwarnings("ignore", category=UserWarning)
 
         # Console proxy to route output either to terminal or Textual log widget.
-        self.console = _ConsoleProxy(Console())
-        self.display_manager = AgentConsole(console=self.console)
+        base_console = Console()
+        self.console = _ConsoleProxy(base_console)
+        self.display_manager = AgentConsole(console=base_console)
 
         # Configure logging: all logs to file, nothing to console
         log_level = _determine_chat_log_level()
@@ -623,6 +628,11 @@ class ChatCLI:
         self.context = ProcessingContext(user_id="1", auth_token="local_token")
         self.messages: list[Message] = []
         self.agent_mode = True  # Default to agent mode ON - omnipotent agent
+        self.debug_mode = False  # Debug mode for displaying tool calls and results
+
+        # Tool management
+        self.all_tools: list[Tool] = []
+        self.enabled_tools: dict[str, bool] = {}
 
         # Store selected LanguageModel object and model ID preference
         self.language_models: list[LanguageModel] = []
@@ -645,6 +655,9 @@ class ChatCLI:
         # Register commands
         self.commands = {}
         self.register_commands()
+
+        # Initialize tools
+        self.refresh_tools()
 
         # Load settings if they exist (loads model_id_from_settings)
         self.load_settings()
@@ -719,6 +732,14 @@ class ChatCLI:
         self._completer = self._build_command_completer()
         if hasattr(self, "session"):
             self.session.completer = self._completer
+
+    def refresh_tools(self) -> None:
+        """Refresh the list of available tools and update enabled_tools mapping."""
+        self.all_tools = create_tools()
+        # Initialize enabled_tools for any new tools
+        for tool in self.all_tools:
+            if tool.name not in self.enabled_tools:
+                self.enabled_tools[tool.name] = True  # Default to enabled
 
     async def load_models_for_provider(self, provider: Provider) -> list[LanguageModel]:
         """Fetch and cache models for a single provider, updating current state."""
@@ -1304,6 +1325,8 @@ class ChatCLI:
             "model_id": self.selected_model.id,
             "provider": self.selected_model.provider.value,
             "agent_mode": self.agent_mode,
+            "debug_mode": self.debug_mode,
+            "enabled_tools": self.enabled_tools,
         }
 
         try:
@@ -1328,6 +1351,12 @@ class ChatCLI:
 
                 # Load other settings
                 self.agent_mode = settings.get("agent_mode", False)
+                self.debug_mode = settings.get("debug_mode", False)
+
+                # Load enabled tools if available
+                loaded_enabled_tools = settings.get("enabled_tools")
+                if loaded_enabled_tools:
+                    self.enabled_tools.update(loaded_enabled_tools)
 
         except Exception as e:
             self.console.print(f"[bold yellow]Warning:[/bold yellow] Failed to load settings: {e}")
