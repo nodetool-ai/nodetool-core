@@ -2,7 +2,7 @@
 Optional FAL dynamic schema resolution endpoint.
 When nodetool-fal is installed, POST /api/fal/resolve-dynamic-schema resolves
 model_info (pasted OpenAPI JSON, llms.txt, URL, or endpoint id) and returns
-dynamic_properties and dynamic_outputs for the DynamicFalSchema node.
+dynamic_properties and dynamic_outputs for the FalAI node.
 Avoids CORS by proxying the fal.ai OpenAPI fetch server-side; pasted OpenAPI
 JSON is parsed directly without any fetch.
 """
