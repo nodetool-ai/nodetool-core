@@ -919,5 +919,5 @@ class TestRootDeployer:
 
         assert plan["deployment_name"] == "test-root"
         assert plan["host"] == "192.168.1.100"
-        assert "Initial Root deployment" in plan["changes"][0]
+        assert "Initial SSH deployment" in plan["changes"][0]
         assert "Systemd service" in str(plan["will_create"])

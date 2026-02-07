@@ -20,12 +20,13 @@ from nodetool.config.deployment import (
     RunPodDeployment,
     SelfHostedDeployment,
     DockerDeployment,
-    RootDeployment,
+    SSHDeployment,
+    LocalDeployment,
     load_deployment_config,
 )
 from nodetool.deploy.gcp import GCPDeployer
 from nodetool.deploy.runpod import RunPodDeployer
-from nodetool.deploy.self_hosted import DockerDeployer, RootDeployer
+from nodetool.deploy.self_hosted import DockerDeployer, SSHDeployer
 from nodetool.deploy.state import StateManager
 
 logger = logging.getLogger(__name__)
@@ -72,7 +73,7 @@ class DeploymentManager:
             if isinstance(deployment, DockerDeployment):
                 info["host"] = deployment.host
                 info["container"] = deployment.container.name
-            elif isinstance(deployment, RootDeployment):
+            elif isinstance(deployment, SSHDeployment | LocalDeployment):
                 info["host"] = deployment.host
                 info["service"] = deployment.service_name
             elif isinstance(deployment, RunPodDeployment):
@@ -128,8 +129,8 @@ class DeploymentManager:
                 state_manager=self.state_manager,
             )
             return deployer.plan()
-        elif isinstance(deployment, RootDeployment):
-            deployer = RootDeployer(
+        elif isinstance(deployment, SSHDeployment | LocalDeployment):
+            deployer = SSHDeployer(
                 deployment_name=name,
                 deployment=deployment,
                 state_manager=self.state_manager,
@@ -184,8 +185,8 @@ class DeploymentManager:
                 state_manager=self.state_manager,
             )
             return deployer.apply(dry_run=dry_run)
-        elif isinstance(deployment, RootDeployment):
-            deployer = RootDeployer(
+        elif isinstance(deployment, SSHDeployment | LocalDeployment):
+            deployer = SSHDeployer(
                 deployment_name=name,
                 deployment=deployment,
                 state_manager=self.state_manager,
@@ -230,8 +231,8 @@ class DeploymentManager:
                 state_manager=self.state_manager,
             )
             return deployer.status()
-        elif isinstance(deployment, RootDeployment):
-            deployer = RootDeployer(
+        elif isinstance(deployment, SSHDeployment | LocalDeployment):
+            deployer = SSHDeployer(
                 deployment_name=name,
                 deployment=deployment,
                 state_manager=self.state_manager,
@@ -286,8 +287,8 @@ class DeploymentManager:
                 state_manager=self.state_manager,
             )
             return deployer.logs(service=service, follow=follow, tail=tail)
-        elif isinstance(deployment, RootDeployment):
-            deployer = RootDeployer(
+        elif isinstance(deployment, SSHDeployment | LocalDeployment):
+            deployer = SSHDeployer(
                 deployment_name=name,
                 deployment=deployment,
                 state_manager=self.state_manager,
@@ -336,8 +337,8 @@ class DeploymentManager:
                 state_manager=self.state_manager,
             )
             return deployer.destroy()
-        elif isinstance(deployment, RootDeployment):
-            deployer = RootDeployer(
+        elif isinstance(deployment, SSHDeployment | LocalDeployment):
+            deployer = SSHDeployer(
                 deployment_name=name,
                 deployment=deployment,
                 state_manager=self.state_manager,
@@ -393,7 +394,7 @@ class DeploymentManager:
 
                 if isinstance(deployment, SelfHostedDeployment):
                     # Validate SSH config
-                    if not deployment.ssh.key_path and not deployment.ssh.password:
+                    if hasattr(deployment, "ssh") and deployment.ssh and not deployment.ssh.key_path and not deployment.ssh.password:
                         results["warnings"].append(f"{deployment_name}: No SSH authentication method configured")
 
                     # Validate type specific requirements
@@ -402,7 +403,7 @@ class DeploymentManager:
                             results["errors"].append(f"{deployment_name}: No container configured")
                             results["valid"] = False
                     
-                    elif isinstance(deployment, RootDeployment):
+                    elif isinstance(deployment, SSHDeployment | LocalDeployment):
                          if not deployment.port:
                              results["errors"].append(f"{deployment_name}: No port configured")
                              results["valid"] = False

@@ -2972,7 +2972,8 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
         GCPDeployment,
         RunPodDeployment,
         DockerDeployment,
-        RootDeployment,
+        SSHDeployment,
+        LocalDeployment,
     )
 
     def _inject(env: Optional[dict[str, str]]) -> dict[str, str]:
@@ -2982,7 +2983,7 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
 
     if isinstance(deployment, DockerDeployment):
         deployment.container.environment = _inject(deployment.container.environment)
-    elif isinstance(deployment, RootDeployment):
+    elif isinstance(deployment, SSHDeployment | LocalDeployment):
         deployment.environment = _inject(deployment.environment)
     elif isinstance(deployment, RunPodDeployment | GCPDeployment):
         deployment.environment = _inject(getattr(deployment, "environment", None))
@@ -3108,7 +3109,8 @@ def deploy_show(name: str):
         GCPDeployment,
         RunPodDeployment,
         DockerDeployment,
-        RootDeployment,
+        SSHDeployment,
+        LocalDeployment,
     )
     from nodetool.deploy.manager import DeploymentManager
 
@@ -3155,8 +3157,8 @@ def deploy_show(name: str):
             content.append(f"  Workspace: {deployment.paths.workspace}")
             content.append(f"  HF Cache: {deployment.paths.hf_cache}")
 
-        elif isinstance(deployment, RootDeployment):
-            content.append("[bold]Root Configuration:[/]")
+        elif isinstance(deployment, SSHDeployment):
+            content.append("[bold]SSH Configuration:[/]")
             content.append(f"  Host: {deployment.host}")
             content.append(f"  SSH User: {deployment.ssh.user}")
             content.append("")
@@ -3173,6 +3175,24 @@ def deploy_show(name: str):
             content.append("")
 
             # Paths
+            content.append("[bold]Paths:[/]")
+            content.append(f"  Workspace: {deployment.paths.workspace}")
+            content.append(f"  HF Cache: {deployment.paths.hf_cache}")
+        elif isinstance(deployment, LocalDeployment):
+            content.append("[bold]Local Configuration:[/]")
+            content.append(f"  Host: {deployment.host}")
+            content.append("")
+
+            content.append("[bold]Service:[/]")
+            content.append(f"  Port: {deployment.port}")
+            if deployment.service_name:
+                content.append(f"  Systemd Service: {deployment.service_name}")
+            if deployment.workflows:
+                content.append(f"  Workflows: {', '.join(deployment.workflows)}")
+            if deployment.gpu:
+                content.append(f"  GPU: {deployment.gpu}")
+            content.append("")
+
             content.append("[bold]Paths:[/]")
             content.append(f"  Workspace: {deployment.paths.workspace}")
             content.append(f"  HF Cache: {deployment.paths.hf_cache}")
@@ -3227,7 +3247,7 @@ def deploy_show(name: str):
             url = f"http://{deployment.host}:{deployment.container.port}"
             content.append(f"  {deployment.container.name}: {url}")
 
-        elif isinstance(deployment, RootDeployment):
+        elif isinstance(deployment, SSHDeployment | LocalDeployment):
             content.append("[bold]Endpoints:[/]")
             url = f"http://{deployment.host}:{deployment.port}"
             content.append(f"  Service: {url}")
@@ -3278,7 +3298,7 @@ def deploy_show(name: str):
 @click.option(
     "--type",
     "deployment_type",
-    type=click.Choice(["docker", "root", "runpod", "gcp"]),
+    type=click.Choice(["docker", "ssh", "local", "runpod", "gcp"]),
     prompt="Deployment type",
     help="Type of deployment",
 )
@@ -3294,7 +3314,8 @@ def deploy_add(name: str, deployment_type: str):
         RunPodDeployment,
         RunPodImageConfig,
         DockerDeployment,
-        RootDeployment,
+        SSHDeployment,
+        LocalDeployment,
         SSHConfig,
         get_deployment_config_path,
         load_deployment_config,
@@ -3375,8 +3396,8 @@ def deploy_add(name: str, deployment_type: str):
                 container=container,
             )
 
-        elif deployment_type == "root":
-            console.print("[cyan]Root/Shell Configuration:[/]")
+        elif deployment_type == "ssh":
+            console.print("[cyan]SSH/Shell Configuration:[/]")
 
             host = click.prompt("Host address", type=str)
             ssh_user = click.prompt("SSH username", type=str)
@@ -3398,9 +3419,37 @@ def deploy_add(name: str, deployment_type: str):
                 workflows_str = click.prompt("  Workflow IDs (comma-separated)", type=str)
                 workflows = [w.strip() for w in workflows_str.split(",")]
 
-            deployment = RootDeployment(
+            deployment = SSHDeployment(
                 host=host,
                 ssh=SSHConfig(user=ssh_user, key_path=ssh_key_path),
+                port=container_port,
+                service_name=service_name,
+                gpu=gpu,
+                workflows=workflows,
+            )
+        elif deployment_type == "local":
+            console.print("[cyan]Local/Shell Configuration:[/]")
+
+            host = click.prompt("Host address", type=str, default="localhost")
+
+            console.print()
+            console.print("[cyan]Service configuration:[/]")
+            container_port = click.prompt("  Port", type=int, default=8000)
+            service_name = click.prompt("  Systemd service name", type=str, default=f"nodetool-{container_port}")
+
+            use_gpu = click.confirm("  Assign GPU?", default=False)
+            gpu = None
+            if use_gpu:
+                gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
+
+            has_workflows = click.confirm("  Assign specific workflows?", default=False)
+            workflows = None
+            if has_workflows:
+                workflows_str = click.prompt("  Workflow IDs (comma-separated)", type=str)
+                workflows = [w.strip() for w in workflows_str.split(",")]
+
+            deployment = LocalDeployment(
+                host=host,
                 port=container_port,
                 service_name=service_name,
                 gpu=gpu,
@@ -5261,7 +5310,7 @@ async def deploy_users_reset_token(deployment_name: str, username: str):
 def deploy_users_list(deployment_name: str, as_json: bool):
     """List users on remote deployment."""
     console.print(
-        "[yellow]⚠️  Remote user management requires deployment config to support docker/root types and multi_user auth[/]"
+        "[yellow]⚠️  Remote user management requires deployment config to support docker/ssh/local types and multi_user auth[/]"
     )
     console.print("[yellow]⚠️  This feature is being implemented as part of deployment config refactoring[/]")
     console.print("[yellow]⚠️  Use 'nodetool users list' for local user management for now[/]")
@@ -5275,7 +5324,7 @@ def deploy_users_list(deployment_name: str, as_json: bool):
 def deploy_users_remove(deployment_name: str, username: str, force: bool):
     """Remove user from remote deployment."""
     console.print(
-        "[yellow]⚠️  Remote user management requires deployment config to support docker/root types and multi_user auth[/]"
+        "[yellow]⚠️  Remote user management requires deployment config to support docker/ssh/local types and multi_user auth[/]"
     )
     console.print("[yellow]⚠️  This feature is being implemented as part of deployment config refactoring[/]")
     console.print("[yellow]⚠️  Use 'nodetool users remove' for local user management for now[/]")
@@ -5288,7 +5337,7 @@ def deploy_users_remove(deployment_name: str, username: str, force: bool):
 def deploy_users_reset_token(deployment_name: str, username: str):
     """Reset user token on remote deployment."""
     console.print(
-        "[yellow]⚠️  Remote user management requires deployment config to support docker/root types and multi_user auth[/]"
+        "[yellow]⚠️  Remote user management requires deployment config to support docker/ssh/local types and multi_user auth[/]"
     )
     console.print("[yellow]⚠️  This feature is being implemented as part of deployment config refactoring[/]")
     console.print("[yellow]⚠️  Use 'nodetool users reset-token' for local user management for now[/]")

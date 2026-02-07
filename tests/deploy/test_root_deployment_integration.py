@@ -420,8 +420,8 @@ class TestShellDeploymentPlan:
 
             assert plan["deployment_name"] == "test"
             assert plan["host"] == "localhost"
-            assert plan["type"] == "root"
-            assert "Initial Root deployment" in str(plan["changes"])
+            assert plan["type"] == "ssh"
+            assert "Initial SSH deployment" in str(plan["changes"])
             assert any("Micromamba" in item for item in plan["will_create"])
             assert any("Conda environment" in item for item in plan["will_create"])
             assert any("Systemd service" in item for item in plan["will_create"])
@@ -486,7 +486,7 @@ class TestShellDeploymentApplyDryRun:
 
             # Should return plan without executing
             assert "deployment_name" in result
-            assert result["type"] == "root"
+            assert result["type"] == "ssh"
 
             # State manager should not be called during dry run
             mock_state.update_deployment_status.assert_not_called()

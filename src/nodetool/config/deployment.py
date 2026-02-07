@@ -21,7 +21,8 @@ class DeploymentType(str, Enum):
     """Supported deployment types."""
 
     DOCKER = "docker"
-    ROOT = "root"
+    SSH = "ssh"
+    LOCAL = "local"
     RUNPOD = "runpod"
     GCP = "gcp"
 
@@ -85,7 +86,7 @@ class PersistentPaths(BaseModel):
     These paths should be mounted as volumes in containerized deployments
     to ensure data survives container restarts and redeployments.
 
-    For local/root deployments, these are direct filesystem paths.
+    For local/ssh deployments, these are direct filesystem paths.
     For Docker/RunPod/GCP deployments, these should be mounted volumes.
     """
 
@@ -259,13 +260,11 @@ class DockerDeployment(BaseModel):
         return f"http://{self.host}:{host_port}"
 
 
-class RootDeployment(BaseModel):
-    """Self-hosted deployment configuration for Shell (systemd service)."""
+class _BaseShellDeployment(BaseModel):
+    """Shared configuration for shell-based self-hosted deployments."""
 
-    type: Literal[DeploymentType.ROOT] = DeploymentType.ROOT
     enabled: bool = Field(True, description="Whether this deployment is enabled")
-    host: str = Field(..., description="Remote host address (IP or hostname)")
-    ssh: SSHConfig
+    host: str = Field(..., description="Host address (IP or hostname)")
     paths: ServerPaths = ServerPaths()
     persistent_paths: Optional[PersistentPaths] = Field(
         None,
@@ -290,7 +289,25 @@ class RootDeployment(BaseModel):
         return f"http://{self.host}:{self.port}"
 
 
-SelfHostedDeployment = DockerDeployment | RootDeployment
+class SSHDeployment(_BaseShellDeployment):
+    """Self-hosted deployment configuration for remote shell deployment via SSH."""
+
+    type: Literal[DeploymentType.SSH] = DeploymentType.SSH
+    ssh: SSHConfig
+
+
+class LocalDeployment(_BaseShellDeployment):
+    """Self-hosted deployment configuration for local shell deployment."""
+
+    type: Literal[DeploymentType.LOCAL] = DeploymentType.LOCAL
+    host: str = Field("localhost", description="Local host address")
+
+
+# Backward-compatibility alias for older imports/usages.
+RootDeployment = SSHDeployment
+
+
+SelfHostedDeployment = DockerDeployment | SSHDeployment | LocalDeployment
 
 
 # ============================================================================
@@ -508,6 +525,23 @@ class DeploymentConfig(BaseModel):
             if not hasattr(deployment, "type"):
                 raise ValueError(f"Deployment '{name}' missing 'type' field")
         return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_root_type(cls, data: Any) -> Any:
+        """Map legacy self-hosted type 'root' to 'ssh' for backward compatibility."""
+        if not isinstance(data, dict):
+            return data
+
+        deployments = data.get("deployments")
+        if not isinstance(deployments, dict):
+            return data
+
+        for _name, deployment in deployments.items():
+            if isinstance(deployment, dict) and deployment.get("type") == "root":
+                deployment["type"] = "ssh"
+
+        return data
 
 
 # ============================================================================

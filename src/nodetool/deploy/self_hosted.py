@@ -22,7 +22,8 @@ from typing import Any, Optional, Union, Generic, TypeVar
 from nodetool.config.deployment import (
     DeploymentStatus,
     DockerDeployment,
-    RootDeployment,
+    SSHDeployment,
+    LocalDeployment,
     SelfHostedDeployment,
 )
 from nodetool.deploy.docker_run import DockerRunGenerator
@@ -113,7 +114,9 @@ class BaseSSHDeployer(ABC, Generic[TDeployment]):
         self.deployment = deployment
         self.state_manager = state_manager or StateManager()
         self.is_localhost = is_localhost(deployment.host)
-        self.use_proxy = deployment.use_proxy and deployment.proxy is not None
+        self.use_proxy = bool(
+            getattr(deployment, "use_proxy", False) and getattr(deployment, "proxy", None) is not None
+        )
 
     def _log(self, results: dict[str, Any], message: str) -> None:
         """Log a message to results and stdout."""
@@ -983,17 +986,18 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
             results["steps"].append(f"  Warning: health check failed: {exc.stderr.strip()}")
 
 
-class RootDeployer(BaseSSHDeployer[RootDeployment]):
-    """Deployer for Root/Shell-based self-hosted deployments."""
+class SSHDeployer(BaseSSHDeployer[SSHDeployment | LocalDeployment]):
+    """Deployer for SSH/local shell-based self-hosted deployments."""
 
     def _create_specific_directories(self, ssh: Executor, workspace_path: str) -> None:
         ssh.mkdir(f"{workspace_path}/env", parents=True) # Ensure env dir parent exists
 
     def plan(self) -> dict[str, Any]:
+        deployment_kind = "local" if isinstance(self.deployment, LocalDeployment) else "ssh"
         plan = {
             "deployment_name": self.deployment_name,
             "host": self.deployment.host,
-            "type": "root",
+            "type": deployment_kind,
             "changes": [],
             "will_create": [],
             "will_update": [],
@@ -1003,9 +1007,13 @@ class RootDeployer(BaseSSHDeployer[RootDeployment]):
         current_state = self.state_manager.read_state(self.deployment_name)
         
         if not current_state or not current_state.get("last_deployed"):
-            plan["changes"].append("Initial Root deployment - will install dependencies and start service")
+            plan["changes"].append(
+                f"Initial {deployment_kind.upper()} deployment - will install dependencies and start service"
+            )
         else:
-            plan["changes"].append("Update Root deployment - will update dependencies and restart service")
+            plan["changes"].append(
+                f"Update {deployment_kind.upper()} deployment - will update dependencies and restart service"
+            )
 
         plan["will_create"].extend(
             [
@@ -1098,10 +1106,11 @@ class RootDeployer(BaseSSHDeployer[RootDeployment]):
         return results
 
     def status(self) -> dict[str, Any]:
+        deployment_kind = "local" if isinstance(self.deployment, LocalDeployment) else "ssh"
         status_info = {
             "deployment_name": self.deployment_name,
             "host": self.deployment.host,
-            "type": "root",
+            "type": deployment_kind,
         }
 
         state = self.state_manager.read_state(self.deployment_name)
@@ -1310,3 +1319,7 @@ WantedBy=default.target
             self._log(results, f"  Health endpoint OK: {health_url}")
         except Exception as exc:
             self._log(results, f"  Warning: health check failed: {exc}")
+
+
+# Backward-compatibility alias for older imports/usages.
+RootDeployer = SSHDeployer

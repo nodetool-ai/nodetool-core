@@ -1,7 +1,7 @@
 """
 Remote user management for self-hosted deployments.
 
-This module provides SSH-based user management for Docker and Root deployments.
+This module provides SSH-based user management for Docker and SSH deployments.
 Operations are performed remotely via SSH, never transmitting plaintext tokens.
 """
 
@@ -10,13 +10,11 @@ import hashlib
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Union
-
 import yaml
 from pydantic import BaseModel
 from rich.console import Console
 
-from nodetool.config.deployment import DockerDeployment, RootDeployment
+from nodetool.config.deployment import DockerDeployment, SSHDeployment
 from nodetool.deploy.ssh import SSHConnection
 from nodetool.security.providers.multi_user import UserInfo
 
@@ -28,7 +26,7 @@ class RemoteUserManager:
 
     def __init__(
         self,
-        deployment: DockerDeployment | RootDeployment,
+        deployment: DockerDeployment | SSHDeployment,
         users_file: str,
     ):
         self.deployment = deployment

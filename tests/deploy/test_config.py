@@ -12,6 +12,7 @@ from nodetool.config.deployment import (
     DeploymentType,
     DockerDeployment,
     ImageConfig,
+    LocalDeployment,
     RootDeployment,
     SSHConfig,
 )
@@ -115,7 +116,7 @@ class TestDockerDeployment:
 
     def test_self_hosted_without_proxy(self):
         """Test self-hosted deployment configured without proxy."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -128,7 +129,7 @@ class TestDockerDeployment:
 
     def test_self_hosted_without_proxy_port_7777_maps_to_8000(self):
         """Test non-proxy URL follows host port remap used by docker run."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -149,9 +150,23 @@ class TestRootDeployment:
             port=8000,
             service_name="nodetool-service",
         )
-        assert deployment.type == DeploymentType.ROOT
+        assert deployment.type == DeploymentType.SSH
         assert deployment.port == 8000
         assert deployment.service_name == "nodetool-service"
+
+
+class TestLocalDeployment:
+    """Tests for LocalDeployment model."""
+
+    def test_local_deployment_basic(self):
+        """Test basic Local deployment."""
+        deployment = LocalDeployment(
+            port=8000,
+            service_name="nodetool-local",
+        )
+        assert deployment.type == DeploymentType.LOCAL
+        assert deployment.host == "localhost"
+        assert deployment.get_server_url() == "http://localhost:8000"
 
 
 class TestDeploymentConfig:
@@ -237,6 +252,22 @@ class TestConfigSerialization:
         assert isinstance(loaded_config.deployments["test-docker"], DockerDeployment)
         assert "test-root" in loaded_config.deployments
         assert isinstance(loaded_config.deployments["test-root"], RootDeployment)
+
+    def test_legacy_root_type_deserializes_as_ssh(self):
+        """Test backward-compatibility mapping from root type to ssh type."""
+        legacy_yaml = {
+            "deployments": {
+                "legacy-root": {
+                    "type": "root",
+                    "host": "192.168.1.101",
+                    "ssh": {"user": "root", "key_path": "/tmp/key"},
+                    "port": 8000,
+                }
+            }
+        }
+
+        loaded_config = DeploymentConfig.model_validate(legacy_yaml)
+        assert loaded_config.deployments["legacy-root"].type == DeploymentType.SSH
 
 
 class TestConfigFileOperations:
