@@ -1174,8 +1174,10 @@ def vibecoding(
             elif output:
                 # Save to file
                 try:
-                    with open(output, "w", encoding="utf-8") as f:
-                        f.write(html_content)
+                    import aiofiles
+
+                    async with aiofiles.open(output, "w", encoding="utf-8") as f:
+                        await f.write(html_content)
                     console.print(f"\n[green]✅ Saved HTML app to {output}[/green]")
                 except Exception as e:
                     console.print(f"[red]Error writing file: {e}[/red]")

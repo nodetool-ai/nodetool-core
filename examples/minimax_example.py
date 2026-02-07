@@ -116,9 +116,11 @@ async def example_image_generation():
     print(f"Generated image size: {len(image_bytes)} bytes")
 
     # Optionally save to file
+    import aiofiles
+
     output_path = "/tmp/minimax_generated_image.png"
-    with open(output_path, "wb") as f:
-        f.write(image_bytes)
+    async with aiofiles.open(output_path, "wb") as f:
+        await f.write(image_bytes)
     print(f"Image saved to: {output_path}\n")
 
 
