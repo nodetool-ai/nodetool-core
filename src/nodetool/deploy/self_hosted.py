@@ -243,6 +243,9 @@ class SelfHostedDeployer:
                     self._ensure_network(executor, results)
                     self._sync_tls_files(executor, results)
                     self._ensure_proxy_image(executor, results)
+                else:
+                    # Step 2: Always pull latest app image before recreating container
+                    self._pull_app_image(executor, results)
 
                 # Step 3: Stop existing container if present
                 self._stop_existing_container(executor, results)
@@ -459,6 +462,13 @@ class SelfHostedDeployer:
         ssh.execute(command, check=False, timeout=30)
         results["steps"].append(f"  Ensured docker network: {network}")
 
+    def _pull_app_image(self, ssh, results: dict[str, Any]) -> None:
+        """Always pull the app image for direct-container deployments."""
+        image = self.deployment.image.full_name
+        results["steps"].append(f"Pulling app image: {image}")
+        ssh.execute(f"docker pull {shlex.quote(image)}", check=True, timeout=600)
+        results["steps"].append("  App image pull complete.")
+
     def _ensure_proxy_image(self, ssh, results: dict[str, Any]) -> None:
         """Ensure the proxy image exists on the target host, pushing it if necessary."""
         if not self.deployment.proxy:
@@ -611,6 +621,7 @@ class SelfHostedDeployer:
 
         container_name = self._container_name()
         time.sleep(5)
+        health_errors: list[str] = []
 
         status_cmd = (
             f"docker ps -f name={container_name} "
@@ -622,12 +633,13 @@ class SelfHostedDeployer:
             if stdout.strip():
                 results["steps"].append(f"  Container status: {stdout.strip()}")
             else:
-                if self.use_proxy:
-                    results["steps"].append("  Warning: proxy container not running")
-                else:
-                    results["steps"].append("  Warning: app container not running")
+                warning = "proxy container not running" if self.use_proxy else "app container not running"
+                results["steps"].append(f"  Warning: {warning}")
+                health_errors.append(warning)
         except Exception as exc:
-            results["steps"].append(f"  Warning: could not retrieve status: {exc}")
+            warning = f"could not retrieve status: {exc}"
+            results["steps"].append(f"  Warning: {warning}")
+            health_errors.append(warning)
 
         if self.use_proxy and self.deployment.proxy:
             health_url = f"http://127.0.0.1:{self.deployment.proxy.listen_http}/healthz"
@@ -637,7 +649,13 @@ class SelfHostedDeployer:
             ssh.execute(f"curl -fsS {health_url}", check=True, timeout=20)
             results["steps"].append(f"  Health endpoint OK: {health_url}")
         except SSHCommandError as exc:
-            results["steps"].append(f"  Warning: health check failed: {exc.stderr.strip()}")
+            warning = f"health check failed: {exc.stderr.strip()}"
+            results["steps"].append(f"  Warning: {warning}")
+            health_errors.append(warning)
+
+        if health_errors:
+            results["errors"].extend(health_errors)
+            raise RuntimeError(f"Deployment health check failed: {'; '.join(health_errors)}")
 
         # Check HTTPS status endpoint when TLS configured
         if (

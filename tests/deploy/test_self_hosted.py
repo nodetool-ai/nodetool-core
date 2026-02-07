@@ -375,6 +375,7 @@ class TestSelfHostedDeployer:
         mock_ssh.mkdir = Mock()
         mock_ssh.execute = Mock(
             side_effect=[
+                (0, "pulled", ""),  # docker pull
                 (0, "", ""),  # stop_existing: check
                 (0, "container_id_123", ""),  # start container
                 (0, "nodetool-default Up 1 second", ""),  # check status
@@ -406,6 +407,32 @@ class TestSelfHostedDeployer:
             assert result["status"] == "success"
             assert len(result["errors"]) == 0
             mock_state_manager.write_state.assert_called_once()
+            assert any(
+                call[0][0].startswith("docker pull nodetool/nodetool:latest")
+                for call in mock_ssh.execute.call_args_list
+            )
+
+    def test_pull_app_image(self, no_proxy_deployment, mock_state_manager):
+        """Test app image is always pulled in direct-container mode."""
+        mock_ssh = Mock()
+        mock_ssh.execute = Mock(return_value=(0, "ok", ""))
+
+        deployer = SelfHostedDeployer(
+            deployment_name="test",
+            deployment=no_proxy_deployment,
+            state_manager=mock_state_manager,
+        )
+
+        results = {"steps": []}
+        deployer._pull_app_image(mock_ssh, results)
+
+        mock_ssh.execute.assert_called_once_with(
+            "docker pull nodetool/nodetool:latest",
+            check=True,
+            timeout=600,
+        )
+        assert "Pulling app image: nodetool/nodetool:latest" in results["steps"]
+        assert "  App image pull complete." in results["steps"]
 
     def test_create_directories(self, basic_deployment, mock_state_manager):
         """Test directory creation."""
@@ -606,7 +633,12 @@ class TestSelfHostedDeployer:
     def test_check_health_container_not_running(self, basic_deployment, mock_state_manager):
         """Test health check when container not running."""
         mock_ssh = Mock()
-        mock_ssh.execute = Mock(return_value=(0, "", ""))
+        mock_ssh.execute = Mock(
+            side_effect=[
+                (0, "", ""),  # status
+                (0, "ok", ""),  # health curl
+            ]
+        )
 
         with patch("nodetool.deploy.self_hosted.time.sleep"):
             deployer = SelfHostedDeployer(
@@ -615,10 +647,12 @@ class TestSelfHostedDeployer:
                 state_manager=mock_state_manager,
             )
 
-            results = {"steps": []}
-            deployer._check_health(mock_ssh, results, "token-123")
+            results = {"steps": [], "errors": []}
+            with pytest.raises(RuntimeError, match="Deployment health check failed"):
+                deployer._check_health(mock_ssh, results, "token-123")
 
             assert any("not running" in step for step in results["steps"])
+            assert any("not running" in err for err in results["errors"])
 
     def test_check_health_without_proxy_uses_mapped_port(self, no_proxy_deployment, mock_state_manager):
         """Test direct app health check uses host-mapped port (7777 -> 8000)."""
