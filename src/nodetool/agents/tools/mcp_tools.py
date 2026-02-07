@@ -6,7 +6,7 @@ This module provides Tool wrappers for all MCP tools, making the agent
 workflows, nodes, jobs, assets, collections, and storage.
 """
 
-from typing import Any
+from typing import Any, ClassVar
 
 from nodetool.agents.tools.base import Tool
 from nodetool.workflows.processing_context import ProcessingContext
@@ -30,7 +30,7 @@ Args:
     query: Optional search query to filter workflows by name/description
     limit: Maximum number of workflows to return (default: 100)
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "workflow_type": {
@@ -82,7 +82,7 @@ Use this to understand a workflow before running it.
 Args:
     workflow_id: The ID of the workflow to retrieve
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "workflow_id": {
@@ -121,7 +121,7 @@ Args:
     tags: Optional list of tags for organization
     access: Access level ("private" or "public")
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "name": {
@@ -183,7 +183,7 @@ Args:
     workflow_id: The ID of the workflow to run
     params: Dictionary of input parameters for the workflow (optional)
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "workflow_id": {
@@ -224,7 +224,7 @@ Args:
     graph: Workflow graph structure with nodes and edges
     params: Dictionary of input parameters for the workflow (optional)
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "graph": {
@@ -264,7 +264,7 @@ to debug workflows before running them.
 Args:
     workflow_id: The ID of the workflow to validate
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "workflow_id": {
@@ -300,7 +300,7 @@ Args:
     package_name: The name of the package containing the example
     example_name: The name of the example workflow to load
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "package_name": {
@@ -339,7 +339,7 @@ Args:
     workflow_id: The ID of the workflow to export
     descriptive_names: Use descriptive node names instead of UUIDs (default: True)
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "workflow_id": {
@@ -386,7 +386,7 @@ Args:
     namespace: Optional namespace prefix filter (e.g. "nodetool.text")
     limit: Maximum number of nodes to return (default: 200)
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "namespace": {
@@ -432,7 +432,7 @@ Args:
     output_type: Optional filter by output type
     include_metadata: If True, return full node metadata including properties
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "query": {
@@ -490,7 +490,7 @@ to understand how to use a specific node in a workflow.
 Args:
     node_type: Fully-qualified node type (e.g. "nodetool.text.Concat")
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "node_type": {
@@ -528,7 +528,7 @@ Args:
     workflow_id: Optional workflow ID to filter by
     limit: Maximum number of jobs to return (default: 100)
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "workflow_id": {
@@ -571,7 +571,7 @@ Returns job status, timing, error information, and cost.
 Args:
     job_id: The job ID
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "job_id": {
@@ -606,7 +606,7 @@ Args:
     job_id: The job ID
     limit: Maximum number of log entries to return (default: 200)
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "job_id": {
@@ -648,7 +648,7 @@ Args:
     workflow_id: The workflow ID to run
     params: Optional input parameters
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "workflow_id": {
@@ -695,7 +695,7 @@ Args:
     content_type: Filter by type ("image", "video", "audio", "text", "folder")
     limit: Maximum number of assets to return (default: 100)
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "source": {
@@ -749,7 +749,7 @@ Returns asset details including URLs and metadata.
 Args:
     asset_id: The ID of the asset
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "asset_id": {
@@ -788,7 +788,7 @@ Returns collections with their metadata and document counts.
 Args:
     limit: Maximum number of collections to return (default: 50)
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "limit": {
@@ -822,7 +822,7 @@ Args:
     query_texts: List of query texts to search for
     n_results: Number of results to return per query (default: 10)
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "name": {
@@ -875,7 +875,7 @@ Args:
     downloaded_only: Only show downloaded models
     limit: Maximum number of models to return (default: 50)
 """
-    input_schema = {
+    input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "provider": {

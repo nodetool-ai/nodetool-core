@@ -32,12 +32,12 @@ def test_update_planning_display():
     console.update_planning_display("phase1", "Running", "work")
     # Check that the planning node was recorded
     assert "phase1" in console._planning_nodes
-    status, label, content, is_error = console._planning_nodes["phase1"]
+    status, _label, content, _is_error = console._planning_nodes["phase1"]
     assert status == "Running"
     assert content == "work"
 
     console.update_planning_display("phase1", "Success", "done")
-    status, label, content, is_error = console._planning_nodes["phase1"]
+    status, _label, content, _is_error = console._planning_nodes["phase1"]
     assert status == "Success"
     assert content == "done"
 
@@ -51,13 +51,13 @@ def test_update_planning_display_without_phase():
     console.update_planning_display("phase1", "Running", "work", show_phase=False)
     # Check that the planning node was recorded without phase label
     assert "__planner_status__" in console._planning_nodes
-    status, label, content, is_error = console._planning_nodes["__planner_status__"]
+    status, label, content, _is_error = console._planning_nodes["__planner_status__"]
     assert status == "Running"
     assert content == "work"
     assert label == ""  # No phase label
 
     console.update_planning_display("phase2", "Success", "done", show_phase=False)
-    status, label, content, is_error = console._planning_nodes["__planner_status__"]
+    status, _label, content, _is_error = console._planning_nodes["__planner_status__"]
     assert status == "Success"
     assert content == "done"
 
