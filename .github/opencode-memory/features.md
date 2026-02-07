@@ -19,3 +19,4 @@
 - **Async Barrier**: `AsyncBarrier` for synchronizing multiple coroutines at a synchronization point, useful for phased concurrent operations
 - **Async Condition**: `AsyncCondition` for condition variables allowing tasks to wait until notified by another task, with lock-based coordination to prevent race conditions
 - **Async Reader-Writer Lock**: `AsyncReaderWriterLock` for multiple concurrent readers with exclusive writer access, using writer-preference semantics to prevent starvation
+- **Async Channel**: `AsyncChannel` for producer-consumer patterns with send/receive/close operations, async iteration, and fan-in/fan-out utilities for channel composition
