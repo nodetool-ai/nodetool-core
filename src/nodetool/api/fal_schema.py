@@ -8,12 +8,18 @@ JSON is parsed directly without any fetch.
 """
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+
+class ResolveFalDynamicSchemaRequest(BaseModel):
+    model_info: str
+
 
 router = APIRouter(prefix="/api/fal", tags=["fal"])
 
 
 @router.post("/resolve-dynamic-schema")
-async def resolve_fal_dynamic_schema(body: dict) -> dict:
+async def resolve_fal_dynamic_schema(body: ResolveFalDynamicSchemaRequest) -> dict:
     """
     Resolve FAL dynamic schema from model_info (pasted llms.txt, URL, or endpoint id).
     Returns dynamic_properties and dynamic_outputs for the UI to update the node.
@@ -27,7 +33,7 @@ async def resolve_fal_dynamic_schema(body: dict) -> dict:
             "FAL dynamic schema resolution requires nodetool-fal to be installed.",
         ) from e
 
-    model_info = (body.get("model_info") or "").strip()
+    model_info = body.model_info.strip()
     if not model_info:
         raise HTTPException(
             400,
