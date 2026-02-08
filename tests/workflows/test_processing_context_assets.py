@@ -1059,17 +1059,17 @@ class TestModel3DWithAssociatedFiles:
         """Test creating Model3DRef with an associated MTL material file."""
         model_data = b"obj model data"
         mtl_data = b"material definition"
-        
+
         # Create material file as AssetRef
         material_ref = AssetRef(data=mtl_data, uri="test.mtl")
-        
+
         # Create Model3DRef with material
         result = await context.model3d_from_bytes(
-            model_data, 
+            model_data,
             format="obj"
         )
         result.material_file = material_ref
-        
+
         assert isinstance(result, Model3DRef)
         assert result.format == "obj"
         assert result.material_file is not None
@@ -1079,18 +1079,18 @@ class TestModel3DWithAssociatedFiles:
     async def test_model3d_with_texture_files(self, context: ProcessingContext):
         """Test creating Model3DRef with associated texture images."""
         model_data = b"glb model data"
-        
+
         # Create texture images
         texture1 = ImageRef(data=b"texture1 data", uri="texture1.png")
         texture2 = ImageRef(data=b"texture2 data", uri="texture2.png")
-        
+
         # Create Model3DRef with textures
         model3d_ref = Model3DRef(
             data=model_data,
             format="glb",
             texture_files=[texture1, texture2]
         )
-        
+
         assert isinstance(model3d_ref, Model3DRef)
         assert len(model3d_ref.texture_files) == 2
         assert model3d_ref.texture_files[0].uri == "texture1.png"
@@ -1103,10 +1103,10 @@ class TestModel3DWithAssociatedFiles:
         mtl_data = b"material definition with texture refs"
         diffuse_texture = ImageRef(data=b"diffuse map", uri="diffuse.png")
         normal_texture = ImageRef(data=b"normal map", uri="normal.png")
-        
+
         # Create material file
         material_ref = AssetRef(data=mtl_data, uri="model.mtl")
-        
+
         # Create complete OBJ model
         model3d_ref = Model3DRef(
             data=obj_data,
@@ -1114,7 +1114,7 @@ class TestModel3DWithAssociatedFiles:
             material_file=material_ref,
             texture_files=[diffuse_texture, normal_texture]
         )
-        
+
         assert model3d_ref.format == "obj"
         assert model3d_ref.material_file is not None
         assert model3d_ref.material_file.uri == "model.mtl"
@@ -1126,7 +1126,7 @@ class TestModel3DWithAssociatedFiles:
     async def test_model3d_default_empty_texture_list(self, context: ProcessingContext):
         """Test that texture_files defaults to empty list."""
         model3d_ref = Model3DRef(data=b"model data", format="glb")
-        
+
         assert model3d_ref.texture_files == []
         assert isinstance(model3d_ref.texture_files, list)
 
@@ -1135,17 +1135,17 @@ class TestModel3DWithAssociatedFiles:
         """Test that Model3DRef with associated files serializes correctly."""
         material_ref = AssetRef(data=b"mtl data", uri="test.mtl")
         texture = ImageRef(data=b"texture data", uri="texture.png")
-        
+
         model3d_ref = Model3DRef(
             data=b"obj data",
             format="obj",
             material_file=material_ref,
             texture_files=[texture]
         )
-        
+
         # Test that it can be serialized (Pydantic model_dump)
         serialized = model3d_ref.model_dump()
-        
+
         assert serialized["type"] == "model_3d"
         assert serialized["format"] == "obj"
         assert serialized["material_file"] is not None

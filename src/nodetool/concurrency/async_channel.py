@@ -81,7 +81,7 @@ class AsyncChannel(Generic[T]):
             raise ChannelClosedError("Cannot send to closed channel")
         await self._queue.put(item)
 
-    async def send_nowait(self, item: T) -> None:
+    def send_nowait(self, item: T) -> None:
         """
         Send an item to the channel without blocking.
 
@@ -120,7 +120,7 @@ class AsyncChannel(Generic[T]):
                 raise ChannelClosedError("Channel is closed and empty") from None
             raise
 
-    async def receive_nowait(self) -> T:
+    def receive_nowait(self) -> T:
         """
         Receive an item from the channel without blocking.
 
