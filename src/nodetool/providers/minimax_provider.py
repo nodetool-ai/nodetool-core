@@ -50,10 +50,16 @@ MINIMAX_IMAGE_API_URL = "https://api.minimax.io/v1/image_generation"
 MINIMAX_TTS_API_URL = "https://api.minimax.io/v1/t2a_v2"
 
 # MiniMax Video Generation API base URL
-MINIMAX_VIDEO_API_URL = "https://api.minimaxi.com/v1/video_generation"
+MINIMAX_VIDEO_API_URL = "https://api.minimax.io/v1/video_generation"
+
+# MiniMax Video Query API URL (polling endpoint)
+MINIMAX_VIDEO_QUERY_API_URL = "https://api.minimax.io/v1/query/video_generation"
 
 # MiniMax File Upload API base URL
-MINIMAX_FILE_UPLOAD_URL = "https://api.minimaxi.com/v1/files/upload"
+MINIMAX_FILE_UPLOAD_URL = "https://api.minimax.io/v1/files/upload"
+
+# MiniMax File Retrieve API URL (used to resolve file download URLs)
+MINIMAX_FILE_RETRIEVE_URL = "https://api.minimax.io/v1/files/retrieve"
 
 # Known MiniMax image models
 MINIMAX_IMAGE_MODELS = [
@@ -588,12 +594,12 @@ class MiniMaxProvider(AnthropicProvider):
             "Authorization": f"Bearer {self.api_key}",
         }
         elapsed = 0
-        status_url = f"{MINIMAX_VIDEO_API_URL}/{task_id}"
+        status_url = MINIMAX_VIDEO_QUERY_API_URL
 
         while elapsed < timeout_s:
             async with (
                 aiohttp.ClientSession() as session,
-                session.get(status_url, headers=headers) as response,
+                session.get(status_url, headers=headers, params={"task_id": task_id}) as response,
             ):
                 if response.status != 200:
                     error_text = await response.text()
@@ -602,17 +608,63 @@ class MiniMaxProvider(AnthropicProvider):
                     )
                 result = await response.json()
 
-            status = result.get("status", "")
-            if status == "Success":
-                return result
-            if status in ("Failed", "Error"):
-                raise RuntimeError(f"MiniMax video generation task failed: {result}")
+            base_resp = result.get("base_resp", {})
+            status_code = base_resp.get("status_code", 0)
+            if status_code != 0:
+                status_msg = base_resp.get("status_msg", "Unknown error")
+                raise RuntimeError(f"MiniMax video task poll failed: {status_msg} (code: {status_code})")
 
-            log.debug(f"Video task {task_id}: status={status}, elapsed={elapsed}s")
+            task_data = result.get("data") if isinstance(result.get("data"), dict) else result
+            status = str(task_data.get("status", "")).lower()
+            if status in {"success", "succeeded"}:
+                return task_data
+            if status in {"failed", "fail", "error"}:
+                raise RuntimeError(f"MiniMax video generation task failed: {task_data}")
+
+            log.debug(f"Video task {task_id}: status={task_data.get('status')}, elapsed={elapsed}s")
             await asyncio.sleep(poll_interval)
             elapsed += poll_interval
 
         raise TimeoutError(f"MiniMax video generation timed out after {timeout_s}s")
+
+    async def _resolve_video_download_url(self, task_result: dict[str, Any]) -> str:
+        """Resolve a downloadable URL from a completed MiniMax video task response."""
+        video_url = task_result.get("video_url")
+        if video_url:
+            return str(video_url)
+
+        file_info = task_result.get("file") if isinstance(task_result.get("file"), dict) else {}
+        if file_info.get("download_url"):
+            return str(file_info["download_url"])
+
+        file_id = task_result.get("file_id") or file_info.get("file_id")
+        if not file_id:
+            raise RuntimeError("No video URL or file_id in completed task response")
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+        }
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(MINIMAX_FILE_RETRIEVE_URL, headers=headers, params={"file_id": file_id}) as response,
+        ):
+            if response.status != 200:
+                error_text = await response.text()
+                raise RuntimeError(f"MiniMax file retrieve failed with status {response.status}: {error_text}")
+            result = await response.json()
+
+        base_resp = result.get("base_resp", {})
+        status_code = base_resp.get("status_code", 0)
+        if status_code != 0:
+            status_msg = base_resp.get("status_msg", "Unknown error")
+            raise RuntimeError(f"MiniMax file retrieve failed: {status_msg} (code: {status_code})")
+
+        data = result.get("data") if isinstance(result.get("data"), dict) else result
+        retrieved_file = data.get("file") if isinstance(data.get("file"), dict) else data
+        download_url = retrieved_file.get("download_url") or retrieved_file.get("url")
+        if not download_url:
+            raise RuntimeError(f"No download URL returned from MiniMax file retrieve: {result}")
+        return str(download_url)
 
     async def _upload_image(self, image: bytes) -> str:
         """Upload an image to MiniMax file service and return the file_id.
@@ -718,7 +770,14 @@ class MiniMaxProvider(AnthropicProvider):
                     )
                 result = await response.json()
 
-            task_id = result.get("task_id")
+            base_resp = result.get("base_resp", {})
+            status_code = base_resp.get("status_code", 0)
+            if status_code != 0:
+                status_msg = base_resp.get("status_msg", "Unknown error")
+                raise RuntimeError(f"MiniMax video generation failed: {status_msg} (code: {status_code})")
+
+            task_data = result.get("data") if isinstance(result.get("data"), dict) else result
+            task_id = task_data.get("task_id")
             if not task_id:
                 raise RuntimeError(f"No task_id returned from MiniMax video generation: {result}")
 
@@ -726,18 +785,11 @@ class MiniMaxProvider(AnthropicProvider):
 
             max_wait = timeout_s if timeout_s and timeout_s > 0 else 600
             completed = await self._poll_video_task(task_id, max_wait)
-
-            video_url = completed.get("video_url") or completed.get("file", {}).get("download_url")
-            if not video_url:
-                file_id = completed.get("file_id")
-                if file_id:
-                    video_url = f"https://api.minimaxi.com/v1/files/{file_id}/content"
-                else:
-                    raise RuntimeError("No video URL or file_id in completed task response")
+            video_url = await self._resolve_video_download_url(completed)
 
             async with (
                 aiohttp.ClientSession() as session,
-                session.get(video_url, headers={"Authorization": f"Bearer {self.api_key}"}) as dl_resp,
+                session.get(video_url) as dl_resp,
             ):
                 if dl_resp.status != 200:
                     error_text = await dl_resp.text()
@@ -805,14 +857,12 @@ class MiniMaxProvider(AnthropicProvider):
         self._log_api_request("image_to_video", params=params)
 
         try:
-            # Upload the image first to get a file_id
-            image_file_id = await self._upload_image(image)
-            log.debug(f"Uploaded image, file_id: {image_file_id}")
+            image_base64 = base64.b64encode(image).decode("utf-8")
 
             payload: dict[str, Any] = {
                 "model": model_id,
                 "prompt": prompt,
-                "first_frame_image_id": image_file_id,
+                "first_frame_image": f"data:image/png;base64,{image_base64}",
             }
 
             if hasattr(params, "aspect_ratio") and params.aspect_ratio:
@@ -834,7 +884,14 @@ class MiniMaxProvider(AnthropicProvider):
                     )
                 result = await response.json()
 
-            task_id = result.get("task_id")
+            base_resp = result.get("base_resp", {})
+            status_code = base_resp.get("status_code", 0)
+            if status_code != 0:
+                status_msg = base_resp.get("status_msg", "Unknown error")
+                raise RuntimeError(f"MiniMax image-to-video generation failed: {status_msg} (code: {status_code})")
+
+            task_data = result.get("data") if isinstance(result.get("data"), dict) else result
+            task_id = task_data.get("task_id")
             if not task_id:
                 raise RuntimeError(f"No task_id returned from MiniMax video generation: {result}")
 
@@ -842,18 +899,11 @@ class MiniMaxProvider(AnthropicProvider):
 
             max_wait = timeout_s if timeout_s and timeout_s > 0 else 600
             completed = await self._poll_video_task(task_id, max_wait)
-
-            video_url = completed.get("video_url") or completed.get("file", {}).get("download_url")
-            if not video_url:
-                file_id = completed.get("file_id")
-                if file_id:
-                    video_url = f"https://api.minimaxi.com/v1/files/{file_id}/content"
-                else:
-                    raise RuntimeError("No video URL or file_id in completed task response")
+            video_url = await self._resolve_video_download_url(completed)
 
             async with (
                 aiohttp.ClientSession() as session,
-                session.get(video_url, headers={"Authorization": f"Bearer {self.api_key}"}) as dl_resp,
+                session.get(video_url) as dl_resp,
             ):
                 if dl_resp.status != 200:
                     error_text = await dl_resp.text()

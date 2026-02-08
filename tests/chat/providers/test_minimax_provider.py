@@ -894,7 +894,6 @@ class TestMiniMaxVideoGeneration:
             prompt="Make this image come to life",
         )
 
-        upload_response = {"file_id": "file_uploaded_123"}
         submit_response = {"task_id": "task_i2v_456", "status": "Processing"}
         poll_response = {
             "task_id": "task_i2v_456",
@@ -909,8 +908,6 @@ class TestMiniMaxVideoGeneration:
                 self.status = 200
 
             async def json(self):
-                if "files/upload" in str(self.url):
-                    return upload_response
                 if "video_generation" in str(self.url) and self.method == "post":
                     return submit_response
                 return poll_response
@@ -948,7 +945,7 @@ class TestMiniMaxVideoGeneration:
         """Test MINIMAX_VIDEO_API_URL constant."""
         from nodetool.providers.minimax_provider import MINIMAX_VIDEO_API_URL
 
-        assert MINIMAX_VIDEO_API_URL == "https://api.minimaxi.com/v1/video_generation"
+        assert MINIMAX_VIDEO_API_URL == "https://api.minimax.io/v1/video_generation"
 
     def test_video_models_constant(self):
         """Test MINIMAX_VIDEO_MODELS constant."""
