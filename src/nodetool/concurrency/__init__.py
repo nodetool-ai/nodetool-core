@@ -11,6 +11,7 @@ from .async_condition import AsyncCondition
 from .async_event import AsyncEvent
 from .async_iterators import (
     AsyncByteStream,
+    async_filter,
     async_first,
     async_list,
     async_merge,
@@ -67,6 +68,7 @@ __all__ = [
     "TimeoutContext",
     "TimeoutError",
     "TimeoutPolicy",
+    "async_filter",
     "async_first",
     "async_list",
     "async_merge",

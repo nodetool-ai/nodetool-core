@@ -1,7 +1,10 @@
+import asyncio
+
 import pytest
 
 from nodetool.concurrency.async_iterators import (
     AsyncByteStream,
+    async_filter,
     async_first,
     async_list,
     async_merge,
@@ -495,3 +498,149 @@ class TestAsyncMerge:
 
         result = await async_list(async_merge(gen1()))
         assert result == [1, 2]
+
+
+class TestAsyncFilter:
+    """Tests for async_filter function."""
+
+    @pytest.mark.asyncio
+    async def test_filter_with_sync_predicate(self):
+        """Test filtering with a sync predicate function."""
+
+        async def gen():
+            for i in range(10):
+                yield i
+
+        result = await async_list(async_filter(lambda x: x % 2 == 0, gen()))
+        assert result == [0, 2, 4, 6, 8]
+
+    @pytest.mark.asyncio
+    async def test_filter_with_async_predicate(self):
+        """Test filtering with an async predicate function."""
+
+        async def gen():
+            for i in range(10):
+                yield i
+
+        async def is_even(x):
+            return x % 2 == 0
+
+        result = await async_list(async_filter(is_even, gen()))
+        assert result == [0, 2, 4, 6, 8]
+
+    @pytest.mark.asyncio
+    async def test_filter_all_pass(self):
+        """Test filtering when all items pass the predicate."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        result = await async_list(async_filter(lambda x: True, gen()))
+        assert result == [0, 1, 2, 3, 4]
+
+    @pytest.mark.asyncio
+    async def test_filter_none_pass(self):
+        """Test filtering when no items pass the predicate."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        result = await async_list(async_filter(lambda x: False, gen()))
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_filter_empty_iterable(self):
+        """Test filtering an empty iterable."""
+
+        async def gen():
+            return
+            yield  # pragma: no cover
+
+        result = await async_list(async_filter(lambda x: True, gen()))
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_filter_strings(self):
+        """Test filtering string items."""
+
+        async def gen():
+            for s in ["apple", "banana", "cherry", "date"]:
+                yield s
+
+        result = await async_list(async_filter(lambda x: len(x) > 5, gen()))
+        assert result == ["banana", "cherry"]
+
+    @pytest.mark.asyncio
+    async def test_filter_with_complex_predicate(self):
+        """Test filtering with a more complex predicate."""
+
+        async def gen():
+            for i in range(20):
+                yield i
+
+        # Filter numbers that are divisible by 2 or 3
+        result = await async_list(async_filter(lambda x: x % 2 == 0 or x % 3 == 0, gen()))
+        assert result == [0, 2, 3, 4, 6, 8, 9, 10, 12, 14, 15, 16, 18]
+
+    @pytest.mark.asyncio
+    async def test_filter_preserves_order(self):
+        """Test that filtering preserves the original order."""
+
+        async def gen():
+            for i in [5, 2, 8, 1, 9, 3, 7, 4, 6]:
+                yield i
+
+        # Filter even numbers
+        result = await async_list(async_filter(lambda x: x % 2 == 0, gen()))
+        assert result == [2, 8, 4, 6]
+
+    @pytest.mark.asyncio
+    async def test_filter_with_async_predicate_that_awaits(self):
+        """Test async predicate that performs async operations."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        async def is_greater_than_two(x):
+            # Simulate async operation
+            await asyncio.sleep(0)
+            return x > 2
+
+        result = await async_list(async_filter(is_greater_than_two, gen()))
+        assert result == [3, 4]
+
+    @pytest.mark.asyncio
+    async def test_filter_single_item_passes(self):
+        """Test filtering when only one item passes."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        result = await async_list(async_filter(lambda x: x == 2, gen()))
+        assert result == [2]
+
+    @pytest.mark.asyncio
+    async def test_filter_first_item_fails(self):
+        """Test filtering when first item fails predicate."""
+
+        async def gen():
+            for i in range(1, 6):
+                yield i
+
+        result = await async_list(async_filter(lambda x: x > 1, gen()))
+        assert result == [2, 3, 4, 5]
+
+    @pytest.mark.asyncio
+    async def test_filter_last_item_fails(self):
+        """Test filtering when last item fails predicate."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        result = await async_list(async_filter(lambda x: x < 4, gen()))
+        assert result == [0, 1, 2, 3]

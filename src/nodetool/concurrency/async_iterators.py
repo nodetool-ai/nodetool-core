@@ -1,4 +1,5 @@
-from collections.abc import AsyncIterator
+import asyncio
+from collections.abc import AsyncIterator, Callable
 from typing import AsyncIterable, TypeVar
 
 T = TypeVar("T")
@@ -170,4 +171,44 @@ async def async_merge(*iterables: AsyncIterable[T]) -> AsyncIterator[T]:
     """
     for aiterable in iterables:
         async for item in aiterable:
+            yield item
+
+
+async def async_filter(
+    predicate: Callable[[T], bool] | Callable[[T], object], aiterable: AsyncIterable[T]
+) -> AsyncIterator[T]:
+    """
+    Filter items from an async iterable using a predicate function.
+
+    Yields items from the iterable for which the predicate returns True.
+    The predicate can be a sync function or an async function.
+
+    Args:
+        predicate: A function that takes an item and returns bool.
+                   Can be sync or async.
+        aiterable: The async iterable to filter.
+
+    Yields:
+        Items from the iterable for which predicate(item) is True.
+
+    Example:
+        >>> async def gen():
+        ...     for i in range(10):
+        ...         yield i
+        >>> # With sync predicate
+        >>> result = await async_list(async_filter(lambda x: x % 2 == 0, gen()))
+        >>> result
+        [0, 2, 4, 6, 8]
+        >>> # With async predicate
+        >>> async def is_even(x):
+        ...     return x % 2 == 0
+        >>> result = await async_list(async_filter(is_even, gen()))
+        >>> result
+        [0, 2, 4, 6, 8]
+    """
+    async for item in aiterable:
+        result = predicate(item)
+        if asyncio.iscoroutine(result):
+            result = await result  # type: ignore[misc]
+        if result:
             yield item
