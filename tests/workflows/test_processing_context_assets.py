@@ -624,6 +624,17 @@ class TestModelMethods:
 class TestUtilityMethods:
     """Test utility and helper methods."""
 
+    @pytest.mark.asyncio
+    async def test_embed_assets_in_data_with_asset_id(self, context: ProcessingContext):
+        """Ensure embed_assets_in_data materializes data for asset_id-backed refs."""
+        asset_ref = ImageRef(asset_id="asset_123", uri="asset://asset_123.png")
+        with patch.object(context, "asset_to_bytes", new=AsyncMock(return_value=b"asset bytes")) as mock_fetch:
+            result = await context.embed_assets_in_data(asset_ref)
+
+        assert isinstance(result, ImageRef)
+        assert result.data == b"asset bytes"
+        mock_fetch.assert_called_once_with(asset_ref)
+
     def test_encode_assets_as_uri(self, context: ProcessingContext):
         """Test encoding assets as URIs recursively."""
         # Test with nested structure containing AssetRef
@@ -1151,4 +1162,3 @@ class TestModel3DWithAssociatedFiles:
         assert serialized["material_file"] is not None
         assert len(serialized["texture_files"]) == 1
         assert serialized["texture_files"][0]["type"] == "image"
-

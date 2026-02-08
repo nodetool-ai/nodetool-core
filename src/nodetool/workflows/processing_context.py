@@ -2866,6 +2866,9 @@ class ProcessingContext:
             if (value.uri and value.uri.startswith("memory://")) or value.data is not None:
                 data_bytes = await self.asset_to_bytes(value)
                 return value.model_copy(update={"uri": None, "data": data_bytes})
+            if value.asset_id is not None or (value.uri and value.uri.startswith("asset://")):
+                data_bytes = await self.asset_to_bytes(value)
+                return value.model_copy(update={"data": data_bytes})
             return value
         elif isinstance(value, dict):
             keys = list(value.keys())
