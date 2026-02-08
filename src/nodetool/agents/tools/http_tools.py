@@ -1,3 +1,4 @@
+import asyncio
 import os
 from typing import Any, ClassVar
 
@@ -74,7 +75,7 @@ class DownloadFileTool(Tool):
             full_path = context.resolve_workspace_path(output_file)
             parent_dir = os.path.dirname(full_path)
             if parent_dir:
-                os.makedirs(parent_dir, exist_ok=True)
+                await asyncio.to_thread(os.makedirs, parent_dir, exist_ok=True)
 
             async with (
                 aiohttp.ClientSession() as session,

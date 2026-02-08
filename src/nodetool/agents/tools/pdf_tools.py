@@ -1,5 +1,6 @@
 """PDF tools module."""
 
+import asyncio
 import json
 import os
 from typing import Any, ClassVar
@@ -195,7 +196,7 @@ class ConvertPDFToMarkdownTool(Tool):
 
             parent_dir = os.path.dirname(output_file)
             if parent_dir:
-                os.makedirs(parent_dir, exist_ok=True)
+                await asyncio.to_thread(os.makedirs, parent_dir, exist_ok=True)
             async with aiofiles.open(output_file, "w") as f:
                 await f.write(md_text)
 
@@ -241,7 +242,7 @@ class ConvertMarkdownToPDFTool(Tool):
 
             parent_dir = os.path.dirname(output_file)
             if parent_dir:
-                os.makedirs(parent_dir, exist_ok=True)
+                await asyncio.to_thread(os.makedirs, parent_dir, exist_ok=True)
 
             # Convert using pypandoc
             pypandoc.convert_file(
@@ -310,7 +311,7 @@ class ConvertDocumentTool(Tool):
 
             parent_dir = os.path.dirname(output_file)
             if parent_dir:
-                os.makedirs(parent_dir, exist_ok=True)
+                await asyncio.to_thread(os.makedirs, parent_dir, exist_ok=True)
 
             extra_args = params.get("extra_args", [])
             if isinstance(extra_args, str):
