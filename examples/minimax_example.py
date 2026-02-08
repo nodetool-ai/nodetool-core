@@ -2,14 +2,20 @@
 Example: Using MiniMax Provider in NodeTool
 
 This example demonstrates how to use the MiniMax provider to generate
-LLM responses using MiniMax's Anthropic-compatible API and images
-using MiniMax's image generation API.
+LLM responses using MiniMax's Anthropic-compatible API, images
+using MiniMax's image generation API, and videos using MiniMax's
+Hailuo video generation API.
 
 MiniMax provides access to models like:
 - MiniMax-M2.1
 - MiniMax-M2.1-lightning
 - MiniMax-M2
+- MiniMax-Text-01
 - image-01 (for image generation)
+- image-01-live (for image generation with style options)
+- MiniMax-Hailuo-2.3 (for video generation)
+- MiniMax-Hailuo-2.3-Fast (for fast video generation)
+- MiniMax-Hailuo-02 (for video generation)
 
 Requirements:
 - Set MINIMAX_API_KEY environment variable
@@ -21,9 +27,9 @@ it to the workflow environment.
 
 import asyncio
 
-from nodetool.metadata.types import ImageModel, Message, Provider
+from nodetool.metadata.types import ImageModel, Message, Provider, VideoModel
 from nodetool.providers import get_provider
-from nodetool.providers.types import TextToImageParams
+from nodetool.providers.types import TextToImageParams, TextToVideoParams
 
 
 async def example_basic_chat():
@@ -86,6 +92,20 @@ async def example_list_models():
     for model in image_models:
         print(f"  - {model.id}: {model.name}")
 
+    # Get available video models
+    video_models = await provider.get_available_video_models()
+
+    print(f"\nAvailable MiniMax video models: {len(video_models)}")
+    for model in video_models:
+        print(f"  - {model.id}: {model.name}")
+
+    # Get available TTS models
+    tts_models = await provider.get_available_tts_models()
+
+    print(f"\nAvailable MiniMax TTS models: {len(tts_models)}")
+    for model in tts_models:
+        print(f"  - {model.id}: {model.name}")
+
     print()
 
 
@@ -124,6 +144,39 @@ async def example_image_generation():
     print(f"Image saved to: {output_path}\n")
 
 
+async def example_video_generation():
+    """Example: Generate a video with MiniMax Hailuo"""
+    print("MiniMax Provider - Video Generation Example")
+    print("-" * 50)
+
+    provider = await get_provider(Provider.MiniMax, user_id="1")
+
+    # Create video generation parameters
+    params = TextToVideoParams(
+        model=VideoModel(
+            id="MiniMax-Hailuo-2.3",
+            name="Hailuo 2.3",
+            provider=Provider.MiniMax,
+        ),
+        prompt="A cat wearing sunglasses, walking down a street at sunset",
+    )
+
+    print(f"Generating video with prompt: '{params.prompt}'")
+
+    # Generate the video (this may take a few minutes)
+    video_bytes = await provider.text_to_video(params, timeout_s=600)
+
+    print(f"Generated video size: {len(video_bytes)} bytes")
+
+    # Optionally save to file
+    import aiofiles
+
+    output_path = "/tmp/minimax_generated_video.mp4"
+    async with aiofiles.open(output_path, "wb") as f:
+        await f.write(video_bytes)
+    print(f"Video saved to: {output_path}\n")
+
+
 async def main():
     """Run all examples"""
     print("=" * 50)
@@ -143,6 +196,9 @@ async def main():
 
         # Run image generation example
         await example_image_generation()
+
+        # Run video generation example
+        await example_video_generation()
     except Exception as e:
         print(f"Error: {e}")
         print("\n(i) Make sure MINIMAX_API_KEY is set in your environment")
