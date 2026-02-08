@@ -98,7 +98,8 @@ class LocalExecutor:
 
     def mkdir(self, path: str, mode: int = 0o755, parents: bool = True) -> None:
         """Create a directory locally."""
-        os.makedirs(path, mode=mode, exist_ok=parents)
+        expanded_path = os.path.expanduser(path)
+        os.makedirs(expanded_path, mode=mode, exist_ok=parents)
 
 
 class BaseSSHDeployer(ABC, Generic[TDeployment]):
