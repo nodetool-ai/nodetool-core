@@ -1693,8 +1693,12 @@ def codegen_cmd():
         os.makedirs(output_path, exist_ok=True)
 
         click.echo(f"Generating DSL modules from {source_path} to {output_path} for namespace '{namespace}'...")
-        create_dsl_modules(source_path, output_path)
-        click.echo(f"✅ DSL module generation complete for namespace '{namespace}'!")
+        try:
+            create_dsl_modules(source_path, output_path)
+            click.echo(f"✅ DSL module generation complete for namespace '{namespace}'!")
+        except Exception as e:
+            click.echo(f"Warning: Skipping namespace due to error: {e}", err=True)
+            continue
 
     click.echo("✅ All DSL module generation complete!")
 
