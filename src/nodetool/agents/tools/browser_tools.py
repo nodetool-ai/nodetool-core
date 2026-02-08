@@ -426,7 +426,7 @@ class ScreenshotTool(Tool):
         full_path = context.resolve_workspace_path(output_file)
         parent_dir = os.path.dirname(full_path)
         if parent_dir:
-            os.makedirs(parent_dir, exist_ok=True)
+            await asyncio.to_thread(os.makedirs, parent_dir, exist_ok=True)
 
         browser_context = None
 
@@ -913,7 +913,7 @@ class DOMExtractTool(Tool):
                 full_path = context.resolve_workspace_path(output_file)
                 parent_dir = os.path.dirname(full_path)
                 if parent_dir:
-                    os.makedirs(parent_dir, exist_ok=True)
+                    await asyncio.to_thread(os.makedirs, parent_dir, exist_ok=True)
 
                 async with aiofiles.open(full_path, "w", encoding="utf-8") as f:
                     if output_file.endswith(".json"):
@@ -1139,7 +1139,7 @@ class AgenticBrowserTool(Tool):
             full_path = context.resolve_workspace_path(output_file)
             parent_dir = os.path.dirname(full_path)
             if parent_dir:
-                os.makedirs(parent_dir, exist_ok=True)
+                await asyncio.to_thread(os.makedirs, parent_dir, exist_ok=True)
 
             async with aiofiles.open(full_path, "w", encoding="utf-8") as f:
                 await f.write(

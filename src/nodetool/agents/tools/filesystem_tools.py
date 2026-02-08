@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 from typing import Any, ClassVar
@@ -44,13 +45,13 @@ class WriteFileTool(Tool):
             # Create parent directories if they don't exist
             parent_dir = os.path.dirname(full_path)
             if parent_dir:
-                os.makedirs(parent_dir, exist_ok=True)
+                await asyncio.to_thread(os.makedirs, parent_dir, exist_ok=True)
 
             mode = "a" if append else "w"
             async with aiofiles.open(full_path, mode, encoding="utf-8") as f:
                 await f.write(content)
 
-            file_existed = os.path.exists(full_path)
+            file_existed = await asyncio.to_thread(os.path.exists, full_path)
             return {
                 "success": True,
                 "path": path,
@@ -109,13 +110,15 @@ class ReadFileTool(Tool):
 
             full_path = os.path.abspath(path)
 
-            if not os.path.exists(full_path):
+            path_exists = await asyncio.to_thread(os.path.exists, full_path)
+            if not path_exists:
                 return {
                     "success": False,
                     "error": f"Path {path} does not exist",
                 }
 
-            if os.path.isfile(full_path):
+            is_file = await asyncio.to_thread(os.path.isfile, full_path)
+            if is_file:
                 # Handle reading a single file
                 try:
                     # Check if the file is binary
@@ -223,7 +226,8 @@ class ReadFileTool(Tool):
                         "error": str(e),
                     }
 
-            elif os.path.isdir(full_path):
+            is_dir = await asyncio.to_thread(os.path.isdir, full_path)
+            if is_dir:
                 return {
                     "success": False,
                     "error": f"Path {path} is a directory, not a file",
@@ -264,46 +268,44 @@ class ListDirectoryTool(Tool):
             recursive = params.get("recursive", False)
             full_path = os.path.abspath(path)
 
-            if not os.path.exists(full_path):
+            def _list_directory_blocking():
+                # Check if path exists and is a directory
+                if not os.path.exists(full_path):
+                    return {"success": False, "error": f"Path {path} does not exist"}
+
+                if not os.path.isdir(full_path):
+                    return {"success": False, "error": f"Path {path} is not a directory"}
+
+                results = {"files": [], "directories": []}
+                errors = []
+
+                if recursive:
+                    for root, dirs, files in os.walk(full_path):
+                        for dir_name in dirs:
+                            results["directories"].append(os.path.join(root, dir_name))
+                        for file_name in files:
+                            results["files"].append(os.path.join(root, file_name))
+                else:
+                    try:
+                        for item in os.listdir(full_path):
+                            item_path = os.path.join(full_path, item)
+                            if os.path.isdir(item_path):
+                                results["directories"].append(item_path)
+                            elif os.path.isfile(item_path):
+                                results["files"].append(item_path)
+                    except Exception as e:
+                        errors.append(f"Error listing contents of {path}: {str(e)}")
+
                 return {
-                    "success": False,
-                    "error": f"Path {path} does not exist",
+                    "success": True,
+                    "path": path,
+                    "full_path": full_path,
+                    "recursive": recursive,
+                    "contents": results,
+                    "list_errors": errors if errors else None,
                 }
 
-            if not os.path.isdir(full_path):
-                return {
-                    "success": False,
-                    "error": f"Path {path} is not a directory",
-                }
-
-            results = {"files": [], "directories": []}
-            errors = []
-
-            if recursive:
-                for root, dirs, files in os.walk(full_path):
-                    for dir_name in dirs:
-                        results["directories"].append(os.path.join(root, dir_name))
-                    for file_name in files:
-                        results["files"].append(os.path.join(root, file_name))
-            else:
-                try:
-                    for item in os.listdir(full_path):
-                        item_path = os.path.join(full_path, item)
-                        if os.path.isdir(item_path):
-                            results["directories"].append(item_path)
-                        elif os.path.isfile(item_path):
-                            results["files"].append(item_path)
-                except Exception as e:
-                    errors.append(f"Error listing contents of {path}: {str(e)}")
-
-            return {
-                "success": True,
-                "path": path,
-                "full_path": full_path,
-                "recursive": recursive,
-                "contents": results,
-                "list_errors": errors if errors else None,
-            }
+            return await asyncio.to_thread(_list_directory_blocking)
 
         except Exception as e:
             return {"success": False, "error": str(e)}
