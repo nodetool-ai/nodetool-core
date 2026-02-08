@@ -9,7 +9,14 @@ from .async_channel import (
 )
 from .async_condition import AsyncCondition
 from .async_event import AsyncEvent
-from .async_iterators import AsyncByteStream
+from .async_iterators import (
+    AsyncByteStream,
+    async_first,
+    async_list,
+    async_merge,
+    async_slice,
+    async_take,
+)
 from .async_lock import AsyncLock
 from .async_priority_queue import AsyncPriorityQueue
 from .async_rwlock import AsyncReaderWriterLock
@@ -60,6 +67,11 @@ __all__ = [
     "TimeoutContext",
     "TimeoutError",
     "TimeoutPolicy",
+    "async_first",
+    "async_list",
+    "async_merge",
+    "async_slice",
+    "async_take",
     "batched_async_iterable",
     "create_channel",
     "fan_in",

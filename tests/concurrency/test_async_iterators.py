@@ -1,6 +1,13 @@
 import pytest
 
-from nodetool.concurrency.async_iterators import AsyncByteStream
+from nodetool.concurrency.async_iterators import (
+    AsyncByteStream,
+    async_first,
+    async_list,
+    async_merge,
+    async_slice,
+    async_take,
+)
 
 
 class TestAsyncByteStream:
@@ -148,3 +155,343 @@ class TestAsyncByteStream:
         stream = AsyncByteStream(b"abc", chunk_size=3)
         chunks = [chunk async for chunk in stream]
         assert chunks == [b"abc"]
+
+
+class TestAsyncTake:
+    """Tests for async_take function."""
+
+    @pytest.mark.asyncio
+    async def test_take_less_than_available(self):
+        """Test taking fewer items than available."""
+        async def gen():
+            for i in range(10):
+                yield i
+
+        result = await async_take(gen(), 3)
+        assert result == [0, 1, 2]
+
+    @pytest.mark.asyncio
+    async def test_take_exact_count(self):
+        """Test taking exact number of available items."""
+        async def gen():
+            for i in range(3):
+                yield i
+
+        result = await async_take(gen(), 3)
+        assert result == [0, 1, 2]
+
+    @pytest.mark.asyncio
+    async def test_take_more_than_available(self):
+        """Test taking more items than available."""
+        async def gen():
+            for i in range(3):
+                yield i
+
+        result = await async_take(gen(), 10)
+        assert result == [0, 1, 2]
+
+    @pytest.mark.asyncio
+    async def test_take_zero(self):
+        """Test taking zero items."""
+        async def gen():
+            for i in range(5):
+                yield i
+
+        result = await async_take(gen(), 0)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_take_from_empty(self):
+        """Test taking from empty iterable."""
+        async def gen():
+            return
+            yield  # pragma: no cover
+
+        result = await async_take(gen(), 5)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_take_strings(self):
+        """Test taking string items."""
+        async def gen():
+            for s in ["a", "b", "c", "d"]:
+                yield s
+
+        result = await async_take(gen(), 2)
+        assert result == ["a", "b"]
+
+
+class TestAsyncSlice:
+    """Tests for async_slice function."""
+
+    @pytest.mark.asyncio
+    async def test_slice_with_stop(self):
+        """Test slicing with start and stop."""
+        async def gen():
+            for i in range(10):
+                yield i
+
+        result = await async_slice(gen(), 2, 5)
+        assert result == [2, 3, 4]
+
+    @pytest.mark.asyncio
+    async def test_slice_without_stop(self):
+        """Test slicing with only start (no stop)."""
+        async def gen():
+            for i in range(10):
+                yield i
+
+        result = await async_slice(gen(), 5)
+        assert result == [5, 6, 7, 8, 9]
+
+    @pytest.mark.asyncio
+    async def test_slice_start_zero(self):
+        """Test slicing from start."""
+        async def gen():
+            for i in range(10):
+                yield i
+
+        result = await async_slice(gen(), 0, 3)
+        assert result == [0, 1, 2]
+
+    @pytest.mark.asyncio
+    async def test_slice_beyond_end(self):
+        """Test slicing beyond end of iterable."""
+        async def gen():
+            for i in range(5):
+                yield i
+
+        result = await async_slice(gen(), 3, 10)
+        assert result == [3, 4]
+
+    @pytest.mark.asyncio
+    async def test_slice_empty_result(self):
+        """Test slicing with start beyond end."""
+        async def gen():
+            for i in range(5):
+                yield i
+
+        result = await async_slice(gen(), 10, 15)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_slice_from_empty(self):
+        """Test slicing from empty iterable."""
+        async def gen():
+            return
+            yield  # pragma: no cover
+
+        result = await async_slice(gen(), 0, 5)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_slice_strings(self):
+        """Test slicing string items."""
+        async def gen():
+            for s in ["a", "b", "c", "d", "e"]:
+                yield s
+
+        result = await async_slice(gen(), 1, 4)
+        assert result == ["b", "c", "d"]
+
+
+class TestAsyncFirst:
+    """Tests for async_first function."""
+
+    @pytest.mark.asyncio
+    async def test_first_from_nonempty(self):
+        """Test getting first item from nonempty iterable."""
+        async def gen():
+            for i in range(5):
+                yield i
+
+        result = await async_first(gen())
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_first_from_empty_without_default(self):
+        """Test getting first from empty iterable without default."""
+        async def gen():
+            return
+            yield  # pragma: no cover
+
+        result = await async_first(gen())
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_first_from_empty_with_default(self):
+        """Test getting first from empty iterable with default."""
+        async def gen():
+            return
+            yield  # pragma: no cover
+
+        result = await async_first(gen(), default=42)
+        assert result == 42
+
+    @pytest.mark.asyncio
+    async def test_first_strings(self):
+        """Test getting first string item."""
+        async def gen():
+            for s in ["a", "b", "c"]:
+                yield s
+
+        result = await async_first(gen())
+        assert result == "a"
+
+    @pytest.mark.asyncio
+    async def test_first_with_falsey_default(self):
+        """Test that Falsey default values work correctly."""
+        async def gen():
+            return
+            yield  # pragma: no cover
+
+        result = await async_first(gen(), default=0)
+        assert result == 0
+
+        result = await async_first(gen(), default="")
+        assert result == ""
+
+        result = await async_first(gen(), default=False)
+        assert result is False
+
+
+class TestAsyncList:
+    """Tests for async_list function."""
+
+    @pytest.mark.asyncio
+    async def test_list_from_nonempty(self):
+        """Test consuming nonempty iterable into list."""
+        async def gen():
+            for i in range(5):
+                yield i
+
+        result = await async_list(gen())
+        assert result == [0, 1, 2, 3, 4]
+
+    @pytest.mark.asyncio
+    async def test_list_from_empty(self):
+        """Test consuming empty iterable into list."""
+        async def gen():
+            return
+            yield  # pragma: no cover
+
+        result = await async_list(gen())
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_list_strings(self):
+        """Test consuming string iterable into list."""
+        async def gen():
+            for s in ["a", "b", "c"]:
+                yield s
+
+        result = await async_list(gen())
+        assert result == ["a", "b", "c"]
+
+    @pytest.mark.asyncio
+    async def test_list_single_item(self):
+        """Test consuming single item iterable."""
+        async def gen():
+            yield 42
+
+        result = await async_list(gen())
+        assert result == [42]
+
+
+class TestAsyncMerge:
+    """Tests for async_merge function."""
+
+    @pytest.mark.asyncio
+    async def test_merge_two_iterables(self):
+        """Test merging two async iterables."""
+        async def gen1():
+            yield 1
+            yield 2
+
+        async def gen2():
+            yield 3
+            yield 4
+
+        result = await async_list(async_merge(gen1(), gen2()))
+        assert result == [1, 2, 3, 4]
+
+    @pytest.mark.asyncio
+    async def test_merge_three_iterables(self):
+        """Test merging three async iterables."""
+        async def gen1():
+            yield 1
+
+        async def gen2():
+            yield 2
+
+        async def gen3():
+            yield 3
+
+        result = await async_list(async_merge(gen1(), gen2(), gen3()))
+        assert result == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    async def test_merge_empty_iterables(self):
+        """Test merging empty iterables."""
+        async def gen1():
+            return
+            yield  # pragma: no cover
+
+        async def gen2():
+            return
+            yield  # pragma: no cover
+
+        result = await async_list(async_merge(gen1(), gen2()))
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_merge_with_empty_first(self):
+        """Test merging when first iterable is empty."""
+        async def gen1():
+            return
+            yield  # pragma: no cover
+
+        async def gen2():
+            yield 1
+            yield 2
+
+        result = await async_list(async_merge(gen1(), gen2()))
+        assert result == [1, 2]
+
+    @pytest.mark.asyncio
+    async def test_merge_with_empty_last(self):
+        """Test merging when last iterable is empty."""
+        async def gen1():
+            yield 1
+            yield 2
+
+        async def gen2():
+            return
+            yield  # pragma: no cover
+
+        result = await async_list(async_merge(gen1(), gen2()))
+        assert result == [1, 2]
+
+    @pytest.mark.asyncio
+    async def test_merge_strings(self):
+        """Test merging string iterables."""
+        async def gen1():
+            yield "a"
+            yield "b"
+
+        async def gen2():
+            yield "c"
+            yield "d"
+
+        result = await async_list(async_merge(gen1(), gen2()))
+        assert result == ["a", "b", "c", "d"]
+
+    @pytest.mark.asyncio
+    async def test_merge_single_iterable(self):
+        """Test merging single iterable."""
+        async def gen1():
+            yield 1
+            yield 2
+
+        result = await async_list(async_merge(gen1()))
+        assert result == [1, 2]
