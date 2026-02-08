@@ -634,7 +634,7 @@ class MiniMaxProvider(AnthropicProvider):
             return str(video_url)
 
         file_info = task_result.get("file") if isinstance(task_result.get("file"), dict) else {}
-        if file_info.get("download_url"):
+        if file_info and file_info.get("download_url"):
             return str(file_info["download_url"])
 
         file_id = task_result.get("file_id") or file_info.get("file_id")
@@ -818,6 +818,7 @@ class MiniMaxProvider(AnthropicProvider):
         timeout_s: int | None = None,
         context: ProcessingContext | None = None,
         node_id: str | None = None,
+        **kwargs: Any,
     ) -> bytes:
         """Generate a video from an input image using MiniMax Hailuo models.
 

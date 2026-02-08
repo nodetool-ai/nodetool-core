@@ -792,11 +792,11 @@ class TestMiniMaxVideoGeneration:
                 pass
 
         class MockSession:
-            def post(self, url, json=None, headers=None):
+            def post(self, url, json=None, headers=None, **kwargs):
                 call_log.append(("post", url))
                 return MockResponse(url, "post")
 
-            def get(self, url, headers=None):
+            def get(self, url, headers=None, params=None, **kwargs):
                 call_log.append(("get", url))
                 return MockResponse(url, "get")
 
@@ -925,10 +925,10 @@ class TestMiniMaxVideoGeneration:
                 pass
 
         class MockSession:
-            def post(self, url, json=None, headers=None, data=None):
+            def post(self, url, json=None, headers=None, data=None, **kwargs):
                 return MockResponse(url, "post")
 
-            def get(self, url, headers=None):
+            def get(self, url, headers=None, params=None, **kwargs):
                 return MockResponse(url, "get")
 
             async def __aenter__(self):

@@ -102,6 +102,7 @@ class BaseType(BaseModel):
             raise ValueError("Type name is missing. Types must derive from BaseType")
         if type_name not in NameToType:
             raise ValueError(f"Unknown type name: {type_name}. Types must derive from BaseType. Data: {data}")
+        return NameToType[type_name](**data)
 
 class ImageSize(BaseType):
     """
