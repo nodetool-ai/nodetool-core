@@ -1277,10 +1277,15 @@ class SSHDeployer(BaseSSHDeployer[SSHDeployment | LocalDeployment]):
 
         service_name = self.deployment.service_name or f"nodetool-{self.deployment.port}"
         deployment = self.deployment
+        deployment_env = dict(deployment.environment) if deployment.environment else {}
+        env_file_path = f"~/.config/nodetool/{service_name}.env"
+        env_file_reference = f"%h/.config/nodetool/{service_name}.env"
 
         # User-level systemd path
         systemd_dir = ".config/systemd/user"
         ssh.mkdir(systemd_dir, parents=True)
+
+        environment_file_line = f"EnvironmentFile={env_file_reference}\n" if deployment_env else ""
 
         service_file = f"""[Unit]
 Description=NodeTool Server ({service_name})
@@ -1291,12 +1296,22 @@ ExecStart={workspace_expanded}/env/bin/nodetool serve --production --host 0.0.0.
 WorkingDirectory={workspace_expanded}
 Environment="NODETOOL_HOME={workspace_expanded}"
 Environment="HF_HOME={hf_cache_expanded}"
-Restart=always
+{environment_file_line}Restart=always
 RestartSec=10
 
 [Install]
 WantedBy=default.target
 """
+
+        if deployment_env:
+            def _format_env_value(value: str) -> str:
+                escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+                return f'"{escaped}"'
+
+            env_lines = [f"{key}={_format_env_value(str(value))}" for key, value in deployment_env.items()]
+            self._upload_content(ssh, "\n".join(env_lines) + "\n", env_file_path)
+            ssh.execute(f"chmod 600 {shlex.quote(env_file_path)}", check=False)
+            self._log(results, f"  Environment file written: {env_file_path}")
         
         import tempfile
         # Generate generic filename for temp file
