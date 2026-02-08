@@ -349,6 +349,7 @@ def info_cmd(as_json: bool):
     console.print(keys_table)
     console.print()
 
+
 @click.group(name="workflows")
 def workflows() -> None:
     """Workflow management commands (mirrors MCP workflow tools)."""
@@ -780,6 +781,15 @@ mcp.add_command(jobs)
     help="Select authentication provider (overrides ENV AUTH_PROVIDER)",
 )
 @click.option(
+    "--ui-url",
+    help="URL to download and serve the UI from (zip file).",
+)
+@click.option(
+    "--ui",
+    is_flag=True,
+    help="Download and serve the UI matching the current NodeTool version.",
+)
+@click.option(
     "--verbose",
     "-v",
     is_flag=True,
@@ -799,6 +809,8 @@ def serve(
     auth_provider: str | None = None,
     apps_folder: str | None = None,
     production: bool = False,
+    ui_url: str | None = None,
+    ui: bool = False,
     verbose: bool = False,
     mock: bool = False,
 ):
@@ -806,8 +818,22 @@ def serve(
 
     Serves the REST API, WebSocket endpoints, and optionally static assets or app bundles.
 
+    Use --production to run the production server with full admin routers.
     Use --mock to start with pre-filled test data for development and testing.
     """
+    if production:
+        from nodetool.api.run_server import run_server
+
+        if static_folder:
+            console.print("[yellow]Warning: --static-folder ignored in production mode[/]")
+        if apps_folder:
+            console.print("[yellow]Warning: --apps-folder ignored in production mode[/]")
+        if mock:
+            console.print("[yellow]Warning: --mock ignored in production mode[/]")
+
+        run_server(host=host, port=port, reload=reload)
+        return
+
     from nodetool.api.server import create_app, run_uvicorn_server
 
     # Configure logging level based on verbose flag
@@ -830,8 +856,58 @@ def serve(
     except ImportError:
         pass
 
-    if auth_provider:
-        os.environ["AUTH_PROVIDER"] = auth_provider.lower()
+    # Handle UI download if requested
+    if ui or ui_url:
+        if ui and ui_url:
+             console.print("[yellow]Warning: --ui-url overrides --ui[/]")
+        
+        url_to_use = ui_url
+        
+        # If --ui flag is used and no explicit URL, infer it
+        if ui and not ui_url:
+            try:
+                version = get_package_version("nodetool-core")
+                # Fix normalized version if needed (e.g., 0.6.3rc12 -> 0.6.3-rc.12)
+                if "rc" in version and "-" not in version:
+                     version = version.replace("rc", "-rc.")
+                
+                url_to_use = f"https://github.com/nodetool-ai/nodetool/releases/download/v{version}/nodetool-web-{version}.zip"
+                console.print(f"[cyan]Inferring UI URL for version {version}: {url_to_use}[/]")
+            except PackageNotFoundError:
+                console.print("[red]Could not determine package version.[/]")
+                # We will try fallback below if we can't infer or if inference fails
+                pass
+
+        if static_folder:
+             console.print("[yellow]Warning: --ui-url/--ui overrides --static-folder[/]")
+
+        try:
+            if url_to_use:
+                static_folder = _download_and_cache_ui(url_to_use)
+            else:
+                raise Exception("No URL available")
+        except Exception as e:
+            if ui and not ui_url:
+                console.print(f"[yellow]Failed to download UI for current version ({e}). Trying latest release...[/]")
+                try:
+                    import httpx
+                    # Find latest tag
+                    resp = httpx.get("https://github.com/nodetool-ai/nodetool/releases/latest", follow_redirects=False)
+                    location = resp.headers.get("location", "")
+                    if "/tag/" in location:
+                        tag = location.split("/")[-1]
+                        version_str = tag.lstrip("v")
+                        latest_url = f"https://github.com/nodetool-ai/nodetool/releases/download/{tag}/nodetool-web-{version_str}.zip"
+                        console.print(f"[cyan]Downloading latest UI ({tag}): {latest_url}[/]")
+                        static_folder = _download_and_cache_ui(latest_url)
+                    else:
+                        raise Exception("Could not resolve latest release tag")
+                except Exception as inner_e:
+                     console.print(f"[red]Failed to download latest UI: {inner_e}[/]")
+                     sys.exit(1)
+            else:
+                console.print(f"[red]Failed to download UI: {e}[/]")
+                sys.exit(1)
 
     if not reload:
         app = create_app(static_folder=static_folder, apps_folder=apps_folder)
@@ -843,6 +919,63 @@ def serve(
         app = "nodetool.api.app:app"
 
     run_uvicorn_server(app=app, host=host, port=port, reload=reload)
+
+
+def _download_and_cache_ui(url: str) -> str:
+    """Download UI zip from URL and unpack to cache directory."""
+    import hashlib
+    import shutil
+    import zipfile
+    from io import BytesIO
+    import httpx
+    from nodetool.config.settings import get_system_cache_path
+
+    # Generate cache key from URL
+    url_hash = hashlib.md5(url.encode()).hexdigest()
+    cache_dir = get_system_cache_path("ui_cache") / url_hash
+    
+    # Check if already cached
+    if cache_dir.exists() and (cache_dir / "index.html").exists():
+        console.print(f"[green]Using cached UI from {cache_dir}[/]")
+        return str(cache_dir)
+
+    console.print(f"[cyan]Downloading UI from {url}...[/]")
+    
+    # Download
+    with httpx.Client(follow_redirects=True) as client:
+        resp = client.get(url)
+        if resp.status_code == 404:
+             raise Exception("404 Not Found")
+        resp.raise_for_status()
+        
+        # Unpack
+        console.print("[cyan]Unpacking UI...[/]")
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        with zipfile.ZipFile(BytesIO(resp.content)) as z:
+            z.extractall(cache_dir)
+            
+        # Handle case where zip contains a single top-level folder
+        # e.g. nodetool-web-0.6.3-rc.12/index.html -> move contents up
+        items = list(cache_dir.iterdir())
+        if len(items) == 1 and items[0].is_dir():
+            subdir = items[0]
+            # Move contents to temp dir first to avoid conflicts
+            temp_dir = cache_dir.parent / f"{url_hash}_temp"
+            subdir.rename(temp_dir)
+            try:
+                shutil.rmtree(cache_dir)
+                temp_dir.rename(cache_dir)
+            except Exception:
+                # Fallback cleanup
+                if temp_dir.exists():
+                    shutil.rmtree(temp_dir)
+                raise
+
+        console.print(f"[green]UI ready at {cache_dir}[/]")
+        return str(cache_dir)
 
 
 @cli.command()
@@ -2430,6 +2563,7 @@ def download_ollama(
         # Download via HTTP API server
         nodetool admin download-ollama --model-name llama3.2:latest --server-url http://localhost:7777
     """
+
     async def run_download():
         console.print("[bold cyan]📥 Starting Ollama download...[/]")
         console.print(f"Model: {model_name}")
@@ -2841,7 +2975,9 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
     from nodetool.config.deployment import (
         GCPDeployment,
         RunPodDeployment,
-        SelfHostedDeployment,
+        DockerDeployment,
+        SSHDeployment,
+        LocalDeployment,
     )
 
     def _inject(env: Optional[dict[str, str]]) -> dict[str, str]:
@@ -2849,11 +2985,10 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
         env["SECRETS_MASTER_KEY"] = master_key
         return env
 
-    if isinstance(deployment, SelfHostedDeployment):
+    if isinstance(deployment, DockerDeployment):
         deployment.container.environment = _inject(deployment.container.environment)
-        if deployment.proxy and deployment.proxy.services:
-            for service in deployment.proxy.services:
-                service.environment = _inject(service.environment)
+    elif isinstance(deployment, SSHDeployment | LocalDeployment):
+        deployment.environment = _inject(deployment.environment)
     elif isinstance(deployment, RunPodDeployment | GCPDeployment):
         deployment.environment = _inject(getattr(deployment, "environment", None))
 
@@ -2977,7 +3112,9 @@ def deploy_show(name: str):
     from nodetool.config.deployment import (
         GCPDeployment,
         RunPodDeployment,
-        SelfHostedDeployment,
+        DockerDeployment,
+        SSHDeployment,
+        LocalDeployment,
     )
     from nodetool.deploy.manager import DeploymentManager
 
@@ -3002,8 +3139,8 @@ def deploy_show(name: str):
         content.append("")
 
         # Type-specific configuration
-        if isinstance(deployment, SelfHostedDeployment):
-            content.append("[bold]Self-Hosted Configuration:[/]")
+        if isinstance(deployment, DockerDeployment):
+            content.append("[bold]Docker Configuration:[/]")
             content.append(f"  Host: {deployment.host}")
             content.append(f"  SSH User: {deployment.ssh.user}")
             content.append(f"  Image: {deployment.image.name}:{deployment.image.tag}")
@@ -3020,6 +3157,46 @@ def deploy_show(name: str):
             content.append("")
 
             # Paths
+            content.append("[bold]Paths:[/]")
+            content.append(f"  Workspace: {deployment.paths.workspace}")
+            content.append(f"  HF Cache: {deployment.paths.hf_cache}")
+
+        elif isinstance(deployment, SSHDeployment):
+            content.append("[bold]SSH Configuration:[/]")
+            content.append(f"  Host: {deployment.host}")
+            content.append(f"  SSH User: {deployment.ssh.user}")
+            content.append("")
+
+            # Service details
+            content.append("[bold]Service:[/]")
+            content.append(f"  Port: {deployment.port}")
+            if deployment.service_name:
+                content.append(f"  Systemd Service: {deployment.service_name}")
+            if deployment.workflows:
+                content.append(f"  Workflows: {', '.join(deployment.workflows)}")
+            if deployment.gpu:
+                content.append(f"  GPU: {deployment.gpu}")
+            content.append("")
+
+            # Paths
+            content.append("[bold]Paths:[/]")
+            content.append(f"  Workspace: {deployment.paths.workspace}")
+            content.append(f"  HF Cache: {deployment.paths.hf_cache}")
+        elif isinstance(deployment, LocalDeployment):
+            content.append("[bold]Local Configuration:[/]")
+            content.append(f"  Host: {deployment.host}")
+            content.append("")
+
+            content.append("[bold]Service:[/]")
+            content.append(f"  Port: {deployment.port}")
+            if deployment.service_name:
+                content.append(f"  Systemd Service: {deployment.service_name}")
+            if deployment.workflows:
+                content.append(f"  Workflows: {', '.join(deployment.workflows)}")
+            if deployment.gpu:
+                content.append(f"  GPU: {deployment.gpu}")
+            content.append("")
+
             content.append("[bold]Paths:[/]")
             content.append(f"  Workspace: {deployment.paths.workspace}")
             content.append(f"  HF Cache: {deployment.paths.hf_cache}")
@@ -3061,18 +3238,23 @@ def deploy_show(name: str):
             if state.get("last_deployed"):
                 content.append(f"  Last Deployed: {state['last_deployed']}")
 
-            if state.get("compose_hash"):
-                content.append(f"  Compose Hash: {state['compose_hash'][:12]}...")
+            if state.get("container_hash"):
+                content.append(f"  Container Hash: {state['container_hash'][:12]}...")
         else:
             content.append("  Status: [yellow]Not deployed[/]")
 
         content.append("")
 
         # URLs and endpoints
-        if isinstance(deployment, SelfHostedDeployment):
+        if isinstance(deployment, DockerDeployment):
             content.append("[bold]Endpoints:[/]")
             url = f"http://{deployment.host}:{deployment.container.port}"
             content.append(f"  {deployment.container.name}: {url}")
+
+        elif isinstance(deployment, SSHDeployment | LocalDeployment):
+            content.append("[bold]Endpoints:[/]")
+            url = f"http://{deployment.host}:{deployment.port}"
+            content.append(f"  Service: {url}")
 
         elif isinstance(deployment, GCPDeployment):
             if state and state.get("service_url"):
@@ -3120,7 +3302,7 @@ def deploy_show(name: str):
 @click.option(
     "--type",
     "deployment_type",
-    type=click.Choice(["self-hosted", "runpod", "gcp"]),
+    type=click.Choice(["docker", "ssh", "local", "runpod", "gcp"]),
     prompt="Deployment type",
     help="Type of deployment",
 )
@@ -3135,7 +3317,9 @@ def deploy_add(name: str, deployment_type: str):
         ImageConfig,
         RunPodDeployment,
         RunPodImageConfig,
-        SelfHostedDeployment,
+        DockerDeployment,
+        SSHDeployment,
+        LocalDeployment,
         SSHConfig,
         get_deployment_config_path,
         load_deployment_config,
@@ -3162,32 +3346,35 @@ def deploy_add(name: str, deployment_type: str):
         console.print()
 
         # Gather deployment-specific configuration
-        if deployment_type == "self-hosted":
-            console.print("[cyan]Self-Hosted Configuration:[/]")
-            host = click.prompt("Host address", type=str)
-            ssh_user = click.prompt("SSH username", type=str)
-            ssh_key_path = click.prompt("SSH key path", type=str, default="~/.ssh/id_rsa")
+        if deployment_type == "docker":
+            console.print("[cyan]Docker Configuration:[/]")
 
-            # Image configuration
+            host = click.prompt("Host address", type=str)
+
+            # Check if localhost to skip SSH prompts
+            ssh_user = None
+            ssh_key_path = None
+            is_localhost = host.lower() in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]
+
+            if not is_localhost:
+                ssh_user = click.prompt("SSH username", type=str)
+                ssh_key_path = click.prompt("SSH key path", type=str, default="~/.ssh/id_rsa")
+
             console.print()
             console.print("[cyan]Image configuration:[/]")
             image_name = click.prompt("  Docker image name", type=str, default="nodetool/nodetool")
             image_tag = click.prompt("  Docker image tag", type=str, default="latest")
 
-            # Container configuration
             console.print()
             console.print("[cyan]Container configuration:[/]")
+            container_name = click.prompt("  Container name", type=str, default=f"nodetool-{name}")
+            container_port = click.prompt("  Port", type=int, default=8000)
 
-            container_name = click.prompt("  Container name", type=str)
-            container_port = click.prompt("  Port", type=int)
-
-            # Optional GPU
             use_gpu = click.confirm("  Assign GPU?", default=False)
             gpu = None
             if use_gpu:
                 gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
 
-            # Optional workflows
             has_workflows = click.confirm("  Assign specific workflows?", default=False)
             workflows = None
             if has_workflows:
@@ -3201,11 +3388,76 @@ def deploy_add(name: str, deployment_type: str):
                 workflows=workflows,
             )
 
-            deployment = SelfHostedDeployment(
+            # Create SSH config only if user provided details
+            ssh_config = None
+            if ssh_user:
+                ssh_config = SSHConfig(user=ssh_user, key_path=ssh_key_path)
+
+            deployment = DockerDeployment(
                 host=host,
-                ssh=SSHConfig(user=ssh_user, key_path=ssh_key_path),
+                ssh=ssh_config,
                 image=ImageConfig(name=image_name, tag=image_tag),
                 container=container,
+            )
+
+        elif deployment_type == "ssh":
+            console.print("[cyan]SSH/Shell Configuration:[/]")
+
+            host = click.prompt("Host address", type=str)
+            ssh_user = click.prompt("SSH username", type=str)
+            ssh_key_path = click.prompt("SSH key path", type=str, default="~/.ssh/id_rsa")
+
+            console.print()
+            console.print("[cyan]Service configuration:[/]")
+            container_port = click.prompt("  Port", type=int, default=8000)
+            service_name = click.prompt("  Systemd service name", type=str, default=f"nodetool-{container_port}")
+            
+            use_gpu = click.confirm("  Assign GPU?", default=False)
+            gpu = None
+            if use_gpu:
+                 gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
+            
+            has_workflows = click.confirm("  Assign specific workflows?", default=False)
+            workflows = None
+            if has_workflows:
+                workflows_str = click.prompt("  Workflow IDs (comma-separated)", type=str)
+                workflows = [w.strip() for w in workflows_str.split(",")]
+
+            deployment = SSHDeployment(
+                host=host,
+                ssh=SSHConfig(user=ssh_user, key_path=ssh_key_path),
+                port=container_port,
+                service_name=service_name,
+                gpu=gpu,
+                workflows=workflows,
+            )
+        elif deployment_type == "local":
+            console.print("[cyan]Local/Shell Configuration:[/]")
+
+            host = click.prompt("Host address", type=str, default="localhost")
+
+            console.print()
+            console.print("[cyan]Service configuration:[/]")
+            container_port = click.prompt("  Port", type=int, default=8000)
+            service_name = click.prompt("  Systemd service name", type=str, default=f"nodetool-{container_port}")
+
+            use_gpu = click.confirm("  Assign GPU?", default=False)
+            gpu = None
+            if use_gpu:
+                gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
+
+            has_workflows = click.confirm("  Assign specific workflows?", default=False)
+            workflows = None
+            if has_workflows:
+                workflows_str = click.prompt("  Workflow IDs (comma-separated)", type=str)
+                workflows = [w.strip() for w in workflows_str.split(",")]
+
+            deployment = LocalDeployment(
+                host=host,
+                port=container_port,
+                service_name=service_name,
+                gpu=gpu,
+                workflows=workflows,
             )
 
         elif deployment_type == "runpod":
@@ -4767,7 +5019,6 @@ def proxy_validate_config(config: str):
             f"Idle timeout: {proxy_config.global_.idle_timeout}s"
         )
 
-        # Display services
         table = Table(title="Services")
         table.add_column("Name", style="cyan")
         table.add_column("Path", style="magenta")
@@ -4794,6 +5045,307 @@ def proxy_validate_config(config: str):
     except Exception as e:
         console.print(f"[red]❌ Error: {e}[/]")
         raise SystemExit(1) from e
+
+
+@cli.group()
+def users():
+    """User management for local NodeTool server."""
+    pass
+
+
+@users.command("add")
+@click.argument("username")
+@click.option("--role", type=click.Choice(["admin", "user"]), default="user", help="User role")
+def users_add(username: str, role: str):
+    """Add a new user and display their bearer token."""
+    from nodetool.security.user_manager import UserManager
+
+    manager = UserManager()
+    try:
+        result = manager.add_user(username, role)
+        console.print(Panel.fit(f"[green]✅ User '{username}' added successfully[/]"))
+        console.print()
+        console.print("[bold yellow]Bearer Token (save this - won't be shown again!):[/]")
+        console.print(f"[bold cyan]{result.token}[/]")
+        console.print()
+        console.print(f"[dim]User ID: {result.user_id}[/]")
+        console.print(f"[dim]Role: {result.role}[/]")
+        console.print(f"[dim]Created: {result.created_at}[/]")
+    except ValueError as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@users.command("list")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def users_list(as_json: bool):
+    """List all users (tokens masked)."""
+    from nodetool.security.user_manager import UserManager
+
+    manager = UserManager()
+    users = manager.list_users()
+
+    if not users:
+        console.print("[yellow]No users found.[/]")
+        return
+
+    if as_json:
+        output = {
+            username: {
+                "user_id": user.user_id,
+                "role": user.role,
+                "token_hash": user.token_hash[:16] + "...",
+                "created_at": user.created_at,
+            }
+            for username, user in users.items()
+        }
+        click.echo(json.dumps(output, indent=2, default=_json_default))
+        return
+
+    table = Table(title="Users")
+    table.add_column("Username", style="cyan")
+    table.add_column("User ID", style="green")
+    table.add_column("Role", style="magenta")
+    table.add_column("Token Hash", style="yellow")
+    table.add_column("Created", style="white")
+
+    for username, user in users.items():
+        table.add_row(username, user.user_id, user.role, user.token_hash[:16] + "...", user.created_at[:19])
+
+    console.print(table)
+
+
+@users.command("remove")
+@click.argument("username")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation")
+def users_remove(username: str, force: bool):
+    """Remove a user."""
+    from nodetool.security.user_manager import UserManager
+
+    manager = UserManager()
+
+    if not force:
+        if not click.confirm(f"Remove user '{username}'?"):
+            return
+
+    try:
+        manager.remove_user(username)
+        console.print(f"[green]✅ User '{username}' removed[/]")
+    except ValueError as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@users.command("reset-token")
+@click.argument("username")
+def users_reset_token(username: str):
+    """Generate new bearer token for a user."""
+    from nodetool.security.user_manager import UserManager
+
+    manager = UserManager()
+    try:
+        result = manager.reset_token(username)
+        console.print(Panel.fit(f"[green]✅ New token for '{username}' generated[/]"))
+        console.print()
+        console.print("[bold yellow]New Bearer Token (save this!):[/]")
+        console.print(f"[bold cyan]{result.token}[/]")
+        console.print()
+        console.print(f"[dim]User ID: {result.user_id}[/]")
+        console.print(f"[dim]Role: {result.role}[/]")
+        console.print(f"[dim]Created: {result.created_at}[/]")
+        console.print()
+        console.print("[yellow]⚠️  Previous token is now invalid[/]")
+    except ValueError as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@deploy.command("users")
+@click.argument("deployment_name")
+@click.pass_context
+def deploy_users(ctx: click.Context, deployment_name: str):
+    """Manage users on a remote deployment."""
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
+        return
+
+
+@deploy.command("users-add")
+@click.argument("deployment_name")
+@click.argument("username")
+@click.option("--role", type=click.Choice(["admin", "user"]), default="user")
+async def deploy_users_add(deployment_name: str, username: str, role: str):
+    """Add user to deployment via API (works for ALL deployment types)."""
+    from nodetool.config.deployment import load_deployment_config
+    from nodetool.deploy.api_user_manager import APIUserManager
+
+    config = load_deployment_config()
+    if deployment_name not in config.deployments:
+        console.print(f"[red]❌ Deployment '{deployment_name}' not found[/]")
+        sys.exit(1)
+
+    deployment = config.deployments[deployment_name]
+    server_url = deployment.get_server_url()
+
+    if not server_url:
+        console.print(f"[red]❌ Deployment '{deployment_name}' has no server URL[/]")
+        sys.exit(1)
+
+    admin_token = click.prompt("Enter admin bearer token", hide_input=True)
+    manager = APIUserManager(server_url, admin_token)
+
+    try:
+        result = await manager.add_user(username, role)
+        console.print(f"[green]✅ User '{username}' added to '{deployment_name}'[/]")
+        console.print()
+        console.print("[bold yellow]Bearer Token (save this - won't be shown again!):[/]")
+        console.print(f"[bold cyan]{result['token']}[/]")
+        console.print()
+        console.print(f"[dim]User ID: {result['user_id']}[/]")
+        console.print(f"[dim]Role: {result['role']}[/]")
+    except Exception as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@deploy.command("users-list")
+@click.argument("deployment_name")
+@click.option("--json", "as_json", is_flag=True)
+async def deploy_users_list(deployment_name: str, as_json: bool):
+    """List users on deployment via API."""
+    from nodetool.config.deployment import load_deployment_config
+    from nodetool.deploy.api_user_manager import APIUserManager
+
+    config = load_deployment_config()
+    deployment = config.deployments[deployment_name]
+    server_url = deployment.get_server_url()
+
+    admin_token = click.prompt("Enter admin bearer token", hide_input=True)
+    manager = APIUserManager(server_url, admin_token)
+
+    users = await manager.list_users()
+
+    if not users:
+        console.print("[yellow]No users found on deployment.[/]")
+        return
+
+    if as_json:
+        click.echo(json.dumps(users, indent=2, default=_json_default))
+        return
+
+    table = Table(title=f"Users on {deployment_name}")
+    table.add_column("Username", style="cyan")
+    table.add_column("User ID", style="green")
+    table.add_column("Role", style="magenta")
+    table.add_column("Token Hash", style="yellow")
+    table.add_column("Created", style="white")
+
+    for user in users:
+        table.add_row(
+            user["username"],
+            user["user_id"],
+            user["role"],
+            user.get("token_hash", "")[:16] + "...",
+            user.get("created_at", "")[:19],
+        )
+
+    console.print(table)
+
+
+@deploy.command("users-remove")
+@click.argument("deployment_name")
+@click.argument("username")
+@click.option("--force", "-f", is_flag=True)
+async def deploy_users_remove(deployment_name: str, username: str, force: bool):
+    """Remove user from deployment via API."""
+    from nodetool.config.deployment import load_deployment_config
+    from nodetool.deploy.api_user_manager import APIUserManager
+
+    config = load_deployment_config()
+    deployment = config.deployments[deployment_name]
+    server_url = deployment.get_server_url()
+
+    admin_token = click.prompt("Enter admin bearer token", hide_input=True)
+    manager = APIUserManager(server_url, admin_token)
+
+    if not force:
+        if not click.confirm(f"Remove user '{username}' from '{deployment_name}'?"):
+            return
+
+    try:
+        result = await manager.remove_user(username)
+        console.print(f"[green]✅ User '{username}' removed from '{deployment_name}'[/]")
+    except Exception as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@deploy.command("users-reset-token")
+@click.argument("deployment_name")
+@click.argument("username")
+async def deploy_users_reset_token(deployment_name: str, username: str):
+    """Reset user token on deployment via API."""
+    from nodetool.config.deployment import load_deployment_config
+    from nodetool.deploy.api_user_manager import APIUserManager
+
+    config = load_deployment_config()
+    deployment = config.deployments[deployment_name]
+    server_url = deployment.get_server_url()
+
+    admin_token = click.prompt("Enter admin bearer token", hide_input=True)
+    manager = APIUserManager(server_url, admin_token)
+
+    try:
+        result = await manager.reset_token(username)
+        console.print(Panel.fit(f"[green]✅ New token for '{username}' on '{deployment_name}'[/]"))
+        console.print()
+        console.print("[bold yellow]New Bearer Token (save this!):[/]")
+        console.print(f"[bold cyan]{result['token']}[/]")
+        console.print()
+        console.print("[yellow]⚠️  Previous token is now invalid[/]")
+    except Exception as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@deploy.command("users-list")
+@click.argument("deployment_name")
+@click.option("--json", "as_json", is_flag=True)
+def deploy_users_list(deployment_name: str, as_json: bool):
+    """List users on remote deployment."""
+    console.print(
+        "[yellow]⚠️  Remote user management requires deployment config to support docker/ssh/local types and multi_user auth[/]"
+    )
+    console.print("[yellow]⚠️  This feature is being implemented as part of deployment config refactoring[/]")
+    console.print("[yellow]⚠️  Use 'nodetool users list' for local user management for now[/]")
+    sys.exit(1)
+
+
+@deploy.command("users-remove")
+@click.argument("deployment_name")
+@click.argument("username")
+@click.option("--force", "-f", is_flag=True)
+def deploy_users_remove(deployment_name: str, username: str, force: bool):
+    """Remove user from remote deployment."""
+    console.print(
+        "[yellow]⚠️  Remote user management requires deployment config to support docker/ssh/local types and multi_user auth[/]"
+    )
+    console.print("[yellow]⚠️  This feature is being implemented as part of deployment config refactoring[/]")
+    console.print("[yellow]⚠️  Use 'nodetool users remove' for local user management for now[/]")
+    sys.exit(1)
+
+
+@deploy.command("users-reset-token")
+@click.argument("deployment_name")
+@click.argument("username")
+def deploy_users_reset_token(deployment_name: str, username: str):
+    """Reset user token on remote deployment."""
+    console.print(
+        "[yellow]⚠️  Remote user management requires deployment config to support docker/ssh/local types and multi_user auth[/]"
+    )
+    console.print("[yellow]⚠️  This feature is being implemented as part of deployment config refactoring[/]")
+    console.print("[yellow]⚠️  Use 'nodetool users reset-token' for local user management for now[/]")
+    sys.exit(1)
 
 
 if __name__ == "__main__":

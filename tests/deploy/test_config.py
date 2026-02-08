@@ -10,8 +10,10 @@ from nodetool.config.deployment import (
     DeploymentConfig,
     DeploymentStatus,
     DeploymentType,
+    DockerDeployment,
     ImageConfig,
-    SelfHostedDeployment,
+    LocalDeployment,
+    RootDeployment,
     SSHConfig,
 )
 
@@ -85,24 +87,24 @@ class TestContainerConfig:
         assert config.gpu == "0,1"
 
 
-class TestSelfHostedDeployment:
-    """Tests for SelfHostedDeployment model."""
+class TestDockerDeployment:
+    """Tests for DockerDeployment model."""
 
-    def test_self_hosted_basic(self):
-        """Test basic self-hosted deployment."""
-        deployment = SelfHostedDeployment(
+    def test_docker_deployment_basic(self):
+        """Test basic Docker deployment."""
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="default", port=7777),
         )
-        assert deployment.type == DeploymentType.SELF_HOSTED
+        assert deployment.type == DeploymentType.DOCKER
         assert deployment.enabled is True
         assert deployment.host == "192.168.1.100"
 
-    def test_self_hosted_with_container(self):
-        """Test self-hosted deployment with container."""
-        deployment = SelfHostedDeployment(
+    def test_docker_deployment_with_gpu(self):
+        """Test Docker deployment with GPU."""
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -114,7 +116,7 @@ class TestSelfHostedDeployment:
 
     def test_self_hosted_without_proxy(self):
         """Test self-hosted deployment configured without proxy."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -127,7 +129,7 @@ class TestSelfHostedDeployment:
 
     def test_self_hosted_without_proxy_port_7777_maps_to_8000(self):
         """Test non-proxy URL follows host port remap used by docker run."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -135,6 +137,36 @@ class TestSelfHostedDeployment:
             use_proxy=False,
         )
         assert deployment.get_server_url() == "http://192.168.1.100:8000"
+
+
+class TestRootDeployment:
+    """Tests for RootDeployment model."""
+
+    def test_root_deployment_basic(self):
+        """Test basic Root deployment."""
+        deployment = RootDeployment(
+            host="192.168.1.100",
+            ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
+            port=8000,
+            service_name="nodetool-service",
+        )
+        assert deployment.type == DeploymentType.SSH
+        assert deployment.port == 8000
+        assert deployment.service_name == "nodetool-service"
+
+
+class TestLocalDeployment:
+    """Tests for LocalDeployment model."""
+
+    def test_local_deployment_basic(self):
+        """Test basic Local deployment."""
+        deployment = LocalDeployment(
+            port=8000,
+            service_name="nodetool-local",
+        )
+        assert deployment.type == DeploymentType.LOCAL
+        assert deployment.host == "localhost"
+        assert deployment.get_server_url() == "http://localhost:8000"
 
 
 class TestDeploymentConfig:
@@ -151,16 +183,22 @@ class TestDeploymentConfig:
         """Test deployment configuration with multiple deployments."""
         config = DeploymentConfig(
             deployments={
-                "prod-server": SelfHostedDeployment(
+                "prod-docker": DockerDeployment(
                     host="192.168.1.100",
                     ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
                     image=ImageConfig(name="nodetool/nodetool", tag="latest"),
                     container=ContainerConfig(name="default", port=7777),
                 ),
+                "prod-root": RootDeployment(
+                    host="192.168.1.101",
+                    ssh=SSHConfig(user="root", key_path="~/.ssh/id_rsa"),
+                    port=8000,
+                ),
             }
         )
-        assert len(config.deployments) == 1
-        assert "prod-server" in config.deployments
+        assert len(config.deployments) == 2
+        assert "prod-docker" in config.deployments
+        assert "prod-root" in config.deployments
 
     def test_deployment_config_custom_defaults(self):
         """Test deployment configuration with custom defaults."""
@@ -184,11 +222,16 @@ class TestConfigSerialization:
         """Test YAML serialization of deployment config."""
         config = DeploymentConfig(
             deployments={
-                "test-server": SelfHostedDeployment(
+                "test-docker": DockerDeployment(
                     host="localhost",
                     ssh=SSHConfig(user="test", key_path="/tmp/key"),
                     image=ImageConfig(name="nodetool/nodetool", tag="latest"),
                     container=ContainerConfig(name="default", port=7777),
+                ),
+                "test-root": RootDeployment(
+                    host="remote",
+                    ssh=SSHConfig(user="root", key_path="/tmp/key"),
+                    port=8000,
                 )
             }
         )
@@ -198,15 +241,33 @@ class TestConfigSerialization:
 
         # Should be serializable to YAML
         yaml_str = yaml.dump(data, default_flow_style=False)
-        assert "test-server" in yaml_str
-        assert "localhost" in yaml_str
+        assert "test-docker" in yaml_str
+        assert "test-root" in yaml_str
 
         # Deserialize back
         loaded_data = yaml.safe_load(yaml_str)
         loaded_config = DeploymentConfig.model_validate(loaded_data)
 
-        assert "test-server" in loaded_config.deployments
-        assert loaded_config.deployments["test-server"].host == "localhost"
+        assert "test-docker" in loaded_config.deployments
+        assert isinstance(loaded_config.deployments["test-docker"], DockerDeployment)
+        assert "test-root" in loaded_config.deployments
+        assert isinstance(loaded_config.deployments["test-root"], RootDeployment)
+
+    def test_legacy_root_type_deserializes_as_ssh(self):
+        """Test backward-compatibility mapping from root type to ssh type."""
+        legacy_yaml = {
+            "deployments": {
+                "legacy-root": {
+                    "type": "root",
+                    "host": "192.168.1.101",
+                    "ssh": {"user": "root", "key_path": "/tmp/key"},
+                    "port": 8000,
+                }
+            }
+        }
+
+        loaded_config = DeploymentConfig.model_validate(legacy_yaml)
+        assert loaded_config.deployments["legacy-root"].type == DeploymentType.SSH
 
 
 class TestConfigFileOperations:
@@ -219,7 +280,7 @@ class TestConfigFileOperations:
         # Create config
         config = DeploymentConfig(
             deployments={
-                "test-deployment": SelfHostedDeployment(
+                "test-deployment": DockerDeployment(
                     host="192.168.1.100",
                     ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
                     image=ImageConfig(name="nodetool/nodetool", tag="latest"),

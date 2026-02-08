@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main, develop]
   workflow_dispatch: # Manual trigger
+    inputs:
+      run_docker_integration:
+        description: "Run Docker integration tests (requires Docker image build)"
+        required: false
+        default: "false"
+        type: boolean
 
 jobs:
   test:
@@ -36,4 +42,73 @@ jobs:
             --ignore=tests/workflows/test_job_execution_manager.py \
             --ignore=tests/workflows/test_job_execution.py \
             --ignore=tests/workflows/test_threaded_job_execution.py \
-            --ignore=tests/workflows/test_subprocess_job_execution.py
+            --ignore=tests/workflows/test_subprocess_job_execution.py \
+            --ignore=tests/deploy/test_docker_api_integration.py
+
+  # Optional: Run Docker integration tests if explicitly requested
+  docker-integration:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.run_docker_integration == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --tag nodetool:local \
+            --build-arg USE_LOCAL_REPO=1 \
+            --file Dockerfile \
+            .
+
+      - name: Create test workspace
+        run: |
+          mkdir -p /tmp/nodetool_test/workspace
+          mkdir -p /tmp/nodetool_test/hf-cache
+
+      - name: Start NodeTool container
+        run: |
+          docker run -d \
+            --name nodetool-test-integration \
+            --restart unless-stopped \
+            -p 8777:7777 \
+            -v /tmp/nodetool_test/workspace:/workspace \
+            -v /tmp/nodetool_test/hf-cache:/hf-cache \
+            -e PORT=7777 \
+            -e NODETOOL_API_URL=http://localhost:7777 \
+            -e DB_PATH=/workspace/nodetool.db \
+            -e HF_HOME=/hf-cache \
+            -e ENV=test \
+            --health-cmd "curl -f http://localhost:7777/health || exit 1" \
+            --health-interval 10s \
+            --health-timeout 5s \
+            --health-retries 5 \
+            --health-start-period 30s \
+            nodetool:local
+
+      - name: Wait for container to be ready
+        run: |
+          timeout 90s bash -c '
+            until curl -s http://localhost:8777/health | grep -q "OK"; do
+              echo "Waiting for API..."
+              sleep 2
+            done
+          '
+
+      - name: Run Docker integration tests
+        run: |
+          uv run pytest \
+            tests/deploy/test_docker_api_integration.py \
+            -v \
+            -m integration \
+            --timeout=300
+
+      - name: Cleanup container
+        if: always()
+        run: |
+          docker stop nodetool-test-integration || true
+          docker rm nodetool-test-integration || true

@@ -22,10 +22,10 @@ try:
     PARAMIKO_AVAILABLE = True
 except ImportError:
     PARAMIKO_AVAILABLE = False
-    paramiko = None  # type: ignore
-    SSHClient = None  # type: ignore
-    AutoAddPolicy = None  # type: ignore
-    SFTPClient = None  # type: ignore
+    paramiko = None
+    SSHClient = None
+    AutoAddPolicy = None
+    SFTPClient = None
 
 
 class SSHConnectionError(Exception):
@@ -200,8 +200,9 @@ class SSHConnection:
         stderr_data = stderr.read().decode("utf-8", errors="replace")
 
         if check and exit_code != 0:
+            error_msg = f"Command failed with exit code {exit_code}: {command}\nSTDERR:\n{stderr_data}"
             raise SSHCommandError(
-                f"Command failed with exit code {exit_code}: {command}",
+                error_msg,
                 exit_code=exit_code,
                 stdout=stdout_data,
                 stderr=stderr_data,

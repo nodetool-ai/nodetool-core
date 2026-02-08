@@ -288,11 +288,18 @@ async def get_secrets_batch(keys: list[str], user_id: str) -> dict[str, Optional
         # but the check is harmless.
         if secret.key in keys_not_in_cache:
             log.debug(f"Secret '{secret.key}' found in database for user {user_id}")
-            decrypted_value = await secret.get_decrypted_value()
-            result[secret.key] = decrypted_value
-            # Update cache
-            _SECRET_CACHE[(user_id, secret.key)] = decrypted_value
-            found_in_db.add(secret.key)
+            try:
+                decrypted_value = await secret.get_decrypted_value()
+                result[secret.key] = decrypted_value
+                # Update cache
+                _SECRET_CACHE[(user_id, secret.key)] = decrypted_value
+                found_in_db.add(secret.key)
+            except ValueError:
+                log.error(f"Failed to decrypt secret '{secret.key}' for user {user_id}. Skipping.")
+                result[secret.key] = None
+            except Exception as e:
+                log.error(f"Unexpected error decrypting secret '{secret.key}' for user {user_id}: {e}. Skipping.")
+                result[secret.key] = None
 
     # 3. Check environment for anything still missing
     for key in keys_not_in_cache:

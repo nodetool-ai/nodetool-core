@@ -126,8 +126,15 @@ class DockerRunGenerator:
         workspace_path = self.deployment.paths.workspace
         volumes.append(f"{workspace_path}:/workspace")
 
-        # HuggingFace cache volume (read-only)
-        volumes.append(f"{self.deployment.paths.hf_cache}:/hf-cache:ro")
+        # HuggingFace cache volume
+        # If persistent_paths is configured, mount as read-write for model downloads
+        persistent_paths = self.deployment.persistent_paths
+        if persistent_paths:
+            # For persistent deployments, hf_cache must be writable to allow model downloads
+            volumes.append(f"{self.deployment.paths.hf_cache}:/hf-cache")
+        else:
+            # Default: read-only for safety when not using persistent storage
+            volumes.append(f"{self.deployment.paths.hf_cache}:/hf-cache:ro")
 
         return volumes
 
@@ -145,11 +152,21 @@ class DockerRunGenerator:
         env["PORT"] = str(APP_ENV_PORT)
         env["NODETOOL_API_URL"] = f"http://localhost:{self.container.port}"
 
-        # Set database path to workspace (mounted volume)
-        env["DB_PATH"] = "/workspace/nodetool.db"
-
-        # Set HuggingFace cache to mounted volume
-        env["HF_HOME"] = "/hf-cache"
+        # Configure paths from persistent_paths if available
+        persistent_paths = self.deployment.persistent_paths
+        if persistent_paths:
+            # Use persistent_paths for all storage configuration
+            env["USERS_FILE"] = persistent_paths.users_file
+            env["DB_PATH"] = persistent_paths.db_path
+            env["CHROMA_PATH"] = persistent_paths.chroma_path
+            env["HF_HOME"] = persistent_paths.hf_cache
+            env["ASSET_BUCKET"] = persistent_paths.asset_bucket
+            # Enable multi_user auth when persistent_paths is configured
+            env["AUTH_PROVIDER"] = "multi_user"
+        else:
+            # Fallback to default paths
+            env["DB_PATH"] = "/workspace/nodetool.db"
+            env["HF_HOME"] = "/hf-cache"
 
         # Add workflow IDs if specified
         if self.container.workflows:

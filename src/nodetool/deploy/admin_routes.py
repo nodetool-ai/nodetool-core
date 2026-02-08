@@ -8,6 +8,9 @@ This module encapsulates endpoints under /admin, including:
 - Delete HF model
 - Workflow registry status
 - Collection management (CRUD operations)
+
+All admin endpoints require admin access via require_admin dependency
+for multi_user auth provider, or X-Admin-Token header for legacy auth.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
+from nodetool.security.admin_auth import require_admin
 
 logger = logging.getLogger("nodetool.admin")
 from nodetool.deploy.admin_operations import (
@@ -237,7 +241,7 @@ def create_admin_router() -> APIRouter:
 
     # Database adapter operations
     @router.post("/admin/db/{table}/save")
-    async def db_save(table: str, item: dict[str, Any]):
+    async def db_save(table: str, item: dict[str, Any], _: None = Depends(require_admin)):
         """Save an item to the specified table using the database adapter."""
         try:
             adapter = await get_model_adapter(table)
@@ -247,7 +251,7 @@ def create_admin_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.get("/admin/db/{table}/{key}")
-    async def db_get(table: str, key: str):
+    async def db_get(table: str, key: str, _: None = Depends(require_admin)):
         """Get an item by primary key from the specified table."""
         try:
             adapter = await get_model_adapter(table)
@@ -261,7 +265,7 @@ def create_admin_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.delete("/admin/db/{table}/{key}")
-    async def db_delete(table: str, key: str):
+    async def db_delete(table: str, key: str, _: None = Depends(require_admin)):
         """Delete an item by primary key from the specified table."""
         try:
             adapter = await get_model_adapter(table)
@@ -272,7 +276,7 @@ def create_admin_router() -> APIRouter:
 
     # Collection management endpoints
     @router.post("/admin/collections", response_model=CollectionResponse)
-    async def create_collection(req: CollectionCreate) -> CollectionResponse:
+    async def create_collection(req: CollectionCreate, _: None = Depends(require_admin)) -> CollectionResponse:
         """Create a new collection."""
         try:
             client = await get_async_chroma_client()
@@ -292,6 +296,7 @@ def create_admin_router() -> APIRouter:
     async def list_collections(
         offset: Optional[int] = None,
         limit: Optional[int] = None,
+        _: None = Depends(require_admin),
     ) -> CollectionList:
         """List all collections."""
         try:
@@ -324,7 +329,7 @@ def create_admin_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.get("/admin/collections/{name}", response_model=CollectionResponse)
-    async def get_collection(name: str) -> CollectionResponse:
+    async def get_collection(name: str, _: None = Depends(require_admin)) -> CollectionResponse:
         """Get a specific collection by name."""
         try:
             client = await get_async_chroma_client()
@@ -339,7 +344,7 @@ def create_admin_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.put("/admin/collections/{name}")
-    async def update_collection(name: str, req: CollectionModify):
+    async def update_collection(name: str, req: CollectionModify, _: None = Depends(require_admin)):
         """Update a collection."""
         try:
             client = await get_async_chroma_client()
@@ -359,7 +364,7 @@ def create_admin_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.delete("/admin/collections/{name}")
-    async def delete_collection(name: str):
+    async def delete_collection(name: str, _: None = Depends(require_admin)):
         """Delete a collection."""
         try:
             client = await get_async_chroma_client()
@@ -369,7 +374,7 @@ def create_admin_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.post("/admin/collections/{name}/add")
-    async def add_to_collection(name: str, req: AddToCollection):
+    async def add_to_collection(name: str, req: AddToCollection, _: None = Depends(require_admin)):
         """Add a file to a collection."""
         try:
             client = await get_async_chroma_client()
@@ -390,6 +395,7 @@ def create_admin_router() -> APIRouter:
         content_type: Optional[str] = None,
         cursor: Optional[str] = None,
         page_size: Optional[int] = 100,
+        _: None = Depends(require_admin),
     ) -> AssetList:
         """List assets (admin endpoint - no user restrictions)."""
         try:
@@ -418,6 +424,7 @@ def create_admin_router() -> APIRouter:
     async def create_asset(
         user: str = Depends(current_user),
         data: dict[str, Any] = Body(...),
+        _: None = Depends(require_admin),
     ) -> Asset:
         """Create a new asset (admin endpoint - no user restrictions)."""
         try:
@@ -445,6 +452,7 @@ def create_admin_router() -> APIRouter:
         asset_id: str,
         user: str = Depends(current_user),
         user_id: Optional[str] = "1",
+        _: None = Depends(require_admin),
     ) -> Asset:
         """Get a single asset by ID (admin endpoint - no user restrictions)."""
         try:
@@ -475,7 +483,7 @@ def create_admin_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.delete("/admin/assets/{asset_id}")
-    async def delete_asset(asset_id: str, user: str = Depends(current_user)):
+    async def delete_asset(asset_id: str, user: str = Depends(current_user), _: None = Depends(require_admin)):
         """Delete an asset (recursive for folders) (admin endpoint - no user restrictions)."""
         try:
             asset = await AssetModel.get(asset_id)

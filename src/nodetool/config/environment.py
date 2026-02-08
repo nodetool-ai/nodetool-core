@@ -27,18 +27,19 @@ DEFAULT_ENV = {
     "CHROMA_URL": None,
     "CHROMA_PATH": str(get_system_data_path("chroma")),
     "COMFY_FOLDER": None,
-    "JOB_EXECUTION_STRATEGY": "threaded",  # threaded, subprocess, docker
+    "JOB_EXECUTION_STRATEGY": "threaded",
     "MEMCACHE_HOST": None,
     "MEMCACHE_PORT": None,
     "DB_PATH": str(get_system_data_path("nodetool.sqlite3")),
-    "OLLAMA_API_URL": None,  # Must be explicitly configured; defaults to None to avoid connection errors in containers
+    "USERS_FILE": str(get_system_file_path("users.yaml")),
+    "OLLAMA_API_URL": None,
     "ENV": "development",
     "LOG_LEVEL": "INFO",
-    "AUTH_PROVIDER": "local",  # valid: none, local, static, supabase
+    "AUTH_PROVIDER": "local",
     "DEBUG": None,
     "AWS_REGION": "us-east-1",
     "NODETOOL_API_URL": None,
-    "NODETOOL_ENABLE_TERMINAL_WS": "1",  # Enable terminal WebSocket in dev/test (blocked in production)
+    "NODETOOL_ENABLE_TERMINAL_WS": "1",
     "WORKER_ID": None,
     "SENTRY_DSN": None,
     "SUPABASE_URL": None,
@@ -269,7 +270,7 @@ class Environment:
         falls back to "local".
         """
         kind = str(cls.get("AUTH_PROVIDER", "local")).lower()
-        if kind not in ("none", "local", "static", "supabase"):
+        if kind not in ("none", "local", "static", "multi_user", "supabase"):
             kind = "local"
         return kind
 
@@ -278,9 +279,9 @@ class Environment:
         """Whether HTTP/WebSocket endpoints should enforce authentication.
 
         - none/local: no enforcement (developer convenience)
-        - static/supabase: enforce
+        - static/multi_user/supabase: enforce
         """
-        return cls.get_auth_provider_kind() in ("static", "supabase")
+        return cls.get_auth_provider_kind() in ("static", "multi_user", "supabase")
 
     @classmethod
     def check_insecure_auth_binding(cls, host: str) -> list[str]:

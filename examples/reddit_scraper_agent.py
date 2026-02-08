@@ -51,7 +51,7 @@ async def analyze_reddit_subreddit(
     subreddit: str = "n8n",
     focus_area: str = "customer pain points and issues",
 ):
-    context = ProcessingContext()
+    context = ProcessingContext(workspace_dir="/tmp/reddit_analysis")
     search_agent = Agent(
         name="Reddit Search Agent",
         objective=f"""

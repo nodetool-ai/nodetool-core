@@ -12,7 +12,7 @@ from nodetool.config.deployment import (
     ContainerConfig,
     DeploymentConfig,
     ImageConfig,
-    SelfHostedDeployment,
+    DockerDeployment,
     SSHConfig,
 )
 from nodetool.deploy.state import (
@@ -35,13 +35,13 @@ def sample_config(temp_config_dir):
     """Create a sample deployment configuration."""
     config = DeploymentConfig(
         deployments={
-            "test-server": SelfHostedDeployment(
+            "test-server": DockerDeployment(
                 host="192.168.1.100",
                 ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
                 image=ImageConfig(name="nodetool/nodetool", tag="latest"),
                 container=ContainerConfig(name="wf1", port=8001, workflows=["abc123"]),
             ),
-            "test-server-2": SelfHostedDeployment(
+            "test-server-2": DockerDeployment(
                 host="192.168.1.101",
                 ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
                 image=ImageConfig(name="nodetool/nodetool", tag="latest"),

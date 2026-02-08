@@ -8,7 +8,7 @@ deployments (self-hosted, RunPod, GCP) are managed through a single deployment.y
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, Union
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -16,10 +16,13 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from nodetool.config.settings import get_system_file_path
 
 
+
 class DeploymentType(str, Enum):
     """Supported deployment types."""
 
-    SELF_HOSTED = "self-hosted"
+    DOCKER = "docker"
+    SSH = "ssh"
+    LOCAL = "local"
     RUNPOD = "runpod"
     GCP = "gcp"
 
@@ -70,11 +73,40 @@ class ContainerConfig(BaseModel):
     workflows: Optional[list[str]] = Field(None, description="Workflow IDs to run in this container")
 
 
-class SelfHostedPaths(BaseModel):
-    """Paths on the remote self-hosted server."""
+class ServerPaths(BaseModel):
+    """Paths on the remote server."""
 
-    workspace: str = "/data/workspace"
-    hf_cache: str = "/data/hf-cache"
+    workspace: str = "~/nodetool_data/workspace"
+    hf_cache: str = "~/nodetool_data/hf-cache"
+
+
+class PersistentPaths(BaseModel):
+    """Persistent storage paths for deployment data.
+
+    These paths should be mounted as volumes in containerized deployments
+    to ensure data survives container restarts and redeployments.
+
+    For local/ssh deployments, these are direct filesystem paths.
+    For Docker/RunPod/GCP deployments, these should be mounted volumes.
+    """
+
+    users_file: str = "/workspace/users.yaml"
+    """User authentication file for multi-user bearer token auth."""
+
+    db_path: str = "/workspace/nodetool.db"
+    """SQLite database path for workflow and asset metadata."""
+
+    chroma_path: str = "/workspace/chroma"
+    """ChromaDB path for vector storage and embeddings."""
+
+    hf_cache: str = "/workspace/hf-cache"
+    """HuggingFace model cache location."""
+
+    asset_bucket: str = "/workspace/assets"
+    """Asset storage location (can be S3 bucket or filesystem path)."""
+
+    logs_path: Optional[str] = "/workspace/logs"
+    """Log files directory."""
 
 
 class SelfHostedState(BaseModel):
@@ -85,8 +117,7 @@ class SelfHostedState(BaseModel):
     container_id: Optional[str] = None
     container_name: Optional[str] = None
     url: Optional[str] = None
-    proxy_run_hash: Optional[str] = None
-    proxy_bearer_token: Optional[str] = None
+    container_hash: Optional[str] = None
 
 
 class ImageConfig(BaseModel):
@@ -168,14 +199,18 @@ class ProxySpec(BaseModel):
     )
 
 
-class SelfHostedDeployment(BaseModel):
-    """Self-hosted deployment configuration for a single container."""
+class DockerDeployment(BaseModel):
+    """Self-hosted deployment configuration for Docker."""
 
-    type: Literal[DeploymentType.SELF_HOSTED] = DeploymentType.SELF_HOSTED
+    type: Literal[DeploymentType.DOCKER] = DeploymentType.DOCKER
     enabled: bool = Field(True, description="Whether this deployment is enabled")
     host: str = Field(..., description="Remote host address (IP or hostname)")
-    ssh: SSHConfig
-    paths: SelfHostedPaths = SelfHostedPaths()
+    ssh: Optional[SSHConfig] = Field(None, description="SSH configuration (required for remote hosts)")
+    paths: ServerPaths = ServerPaths()
+    persistent_paths: Optional[PersistentPaths] = Field(
+        None,
+        description="Persistent storage paths for users, database, and cache",
+    )
     image: ImageConfig
     container: ContainerConfig = Field(..., description="Container configuration")
     worker_auth_token: Optional[str] = Field(
@@ -223,6 +258,56 @@ class SelfHostedDeployment(BaseModel):
         # Keep URL aligned with docker run host-port remapping (7777 -> 8000).
         host_port = 8000 if self.container.port == 7777 else self.container.port
         return f"http://{self.host}:{host_port}"
+
+
+class _BaseShellDeployment(BaseModel):
+    """Shared configuration for shell-based self-hosted deployments."""
+
+    enabled: bool = Field(True, description="Whether this deployment is enabled")
+    host: str = Field(..., description="Host address (IP or hostname)")
+    paths: ServerPaths = ServerPaths()
+    persistent_paths: Optional[PersistentPaths] = Field(
+        None,
+        description="Persistent storage paths for users, database, and cache",
+    )
+
+    # Service configuration
+    port: int = Field(..., description="Service port")
+    service_name: Optional[str] = Field(None, description="Systemd service name")
+    gpu: Optional[str] = Field(None, description="GPU device ID(s)")
+    environment: Optional[dict[str, str]] = Field(None, description="Environment variables")
+    workflows: Optional[list[str]] = Field(None, description="Workflow IDs to run")
+
+    worker_auth_token: Optional[str] = Field(
+        None,
+        description="Authentication token for worker API (auto-generated if not set)",
+    )
+    state: SelfHostedState = Field(default_factory=SelfHostedState)
+
+    def get_server_url(self) -> str:
+        """Get the server URL for this deployment."""
+        return f"http://{self.host}:{self.port}"
+
+
+class SSHDeployment(_BaseShellDeployment):
+    """Self-hosted deployment configuration for remote shell deployment via SSH."""
+
+    type: Literal[DeploymentType.SSH] = DeploymentType.SSH
+    ssh: SSHConfig
+
+
+class LocalDeployment(_BaseShellDeployment):
+    """Self-hosted deployment configuration for local shell deployment."""
+
+    type: Literal[DeploymentType.LOCAL] = DeploymentType.LOCAL
+    host: str = Field("localhost", description="Local host address")
+
+
+# Backward-compatibility alias for older imports/usages.
+RootDeployment = SSHDeployment
+
+
+SelfHostedDeployment = DockerDeployment | SSHDeployment | LocalDeployment
 
 
 # ============================================================================
@@ -314,6 +399,10 @@ class RunPodDeployment(BaseModel):
     execution_timeout: Optional[int] = None
     flashboot: bool = False
     environment: Optional[dict[str, str]] = Field(None, description="Environment variables for the deployment")
+    persistent_paths: Optional[PersistentPaths] = Field(
+        None,
+        description="Persistent storage paths for users, database, and cache",
+    )
     workflows: list[str] = Field(default_factory=list, description="Workflow IDs to deploy")
     state: RunPodState = Field(default=RunPodState())
 
@@ -393,6 +482,10 @@ class GCPDeployment(BaseModel):
     resources: GCPResourceConfig = Field(default_factory=GCPResourceConfig)
     storage: Optional[GCPStorageConfig] = None
     iam: GCPIAMConfig = Field(default_factory=GCPIAMConfig)
+    persistent_paths: Optional[PersistentPaths] = Field(
+        None,
+        description="Persistent storage paths for users, database, and cache",
+    )
     workflows: list[str] = Field(default_factory=list, description="Workflow IDs to deploy")
     state: GCPState = Field(default_factory=GCPState)
 
@@ -432,6 +525,23 @@ class DeploymentConfig(BaseModel):
             if not hasattr(deployment, "type"):
                 raise ValueError(f"Deployment '{name}' missing 'type' field")
         return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_root_type(cls, data: Any) -> Any:
+        """Map legacy self-hosted type 'root' to 'ssh' for backward compatibility."""
+        if not isinstance(data, dict):
+            return data
+
+        deployments = data.get("deployments")
+        if not isinstance(deployments, dict):
+            return data
+
+        for _name, deployment in deployments.items():
+            if isinstance(deployment, dict) and deployment.get("type") == "root":
+                deployment["type"] = "ssh"
+
+        return data
 
 
 # ============================================================================
