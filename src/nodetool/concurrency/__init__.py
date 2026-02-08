@@ -24,16 +24,19 @@ from .circuit_breaker import (
     CircuitState,
     MultiCircuitBreaker,
 )
+from .debounce_throttle import AdaptiveThrottle, AsyncDebounce, AsyncThrottle
 from .rate_limit import AsyncRateLimiter, AsyncTokenBucket
 from .retry import RetryPolicy, retry_with_exponential_backoff
 from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_timeout
 
 __all__ = [
+    "AdaptiveThrottle",
     "AsyncBarrier",
     "AsyncByteStream",
     "AsyncChannel",
     "AsyncChannelIterator",
     "AsyncCondition",
+    "AsyncDebounce",
     "AsyncEvent",
     "AsyncLock",
     "AsyncPriorityQueue",
@@ -41,6 +44,7 @@ __all__ = [
     "AsyncReaderWriterLock",
     "AsyncSemaphore",
     "AsyncTaskGroup",
+    "AsyncThrottle",
     "AsyncTokenBucket",
     "ChannelClosedError",
     "CircuitBreaker",
@@ -49,6 +53,7 @@ __all__ = [
     "CircuitBreakerStats",
     "CircuitState",
     "MultiCircuitBreaker",
+    "RetryPolicy",
     "TaskExecutionError",
     "TaskResult",
     "TaskStats",

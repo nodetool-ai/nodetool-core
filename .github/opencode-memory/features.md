@@ -20,3 +20,4 @@
 - **Async Condition**: `AsyncCondition` for condition variables allowing tasks to wait until notified by another task, with lock-based coordination to prevent race conditions
 - **Async Reader-Writer Lock**: `AsyncReaderWriterLock` for multiple concurrent readers with exclusive writer access, using writer-preference semantics to prevent starvation
 - **Async Channel**: `AsyncChannel` for producer-consumer patterns with send/receive/close operations, async iteration, and fan-in/fan-out utilities for channel composition
+- **Debounce & Throttle**: `AsyncDebounce`, `AsyncThrottle`, and `AdaptiveThrottle` for controlling async function execution frequency, useful for rate limiting and preventing excessive API calls
