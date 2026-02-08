@@ -7,6 +7,7 @@ from nodetool.concurrency.async_iterators import (
     async_filter,
     async_first,
     async_list,
+    async_map,
     async_merge,
     async_slice,
     async_take,
@@ -644,3 +645,145 @@ class TestAsyncFilter:
 
         result = await async_list(async_filter(lambda x: x < 4, gen()))
         assert result == [0, 1, 2, 3]
+
+
+class TestAsyncMap:
+    """Tests for async_map function."""
+
+    @pytest.mark.asyncio
+    async def test_map_with_sync_function(self):
+        """Test mapping with a sync function."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        result = await async_list(async_map(lambda x: x * 2, gen()))
+        assert result == [0, 2, 4, 6, 8]
+
+    @pytest.mark.asyncio
+    async def test_map_with_async_function(self):
+        """Test mapping with an async function."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        async def double(x):
+            return x * 2
+
+        result = await async_list(async_map(double, gen()))
+        assert result == [0, 2, 4, 6, 8]
+
+    @pytest.mark.asyncio
+    async def test_map_empty_iterable(self):
+        """Test mapping over empty iterable."""
+
+        async def gen():
+            return
+            yield  # pragma: no cover
+
+        result = await async_list(async_map(lambda x: x * 2, gen()))
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_map_single_item(self):
+        """Test mapping single item."""
+
+        async def gen():
+            yield 5
+
+        result = await async_list(async_map(lambda x: x * 3, gen()))
+        assert result == [15]
+
+    @pytest.mark.asyncio
+    async def test_map_type_transformation(self):
+        """Test mapping that transforms types."""
+
+        async def gen():
+            for i in range(3):
+                yield i
+
+        result = await async_list(async_map(lambda x: str(x), gen()))
+        assert result == ["0", "1", "2"]
+
+    @pytest.mark.asyncio
+    async def test_map_complex_transformation(self):
+        """Test mapping with complex transformation."""
+
+        async def gen():
+            for i in range(3):
+                yield i
+
+        result = await async_list(async_map(lambda x: x**2 + 1, gen()))
+        assert result == [1, 2, 5]
+
+    @pytest.mark.asyncio
+    async def test_map_strings(self):
+        """Test mapping string items."""
+
+        async def gen():
+            for s in ["a", "b", "c"]:
+                yield s
+
+        result = await async_list(async_map(lambda x: x.upper(), gen()))
+        assert result == ["A", "B", "C"]
+
+    @pytest.mark.asyncio
+    async def test_map_with_async_function_that_awaits(self):
+        """Test async mapper that performs async operations."""
+
+        async def gen():
+            for i in range(3):
+                yield i
+
+        async def add_with_delay(x):
+            await asyncio.sleep(0)
+            return x + 10
+
+        result = await async_list(async_map(add_with_delay, gen()))
+        assert result == [10, 11, 12]
+
+    @pytest.mark.asyncio
+    async def test_map_preserves_order(self):
+        """Test that mapping preserves original order."""
+
+        async def gen():
+            for i in [5, 2, 8, 1, 9]:
+                yield i
+
+        result = await async_list(async_map(lambda x: x * 2, gen()))
+        assert result == [10, 4, 16, 2, 18]
+
+    @pytest.mark.asyncio
+    async def test_map_with_lambda_returning_none(self):
+        """Test mapping when function returns None."""
+
+        async def gen():
+            for i in range(3):
+                yield i
+
+        result = await async_list(async_map(lambda x: None, gen()))
+        assert result == [None, None, None]
+
+    @pytest.mark.asyncio
+    async def test_map_with_falsey_values(self):
+        """Test mapping when function returns Falsey values."""
+
+        async def gen():
+            for i in range(3):
+                yield i
+
+        result = await async_list(async_map(lambda x: 0 if x % 2 == 0 else "", gen()))
+        assert result == [0, "", 0]
+
+    @pytest.mark.asyncio
+    async def test_map_identity(self):
+        """Test mapping with identity function."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        result = await async_list(async_map(lambda x: x, gen()))
+        assert result == [0, 1, 2, 3, 4]

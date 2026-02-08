@@ -3,6 +3,7 @@ from collections.abc import AsyncIterator, Callable
 from typing import AsyncIterable, TypeVar
 
 T = TypeVar("T")
+R = TypeVar("R")
 
 
 class AsyncByteStream:
@@ -212,3 +213,42 @@ async def async_filter(
             result = await result  # type: ignore[misc]
         if result:
             yield item
+
+
+async def async_map(
+    func: Callable[[T], R] | Callable[[T], object], aiterable: AsyncIterable[T]
+) -> AsyncIterator[R]:
+    """
+    Map a function over an async iterable, transforming each item.
+
+    Applies the function to each item in the iterable and yields the results.
+    The function can be sync or async.
+
+    Args:
+        func: A function that takes an item and returns a transformed value.
+              Can be sync or async.
+        aiterable: The async iterable to map over.
+
+    Yields:
+        Transformed items from applying func to each item in the iterable.
+
+    Example:
+        >>> async def gen():
+        ...     for i in range(5):
+        ...         yield i
+        >>> # With sync function
+        >>> result = await async_list(async_map(lambda x: x * 2, gen()))
+        >>> result
+        [0, 2, 4, 6, 8]
+        >>> # With async function
+        >>> async def double(x):
+        ...     return x * 2
+        >>> result = await async_list(async_map(double, gen()))
+        >>> result
+        [0, 2, 4, 6, 8]
+    """
+    async for item in aiterable:
+        result = func(item)
+        if asyncio.iscoroutine(result):
+            result = await result  # type: ignore[misc]
+        yield result  # type: ignore[misc]
