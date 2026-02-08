@@ -25,6 +25,7 @@ from nodetool.config.deployment import (
     SSHDeployment,
     LocalDeployment,
     SelfHostedDeployment,
+    NginxConfig,
 )
 from nodetool.deploy.docker_run import DockerRunGenerator
 from nodetool.deploy.proxy_run import ProxyRunGenerator
@@ -1043,21 +1044,27 @@ class SSHDeployer(BaseSSHDeployer[SSHDeployment | LocalDeployment]):
             with self._get_executor() as executor:
                 # 1. Setup directories
                 self._create_directories(executor, results)
-                
+
                 # 2. Install micromamba
                 self._install_micromamba(executor, results)
-                
+
                 # 3. Create/Update environment
                 self._create_conda_env(executor, results)
-                
+
                 # 4. Install packages with uv
                 self._install_python_packages(executor, results)
-                
+
                 # 5. Setup systemd service
                 self._setup_systemd(executor, results)
-                
+
                 # 6. Check health
                 self._check_health(executor, results)
+
+                # 7. Setup nginx if enabled
+                self._setup_nginx(executor, results)
+
+                # 8. Check nginx health if enabled
+                self._check_nginx_health(executor, results)
 
                 self.state_manager.write_state(
                     self.deployment_name,
@@ -1250,25 +1257,40 @@ class SSHDeployer(BaseSSHDeployer[SSHDeployment | LocalDeployment]):
 
     def _setup_systemd(self, ssh: Executor, results: dict[str, Any]) -> None:
         """Create and start systemd service."""
-        
+
         self._log(results, "Configuring systemd service...")
         workspace = self.deployment.paths.workspace
+        hf_cache = self.deployment.paths.hf_cache
+
+        # Expand ~ to absolute path for systemd (systemd doesn't support ~)
+        def expand_for_systemd(path: str) -> str:
+            """Expand a path for systemd use (absolute path on localhost, $HOME on remote)."""
+            if self.is_localhost:
+                return os.path.expanduser(path)
+            # For remote, replace leading ~ with $HOME
+            if path.startswith("~/"):
+                return f"$HOME/{path[2:]}"
+            return path
+
+        workspace_expanded = expand_for_systemd(workspace)
+        hf_cache_expanded = expand_for_systemd(hf_cache)
+
         service_name = self.deployment.service_name or f"nodetool-{self.deployment.port}"
         deployment = self.deployment
-        
+
         # User-level systemd path
         systemd_dir = ".config/systemd/user"
         ssh.mkdir(systemd_dir, parents=True)
-        
+
         service_file = f"""[Unit]
 Description=NodeTool Server ({service_name})
 After=network.target
 
 [Service]
-ExecStart={workspace}/env/bin/nodetool serve --production --host 0.0.0.0 --port {deployment.port}
-WorkingDirectory={workspace}
-Environment="NODETOOL_HOME={workspace}"
-Environment="HF_HOME={deployment.paths.hf_cache}"
+ExecStart={workspace_expanded}/env/bin/nodetool serve --production --host 0.0.0.0 --port {deployment.port}
+WorkingDirectory={workspace_expanded}
+Environment="NODETOOL_HOME={workspace_expanded}"
+Environment="HF_HOME={hf_cache_expanded}"
 Restart=always
 RestartSec=10
 
@@ -1311,15 +1333,240 @@ WantedBy=default.target
         """Check health for shell deployment."""
         self._log(results, "Checking health...")
         time.sleep(5)
-        
+
         port = self.deployment.port
         health_url = f"http://127.0.0.1:{port}/health"
-        
+
         try:
             ssh.execute(f"curl -fsS {health_url}", check=True, timeout=20)
             self._log(results, f"  Health endpoint OK: {health_url}")
         except Exception as exc:
             self._log(results, f"  Warning: health check failed: {exc}")
+
+    def _check_nginx_health(self, ssh: Executor, results: dict[str, Any]) -> None:
+        """Check nginx health if enabled."""
+        if not self.deployment.nginx or not self.deployment.nginx.enabled:
+            return
+
+        self._log(results, "Checking nginx health...")
+
+        nginx = self.deployment.nginx
+        check_port = nginx.https_port if nginx.ssl_cert_path else nginx.http_port
+        protocol = "https" if nginx.ssl_cert_path else "http"
+        health_url = f"{protocol}://{self.deployment.host}:{check_port}/health"
+
+        # Skip SSL verification for self-signed certs
+        try:
+            curl_cmd = f"curl -fsS -k {health_url}"
+            ssh.execute(curl_cmd, check=True, timeout=20)
+            self._log(results, f"  Nginx health endpoint OK: {health_url}")
+        except Exception as exc:
+            self._log(results, f"  Warning: nginx health check failed: {exc}")
+
+    def _setup_nginx(self, ssh: Executor, results: dict[str, Any]) -> None:
+        """Setup nginx as a reverse proxy for the deployment."""
+        from nodetool.config.deployment import NginxConfig
+
+        if not self.deployment.nginx or not self.deployment.nginx.enabled:
+            return
+
+        nginx = self.deployment.nginx
+        self._log(results, "Setting up nginx reverse proxy...")
+
+        # Create nginx config directory
+        config_dir = os.path.expanduser(nginx.config_dir) if self.is_localhost else f"$HOME/{nginx.config_dir.lstrip('~')}"
+        ssh.mkdir(config_dir, parents=True)
+
+        # Check if nginx is installed
+        _code, nginx_version, _ = ssh.execute("nginx -v 2>&1", check=False)
+        if _code != 0:
+            self._log(results, "  Installing nginx...")
+            # Install nginx based on OS
+            ssh.execute("command -v apt-get >/dev/null 2>&1 && sudo apt-get update -qq && sudo apt-get install -y -qq nginx || command -v yum >/dev/null 2>&1 && sudo yum install -y nginx || echo 'Package manager not found'", check=True, timeout=300)
+
+        # Generate nginx configuration
+        upstream_port = self.deployment.port
+        has_ssl = bool(nginx.ssl_cert_path and nginx.ssl_key_path)
+
+        if has_ssl:
+            # SSL configuration with redirect from HTTP to HTTPS
+            nginx_config = f"""# NodeTool nginx configuration
+# Auto-generated by nodetool deploy
+
+# HTTP server - redirect to HTTPS
+server {{
+    listen {nginx.http_port};
+    server_name {self.deployment.host};
+    return 301 https://$server_name:{nginx.https_port}$request_uri;
+}}
+
+# HTTPS server
+server {{
+    listen {nginx.https_port} ssl;
+    server_name {self.deployment.host};
+
+    ssl_certificate {nginx.ssl_cert_path};
+    ssl_certificate_key {nginx.ssl_key_path};
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    location / {{
+        proxy_pass http://127.0.0.1:{upstream_port};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 600s;
+        proxy_connect_timeout 600s;
+    }}
+
+    # WebSocket support
+    location /ws {{
+        proxy_pass http://127.0.0.1:{upstream_port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 600s;
+        proxy_connect_timeout 600s;
+    }}
+}}
+"""
+        else:
+            # HTTP-only configuration
+            nginx_config = f"""# NodeTool nginx configuration
+# Auto-generated by nodetool deploy
+
+server {{
+    listen {nginx.http_port};
+    server_name {self.deployment.host};
+
+    location / {{
+        proxy_pass http://127.0.0.1:{upstream_port};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 600s;
+        proxy_connect_timeout 600s;
+    }}
+
+    # WebSocket support
+    location /ws {{
+        proxy_pass http://127.0.0.1:{upstream_port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 600s;
+        proxy_connect_timeout 600s;
+    }}
+}}
+"""
+
+        # Write nginx config
+        config_path = f"{config_dir}/nodetool-{self.deployment_name}.conf"
+        self._upload_content(ssh, nginx_config, config_path)
+        self._log(results, f"  Nginx config written: {config_path}")
+
+        # Copy SSL certificates if provided
+        if has_ssl:
+            if self.is_localhost:
+                self._copy_ssl_certs_local(ssh, results, nginx)
+            else:
+                self._copy_ssl_certs_remote(ssh, results, nginx)
+
+        # Test nginx configuration
+        self._log(results, "  Testing nginx configuration...")
+        ssh.execute("sudo nginx -t", check=True, timeout=30)
+
+        # Restart nginx
+        self._log(results, "  Restarting nginx...")
+        ssh.execute("sudo systemctl reload nginx || sudo systemctl restart nginx", check=True, timeout=60)
+
+        self._log(results, "  Nginx configured successfully")
+
+    def _copy_ssl_certs_local(self, ssh: Executor, results: dict[str, Any], nginx: NginxConfig) -> None:
+        """Copy SSL certificates locally for localhost deployment."""
+        if not nginx.ssl_cert_path or not nginx.ssl_key_path:
+            return
+
+        cert_src = Path(nginx.ssl_cert_path).expanduser()
+        key_src = Path(nginx.ssl_key_path).expanduser()
+
+        if not cert_src.exists():
+            results["errors"].append(f"SSL certificate not found: {cert_src}")
+            return
+        if not key_src.exists():
+            results["errors"].append(f"SSL key not found: {key_src}")
+            return
+
+        # Copy to /etc/nginx/certs/ (or another location)
+        cert_dest = Path("/etc/nginx/certs/cert.pem")
+        key_dest = Path("/etc/nginx/certs/key.pem")
+
+        try:
+            cert_dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(cert_src, cert_dest)
+            shutil.copy2(key_src, key_dest)
+            os.chmod(cert_dest, 0o644)
+            os.chmod(key_dest, 0o600)
+            results["steps"].append(f"  SSL certificates copied to {cert_dest.parent}")
+        except PermissionError:
+            results["errors"].append("Permission denied copying SSL certificates. Run with sudo or ensure cert paths are accessible.")
+
+    def _copy_ssl_certs_remote(self, ssh: Executor, results: dict[str, Any], nginx: NginxConfig) -> None:
+        """Copy SSL certificates to remote host via SSH."""
+        if not nginx.ssl_cert_path or not nginx.ssl_key_path:
+            return
+
+        cert_src = Path(nginx.ssl_cert_path).expanduser()
+        key_src = Path(nginx.ssl_key_path).expanduser()
+
+        if not cert_src.exists():
+            results["errors"].append(f"SSL certificate not found: {cert_src}")
+            return
+        if not key_src.exists():
+            results["errors"].append(f"SSL key not found: {key_src}")
+            return
+
+        # Copy via scp
+        ssh_config = self.deployment.ssh
+        cert_dest = "/etc/ssl/certs/nodetool-cert.pem"
+        key_dest = "/etc/ssl/private/nodetool-key.pem"
+
+        try:
+            # Use scp to copy files
+            scp_base = ["scp", "-o", "StrictHostKeyChecking=no"]
+            if ssh_config.key_path:
+                scp_base += ["-i", os.path.expanduser(ssh_config.key_path)]
+            if ssh_config.port and ssh_config.port != 22:
+                scp_base += ["-P", str(ssh_config.port)]
+
+            subprocess.run(
+                scp_base + [str(cert_src), f"{ssh_config.user}@{self.deployment.host}:{cert_dest}"],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                scp_base + [str(key_src), f"{ssh_config.user}@{self.deployment.host}:{key_dest}"],
+                check=True,
+                capture_output=True,
+            )
+
+            # Set permissions on remote
+            ssh.execute(f"sudo chmod 644 {cert_dest}", check=True)
+            ssh.execute(f"sudo chmod 600 {key_dest}", check=True)
+            results["steps"].append("  SSL certificates copied to remote host")
+        except subprocess.CalledProcessError as e:
+            results["errors"].append(f"Failed to copy SSL certificates: {e.stderr.decode()}")
 
 
 # Backward-compatibility alias for older imports/usages.

@@ -260,6 +260,45 @@ class DockerDeployment(BaseModel):
         return f"http://{self.host}:{host_port}"
 
 
+class NginxConfig(BaseModel):
+    """Nginx reverse proxy configuration for self-hosted deployments."""
+
+    enabled: bool = Field(False, description="Whether to enable nginx reverse proxy")
+    # SSL configuration
+    ssl_cert_path: Optional[str] = Field(None, description="Path to SSL certificate file (e.g., ./cert.pem)")
+    ssl_key_path: Optional[str] = Field(None, description="Path to SSL private key file (e.g., ./key.pem)")
+    # Port configuration
+    http_port: int = Field(80, description="HTTP port for nginx (usually 80)")
+    https_port: int = Field(443, description="HTTPS port for nginx (usually 443)")
+    # Nginx configuration directory
+    config_dir: str = Field(
+        "~/nodetool_data/nginx/conf.d",
+        description="Directory for nginx configuration files",
+    )
+    # Custom nginx config template path (optional)
+    custom_config_path: Optional[str] = Field(
+        None,
+        description="Path to custom nginx config template (uses default if not provided)",
+    )
+
+    @field_validator("ssl_cert_path", "ssl_key_path", "config_dir", "custom_config_path")
+    @classmethod
+    def expand_path(cls, v: Optional[str]) -> Optional[str]:
+        """Expand ~ in path."""
+        if v:
+            return str(Path(v).expanduser())
+        return v
+
+    @model_validator(mode="after")
+    def validate_ssl_config(self) -> "NginxConfig":
+        """Validate that both cert and key are provided if SSL is enabled."""
+        if self.ssl_cert_path and not self.ssl_key_path:
+            raise ValueError("ssl_key_path is required when ssl_cert_path is provided")
+        if self.ssl_key_path and not self.ssl_cert_path:
+            raise ValueError("ssl_cert_path is required when ssl_key_path is provided")
+        return self
+
+
 class _BaseShellDeployment(BaseModel):
     """Shared configuration for shell-based self-hosted deployments."""
 
@@ -282,10 +321,18 @@ class _BaseShellDeployment(BaseModel):
         None,
         description="Authentication token for worker API (auto-generated if not set)",
     )
+    nginx: Optional[NginxConfig] = Field(
+        None,
+        description="Nginx reverse proxy configuration",
+    )
     state: SelfHostedState = Field(default_factory=SelfHostedState)
 
     def get_server_url(self) -> str:
         """Get the server URL for this deployment."""
+        if self.nginx and self.nginx.enabled:
+            if self.nginx.ssl_cert_path:
+                return f"https://{self.host}:{self.nginx.https_port}"
+            return f"http://{self.host}:{self.nginx.http_port}"
         return f"http://{self.host}:{self.port}"
 
 
