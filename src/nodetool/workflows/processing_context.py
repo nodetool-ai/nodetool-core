@@ -1117,6 +1117,15 @@ class ProcessingContext:
             asset (AssetRef): The asset to refresh.
         """
         if asset.asset_id:
+            # Preserve extension from existing URI when available (e.g. /api/storage/<id>.jpg)
+            # to avoid forcing a type-default extension that may not match stored content.
+            if asset.uri:
+                uri_path = urlparse(asset.uri).path or asset.uri
+                extension = Path(uri_path).suffix
+                if extension:
+                    asset.uri = f"asset://{asset.asset_id}{extension}"
+                    return
+
             from nodetool.workflows.asset_storage import (
                 get_content_type_for_asset_ref,
                 get_extension_for_content_type,
