@@ -420,7 +420,7 @@ class BaseNode(BaseModel):
         self._sync_mode = sync_mode
         self._inbox = None
 
-    def required_inputs(self):
+    def required_inputs(self) -> list[str]:
         return []
 
     # Streaming input integration
@@ -564,7 +564,7 @@ class BaseNode(BaseModel):
         return False
 
     @classmethod
-    def expose_as_tool(cls):
+    def expose_as_tool(cls) -> bool:
         attr = getattr(cls, "_expose_as_tool", False)
         if isinstance(attr, bool):
             return attr
@@ -572,7 +572,7 @@ class BaseNode(BaseModel):
         return bool(getattr(attr, "default", False))
 
     @classmethod
-    def supports_dynamic_outputs(cls):
+    def supports_dynamic_outputs(cls) -> bool:
         attr = getattr(cls, "_supports_dynamic_outputs", False)
         if isinstance(attr, bool):
             return attr
@@ -608,14 +608,14 @@ class BaseNode(BaseModel):
         return getattr(attr, "default", attr)  # type: ignore
 
     @property
-    def id(self):
+    def id(self) -> str:
         return self._id
 
     @property
-    def parent_id(self):
+    def parent_id(self) -> str | None:
         return self._parent_id
 
-    def has_parent(self):
+    def has_parent(self) -> bool:
         return self._parent_id is not None
 
     def to_dict(self) -> dict[str, Any]:
@@ -839,7 +839,7 @@ class BaseNode(BaseModel):
         return [p.name for p in cls.properties()]
 
     @classmethod
-    def get_metadata(cls: type["BaseNode"], include_model_info: bool = False):
+    def get_metadata(cls: type["BaseNode"], include_model_info: bool = False) -> Any:
         """
         Generate comprehensive metadata for the node class.
 
@@ -873,7 +873,7 @@ class BaseNode(BaseModel):
             raise ValueError(f"Error getting metadata for {cls.__name__}: {e}") from e
 
     @classmethod
-    def get_json_schema(cls):
+    def get_json_schema(cls) -> dict[str, Any]:
         """
         Returns a JSON schema for the node.
         Used as tool description for agents.

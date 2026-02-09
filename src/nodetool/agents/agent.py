@@ -27,6 +27,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from typing_extensions import override
+
 from nodetool.agents.base_agent import BaseAgent
 from nodetool.agents.task_executor import TaskExecutor
 from nodetool.agents.task_planner import TaskPlanner
@@ -330,7 +332,7 @@ def _wrap_command_with_sandbox(cmd: list[str], workspace_dir: str | None = None)
         # Write profile to temporary file
         fd, profile_path = tempfile.mkstemp(suffix=".sb", prefix="nodetool_agent_sandbox_")
         try:
-            os.write(fd, profile.encode("utf-8"))
+            _ = os.write(fd, profile.encode("utf-8"))
         finally:
             os.close(fd)
 
@@ -490,6 +492,7 @@ class AgentRunner(StreamRunnerBase):
         )
         self.resource_limits = resource_limits
 
+    @override
     def build_container_command(self, user_code: str, env_locals: dict[str, Any]) -> list[str]:
         """
         Build the command to run the agent inside the container.
@@ -508,6 +511,7 @@ class AgentRunner(StreamRunnerBase):
             user_code,
         ]
 
+    @override
     def wrap_subprocess_command(self, command: list[str], context: ProcessingContext) -> tuple[list[str], str | None]:
         """
         Wrap subprocess command with sandbox-exec and CPU limiting on macOS.
@@ -531,6 +535,7 @@ class AgentRunner(StreamRunnerBase):
 
         return command, sandbox_profile_path
 
+    @override
     def cleanup_subprocess_wrapper(self, cleanup_data: str | None) -> None:
         """
         Clean up sandbox profile file if it was created.
@@ -756,6 +761,7 @@ class Agent(BaseAgent):
             return f"{self.system_prompt}\n\n{self.skill_system_prompt}"
         return self.system_prompt or self.skill_system_prompt
 
+    @override
     async def execute(
         self,
         context: ProcessingContext,
@@ -785,9 +791,9 @@ class Agent(BaseAgent):
             task_description=self.effective_objective,
             tools=[t.name for t in self.tools],
         ) as span:
-            span.set_attribute("nodetool.agent.name", self.name)
-            span.set_attribute("nodetool.agent.model", self.model)
-            span.set_attribute("nodetool.agent.planning_model", self.planning_model)
+            _ = span.set_attribute("nodetool.agent.name", self.name)
+            _ = span.set_attribute("nodetool.agent.model", self.model)
+            _ = span.set_attribute("nodetool.agent.planning_model", self.planning_model)
 
             tools = list(self.tools)
             task_planner_instance: TaskPlanner | None = None  # Keep track of planner instance
@@ -824,7 +830,7 @@ class Agent(BaseAgent):
                     # Update the context so it's available for other parts of the workflow
                     context.workspace_dir = task_planner_workspace_dir
                 else:
-                    task_planner_workspace_dir = cast("str", context.workspace_dir)
+                    task_planner_workspace_dir = context.workspace_dir
                 task_planner_instance = TaskPlanner(
                     provider=self.provider,
                     model=self.planning_model,
@@ -844,11 +850,11 @@ class Agent(BaseAgent):
                 if task_planner_instance.task_plan and task_planner_instance.task_plan.tasks:
                     self.task = task_planner_instance.task_plan.tasks[0]
 
-                span.add_event("planning_completed", {"step_count": len(self.task.steps) if self.task else 0})
+                _ = span.add_event("planning_completed", {"step_count": len(self.task.steps) if self.task else 0})
 
             assert self.task is not None, "Task was not created by planner and was not provided initially."
             task: Task = self.task
-            span.set_attribute("nodetool.agent.task_step_count", len(task.steps))
+            _ = span.set_attribute("nodetool.agent.task_step_count", len(task.steps))
 
             if not self.initial_task:
                 yield TaskUpdate(
@@ -891,14 +897,14 @@ class Agent(BaseAgent):
                     content=f"Starting execution of {len(task.steps)} steps...",
                     severity="info",
                 )
-                span.add_event("execution_started", {"step_count": len(task.steps)})
+                _ = span.add_event("execution_started", {"step_count": len(task.steps)})
 
                 # Execute all steps within this task and yield results
                 async for item in executor.execute_tasks(context):
                     # Update tool_calls list if item is a ToolCall
                     if isinstance(item, ToolCall):
                         tool_calls.append(item)
-                        span.add_event("tool_called", {"tool_name": item.name})
+                        _ = span.add_event("tool_called", {"tool_name": item.name})
 
                     # Create the updated table and update the live display
                     if self.display_manager:
@@ -920,19 +926,17 @@ class Agent(BaseAgent):
                         if item.is_task_result:
                             log.info(f"Agent: Setting final results for objective: {self.objective[:50]}...")
                             self.results = item.result
-                            span.add_event("task_completed")
+                            _ = span.add_event("task_completed")
                             yield TaskUpdate(
                                 task=task,
                                 event=TaskUpdateEvent.TASK_COMPLETED,
                             )
                         yield item
-                    elif isinstance(item, TaskUpdate | Chunk | LogUpdate):
-                        yield item
-                    else:
+                    else:  # TaskUpdate | Chunk | LogUpdate
                         yield item
 
-                span.set_attribute("nodetool.agent.tools_used_count", len(tool_calls))
-                span.add_event("execution_completed")
+                _ = span.set_attribute("nodetool.agent.tools_used_count", len(tool_calls))
+                _ = span.add_event("execution_completed")
 
             finally:
                 # Ensure live display is stopped
@@ -942,6 +946,7 @@ class Agent(BaseAgent):
             if self.display_manager:
                 log.debug("Provider usage: %s", self.provider.usage)
 
+    @override
     def get_results(self) -> Any:
         """
         Get the results produced by this agent.
