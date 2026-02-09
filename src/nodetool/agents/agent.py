@@ -102,6 +102,12 @@ def _is_valid_skill_description(description: str) -> bool:
     return not _XML_TAG_RE.search(description)
 
 
+def _write_config_file(path: Path, config: dict) -> None:
+    """Write config dict to a JSON file (blocking, intended for asyncio.to_thread)."""
+    with path.open("w") as f:
+        json.dump(config, f)
+
+
 def _load_skill_from_file(skill_file: Path) -> AgentSkill | None:
     """Load and validate a Skill from SKILL.md."""
     try:
@@ -1007,8 +1013,8 @@ class Agent(BaseAgent):
         }
 
         host_config = host_workspace / config_filename
-        with host_config.open("w") as f:
-            json.dump(config, f)
+        # Use asyncio.to_thread to avoid blocking the event loop during file I/O
+        await asyncio.to_thread(_write_config_file, host_config, config)
 
         # Collect environment variables from provider and tools
         env_vars: dict[str, str] = {}
