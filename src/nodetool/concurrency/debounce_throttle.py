@@ -14,6 +14,8 @@ from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
 
+_UNSET = object()  # Sentinel for "no result yet"
+
 T = TypeVar("T")
 
 
@@ -57,6 +59,8 @@ class AsyncDebounce:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._current_func: Any = None
         self._completion_events: list[asyncio.Event] = []
+        self._last_result: Any = _UNSET
+        self._last_exception: Exception | None = None
 
     async def execute(self, func: Callable[[], Coroutine[Any, Any, T]]) -> T:
         """
@@ -94,11 +98,14 @@ class AsyncDebounce:
         # Wait for completion
         await event.wait()
 
-        # Return the result (stored in a shared variable)
-        if hasattr(self, "_last_result"):
-            return self._last_result  # type: ignore
-        else:
-            raise RuntimeError("Execution completed without result")
+        # Return the result or re-raise the exception
+        async with self._lock:
+            if self._last_exception is not None:
+                exc = self._last_exception
+                raise exc
+            if self._last_result is not _UNSET:
+                return self._last_result  # type: ignore
+        raise RuntimeError("Execution completed without result")
 
     async def _timer_loop(self) -> None:
         """Internal timer loop that handles delayed execution."""
@@ -121,10 +128,10 @@ class AsyncDebounce:
                     # Execute the function
                     try:
                         self._last_result = await func_to_execute()
-                    except Exception:
-                        # Store the exception to be re-raised
-                        self._last_exception = True  # type: ignore
-                        raise
+                        self._last_exception = None
+                    except Exception as e:
+                        # Store the actual exception so waiters can re-raise it
+                        self._last_exception = e
                     finally:
                         # Notify all waiters
                         for event in events_to_notify:
@@ -139,8 +146,11 @@ class AsyncDebounce:
                 if should_exit:
                     break
         except asyncio.CancelledError:
-            # Timer was cancelled
-            pass
+            # Notify any waiting events before exiting
+            async with self._lock:
+                for event in self._completion_events:
+                    event.set()
+                self._completion_events.clear()
 
     async def cancel(self) -> bool:
         """
