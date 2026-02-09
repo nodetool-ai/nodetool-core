@@ -14,6 +14,8 @@ from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
 
+_UNSET = object()  # Sentinel for "no result yet"
+
 T = TypeVar("T")
 
 
@@ -57,6 +59,8 @@ class AsyncDebounce:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._current_func: Any = None
         self._completion_events: list[asyncio.Event] = []
+        self._last_result: Any = _UNSET
+        self._last_exception: Exception | None = None
 
     async def execute(self, func: Callable[[], Coroutine[Any, Any, T]]) -> T:
         """
@@ -95,14 +99,13 @@ class AsyncDebounce:
         await event.wait()
 
         # Return the result or re-raise the exception
-        if hasattr(self, "_last_exception") and self._last_exception is not None:
-            exc = self._last_exception
-            self._last_exception = None
-            raise exc
-        if hasattr(self, "_last_result"):
-            return self._last_result  # type: ignore
-        else:
-            raise RuntimeError("Execution completed without result")
+        async with self._lock:
+            if self._last_exception is not None:
+                exc = self._last_exception
+                raise exc
+            if self._last_result is not _UNSET:
+                return self._last_result  # type: ignore
+        raise RuntimeError("Execution completed without result")
 
     async def _timer_loop(self) -> None:
         """Internal timer loop that handles delayed execution."""
