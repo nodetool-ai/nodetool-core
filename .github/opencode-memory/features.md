@@ -21,3 +21,4 @@
 - **Async Reader-Writer Lock**: `AsyncReaderWriterLock` for multiple concurrent readers with exclusive writer access, using writer-preference semantics to prevent starvation
 - **Async Channel**: `AsyncChannel` for producer-consumer patterns with send/receive/close operations, async iteration, and fan-in/fan-out utilities for channel composition
 - **Debounce & Throttle**: `AsyncDebounce`, `AsyncThrottle`, and `AdaptiveThrottle` for controlling async function execution frequency, useful for rate limiting and preventing excessive API calls
+- **Async Generator Orchestrator**: `AsyncGeneratorOrchestrator` for orchestrating multiple async generators with advanced consumption patterns including round-robin, priority-based yielding, selective consumption, fair merge, and race mode
