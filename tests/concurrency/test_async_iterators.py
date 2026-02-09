@@ -9,6 +9,7 @@ from nodetool.concurrency.async_iterators import (
     async_list,
     async_map,
     async_merge,
+    async_reduce,
     async_slice,
     async_take,
 )
@@ -787,3 +788,184 @@ class TestAsyncMap:
 
         result = await async_list(async_map(lambda x: x, gen()))
         assert result == [0, 1, 2, 3, 4]
+
+
+class TestAsyncReduce:
+    """Tests for async_reduce function."""
+
+    @pytest.mark.asyncio
+    async def test_reduce_sum(self):
+        """Test reducing with sum operation."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        result = await async_reduce(lambda acc, x: acc + x, gen(), 0)
+        assert result == 10
+
+    @pytest.mark.asyncio
+    async def test_reduce_multiply(self):
+        """Test reducing with multiplication."""
+
+        async def gen():
+            for i in range(1, 6):
+                yield i
+
+        result = await async_reduce(lambda acc, x: acc * x, gen(), 1)
+        assert result == 120
+
+    @pytest.mark.asyncio
+    async def test_reduce_with_async_function(self):
+        """Test reducing with an async reduction function."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        async def async_add(acc, x):
+            return acc + x
+
+        result = await async_reduce(async_add, gen(), 0)
+        assert result == 10
+
+    @pytest.mark.asyncio
+    async def test_reduce_empty_iterable(self):
+        """Test reducing empty iterable returns initial value."""
+
+        async def gen():
+            return
+            yield  # pragma: no cover
+
+        result = await async_reduce(lambda acc, x: acc + x, gen(), 42)
+        assert result == 42
+
+    @pytest.mark.asyncio
+    async def test_reduce_single_item(self):
+        """Test reducing single item."""
+
+        async def gen():
+            yield 5
+
+        result = await async_reduce(lambda acc, x: acc + x, gen(), 10)
+        assert result == 15
+
+    @pytest.mark.asyncio
+    async def test_reduce_build_list(self):
+        """Test reducing to build a list."""
+
+        async def gen():
+            for i in range(4):
+                yield i
+
+        async def append(acc, x):
+            acc.append(x)
+            return acc
+
+        result = await async_reduce(append, gen(), [])
+        assert result == [0, 1, 2, 3]
+
+    @pytest.mark.asyncio
+    async def test_reduce_build_dict(self):
+        """Test reducing to build a dict."""
+
+        async def gen():
+            for s in ["a", "b", "c"]:
+                yield s
+
+        def add_to_dict(acc, x):
+            acc[x] = len(x)
+            return acc
+
+        result = await async_reduce(add_to_dict, gen(), {})
+        assert result == {"a": 1, "b": 1, "c": 1}
+
+    @pytest.mark.asyncio
+    async def test_reduce_with_string_initial(self):
+        """Test reducing with string initial value."""
+
+        async def gen():
+            for s in ["hello", " ", "world"]:
+                yield s
+
+        result = await async_reduce(lambda acc, x: acc + x, gen(), "")
+        assert result == "hello world"
+
+    @pytest.mark.asyncio
+    async def test_reduce_max_value(self):
+        """Test reducing to find maximum value."""
+
+        async def gen():
+            for i in [3, 7, 2, 9, 4]:
+                yield i
+
+        result = await async_reduce(lambda acc, x: acc if acc > x else x, gen(), 0)
+        assert result == 9
+
+    @pytest.mark.asyncio
+    async def test_reduce_with_complex_transformation(self):
+        """Test reducing with complex transformation."""
+
+        async def gen():
+            for i in range(4):
+                yield i
+
+        def complex_reduce(acc, x):
+            return acc + (x * 2)
+
+        result = await async_reduce(complex_reduce, gen(), 0)
+        assert result == 12  # (0*2) + (1*2) + (2*2) + (3*2) = 0 + 2 + 4 + 6 = 12
+
+    @pytest.mark.asyncio
+    async def test_reduce_preserves_order(self):
+        """Test that reduce processes items in order."""
+
+        async def gen():
+            for i in [1, 2, 3, 4, 5]:
+                yield i
+
+        result = await async_reduce(lambda acc, x: acc * 10 + x, gen(), 0)
+        assert result == 12345
+
+    @pytest.mark.asyncio
+    async def test_reduce_with_tuple_initial(self):
+        """Test reducing with tuple as accumulator."""
+
+        async def gen():
+            for i in range(3):
+                yield i
+
+        def tuple_append(acc, x):
+            return (*acc, x)
+
+        result = await async_reduce(tuple_append, gen(), ())
+        assert result == (0, 1, 2)
+
+    @pytest.mark.asyncio
+    async def test_reduce_with_set_initial(self):
+        """Test reducing with set as accumulator."""
+
+        async def gen():
+            for i in [1, 2, 2, 3, 3, 3]:
+                yield i
+
+        def set_add(acc, x):
+            acc.add(x)
+            return acc
+
+        result = await async_reduce(set_add, gen(), set())
+        assert result == {1, 2, 3}
+
+    @pytest.mark.asyncio
+    async def test_reduce_count_matching(self):
+        """Test reducing to count matching items."""
+
+        async def gen():
+            for i in range(10):
+                yield i
+
+        def count_even(acc, x):
+            return acc + (1 if x % 2 == 0 else 0)
+
+        result = await async_reduce(count_even, gen(), 0)
+        assert result == 5

@@ -16,6 +16,7 @@ from .async_iterators import (
     async_list,
     async_map,
     async_merge,
+    async_reduce,
     async_slice,
     async_take,
 )
@@ -74,6 +75,7 @@ __all__ = [
     "async_list",
     "async_map",
     "async_merge",
+    "async_reduce",
     "async_slice",
     "async_take",
     "batched_async_iterable",

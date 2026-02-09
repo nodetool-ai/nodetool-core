@@ -252,3 +252,56 @@ async def async_map(
         if asyncio.iscoroutine(result):
             result = await result  # type: ignore[misc]
         yield result  # type: ignore[misc]
+
+
+async def async_reduce(
+    func: Callable[[R, T], R] | Callable[[R, T], object],
+    aiterable: AsyncIterable[T],
+    initial: R,
+) -> R:
+    """
+    Reduce an async iterable to a single value using a reduction function.
+
+    Applies the reduction function cumulatively to the items of the iterable,
+    from left to right, starting with the initial value. The reduction function
+    can be sync or async.
+
+    Args:
+        func: A reduction function that takes (accumulator, item) and returns
+              the new accumulator value. Can be sync or async.
+        aiterable: The async iterable to reduce.
+        initial: The initial accumulator value.
+
+    Returns:
+        The final accumulated value after reducing all items.
+
+    Raises:
+        TypeError: If the iterable is empty (always returns initial value).
+
+    Example:
+        >>> async def gen():
+        ...     for i in range(5):
+        ...         yield i
+        >>> # Sum all numbers
+        >>> result = await async_reduce(lambda acc, x: acc + x, gen(), 0)
+        >>> result
+        10
+        >>> # Multiply all numbers
+        >>> result = await async_reduce(lambda acc, x: acc * x, gen(), 1)
+        >>> result
+        0
+        >>> # Build a list
+        >>> async def append(acc, x):
+        ...     acc.append(x)
+        ...     return acc
+        >>> result = await async_reduce(append, gen(), [])
+        >>> result
+        [0, 1, 2, 3, 4]
+    """
+    accumulator: R = initial
+    async for item in aiterable:
+        result = func(accumulator, item)
+        if asyncio.iscoroutine(result):
+            result = await result  # type: ignore[misc]
+        accumulator = result  # type: ignore[misc]
+    return accumulator
