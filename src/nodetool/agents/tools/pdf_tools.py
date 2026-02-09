@@ -43,16 +43,19 @@ class ExtractPDFTextTool(Tool):
             path = context.resolve_workspace_path(params["path"])
             doc = pymupdf.open(path)
 
-            end = params.get("end_page", -1)
-            if end == -1:
-                end = doc.page_count - 1
+            try:
+                end = params.get("end_page", -1)
+                if end == -1:
+                    end = doc.page_count - 1
 
-            text = ""
-            for page_num in range(params.get("start_page", 0), end + 1):
-                page = doc[page_num]
-                text += page.get_text()  # type: ignore
+                text = ""
+                for page_num in range(params.get("start_page", 0), end + 1):
+                    page = doc[page_num]
+                    text += page.get_text()  # type: ignore
 
-            return {"text": text}
+                return {"text": text}
+            finally:
+                doc.close()
         except Exception as e:
             return {"error": str(e)}
 
@@ -99,39 +102,42 @@ class ExtractPDFTablesTool(Tool):
             path = context.resolve_workspace_path(params["path"])
             doc = pymupdf.open(path)
 
-            end = params.get("end_page", -1)
-            if end == -1:
-                end = doc.page_count - 1
+            try:
+                end = params.get("end_page", -1)
+                if end == -1:
+                    end = doc.page_count - 1
 
-            all_tables = []
-            for page_num in range(params.get("start_page", 0), end + 1):
-                page = doc[page_num]
-                tables = page.find_tables()  # type: ignore
+                all_tables = []
+                for page_num in range(params.get("start_page", 0), end + 1):
+                    page = doc[page_num]
+                    tables = page.find_tables()  # type: ignore
 
-                for table in tables:
-                    table_data = {
-                        "page": page_num,
-                        "bbox": {
-                            "x0": table.bbox[0],
-                            "y0": table.bbox[1],
-                            "x1": table.bbox[2],
-                            "y1": table.bbox[3],
-                        },
-                        "rows": table.row_count,
-                        "columns": table.col_count,
-                        "header": {
-                            "names": table.header.names if table.header else [],
-                            "external": (table.header.external if table.header else False),
-                        },
-                        "content": table.extract(),
-                    }
-                    all_tables.append(table_data)
+                    for table in tables:
+                        table_data = {
+                            "page": page_num,
+                            "bbox": {
+                                "x0": table.bbox[0],
+                                "y0": table.bbox[1],
+                                "x1": table.bbox[2],
+                                "y1": table.bbox[3],
+                            },
+                            "rows": table.row_count,
+                            "columns": table.col_count,
+                            "header": {
+                                "names": table.header.names if table.header else [],
+                                "external": (table.header.external if table.header else False),
+                            },
+                            "content": table.extract(),
+                        }
+                        all_tables.append(table_data)
 
-            output_file = context.resolve_workspace_path(params["output_file"])
-            async with aiofiles.open(output_file, "w") as f:
-                await f.write(json.dumps(all_tables))
+                output_file = context.resolve_workspace_path(params["output_file"])
+                async with aiofiles.open(output_file, "w") as f:
+                    await f.write(json.dumps(all_tables))
 
-            return {"output_file": output_file}
+                return {"output_file": output_file}
+            finally:
+                doc.close()
         except Exception as e:
             return {"error": str(e)}
 
@@ -184,23 +190,26 @@ class ConvertPDFToMarkdownTool(Tool):
 
             doc = pymupdf.open(input_file)
 
-            md_text = pymupdf4llm.to_markdown(doc)
+            try:
+                md_text = pymupdf4llm.to_markdown(doc)
 
-            # If page range is specified, split and extract relevant pages
-            start_page = params.get("start_page", 0)
-            end_page = params.get("end_page", -1)
-            if start_page != 0 or end_page != -1:
-                pages = md_text.split("\f")  # Split by form feed character
-                end = end_page if end_page != -1 else len(pages) - 1
-                md_text = "\f".join(pages[start_page : end + 1])
+                # If page range is specified, split and extract relevant pages
+                start_page = params.get("start_page", 0)
+                end_page = params.get("end_page", -1)
+                if start_page != 0 or end_page != -1:
+                    pages = md_text.split("\f")  # Split by form feed character
+                    end = end_page if end_page != -1 else len(pages) - 1
+                    md_text = "\f".join(pages[start_page : end + 1])
 
-            parent_dir = os.path.dirname(output_file)
-            if parent_dir:
-                await asyncio.to_thread(os.makedirs, parent_dir, exist_ok=True)
-            async with aiofiles.open(output_file, "w") as f:
-                await f.write(md_text)
+                parent_dir = os.path.dirname(output_file)
+                if parent_dir:
+                    await asyncio.to_thread(os.makedirs, parent_dir, exist_ok=True)
+                async with aiofiles.open(output_file, "w") as f:
+                    await f.write(md_text)
 
-            return {"output_file": output_file}
+                return {"output_file": output_file}
+            finally:
+                doc.close()
         except Exception as e:
             return {"error": str(e)}
 
