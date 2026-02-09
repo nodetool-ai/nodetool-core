@@ -137,6 +137,9 @@ class TestDockerfileConsistency:
 
     def test_entrypoint_consistency(self):
         """Test that Dockerfile CMD and docker-compose command use the same module."""
+        import json
+        import re
+
         dockerfile_path = REPO_ROOT / "Dockerfile"
         compose_path = REPO_ROOT / "docker-compose.yaml"
 
@@ -146,10 +149,21 @@ class TestDockerfileConsistency:
         with open(compose_path) as f:
             compose_data = yaml.safe_load(f)
 
-        # Both should reference nodetool.api.run_server
-        assert "nodetool.api.run_server" in dockerfile_content
+        # Parse Dockerfile CMD instruction (JSON array format)
+        cmd_match = re.search(r'CMD\s+(\[.*?\])', dockerfile_content)
+        assert cmd_match, "CMD instruction not found in Dockerfile"
+        dockerfile_cmd = json.loads(cmd_match.group(1))
+
+        # Get compose command
         compose_cmd = compose_data["services"]["api"]["command"]
-        assert "nodetool.api.run_server" in compose_cmd
+
+        # Both should use python -m nodetool.api.run_server as the base command
+        assert dockerfile_cmd[:3] == ["python", "-m", "nodetool.api.run_server"], (
+            f"Dockerfile CMD base mismatch: {dockerfile_cmd[:3]}"
+        )
+        assert compose_cmd[:3] == ["python", "-m", "nodetool.api.run_server"], (
+            f"Compose command base mismatch: {compose_cmd[:3]}"
+        )
 
 
 class TestRunServerModule:
@@ -261,10 +275,10 @@ class TestServerEntrypointE2E:
         from nodetool.api.server import create_app
 
         app = create_app()
-        ws_routes = [r.path for r in app.routes if hasattr(r, "path") and "ws" in r.path.lower()]
+        routes = [r.path for r in app.routes if hasattr(r, "path")]
 
         # Main ws endpoint
-        assert "/ws" in [r.path for r in app.routes]
+        assert "/ws" in routes
 
     def test_openai_compatible_endpoints_available(self):
         """Test that OpenAI-compatible endpoints are available."""
