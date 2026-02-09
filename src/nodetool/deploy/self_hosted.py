@@ -298,9 +298,6 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
             with self._get_executor() as executor:
                 self._create_directories(executor, results)
                 self._ensure_image(executor, results)
-                self._stop_existing_container(executor, results)
-                container_hash = self._start_container(executor, results)
-                self._check_health(executor, results)
 
                 bearer_token = None
                 if self.use_proxy:
@@ -882,7 +879,7 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
         """Stop and remove the existing container if present."""
         results["steps"].append("Checking for existing container...")
 
-        container_name = get_container_name(self.deployment)
+        container_name = self._container_name()
         check_command = f"docker ps -a -q -f name={container_name}"
 
         try:
@@ -942,11 +939,9 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
 
     def _start_container(self, ssh: Executor, results: dict[str, Any]) -> str:
         """Start the application container."""
-        results["steps"].append("Starting container...")
-
-        command = self._generate_container_command()
-        container_hash = self._generate_container_hash()
-        
+        generator = self._container_generator()
+        command = generator.generate_command()
+        container_hash = generator.generate_hash()
         results["steps"].append(f"  Command: {command[:120]}...")
 
         try:
@@ -959,7 +954,7 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
 
         return container_hash
 
-    def _check_health(self, ssh: Executor, results: dict[str, Any]) -> None:
+    def _check_health(self, ssh: Executor, results: dict[str, Any], bearer_token: Optional[str] = None) -> None:
         """Check container health and HTTP endpoints."""
         results["steps"].append("Checking health...")
 
@@ -980,12 +975,34 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
         except Exception as exc:
             results["steps"].append(f"  Warning: could not retrieve status: {exc}")
         
-        health_url = f"http://127.0.0.1:{self.deployment.container.port}/health"
+        if self.use_proxy and self.deployment.proxy:
+            health_url = f"http://127.0.0.1:{self.deployment.proxy.listen_http}/healthz"
+        else:
+            health_url = f"http://127.0.0.1:{self._app_host_port()}/health"
         try:
             ssh.execute(f"curl -fsS {health_url}", check=True, timeout=20)
             results["steps"].append(f"  Health endpoint OK: {health_url}")
         except SSHCommandError as exc:
             results["steps"].append(f"  Warning: health check failed: {exc.stderr.strip()}")
+
+        if (
+            self.use_proxy
+            and self.deployment.proxy
+            and self.deployment.proxy.tls_certfile
+            and self.deployment.proxy.tls_keyfile
+        ):
+            token = bearer_token or ""
+            status_url = f"https://{self.deployment.proxy.domain}/status"
+            curl_cmd = (
+                f"curl -fsS -H 'Authorization: Bearer {token}' "
+                f"--resolve {self.deployment.proxy.domain}:443:127.0.0.1 "
+                f"{status_url}"
+            )
+            try:
+                ssh.execute(curl_cmd, check=True, timeout=30)
+                results["steps"].append(f"  Status endpoint OK: {status_url}")
+            except SSHCommandError as exc:
+                results["steps"].append(f"  Warning: HTTPS status check failed: {exc.stderr.strip()}")
 
 
 class SSHDeployer(BaseSSHDeployer[SSHDeployment | LocalDeployment]):
@@ -1278,6 +1295,19 @@ class SSHDeployer(BaseSSHDeployer[SSHDeployment | LocalDeployment]):
         service_name = self.deployment.service_name or f"nodetool-{self.deployment.port}"
         deployment = self.deployment
         deployment_env = dict(deployment.environment) if deployment.environment else {}
+        deployment_env.setdefault("NODETOOL_SERVER_MODE", "private")
+        persistent_paths = deployment.persistent_paths
+        if persistent_paths:
+            deployment_env.setdefault("USERS_FILE", persistent_paths.users_file)
+            deployment_env.setdefault("DB_PATH", persistent_paths.db_path)
+            deployment_env.setdefault("CHROMA_PATH", persistent_paths.chroma_path)
+            deployment_env.setdefault("HF_HOME", persistent_paths.hf_cache)
+            deployment_env.setdefault("ASSET_BUCKET", persistent_paths.asset_bucket)
+            deployment_env.setdefault("AUTH_PROVIDER", "multi_user")
+        else:
+            deployment_env.setdefault("AUTH_PROVIDER", "static")
+        if deployment.worker_auth_token:
+            deployment_env.setdefault("WORKER_AUTH_TOKEN", deployment.worker_auth_token)
         env_file_path = f"~/.config/nodetool/{service_name}.env"
         env_file_reference = f"%h/.config/nodetool/{service_name}.env"
 

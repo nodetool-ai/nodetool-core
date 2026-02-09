@@ -106,6 +106,7 @@ def get_user_auth_provider() -> Any:
     - none: Returns None (no auth enforcement)
     - local: LocalAuthProvider (always returns user "1")
     - static: StaticTokenAuthProvider (shared token auth)
+    - multi_user: MultiUserAuthProvider (users file bearer-token auth)
     - supabase: SupabaseAuthProvider (validates Supabase JWTs)
 
     Returns:
@@ -122,6 +123,11 @@ def get_user_auth_provider() -> Any:
         elif kind == "static":
             # Reuse static token provider for user auth path
             ResourceScope._class_user_auth_provider = get_static_auth_provider()
+        elif kind == "multi_user":
+            from nodetool.security.providers.multi_user import MultiUserAuthProvider
+
+            users_file = Environment.get("USERS_FILE")
+            ResourceScope._class_user_auth_provider = MultiUserAuthProvider(users_file=users_file)
         elif kind == "supabase":
             supabase_url = Environment.get("SUPABASE_URL")
             supabase_key = Environment.get("SUPABASE_KEY")
@@ -553,6 +559,7 @@ class ResourceScope:
         - none: Returns None (no auth enforcement)
         - local: LocalAuthProvider (always returns user "1")
         - static: StaticTokenAuthProvider (shared token auth)
+        - multi_user: MultiUserAuthProvider (users file bearer-token auth)
         - supabase: SupabaseAuthProvider (validates Supabase JWTs)
 
         Uses a class-level singleton shared across all scopes for performance.
@@ -571,6 +578,11 @@ class ResourceScope:
             elif kind == "static":
                 # Reuse static token provider for user auth path
                 ResourceScope._class_user_auth_provider = self.get_static_auth_provider()
+            elif kind == "multi_user":
+                from nodetool.security.providers.multi_user import MultiUserAuthProvider
+
+                users_file = Environment.get("USERS_FILE")
+                ResourceScope._class_user_auth_provider = MultiUserAuthProvider(users_file=users_file)
             elif kind == "supabase":
                 supabase_url = Environment.get("SUPABASE_URL")
                 supabase_key = Environment.get("SUPABASE_KEY")

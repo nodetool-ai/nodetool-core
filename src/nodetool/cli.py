@@ -775,10 +775,66 @@ mcp.add_command(jobs)
 @click.option("--reload", is_flag=True, help="Enable auto-reload on file changes (development only).")
 @click.option("--production", is_flag=True, help="Enable production mode with stricter validation and optimizations.")
 @click.option(
+    "--mode",
+    type=click.Choice(["desktop", "public", "private"], case_sensitive=False),
+    default=None,
+    help="Server mode. Defaults to desktop; production defaults to private when omitted.",
+)
+@click.option(
     "--auth-provider",
-    type=click.Choice(["none", "local", "static", "supabase"], case_sensitive=False),
+    type=click.Choice(["none", "local", "static", "multi_user", "supabase"], case_sensitive=False),
     default=None,
     help="Select authentication provider (overrides ENV AUTH_PROVIDER)",
+)
+@click.option(
+    "--enable-default-api/--disable-default-api",
+    default=None,
+    help="Enable/disable default /api routers.",
+)
+@click.option(
+    "--enable-openai/--disable-openai",
+    default=None,
+    help="Enable/disable /v1 OpenAI-compatible routes.",
+)
+@click.option(
+    "--enable-deploy-admin/--disable-deploy-admin",
+    default=None,
+    help="Enable/disable deploy admin routes (/admin/*).",
+)
+@click.option(
+    "--enable-deploy-collections/--disable-deploy-collections",
+    default=None,
+    help="Enable/disable deploy collection upload route (/collections/*).",
+)
+@click.option(
+    "--enable-deploy-storage/--disable-deploy-storage",
+    default=None,
+    help="Enable/disable deploy storage routes (/admin/storage, /storage).",
+)
+@click.option(
+    "--enable-deploy-workflows/--disable-deploy-workflows",
+    default=None,
+    help="Enable/disable deploy workflow routes (/workflows/*).",
+)
+@click.option(
+    "--enable-main-ws/--disable-main-ws",
+    default=None,
+    help="Enable/disable unified websocket endpoint (/ws).",
+)
+@click.option(
+    "--enable-updates-ws/--disable-updates-ws",
+    default=None,
+    help="Enable/disable updates websocket endpoint (/ws/updates).",
+)
+@click.option(
+    "--enable-terminal-ws/--disable-terminal-ws",
+    default=None,
+    help="Enable/disable terminal websocket endpoints (/ws/terminal, /terminal).",
+)
+@click.option(
+    "--enable-hf-download-ws/--disable-hf-download-ws",
+    default=None,
+    help="Enable/disable HuggingFace download websocket endpoint (/ws/download).",
 )
 @click.option(
     "--ui-url",
@@ -806,7 +862,18 @@ def serve(
     static_folder: str | None = None,
     reload: bool = False,
     force_fp16: bool = False,
+    mode: str | None = None,
     auth_provider: str | None = None,
+    enable_default_api: bool | None = None,
+    enable_openai: bool | None = None,
+    enable_deploy_admin: bool | None = None,
+    enable_deploy_collections: bool | None = None,
+    enable_deploy_storage: bool | None = None,
+    enable_deploy_workflows: bool | None = None,
+    enable_main_ws: bool | None = None,
+    enable_updates_ws: bool | None = None,
+    enable_terminal_ws: bool | None = None,
+    enable_hf_download_ws: bool | None = None,
     apps_folder: str | None = None,
     production: bool = False,
     ui_url: str | None = None,
@@ -821,6 +888,11 @@ def serve(
     Use --production to run the production server with full admin routers.
     Use --mock to start with pre-filled test data for development and testing.
     """
+    if auth_provider:
+        os.environ["AUTH_PROVIDER"] = auth_provider.lower()
+
+    effective_mode = mode.lower() if mode else ("private" if production else "desktop")
+
     if production:
         from nodetool.api.run_server import run_server
 
@@ -831,7 +903,38 @@ def serve(
         if mock:
             console.print("[yellow]Warning: --mock ignored in production mode[/]")
 
-        run_server(host=host, port=port, reload=reload)
+        run_kwargs: dict[str, Any] = {
+            "host": host,
+            "port": port,
+            "reload": reload,
+        }
+        if mode:
+            run_kwargs["mode"] = effective_mode
+        else:
+            os.environ.setdefault("NODETOOL_SERVER_MODE", "private")
+        if auth_provider:
+            run_kwargs["auth_provider"] = auth_provider
+        if enable_default_api is not None:
+            run_kwargs["include_default_api_routers"] = enable_default_api
+        if enable_openai is not None:
+            run_kwargs["include_openai_router"] = enable_openai
+        if enable_deploy_admin is not None:
+            run_kwargs["include_deploy_admin_router"] = enable_deploy_admin
+        if enable_deploy_collections is not None:
+            run_kwargs["include_deploy_collection_router"] = enable_deploy_collections
+        if enable_deploy_storage is not None:
+            run_kwargs["include_deploy_storage_router"] = enable_deploy_storage
+        if enable_deploy_workflows is not None:
+            run_kwargs["include_deploy_workflow_router"] = enable_deploy_workflows
+        if enable_main_ws is not None:
+            run_kwargs["enable_main_ws"] = enable_main_ws
+        if enable_updates_ws is not None:
+            run_kwargs["enable_updates_ws"] = enable_updates_ws
+        if enable_terminal_ws is not None:
+            run_kwargs["enable_terminal_ws"] = enable_terminal_ws
+        if enable_hf_download_ws is not None:
+            run_kwargs["enable_hf_download_ws"] = enable_hf_download_ws
+        run_server(**run_kwargs)
         return
 
     from nodetool.api.server import create_app, run_uvicorn_server
@@ -910,7 +1013,22 @@ def serve(
                 sys.exit(1)
 
     if not reload:
-        app = create_app(static_folder=static_folder, apps_folder=apps_folder)
+        app = create_app(
+            static_folder=static_folder,
+            apps_folder=apps_folder,
+            mode=effective_mode,
+            auth_provider=auth_provider,
+            include_default_api_routers=enable_default_api,
+            include_openai_router=enable_openai,
+            include_deploy_admin_router=enable_deploy_admin,
+            include_deploy_collection_router=enable_deploy_collections,
+            include_deploy_storage_router=enable_deploy_storage,
+            include_deploy_workflow_router=enable_deploy_workflows,
+            enable_main_ws=enable_main_ws,
+            enable_updates_ws=enable_updates_ws,
+            enable_terminal_ws=enable_terminal_ws,
+            enable_hf_download_ws=enable_hf_download_ws,
+        )
     else:
         if static_folder:
             raise Exception("static folder and reload are exclusive options")
@@ -1328,7 +1446,7 @@ def vibecoding(
 @click.option("--port", default=7777, help="Port to listen on.", type=int)
 @click.option(
     "--auth-provider",
-    type=click.Choice(["none", "local", "static", "supabase"], case_sensitive=False),
+    type=click.Choice(["none", "local", "static", "multi_user", "supabase"], case_sensitive=False),
     default=None,
     help="Select authentication provider (overrides ENV AUTH_PROVIDER)",
 )
@@ -1363,7 +1481,7 @@ def vibecoding(
 def worker(
     host: str,
     port: int,
-    remote_auth: bool,
+    auth_provider: str | None,
     provider: str,
     default_model: str,
     tools: str,
@@ -1391,7 +1509,7 @@ def worker(
       # Start with verbose logging
       nodetool worker --verbose
     """
-    from nodetool.deploy.worker import run_worker
+    from nodetool.api.run_server import run_server
 
     # Configure logging level based on verbose flag
     if verbose:
@@ -1402,23 +1520,29 @@ def worker(
 
     import json
 
-    import dotenv
-
-    from nodetool.types.workflow import Workflow
-
-    dotenv.load_dotenv()
-
-    def load_workflow(path: str) -> Workflow:
-        with open(path) as f:
-            workflow = json.load(f)
-        return Workflow.model_validate(workflow)
-
-    loaded_workflows = [load_workflow(f) for f in workflows]
+    if workflows:
+        console.print(
+            "[yellow]Warning: --workflow files are not loaded by unified server mode; "
+            "use database-backed workflows instead.[/]"
+        )
 
     # Parse comma-separated tools string into list
     tools_list = [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else []
+    if auth_provider:
+        os.environ["AUTH_PROVIDER"] = auth_provider.lower()
+    os.environ["CHAT_PROVIDER"] = provider
+    os.environ["DEFAULT_MODEL"] = default_model
+    os.environ["NODETOOL_TOOLS"] = ",".join(tools_list)
 
-    run_worker(host, port, provider, default_model, tools_list, loaded_workflows)
+    console.print("[yellow]`nodetool worker` is deprecated; use `nodetool serve --mode private`.[/]")
+
+    run_server(
+        host=host,
+        port=port,
+        reload=False,
+        mode="private",
+        auth_provider=auth_provider,
+    )
 
 
 @cli.command("dsl-export")
@@ -1551,7 +1675,12 @@ def gradio_export(
 @cli.command("chat-server")
 @click.option("--host", default="127.0.0.1", help="Host address to bind to.")
 @click.option("--port", default=8080, help="Port to listen on.", type=int)
-@click.option("--remote-auth", is_flag=True, help="Enable remote authentication (Supabase-backed auth).")
+@click.option(
+    "--auth-provider",
+    type=click.Choice(["none", "local", "static", "multi_user", "supabase"], case_sensitive=False),
+    default=None,
+    help="Select authentication provider (overrides ENV AUTH_PROVIDER)",
+)
 @click.option(
     "--default-model",
     default="gpt-oss:20b",

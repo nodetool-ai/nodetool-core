@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import datetime
 import logging
@@ -6,6 +8,8 @@ import os
 import platform
 import sys
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, replace
+from enum import Enum
 from typing import Any, ClassVar
 
 from fastapi import APIRouter, FastAPI, Request, WebSocket
@@ -131,6 +135,56 @@ class ExtensionRouterRegistry:
         return cls._routers.copy()
 
 
+class ServerMode(str, Enum):
+    """High-level server runtime modes."""
+
+    DESKTOP = "desktop"
+    PUBLIC = "public"
+    PRIVATE = "private"
+
+    @classmethod
+    def from_value(cls, value: str | "ServerMode" | None) -> "ServerMode":
+        if isinstance(value, cls):
+            return value
+        normalized = (value or "desktop").lower()
+        try:
+            return cls(normalized)
+        except ValueError:
+            raise ValueError(f"Invalid server mode '{value}'. Expected one of: desktop, public, private.") from None
+
+
+@dataclass(slots=True)
+class ServerFeatures:
+    include_default_api_routers: bool = True
+    include_openai_router: bool = True
+    include_deploy_admin_router: bool = True
+    include_deploy_collection_router: bool = True
+    include_deploy_storage_router: bool = True
+    include_deploy_workflow_router: bool = True
+    enable_main_ws: bool = True
+    enable_updates_ws: bool = True
+    enable_terminal_ws: bool = True
+    enable_hf_download_ws: bool = True
+    mount_static: bool = True
+
+
+def _features_for_mode(mode: ServerMode) -> ServerFeatures:
+    if mode == ServerMode.DESKTOP:
+        return ServerFeatures()
+    if mode == ServerMode.PUBLIC:
+        return ServerFeatures(
+            include_deploy_admin_router=False,
+            include_deploy_collection_router=False,
+            enable_terminal_ws=False,
+            enable_hf_download_ws=False,
+        )
+    # ServerMode.PRIVATE
+    return ServerFeatures(
+        enable_terminal_ws=False,
+        enable_hf_download_ws=False,
+    )
+
+
 def _load_default_routers() -> list[APIRouter]:
     """
     Lazily import and assemble the default routers to avoid heavy imports at
@@ -191,7 +245,12 @@ def _load_default_routers() -> list[APIRouter]:
     return routers
 
 
-def _load_deploy_routers() -> list[APIRouter]:
+def _load_deploy_routers(
+    include_admin_router: bool = True,
+    include_collection_router: bool = True,
+    include_storage_router: bool = True,
+    include_workflow_router: bool = True,
+) -> list[APIRouter]:
     """
     Load deployment/admin routers.
 
@@ -209,13 +268,17 @@ def _load_deploy_routers() -> list[APIRouter]:
     )
     from nodetool.deploy.workflow_routes import create_workflow_router
 
-    return [
-        create_admin_router(),
-        create_collection_router(),
-        create_admin_storage_router(),
-        create_public_storage_router(),
-        create_workflow_router(),
-    ]
+    routers: list[APIRouter] = []
+    if include_admin_router:
+        routers.append(create_admin_router())
+    if include_collection_router:
+        routers.append(create_collection_router())
+    if include_storage_router:
+        routers.append(create_admin_storage_router())
+        routers.append(create_public_storage_router())
+    if include_workflow_router:
+        routers.append(create_workflow_router())
+    return routers
 
 
 async def check_ollama_availability(port: int = 11434, timeout: float = 2.0) -> bool:
@@ -287,17 +350,59 @@ def create_app(
     routers: list[APIRouter] | None = None,
     static_folder: str | None = None,
     apps_folder: str | None = None,
+    *,
+    mode: str | ServerMode | None = None,
+    auth_provider: str | None = None,
+    include_default_api_routers: bool | None = None,
+    include_openai_router: bool | None = None,
+    include_deploy_admin_router: bool | None = None,
+    include_deploy_collection_router: bool | None = None,
+    include_deploy_storage_router: bool | None = None,
+    include_deploy_workflow_router: bool | None = None,
+    enable_main_ws: bool | None = None,
+    enable_updates_ws: bool | None = None,
+    enable_terminal_ws: bool | None = None,
+    enable_hf_download_ws: bool | None = None,
+    mount_static: bool | None = None,
 ):
     # Initialize Sentry only when the application is created, not on module import
     initialize_sentry()
 
+    server_mode = ServerMode.from_value(mode)
+    features = _features_for_mode(server_mode)
+    feature_overrides: dict[str, bool | None] = {
+        "include_default_api_routers": include_default_api_routers,
+        "include_openai_router": include_openai_router,
+        "include_deploy_admin_router": include_deploy_admin_router,
+        "include_deploy_collection_router": include_deploy_collection_router,
+        "include_deploy_storage_router": include_deploy_storage_router,
+        "include_deploy_workflow_router": include_deploy_workflow_router,
+        "enable_main_ws": enable_main_ws,
+        "enable_updates_ws": enable_updates_ws,
+        "enable_terminal_ws": enable_terminal_ws,
+        "enable_hf_download_ws": enable_hf_download_ws,
+        "mount_static": mount_static,
+    }
+    for key, value in feature_overrides.items():
+        if value is not None:
+            features = replace(features, **{key: value})
+
+    if auth_provider:
+        os.environ["AUTH_PROVIDER"] = auth_provider.lower()
+
     origins = ["*"] if origins is None else origins
-    routers = _load_default_routers() if routers is None else routers
+    routers = _load_default_routers() if (routers is None and features.include_default_api_routers) else (routers or [])
 
     # Centralized dotenv loading for consistency with deploy.fastapi_server
     from nodetool.config.environment import load_dotenv_files
 
     load_dotenv_files()
+
+    auth_kind = Environment.get_auth_provider_kind()
+    if server_mode == ServerMode.PUBLIC and auth_kind != "supabase":
+        raise RuntimeError("Public server mode requires AUTH_PROVIDER=supabase.")
+    if server_mode == ServerMode.PRIVATE and auth_kind not in ("static", "multi_user", "supabase"):
+        raise RuntimeError("Private server mode requires AUTH_PROVIDER=static, multi_user, or supabase.")
 
     from nodetool.observability.tracing import init_tracing
 
@@ -500,19 +605,25 @@ def create_app(
     tools_str = os.environ.get("NODETOOL_TOOLS", "")
     tools_list = [t.strip() for t in tools_str.split(",") if t.strip()] if tools_str else []
 
-    app.include_router(
-        create_openai_compatible_router(
-            provider=default_provider,
-            default_model=default_model,
-            tools=tools_list,
+    if features.include_openai_router:
+        app.include_router(
+            create_openai_compatible_router(
+                provider=default_provider,
+                default_model=default_model,
+                tools=tools_list,
+            )
         )
-    )
 
     for router in routers:
         app.include_router(router)
 
     # Include deploy routers for admin and production operations
-    for router in _load_deploy_routers():
+    for router in _load_deploy_routers(
+        include_admin_router=features.include_deploy_admin_router,
+        include_collection_router=features.include_deploy_collection_router,
+        include_storage_router=features.include_deploy_storage_router,
+        include_workflow_router=features.include_deploy_workflow_router,
+    ):
         app.include_router(router)
 
     for extension_router in ExtensionRouterRegistry().get_routers():
@@ -541,7 +652,7 @@ def create_app(
     async def editor_redirect(workflow_id: str):
         return RedirectResponse(url="/")
 
-    if not Environment.is_production():
+    if features.enable_hf_download_ws and not Environment.is_production():
         app.add_websocket_route("/ws/download", huggingface_download_endpoint)
 
     async def _authenticate_websocket(websocket: WebSocket):
@@ -580,61 +691,67 @@ def create_app(
         log.warning("WebSocket connection rejected: Invalid token")
         return None, None
 
-    @app.websocket("/ws")
-    async def unified_websocket_endpoint(websocket: WebSocket):
-        """
-        Unified WebSocket endpoint for both workflow execution and chat communications.
+    if features.enable_main_ws:
 
-        This is the recommended endpoint for new integrations. It handles:
-        - Workflow job execution (run_job, cancel_job, get_status, etc.)
-        - Chat message processing (with AI providers)
-        - Real-time bidirectional updates
+        @app.websocket("/ws")
+        async def unified_websocket_endpoint(websocket: WebSocket):
+            """
+            Unified WebSocket endpoint for both workflow execution and chat communications.
 
-        The endpoint routes messages based on their structure:
-        - Messages with 'command' field: Workflow operations
-        - Messages with 'role' or 'content': Chat messages
-        - Control messages (stop, ping, etc.): Connection control
+            This is the recommended endpoint for new integrations. It handles:
+            - Workflow job execution (run_job, cancel_job, get_status, etc.)
+            - Chat message processing (with AI providers)
+            - Real-time bidirectional updates
 
-        See docs/websocket-api.md for detailed API documentation.
-        """
-        token, user_id = await _authenticate_websocket(websocket)
-        if user_id is None:
-            return
-        runner = UnifiedWebSocketRunner(auth_token=token or "", user_id=user_id)
-        await runner.run(websocket)
+            The endpoint routes messages based on their structure:
+            - Messages with 'command' field: Workflow operations
+            - Messages with 'role' or 'content': Chat messages
+            - Control messages (stop, ping, etc.): Connection control
 
-    @app.websocket("/ws/terminal")
-    async def terminal_websocket_endpoint(websocket: WebSocket):
-        # Only allow terminal access when explicitly enabled and never in production
-        if Environment.is_production() or not TerminalWebSocketRunner.is_enabled():
-            # Must accept before closing to raise WebSocketDisconnect in tests
-            await websocket.accept()
-            await websocket.close(code=1008, reason="Terminal access disabled")
-            return
-
-        # Skip authentication in dev mode for convenience
-        if not enforce_auth:
-            token = None
-            user_id = "1"  # Default dev user
-        else:
+            See docs/websocket-api.md for detailed API documentation.
+            """
             token, user_id = await _authenticate_websocket(websocket)
             if user_id is None:
                 return
+            runner = UnifiedWebSocketRunner(auth_token=token or "", user_id=user_id)
+            await runner.run(websocket)
 
-        runner = TerminalWebSocketRunner(auth_token=token or "", user_id=user_id)
-        await runner.run(websocket)
+    if features.enable_terminal_ws:
 
-    # Backwards-compatible terminal websocket route (older clients/tests)
-    @app.websocket("/terminal")
-    async def terminal_websocket_endpoint_legacy(websocket: WebSocket):
-        await terminal_websocket_endpoint(websocket)
+        @app.websocket("/ws/terminal")
+        async def terminal_websocket_endpoint(websocket: WebSocket):
+            # Only allow terminal access when explicitly enabled and never in production
+            if Environment.is_production() or not TerminalWebSocketRunner.is_enabled():
+                # Must accept before closing to raise WebSocketDisconnect in tests
+                await websocket.accept()
+                await websocket.close(code=1008, reason="Terminal access disabled")
+                return
 
-    # WebSocket endpoint for periodic system updates (e.g., system stats)
-    @app.websocket("/ws/updates")
-    async def updates_websocket_endpoint(websocket: WebSocket):
-        await websocket_updates.handle_client(websocket)
+            # Skip authentication in dev mode for convenience
+            if not enforce_auth:
+                token = None
+                user_id = "1"  # Default dev user
+            else:
+                token, user_id = await _authenticate_websocket(websocket)
+                if user_id is None:
+                    return
 
-    if static_folder and os.path.exists(static_folder):
+            runner = TerminalWebSocketRunner(auth_token=token or "", user_id=user_id)
+            await runner.run(websocket)
+
+        # Backwards-compatible terminal websocket route (older clients/tests)
+        @app.websocket("/terminal")
+        async def terminal_websocket_endpoint_legacy(websocket: WebSocket):
+            await terminal_websocket_endpoint(websocket)
+
+    if features.enable_updates_ws:
+
+        # WebSocket endpoint for periodic system updates (e.g., system stats)
+        @app.websocket("/ws/updates")
+        async def updates_websocket_endpoint(websocket: WebSocket):
+            await websocket_updates.handle_client(websocket)
+
+    if features.mount_static and static_folder and os.path.exists(static_folder):
         log.info(f"Mounting static folder: {static_folder}")
         app.mount("/", StaticFiles(directory=static_folder, html=True), name="static")
 

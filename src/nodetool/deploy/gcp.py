@@ -119,7 +119,7 @@ class GCPDeployer:
             results["steps"].append("Starting Google Cloud Run deployment...")
 
             # Prepare environment variables
-            env = dict(self.deployment.environment) if self.deployment.environment else {}
+            env: dict[str, str] = {}
 
             # Call deploy function
             deploy_to_gcp(
@@ -165,7 +165,7 @@ class GCPDeployer:
         status_info = {
             "deployment_name": self.deployment_name,
             "type": "gcp",
-            "project": self.deployment.project,
+            "project": self.deployment.project_id,
             "region": self.deployment.region,
             "service_name": self.deployment.service_name,
         }
@@ -178,7 +178,7 @@ class GCPDeployer:
 
         # Try to get live status from Cloud Run
         try:
-            services = list_gcp_services(region=self.deployment.region, project_id=self.deployment.project)
+            services = list_gcp_services(region=self.deployment.region, project_id=self.deployment.project_id)
 
             # Find our service
             for service in services:
@@ -218,7 +218,7 @@ class GCPDeployer:
             "read",
             f'resource.type="cloud_run_revision" AND resource.labels.service_name="{self.deployment.service_name}"',
             "--project",
-            self.deployment.project,
+            self.deployment.project_id,
             "--limit",
             str(tail),
             "--format",
@@ -260,7 +260,7 @@ class GCPDeployer:
             success = delete_gcp_service(
                 service_name=self.deployment.service_name,
                 region=self.deployment.region,
-                project_id=self.deployment.project,
+                project_id=self.deployment.project_id,
             )
 
             if success:

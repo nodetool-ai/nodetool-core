@@ -118,7 +118,7 @@ def is_admin_user(user_id: str) -> bool:
         return False
 
     # Get user info from provider
-    from nodetool.api.server import get_user_auth_provider
+    from nodetool.runtime.resources import get_user_auth_provider
 
     provider = get_user_auth_provider()
 

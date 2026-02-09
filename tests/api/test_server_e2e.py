@@ -145,9 +145,8 @@ class TestEndpointsAvailability:
         # This will likely 404 on the key but not on the endpoint
         response = client.head("/storage/assets/nonexistent-key")
 
-        # May return 404 for the asset, but the route should match
-        # The endpoint returns Response objects, so status can vary
-        assert response.status_code in (200, 404, 500)
+        # May return 401 (auth required), 404 (asset missing), or 500 depending on backend state.
+        assert response.status_code in (200, 401, 404, 500)
 
     def test_workflows_endpoint_exists(self):
         """Verify /workflows endpoint exists."""
@@ -284,12 +283,16 @@ class TestServerRouterIntegration:
         """Verify /editor/{workflow_id} redirect endpoint exists."""
         app = create_app()
         client = TestClient(app, follow_redirects=False)
+        routes = [route.path for route in app.routes if hasattr(route, "path")]
+        assert "/editor/{workflow_id}" in routes
 
         response = client.get("/editor/test-workflow-id")
 
-        # Should redirect to root
-        assert response.status_code in (301, 302, 307, 308)
-        assert response.headers.get("location") == "/"
+        # Endpoint may be auth-gated; authenticated path still redirects to root.
+        if response.status_code in (301, 302, 307, 308):
+            assert response.headers.get("location") == "/"
+        else:
+            assert response.status_code == 401
 
 
 class TestProductionValidation:
@@ -329,6 +332,25 @@ class TestCollectionRouterAlwaysEnabled:
         # Check for collection routes from the API collection router
         # and/or the deploy collection router
         assert any("collection" in route.lower() for route in routes)
+
+
+class TestServerModes:
+    """E2E checks for server mode and auth compatibility."""
+
+    def test_public_mode_requires_supabase_auth(self, monkeypatch):
+        monkeypatch.setenv("AUTH_PROVIDER", "local")
+        with pytest.raises(RuntimeError, match="Public server mode requires AUTH_PROVIDER=supabase"):
+            create_app(mode="public")
+
+    def test_private_mode_rejects_local_auth(self, monkeypatch):
+        monkeypatch.setenv("AUTH_PROVIDER", "local")
+        with pytest.raises(RuntimeError, match="Private server mode requires AUTH_PROVIDER"):
+            create_app(mode="private")
+
+    def test_private_mode_accepts_multi_user_auth(self, monkeypatch):
+        monkeypatch.setenv("AUTH_PROVIDER", "multi_user")
+        app = create_app(mode="private")
+        assert app is not None
 
 
 class TestRunServerFunction:
@@ -401,3 +423,21 @@ class TestCliServeCommandProductionFlag:
         assert len(create_app_called) == 1
         assert len(uvicorn_called) == 1
         assert uvicorn_called[0]["port"] == 9000
+
+    def test_serve_production_mode_flag_forwarded(self, monkeypatch):
+        from click.testing import CliRunner
+        from nodetool.cli import cli
+
+        calls = []
+
+        def mock_run_server(**kwargs):
+            calls.append(kwargs)
+
+        monkeypatch.setattr("nodetool.api.run_server.run_server", mock_run_server)
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["serve", "--production", "--mode", "public", "--port", "9000"])
+        assert result.exit_code == 0
+        assert len(calls) == 1
+        assert calls[0]["mode"] == "public"
+        assert calls[0]["port"] == 9000

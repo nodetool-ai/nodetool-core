@@ -30,6 +30,19 @@ def run_server(
     host: str = "0.0.0.0",
     port: int = 7777,
     reload: bool = False,
+    mode: str | None = None,
+    auth_provider: str | None = None,
+    include_default_api_routers: bool | None = None,
+    include_openai_router: bool | None = None,
+    include_deploy_admin_router: bool | None = None,
+    include_deploy_collection_router: bool | None = None,
+    include_deploy_storage_router: bool | None = None,
+    include_deploy_workflow_router: bool | None = None,
+    enable_main_ws: bool | None = None,
+    enable_updates_ws: bool | None = None,
+    enable_terminal_ws: bool | None = None,
+    enable_hf_download_ws: bool | None = None,
+    mount_static: bool | None = None,
 ) -> None:
     """Run the NodeTool server.
 
@@ -93,8 +106,23 @@ def run_server(
     console.print("=" * 70)
     console.print("")
 
+    effective_mode = mode or os.environ.get("NODETOOL_SERVER_MODE")
     # Create and run the app
-    app = create_app()
+    app = create_app(
+        mode=effective_mode,
+        auth_provider=auth_provider,
+        include_default_api_routers=include_default_api_routers,
+        include_openai_router=include_openai_router,
+        include_deploy_admin_router=include_deploy_admin_router,
+        include_deploy_collection_router=include_deploy_collection_router,
+        include_deploy_storage_router=include_deploy_storage_router,
+        include_deploy_workflow_router=include_deploy_workflow_router,
+        enable_main_ws=enable_main_ws,
+        enable_updates_ws=enable_updates_ws,
+        enable_terminal_ws=enable_terminal_ws,
+        enable_hf_download_ws=enable_hf_download_ws,
+        mount_static=mount_static,
+    )
     run_uvicorn_server(app, host, port, reload)
 
 

@@ -151,6 +151,7 @@ class DockerRunGenerator:
         # Add container-specific settings
         env["PORT"] = str(APP_ENV_PORT)
         env["NODETOOL_API_URL"] = f"http://localhost:{self.container.port}"
+        env["NODETOOL_SERVER_MODE"] = "private"
 
         # Configure paths from persistent_paths if available
         persistent_paths = self.deployment.persistent_paths
@@ -167,6 +168,7 @@ class DockerRunGenerator:
             # Fallback to default paths
             env["DB_PATH"] = "/workspace/nodetool.db"
             env["HF_HOME"] = "/hf-cache"
+            env.setdefault("AUTH_PROVIDER", "static")
 
         # Add workflow IDs if specified
         if self.container.workflows:
