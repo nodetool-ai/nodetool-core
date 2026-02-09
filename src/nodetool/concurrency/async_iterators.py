@@ -305,3 +305,49 @@ async def async_reduce(
             result = await result  # type: ignore[misc]
         accumulator = result  # type: ignore[misc]
     return accumulator
+
+
+async def async_flat_map(
+    func: Callable[[T], AsyncIterable[R]] | Callable[[T], object],
+    aiterable: AsyncIterable[T],
+) -> AsyncIterator[R]:
+    """
+    Map a function over an async iterable and flatten the result.
+
+    Applies the function to each item in the iterable (which must return
+    an async iterable), then flattens all the results into a single async
+    iterator. The function can be sync or async.
+
+    This is useful for one-to-many transformations where you want to transform
+    each element into multiple elements and then flatten them.
+
+    Args:
+        func: A function that takes an item and returns an async iterable.
+              Can be sync or async.
+        aiterable: The async iterable to map over.
+
+    Yields:
+        Flattened items from applying func to each item in the iterable.
+
+    Example:
+        >>> async def gen():
+        ...     for i in range(3):
+        ...         yield i
+        >>> # Split each number into range
+        >>> async def split(x):
+        ...     for j in range(x):
+        ...         yield j
+        >>> result = await async_list(async_flat_map(split, gen()))
+        >>> result
+        [0, 0, 1, 0, 1, 2]
+        >>> # With sync function
+        >>> result = await async_list(async_flat_map(lambda x: (i for i in range(x)), gen()))
+        >>> result
+        [0, 0, 1, 0, 1, 2]
+    """
+    async for item in aiterable:
+        result = func(item)
+        if asyncio.iscoroutine(result):
+            result = await result  # type: ignore[misc]
+        async for inner_item in result:  # type: ignore[misc]
+            yield inner_item

@@ -6,6 +6,7 @@ from nodetool.concurrency.async_iterators import (
     AsyncByteStream,
     async_filter,
     async_first,
+    async_flat_map,
     async_list,
     async_map,
     async_merge,
@@ -969,3 +970,216 @@ class TestAsyncReduce:
 
         result = await async_reduce(count_even, gen(), 0)
         assert result == 5
+
+
+class TestAsyncFlatMap:
+    """Tests for async_flat_map function."""
+
+    @pytest.mark.asyncio
+    async def test_flat_map_with_sync_function(self):
+        """Test flat mapping with a sync function."""
+
+        async def gen():
+            for i in range(3):
+                yield i
+
+        async def split(x):
+            for j in range(x):
+                yield j
+
+        result = await async_list(async_flat_map(split, gen()))
+        # gen() yields 0, 1, 2
+        # split(0) -> [], split(1) -> [0], split(2) -> [0, 1]
+        assert result == [0, 0, 1]
+
+    @pytest.mark.asyncio
+    async def test_flat_map_with_async_function(self):
+        """Test flat mapping with an async function."""
+
+        async def gen():
+            for i in range(3):
+                yield i
+
+        async def async_split(x):
+            # Simulate async operation
+            await asyncio.sleep(0)
+            for j in range(x):
+                yield j
+
+        result = await async_list(async_flat_map(async_split, gen()))
+        # gen() yields 0, 1, 2
+        # async_split(0) -> [], async_split(1) -> [0], async_split(2) -> [0, 1]
+        assert result == [0, 0, 1]
+
+    @pytest.mark.asyncio
+    async def test_flat_map_empty_iterable(self):
+        """Test flat mapping over empty iterable."""
+
+        async def gen():
+            return
+            yield  # pragma: no cover
+
+        async def split(x):
+            for j in range(x):
+                yield j
+
+        result = await async_list(async_flat_map(split, gen()))
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_flat_map_empty_inner_iterables(self):
+        """Test flat mapping when all inner iterables are empty."""
+
+        async def gen():
+            for _i in range(3):
+                yield 0
+
+        async def split(x):
+            for j in range(x):
+                yield j
+
+        result = await async_list(async_flat_map(split, gen()))
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_flat_map_single_item(self):
+        """Test flat mapping single item."""
+
+        async def gen():
+            yield 2
+
+        async def split(x):
+            for j in range(x):
+                yield j
+
+        result = await async_list(async_flat_map(split, gen()))
+        assert result == [0, 1]
+
+    @pytest.mark.asyncio
+    async def test_flat_map_type_transformation(self):
+        """Test flat mapping that transforms types."""
+
+        async def gen():
+            for s in ["hello", "world"]:
+                yield s
+
+        async def split_chars(s):
+            for c in s:
+                yield c
+
+        result = await async_list(async_flat_map(split_chars, gen()))
+        assert result == ["h", "e", "l", "l", "o", "w", "o", "r", "l", "d"]
+
+    @pytest.mark.asyncio
+    async def test_flat_map_preserves_order(self):
+        """Test that flat mapping preserves original order."""
+
+        async def gen():
+            for i in [2, 1, 3]:
+                yield i
+
+        async def split(x):
+            for j in range(x):
+                yield j
+
+        result = await async_list(async_flat_map(split, gen()))
+        # gen() yields 2, 1, 3
+        # split(2) -> [0, 1], split(1) -> [0], split(3) -> [0, 1, 2]
+        assert result == [0, 1, 0, 0, 1, 2]
+
+    @pytest.mark.asyncio
+    async def test_flat_map_with_complex_transformation(self):
+        """Test flat mapping with complex transformation."""
+
+        async def gen():
+            for i in [1, 2, 3]:
+                yield i
+
+        async def replicate_and_add(x):
+            for offset in range(x):
+                yield x + offset
+
+        result = await async_list(async_flat_map(replicate_and_add, gen()))
+        # gen() yields 1, 2, 3
+        # replicate_and_add(1) -> [1], replicate_and_add(2) -> [2, 3], replicate_and_add(3) -> [3, 4, 5]
+        assert result == [1, 2, 3, 3, 4, 5]
+
+    @pytest.mark.asyncio
+    async def test_flat_map_with_filter(self):
+        """Test flat mapping combined with filtering behavior."""
+
+        async def gen():
+            for i in range(3):
+                yield i
+
+        async def only_even_splits(x):
+            for j in range(x):
+                if j % 2 == 0:
+                    yield j
+
+        result = await async_list(async_flat_map(only_even_splits, gen()))
+        # gen() yields 0, 1, 2
+        # only_even_splits(0) -> [], only_even_splits(1) -> [0], only_even_splits(2) -> [0]
+        assert result == [0, 0]
+
+    @pytest.mark.asyncio
+    async def test_flat_map_nested_lists(self):
+        """Test flat mapping nested list-like structures."""
+
+        async def gen():
+            for lst in [[1, 2], [3, 4, 5], [6]]:
+                yield lst
+
+        async def flatten(lst):
+            for item in lst:
+                yield item
+
+        result = await async_list(async_flat_map(flatten, gen()))
+        assert result == [1, 2, 3, 4, 5, 6]
+
+    @pytest.mark.asyncio
+    async def test_flat_map_with_single_element_inner(self):
+        """Test flat mapping when inner iterables have single element."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        async def wrap(x):
+            yield x
+
+        result = await async_list(async_flat_map(wrap, gen()))
+        assert result == [0, 1, 2, 3, 4]
+
+    @pytest.mark.asyncio
+    async def test_flat_map_with_varying_lengths(self):
+        """Test flat mapping with varying inner iterable lengths."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        async def variable_split(x):
+            # Create iterables of different lengths
+            for j in range(x % 3):
+                yield j
+
+        result = await async_list(async_flat_map(variable_split, gen()))
+        # gen() yields 0, 1, 2, 3, 4
+        # variable_split(0) -> [], variable_split(1) -> [0], variable_split(2) -> [0, 1]
+        # variable_split(3) -> [], variable_split(4) -> [0]
+        assert result == [0, 0, 1, 0]
+
+    @pytest.mark.asyncio
+    async def test_flat_map_identity(self):
+        """Test flat mapping that yields each input as-is."""
+
+        async def gen():
+            for i in [1, 2, 3]:
+                yield i
+
+        async def identity(x):
+            yield x
+
+        result = await async_list(async_flat_map(identity, gen()))
+        assert result == [1, 2, 3]
