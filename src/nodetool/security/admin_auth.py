@@ -3,7 +3,7 @@ Admin token authentication for production admin endpoints.
 
 In production, sensitive admin operations (/admin/*) require either:
 1. ADMIN_TOKEN header (X-Admin-Token) - for admin-only access
-2. WORKER_AUTH_TOKEN (Authorization: Bearer) - standard auth still required
+2. SERVER_AUTH_TOKEN (Authorization: Bearer) - standard auth still required
 
 This provides defense-in-depth: users need both valid user auth AND admin token
 for sensitive operations.

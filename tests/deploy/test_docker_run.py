@@ -207,21 +207,21 @@ class TestDockerRunGenerator:
         assert "-v /custom/workspace:/workspace" in command
         assert "-v /custom/cache:/hf-cache:ro" in command
 
-    def test_generate_command_worker_auth_token(self):
+    def test_generate_command_server_auth_token(self):
         """Test worker authentication token."""
         deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="default", port=7777),
-            worker_auth_token="secret-token-123",
+            server_auth_token="secret-token-123",
         )
 
         generator = DockerRunGenerator(deployment)
         command = generator.generate_command()
 
         # Check auth token
-        assert "-e WORKER_AUTH_TOKEN=secret-token-123" in command
+        assert "-e SERVER_AUTH_TOKEN=secret-token-123" in command
 
     def test_generate_command_format(self, basic_deployment):
         """Test command format with line continuations."""
@@ -441,13 +441,13 @@ class TestDockerRunGenerator:
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="default", port=7777),
-            worker_auth_token="token123",
+            server_auth_token="token123",
         )
 
         generator = DockerRunGenerator(deployment)
         env = generator._build_environment()
 
-        assert "WORKER_AUTH_TOKEN=token123" in env
+        assert "SERVER_AUTH_TOKEN=token123" in env
 
     def test_build_gpu_args_none(self, basic_deployment):
         """Test GPU args when no GPU configured."""

@@ -83,15 +83,15 @@ def get_static_auth_provider() -> Any:
         StaticTokenAuthProvider instance
 
     Raises:
-        ValueError: If WORKER_AUTH_TOKEN is not configured
+        ValueError: If SERVER_AUTH_TOKEN is not configured
     """
-    from nodetool.deploy.auth import get_worker_auth_token
+    from nodetool.deploy.auth import get_server_auth_token
     from nodetool.security.providers.static_token import StaticTokenAuthProvider
 
     if ResourceScope._class_static_auth_provider is None:
-        token = get_worker_auth_token()
+        token = get_server_auth_token()
         if not token:
-            raise ValueError("WORKER_AUTH_TOKEN is required for static authentication.")
+            raise ValueError("SERVER_AUTH_TOKEN is required for static authentication.")
         ResourceScope._class_static_auth_provider = StaticTokenAuthProvider(static_token=token)
     return ResourceScope._class_static_auth_provider
 
@@ -533,22 +533,22 @@ class ResourceScope:
     def get_static_auth_provider(self) -> Any:
         """Get or create the static token authentication provider.
 
-        The static auth provider validates worker tokens for internal services.
+        The static auth provider validates server tokens for internal services.
         Uses a class-level singleton shared across all scopes for performance.
 
         Returns:
             StaticTokenAuthProvider instance
 
         Raises:
-            ValueError: If WORKER_AUTH_TOKEN is not configured
+            ValueError: If SERVER_AUTH_TOKEN is not configured
         """
-        from nodetool.deploy.auth import get_worker_auth_token
+        from nodetool.deploy.auth import get_server_auth_token
         from nodetool.security.providers.static_token import StaticTokenAuthProvider
 
         if ResourceScope._class_static_auth_provider is None:
-            token = get_worker_auth_token()
+            token = get_server_auth_token()
             if not token:
-                raise ValueError("WORKER_AUTH_TOKEN is required for static authentication.")
+                raise ValueError("SERVER_AUTH_TOKEN is required for static authentication.")
             ResourceScope._class_static_auth_provider = StaticTokenAuthProvider(static_token=token)
         return ResourceScope._class_static_auth_provider
 

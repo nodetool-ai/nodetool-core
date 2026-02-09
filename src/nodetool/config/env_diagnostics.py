@@ -88,7 +88,7 @@ DEPLOYMENT_CRITICAL_VARS = {
         "NODETOOL_API_URL",
         "OLLAMA_API_URL",
         # Authentication for exposed deployments
-        "WORKER_AUTH_TOKEN",
+        "SERVER_AUTH_TOKEN",
         # Database (often external in Docker)
         "SUPABASE_URL",
         "SUPABASE_KEY",
@@ -99,7 +99,7 @@ DEPLOYMENT_CRITICAL_VARS = {
         "ENV",
         "LOG_LEVEL",
         "AUTH_PROVIDER",
-        "WORKER_AUTH_TOKEN",
+        "SERVER_AUTH_TOKEN",
         "SUPABASE_URL",
         "SUPABASE_KEY",
         "S3_ENDPOINT_URL",

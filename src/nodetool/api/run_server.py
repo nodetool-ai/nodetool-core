@@ -37,7 +37,6 @@ def run_server(
     include_deploy_admin_router: bool | None = None,
     include_deploy_collection_router: bool | None = None,
     include_deploy_storage_router: bool | None = None,
-    include_deploy_workflow_router: bool | None = None,
     enable_main_ws: bool | None = None,
     enable_updates_ws: bool | None = None,
     enable_terminal_ws: bool | None = None,
@@ -102,7 +101,7 @@ def run_server(
     console.print("  API: GET /api/*")
     console.print("  Admin: /admin/* (requires X-Admin-Token in production)")
     console.print("  OpenAI-Compatible: /v1/chat/completions, /v1/models")
-    console.print("  Workflows: /workflows/*")
+    console.print("  Workflows: /api/workflows/*")
     console.print("=" * 70)
     console.print("")
 
@@ -116,7 +115,6 @@ def run_server(
         include_deploy_admin_router=include_deploy_admin_router,
         include_deploy_collection_router=include_deploy_collection_router,
         include_deploy_storage_router=include_deploy_storage_router,
-        include_deploy_workflow_router=include_deploy_workflow_router,
         enable_main_ws=enable_main_ws,
         enable_updates_ws=enable_updates_ws,
         enable_terminal_ws=enable_terminal_ws,

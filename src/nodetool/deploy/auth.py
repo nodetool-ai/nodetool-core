@@ -1,7 +1,7 @@
 """
-Authentication module for NodeTool worker deployments.
+Authentication module for NodeTool server deployments.
 
-Provides simple token-based authentication for securing worker endpoints
+Provides simple token-based authentication for securing server endpoints
 when deployed in Docker or other production environments.
 
 The token is auto-generated on first run and saved to a deployment config file.
@@ -64,12 +64,12 @@ def save_deployment_config(config: dict) -> None:
     DEPLOYMENT_CONFIG_FILE.chmod(0o600)
 
 
-def get_worker_auth_token() -> Optional[str]:
+def get_server_auth_token() -> Optional[str]:
     """
-    Get the worker authentication token.
+    Get the server authentication token.
 
     Priority:
-    1. WORKER_AUTH_TOKEN environment variable
+    1. SERVER_AUTH_TOKEN environment variable
     2. Token from deployment config file
     3. Auto-generate and save new token
 
@@ -77,18 +77,18 @@ def get_worker_auth_token() -> Optional[str]:
         The authentication token string
     """
     # Check environment variable first
-    env_token = os.environ.get("WORKER_AUTH_TOKEN")
+    env_token = os.environ.get("SERVER_AUTH_TOKEN")
     if env_token:
         return env_token
 
     # Load from deployment config
     config = load_deployment_config()
-    if "worker_auth_token" in config:
-        return config["worker_auth_token"]
+    if "server_auth_token" in config:
+        return config["server_auth_token"]
 
     # Auto-generate new token
     new_token = generate_secure_token()
-    config["worker_auth_token"] = new_token
+    config["server_auth_token"] = new_token
     save_deployment_config(config)
 
     return new_token
@@ -96,7 +96,7 @@ def get_worker_auth_token() -> Optional[str]:
 
 def is_auth_enabled() -> bool:
     """
-    Check if worker authentication is enabled.
+    Check if server authentication is enabled.
 
     Authentication is always enabled - either from environment,
     config file, or auto-generated.
@@ -114,23 +114,23 @@ def get_token_source() -> str:
     Returns:
         String describing the token source: "environment", "config", or "generated"
     """
-    if os.environ.get("WORKER_AUTH_TOKEN"):
+    if os.environ.get("SERVER_AUTH_TOKEN"):
         return "environment"
 
     config = load_deployment_config()
-    if "worker_auth_token" in config:
+    if "server_auth_token" in config:
         return "config"
 
     return "generated"
 
 
-async def verify_worker_token(
+async def verify_server_token(
     authorization: Optional[str] = Header(None),
 ) -> str:
     """
-    Verify the worker authentication token from Authorization header.
+    Verify the server authentication token from Authorization header.
 
-    This dependency can be used to protect endpoints in the worker.
+    This dependency can be used to protect endpoints in the server.
     Authentication is always enabled (token auto-generated if needed).
 
     Args:
@@ -144,10 +144,10 @@ async def verify_worker_token(
 
     Example:
         @router.get("/protected")
-        async def protected_endpoint(auth: str = Depends(verify_worker_token)):
+        async def protected_endpoint(auth: str = Depends(verify_server_token)):
             return {"message": "This is protected"}
     """
-    expected_token = get_worker_auth_token()
+    expected_token = get_server_auth_token()
 
     # Check if authorization header is provided
     if not authorization:

@@ -67,7 +67,7 @@ class TestRequiresAdminToken:
         assert requires_admin_token("/ping") is False
         assert requires_admin_token("/api/workflows") is False
         assert requires_admin_token("/v1/chat/completions") is False
-        assert requires_admin_token("/workflows/run") is False
+        assert requires_admin_token("/api/workflows/run") is False
 
 
 class TestGetAdminToken:

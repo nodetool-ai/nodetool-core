@@ -343,10 +343,10 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
-    env_var="WORKER_AUTH_TOKEN",
+    env_var="SERVER_AUTH_TOKEN",
     group="Deployment",
     description=(
-        "Authentication token for securing NodeTool worker endpoints when deployed. "
+        "Authentication token for securing NodeTool server endpoints when deployed. "
         "When set, all API endpoints (except /health and /ping) require this token "
         "in the Authorization header as 'Bearer TOKEN'. Essential for Docker and "
         "production deployments. Generate with: openssl rand -base64 32"
@@ -368,10 +368,10 @@ register_setting(
 
 register_setting(
     package_name="nodetool",
-    env_var="WORKER_AUTH_TOKEN",
+    env_var="SERVER_AUTH_TOKEN",
     group="Deployment",
     description=(
-        "Authentication token for securing NodeTool worker endpoints when deployed. "
+        "Authentication token for securing NodeTool server endpoints when deployed. "
         "When set, all API endpoints (except /health and /ping) require this token "
         "in in Authorization header as 'Bearer TOKEN'. Essential for Docker and "
         "production deployments. Generate with: openssl rand -base64 32"

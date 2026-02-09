@@ -156,6 +156,34 @@ class TestDockerDeployer:
         assert deployer.state_manager == mock_state_manager
         assert deployer.is_localhost is False
 
+    def test_runtime_command_override_uses_podman(self, basic_deployment, mock_state_manager, monkeypatch):
+        """Runtime override should force podman command generation."""
+        monkeypatch.setenv("NODETOOL_CONTAINER_RUNTIME", "podman")
+        deployer = DockerDeployer(
+            deployment_name="test",
+            deployment=basic_deployment,
+            state_manager=mock_state_manager,
+        )
+        generator = deployer._container_generator()
+        assert generator.generate_command().startswith("podman run")
+
+    def test_localhost_runtime_detection_prefers_podman_when_docker_missing(
+        self, localhost_deployment, mock_state_manager
+    ):
+        """Localhost deploy should use podman when docker is not available."""
+        deployer = DockerDeployer(
+            deployment_name="test",
+            deployment=localhost_deployment,
+            state_manager=mock_state_manager,
+        )
+        with (
+            patch("nodetool.deploy.self_hosted.shutil.which") as mock_which,
+            patch.dict("os.environ", {}, clear=False),
+        ):
+            mock_which.side_effect = lambda cmd: None if cmd == "docker" else "/usr/bin/podman"
+            generator = deployer._container_generator()
+            assert generator.generate_command().startswith("podman run")
+
     def test_get_executor_ssh(self, basic_deployment):
         """Test getting SSH executor for remote host."""
         deployer = DockerDeployer(
@@ -421,6 +449,24 @@ class TestDockerDeployer:
         assert mock_ssh.mkdir.call_count >= 2
         mock_ssh.mkdir.assert_any_call(f"{workspace_path}/proxy", parents=True)
         mock_ssh.mkdir.assert_any_call(f"{workspace_path}/acme", parents=True)
+
+    def test_ensure_image_localhost_missing_fails_without_pull(self, localhost_deployment, mock_state_manager):
+        """Local apply must not auto-pull when image is missing."""
+        mock_ssh = Mock()
+        mock_ssh.execute = Mock(return_value=(0, "", ""))  # images -q => missing
+
+        deployer = DockerDeployer(
+            deployment_name="test",
+            deployment=localhost_deployment,
+            state_manager=mock_state_manager,
+        )
+
+        results = {"steps": []}
+        with pytest.raises(RuntimeError, match="not found locally"):
+            deployer._ensure_image(mock_ssh, results)
+
+        # Should only check local image presence; no pull attempted.
+        assert mock_ssh.execute.call_count == 1
 
     def test_create_directories_custom_paths(self, mock_state_manager):
         """Test directory creation with custom paths."""
