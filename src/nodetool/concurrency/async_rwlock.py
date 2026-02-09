@@ -148,12 +148,11 @@ class AsyncReaderWriterLock:
         Raises:
             RuntimeError: If no readers are currently holding the lock.
         """
-        if self._readers == 0:
-            raise RuntimeError("Cannot release read lock: no readers holding the lock")
-
         async with self._cond:
+            if self._readers == 0:
+                raise RuntimeError("Cannot release read lock: no readers holding the lock")
             self._readers -= 1
-            if self._readers == 0 or (self._readers == 0 and self._writers_waiting > 0):
+            if self._readers == 0:
                 # Notify waiting writers and readers
                 self._cond.notify_all()
 
@@ -164,10 +163,9 @@ class AsyncReaderWriterLock:
         Raises:
             RuntimeError: If no writer is currently holding the lock.
         """
-        if self._writers == 0:
-            raise RuntimeError("Cannot release write lock: no writer holding the lock")
-
         async with self._cond:
+            if self._writers == 0:
+                raise RuntimeError("Cannot release write lock: no writer holding the lock")
             self._writers = 0
             # Notify all waiting tasks (both readers and writers)
             self._cond.notify_all()

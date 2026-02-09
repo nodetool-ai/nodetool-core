@@ -225,19 +225,19 @@ class AsyncChannelIterator(Generic[T]):
 
     async def __anext__(self) -> T:
         """Get the next item from the channel."""
-        if self._channel.closed and self._channel.empty:
-            raise StopAsyncIteration
-
-        try:
-            # Use a small timeout to allow checking closed status
-            item = await asyncio.wait_for(self._channel.receive(), timeout=0.1)
-            return item
-        except TimeoutError:
-            # Check if we should stop
+        while True:
             if self._channel.closed and self._channel.empty:
-                raise StopAsyncIteration from None
-            # Continue waiting
-            return await self.__anext__()
+                raise StopAsyncIteration
+
+            try:
+                # Use a small timeout to allow checking closed status
+                item = await asyncio.wait_for(self._channel.receive(), timeout=0.1)
+                return item
+            except TimeoutError:
+                # Check if we should stop
+                if self._channel.closed and self._channel.empty:
+                    raise StopAsyncIteration from None
+                # Continue waiting via the loop
 
 
 async def create_channel(

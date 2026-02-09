@@ -94,7 +94,11 @@ class AsyncDebounce:
         # Wait for completion
         await event.wait()
 
-        # Return the result (stored in a shared variable)
+        # Return the result or re-raise the exception
+        if hasattr(self, "_last_exception") and self._last_exception is not None:
+            exc = self._last_exception
+            self._last_exception = None
+            raise exc
         if hasattr(self, "_last_result"):
             return self._last_result  # type: ignore
         else:
@@ -121,10 +125,10 @@ class AsyncDebounce:
                     # Execute the function
                     try:
                         self._last_result = await func_to_execute()
-                    except Exception:
-                        # Store the exception to be re-raised
-                        self._last_exception = True  # type: ignore
-                        raise
+                        self._last_exception = None
+                    except Exception as e:
+                        # Store the actual exception so waiters can re-raise it
+                        self._last_exception = e
                     finally:
                         # Notify all waiters
                         for event in events_to_notify:
@@ -139,8 +143,11 @@ class AsyncDebounce:
                 if should_exit:
                     break
         except asyncio.CancelledError:
-            # Timer was cancelled
-            pass
+            # Notify any waiting events before exiting
+            async with self._lock:
+                for event in self._completion_events:
+                    event.set()
+                self._completion_events.clear()
 
     async def cancel(self) -> bool:
         """
