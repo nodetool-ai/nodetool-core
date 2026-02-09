@@ -20,10 +20,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Merge main if necessary
+      - name: Create feature branch
         run: |
           git fetch origin main
-          git merge origin/main --no-edit || echo "Already up to date or merge not needed"
+          git checkout -b assistant/security-audit-$(date +%Y%m%d-%H%M%S) origin/main
 
       - name: Install system dependencies
         run: |
@@ -97,5 +97,8 @@ jobs:
             - Add insight files under `insights/<topic>/`
 
             ## Pull Request Rule
-            - If `git status --porcelain` shows changed files, commit, push, and create or update a PR.
+            - NEVER commit or push directly to the main branch.
+            - Always work on the current feature branch (not main).
+            - Do NOT run `git checkout main` or `git switch main`.
+            - If `git status --porcelain` shows changed files, commit, push the current branch, and create or update a PR targeting main.
             - If there are no file changes, do not commit, do not push, and do not create or update a PR.
