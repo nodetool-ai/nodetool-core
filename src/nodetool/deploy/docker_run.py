@@ -175,7 +175,7 @@ class DockerRunGenerator:
         if self.container.workflows:
             env["NODETOOL_WORKFLOWS"] = ",".join(self.container.workflows)
 
-        # Add worker authentication token (for self-hosted deployments)
+        # Add authentication token for self-hosted deployments.
         if self.deployment.server_auth_token:
             env["SERVER_AUTH_TOKEN"] = self.deployment.server_auth_token
 

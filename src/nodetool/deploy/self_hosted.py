@@ -345,6 +345,11 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
         results["steps"].append("Checking for existing app container...")
 
         container_name = self._container_name()
+        if self._is_local_docker_runtime():
+            self._stop_existing_container_with_api(container_name, results)
+            self._stop_local_port_conflicts_with_api(container_name, self._app_host_port(), results)
+            return
+
         runtime = self._runtime_command_for_shell()
         check_command = f"{runtime} ps -a -q -f name={container_name}"
 
@@ -360,6 +365,89 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
                 results["steps"].append("  No existing app container found")
         except Exception as exc:
             results["steps"].append(f"  Warning: could not inspect app container: {exc}")
+
+        # Also clean up legacy NodeTool containers that still hold the same host port.
+        publish_check = f"{runtime} ps -a --filter publish={self._app_host_port()} --format '{{{{.Names}}}}'"
+        try:
+            _code, stdout, _ = ssh.execute(publish_check, check=False)
+            for conflict_name in [line.strip() for line in stdout.splitlines() if line.strip()]:
+                if conflict_name == container_name:
+                    continue
+                if not conflict_name.startswith("nodetool-"):
+                    continue
+                results["steps"].append(
+                    f"  Found conflicting NodeTool container on port {self._app_host_port()}: {conflict_name}"
+                )
+                ssh.execute(f"{runtime} stop {conflict_name}", check=False, timeout=60)
+                ssh.execute(f"{runtime} rm {conflict_name}", check=False, timeout=60)
+                results["steps"].append(f"  Removed conflicting container: {conflict_name}")
+        except Exception as exc:
+            results["steps"].append(f"  Warning: could not check port conflicts: {exc}")
+
+    def _stop_existing_container_with_api(self, container_name: str, results: dict[str, Any]) -> None:
+        """Stop/remove existing container via Docker API on localhost."""
+        try:
+            container = self._get_local_container_with_api(container_name)
+            if container is None:
+                results["steps"].append("  No existing app container found")
+                return
+
+            results["steps"].append(f"  Found existing app container: {container_name}")
+            try:
+                container.stop(timeout=60)
+                results["steps"].append(f"  Stopped app container: {container_name}")
+            except Exception as exc:
+                results["steps"].append(f"  Warning: failed stopping app container: {exc}")
+            try:
+                container.remove()
+                results["steps"].append(f"  Removed app container: {container_name}")
+            except Exception as exc:
+                results["steps"].append(f"  Warning: failed removing app container: {exc}")
+        except Exception as exc:
+            results["steps"].append(f"  Warning: could not inspect app container: {exc}")
+
+    def _stop_local_port_conflicts_with_api(self, container_name: str, host_port: int, results: dict[str, Any]) -> None:
+        """Stop/remove conflicting legacy NodeTool containers that bind the same host port."""
+        try:
+            import docker  # type: ignore[import-untyped]
+        except Exception:
+            return
+
+        client = None
+        try:
+            client = docker.from_env()  # type: ignore[attr-defined]
+            containers = client.containers.list(all=True)
+            # App container always exposes internal API on 7777/tcp.
+            port_key = "7777/tcp"
+
+            for container in containers:
+                if container.name == container_name:
+                    continue
+                if not container.name.startswith("nodetool-"):
+                    continue
+
+                attrs = container.attrs or {}
+                ports = (attrs.get("NetworkSettings", {}) or {}).get("Ports", {}) or {}
+                bindings = ports.get(port_key) or []
+                has_conflict = any(str(binding.get("HostPort")) == str(host_port) for binding in bindings if binding)
+                if not has_conflict:
+                    continue
+
+                results["steps"].append(f"  Found conflicting NodeTool container on port {host_port}: {container.name}")
+                try:
+                    container.stop(timeout=60)
+                except Exception:
+                    pass
+                container.remove(force=True)
+                results["steps"].append(f"  Removed conflicting container: {container.name}")
+        except Exception as exc:
+            results["steps"].append(f"  Warning: could not check port conflicts: {exc}")
+        finally:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    pass
 
     def _start_container(self, ssh, results: dict[str, Any]) -> str:
         """Start the deployment container."""
@@ -385,40 +473,110 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
         results["steps"].append("Checking app health...")
 
         container_name = self._container_name()
-        time.sleep(5)
-        health_errors: list[str] = []
+        health_url = f"http://127.0.0.1:{self._app_host_port()}/health"
+        max_attempts = 10
+        last_errors: list[str] = []
+
+        time.sleep(2)
+        for attempt in range(1, max_attempts + 1):
+            attempt_errors: list[str] = []
+            container_status = self._get_container_status(ssh, container_name)
+            if container_status:
+                results["steps"].append(f"  Container status: {container_status}")
+            else:
+                attempt_errors.append("app container not running")
+
+            try:
+                ssh.execute(f"curl -fsS {health_url}", check=True, timeout=20)
+                if not attempt_errors:
+                    results["steps"].append(f"  Health endpoint OK: {health_url}")
+                    return
+            except SSHCommandError as exc:
+                err = (exc.stderr or str(exc)).strip()
+                attempt_errors.append(f"health check failed: {err}")
+
+            last_errors = attempt_errors
+            if attempt < max_attempts:
+                results["steps"].append(
+                    f"  Waiting for app startup (attempt {attempt}/{max_attempts})..."
+                )
+                time.sleep(2)
+
+        for err in last_errors:
+            results["steps"].append(f"  Warning: {err}")
+        results["errors"].extend(last_errors)
+        raise RuntimeError(f"Deployment health check failed: {'; '.join(last_errors)}")
+
+    def _get_container_status(self, ssh: Executor, container_name: str) -> str:
+        """Get container status string via Docker API (localhost) or shell fallback."""
+        api_status = self._get_local_container_status_with_api(container_name)
+        if api_status is not None:
+            return api_status
 
         runtime = self._runtime_command_for_shell()
         status_cmd = (
             f"{runtime} ps -f name={container_name} "
             "--format '{{{{.Names}}}} {{{{.Status}}}} {{{{.Ports}}}}'"
         )
-
         try:
             _, stdout, _ = ssh.execute(status_cmd, check=False)
-            if stdout.strip():
-                results["steps"].append(f"  Container status: {stdout.strip()}")
-            else:
-                warning = "app container not running"
-                results["steps"].append(f"  Warning: {warning}")
-                health_errors.append(warning)
-        except Exception as exc:
-            warning = f"could not retrieve status: {exc}"
-            results["steps"].append(f"  Warning: {warning}")
-            health_errors.append(warning)
+            return stdout.strip()
+        except Exception:
+            return ""
 
-        health_url = f"http://127.0.0.1:{self._app_host_port()}/health"
+    def _get_local_container_status_with_api(self, container_name: str) -> Optional[str]:
+        """Use Docker API for localhost deployments when runtime is Docker."""
+        if not self._is_local_docker_runtime():
+            return None
+
         try:
-            ssh.execute(f"curl -fsS {health_url}", check=True, timeout=20)
-            results["steps"].append(f"  Health endpoint OK: {health_url}")
-        except SSHCommandError as exc:
-            warning = f"health check failed: {exc.stderr.strip()}"
-            results["steps"].append(f"  Warning: {warning}")
-            health_errors.append(warning)
+            container = self._get_local_container_with_api(container_name)
+            if container is None:
+                return ""
+            container.reload()
+            attrs = container.attrs or {}
+            state = attrs.get("State", {})
+            network = attrs.get("NetworkSettings", {})
+            health = (state.get("Health") or {}).get("Status")
 
-        if health_errors:
-            results["errors"].extend(health_errors)
-            raise RuntimeError(f"Deployment health check failed: {'; '.join(health_errors)}")
+            status = state.get("Status") or container.status or "unknown"
+            status_part = status if not health else f"{status} (health: {health})"
+            ports = network.get("Ports") or {}
+            return f"{container.name} {status_part} {ports}"
+        except ValueError:
+            # Docker SDK unavailable/not reachable: caller should fall back to shell.
+            return None
+        except Exception:
+            return None
+
+    def _is_local_docker_runtime(self) -> bool:
+        return self.is_localhost and self._resolve_local_runtime_command() == "docker"
+
+    def _get_local_container_with_api(self, container_name: str) -> Any | None:
+        """Fetch local container via Docker SDK; returns None when not found."""
+        if not self._is_local_docker_runtime():
+            raise ValueError("Docker API not available for this deployment runtime")
+
+        try:
+            import docker  # type: ignore[import-untyped]
+            from docker.errors import DockerException, NotFound  # type: ignore[import-untyped]
+        except Exception as exc:
+            raise ValueError("Docker SDK not available") from exc
+
+        client = None
+        try:
+            client = docker.from_env()  # type: ignore[attr-defined]
+            return client.containers.get(container_name)
+        except NotFound:
+            return None
+        except DockerException:
+            raise ValueError("Docker daemon unavailable")
+        finally:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    pass
 
     def destroy(self) -> dict[str, Any]:
         results: dict[str, Any] = {
@@ -431,6 +589,10 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
         try:
             with self._get_executor() as ssh:
                 container_name = self._container_name()
+                if self._is_local_docker_runtime():
+                    self._destroy_local_container_with_api(container_name, results)
+                    self.state_manager.update_deployment_status(self.deployment_name, DeploymentStatus.DESTROYED.value)
+                    return results
 
                 # Stop container
                 runtime = self._runtime_command_for_shell()
@@ -460,6 +622,30 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
 
         return results
 
+    def _destroy_local_container_with_api(self, container_name: str, results: dict[str, Any]) -> None:
+        try:
+            container = self._get_local_container_with_api(container_name)
+        except Exception as exc:
+            results["errors"].append(f"Failed to inspect container: {exc}")
+            raise
+
+        if container is None:
+            results["steps"].append(f"Warning: Container not found: {container_name}")
+            return
+
+        try:
+            container.stop(timeout=30)
+            results["steps"].append(f"Container stopped: {container_name}")
+        except Exception as e:
+            results["steps"].append(f"Warning: Failed to stop container: {e}")
+
+        try:
+            container.remove()
+            results["steps"].append(f"Container removed: {container_name}")
+        except Exception as e:
+            results["errors"].append(f"Failed to remove container: {e}")
+            raise
+
     def status(self) -> dict[str, Any]:
         status_info = {
             "deployment_name": self.deployment_name,
@@ -477,6 +663,10 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
         try:
             with self._get_executor() as ssh:
                 container_name = self._container_name()
+                if self._is_local_docker_runtime():
+                    live_status = self._get_local_container_status_with_api(container_name)
+                    status_info["live_status"] = live_status if live_status else "Container not found"
+                    return status_info
 
                 # Get container status
                 runtime = self._runtime_command_for_shell()
@@ -491,6 +681,18 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
     def logs(self, service: Optional[str] = None, follow: bool = False, tail: int = 100) -> str:
         with self._get_executor() as ssh:
             container_name = self._container_name()
+            if self._is_local_docker_runtime() and not follow:
+                try:
+                    container = self._get_local_container_with_api(container_name)
+                    if container is None:
+                        return ""
+                    logs_output = container.logs(tail=tail)
+                    if isinstance(logs_output, bytes):
+                        return logs_output.decode("utf-8", errors="replace")
+                    return str(logs_output)
+                except Exception:
+                    # Fall back to CLI logs if API path fails.
+                    pass
 
             runtime = self._runtime_command_for_shell()
             command = f"{runtime} logs --tail={tail}"
@@ -505,6 +707,10 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
         image = self.deployment.image.full_name
 
         self._log(results, f"Checking image: {image}")
+        if self._is_local_docker_runtime():
+            self._ensure_local_image_with_api(image, results)
+            return
+
         runtime = self._runtime_command_for_shell()
         cmd = f"{runtime} images -q {image}"
         _exit_code, stdout, _stderr = ssh.execute(cmd, check=False)
@@ -526,6 +732,42 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
             results["steps"].append("  Image transferred successfully.")
         else:
             raise RuntimeError(f"Failed to transfer image '{image}' to remote host.")
+
+    def _ensure_local_image_with_api(self, image: str, results: dict[str, Any]) -> None:
+        try:
+            import docker  # type: ignore[import-untyped]
+            from docker.errors import DockerException, ImageNotFound  # type: ignore[import-untyped]
+        except Exception:
+            # If SDK is unavailable locally, fallback to shell behavior.
+            runtime = self._runtime_command_for_shell()
+            cmd = f"{runtime} images -q {image}"
+            _exit_code, stdout, _stderr = LocalExecutor().execute(cmd, check=False)
+            if stdout.strip():
+                self._log(results, "  Image already present.")
+                return
+            raise RuntimeError(
+                f"Image '{image}' not found locally. "
+                "Pull or build it explicitly before running deploy apply."
+            )
+
+        client = None
+        try:
+            client = docker.from_env()  # type: ignore[attr-defined]
+            client.images.get(image)
+            self._log(results, "  Image already present.")
+        except ImageNotFound:
+            raise RuntimeError(
+                f"Image '{image}' not found locally. "
+                "Pull or build it explicitly before running deploy apply."
+            )
+        except DockerException:
+            raise RuntimeError("Could not query local Docker daemon for image presence.")
+        finally:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    pass
 
     def _push_image_to_remote(self, image: str) -> None:
         """Push a local Docker image to the remote host via docker save/load over SSH."""

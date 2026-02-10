@@ -3035,21 +3035,81 @@ async def _import_secrets_to_worker(server_url: str, auth_token: str, payload: l
     return await client.import_secrets(payload)
 
 
+def _resolve_local_docker_container_token(deployment: Any) -> Optional[str]:
+    """Read SERVER_AUTH_TOKEN from the running local Docker container, if available."""
+    from nodetool.config.deployment import DockerDeployment
+    from nodetool.deploy.docker_run import DockerRunGenerator
+
+    if not isinstance(deployment, DockerDeployment):
+        return None
+    if deployment.host not in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}:
+        return None
+
+    container_name = DockerRunGenerator(deployment).get_container_name()
+
+    try:
+        import docker  # type: ignore[import-untyped]
+        from docker.errors import DockerException, NotFound  # type: ignore[import-untyped]
+    except Exception:
+        return None
+
+    client = None
+    try:
+        client = docker.from_env()  # type: ignore[attr-defined]
+        container = client.containers.get(container_name)
+        container.reload()
+        env_entries = (container.attrs.get("Config", {}) or {}).get("Env") or []
+        for entry in env_entries:
+            if not isinstance(entry, str):
+                continue
+            if entry.startswith("SERVER_AUTH_TOKEN="):
+                _, value = entry.split("=", 1)
+                if value:
+                    return value
+    except NotFound:
+        return None
+    except DockerException:
+        return None
+    except Exception:
+        return None
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+    return None
+
+
+def _resolve_deployment_auth_token(deployment: Any) -> Optional[str]:
+    """Resolve auth token for deployment admin operations."""
+    # Use the running local Docker container token first to avoid config/token drift.
+    token = _resolve_local_docker_container_token(deployment)
+    if token:
+        return token
+
+    token = getattr(deployment, "server_auth_token", None)
+    if token:
+        return token
+
+    env: Optional[dict[str, str]] = None
+    if hasattr(deployment, "environment") and deployment.environment:
+        env = deployment.environment
+    elif hasattr(deployment, "container") and getattr(deployment.container, "environment", None):
+        env = deployment.container.environment
+    if env:
+        return env.get("SERVER_AUTH_TOKEN")
+    return None
+
+
 def _sync_secrets_to_deployment(name: str, deployment: Any) -> None:
     server_url = getattr(deployment, "get_server_url", lambda: None)()
     if not server_url:
         console.print(f"[yellow]Skipping secret sync for '{name}': server URL unavailable.[/]")
         return
 
-    auth_token = getattr(deployment, "server_auth_token", None)
-    if not auth_token:
-        env: Optional[dict[str, str]] = None
-        if hasattr(deployment, "environment") and deployment.environment:
-            env = deployment.environment
-        elif hasattr(deployment, "container") and getattr(deployment.container, "environment", None):
-            env = deployment.container.environment
-        if env:
-            auth_token = env.get("SERVER_AUTH_TOKEN")
+    auth_token = _resolve_deployment_auth_token(deployment)
 
     if not auth_token:
         console.print(f"[yellow]Skipping secret sync for '{name}': worker auth token unavailable.[/]")
@@ -3156,7 +3216,8 @@ def deploy_show(name: str):
         if isinstance(deployment, DockerDeployment):
             content.append("[bold]Docker Configuration:[/]")
             content.append(f"  Host: {deployment.host}")
-            content.append(f"  SSH User: {deployment.ssh.user}")
+            if deployment.ssh:
+                content.append(f"  SSH User: {deployment.ssh.user}")
             content.append(f"  Image: {deployment.image.name}:{deployment.image.tag}")
             content.append("")
 
@@ -3178,7 +3239,8 @@ def deploy_show(name: str):
         elif isinstance(deployment, SSHDeployment):
             content.append("[bold]SSH Configuration:[/]")
             content.append(f"  Host: {deployment.host}")
-            content.append(f"  SSH User: {deployment.ssh.user}")
+            if deployment.ssh:
+                content.append(f"  SSH User: {deployment.ssh.user}")
             content.append("")
 
             # Service details
@@ -3331,6 +3393,7 @@ def deploy_add(name: str, deployment_type: str):
         ImageConfig,
         RunPodDeployment,
         RunPodImageConfig,
+        ServerPaths,
         DockerDeployment,
         SSHDeployment,
         LocalDeployment,
@@ -3341,6 +3404,16 @@ def deploy_add(name: str, deployment_type: str):
     )
 
     try:
+        from pathlib import Path
+
+        def detect_hf_cache_default() -> str:
+            try:
+                from huggingface_hub.constants import HF_HUB_CACHE
+
+                return str(Path(HF_HUB_CACHE).expanduser())
+            except Exception:
+                return str(Path("~/.cache/huggingface/hub").expanduser())
+
         config_path = get_deployment_config_path()
 
         # Load existing config
@@ -3395,6 +3468,19 @@ def deploy_add(name: str, deployment_type: str):
                 workflows_str = click.prompt("  Workflow IDs (comma-separated)", type=str)
                 workflows = [w.strip() for w in workflows_str.split(",")]
 
+            console.print()
+            console.print("[cyan]Storage paths:[/]")
+            console.print("  Workspace stores NodeTool assets and temporary runtime data.")
+            workspace_default = str(Path.home() / ".nodetool-workspace")
+            workspace_path = click.prompt("  Workspace folder", type=str, default=workspace_default)
+            hf_cache_default = detect_hf_cache_default()
+            console.print("  HF cache stores Hugging Face models and downloaded artifacts.")
+            hf_cache_path = click.prompt(
+                "  HF cache folder (detected canonical location)",
+                type=str,
+                default=hf_cache_default,
+            )
+
             container = ContainerConfig(
                 name=container_name,
                 port=container_port,
@@ -3412,6 +3498,7 @@ def deploy_add(name: str, deployment_type: str):
                 ssh=ssh_config,
                 image=ImageConfig(name=image_name, tag=image_tag),
                 container=container,
+                paths=ServerPaths(workspace=workspace_path, hf_cache=hf_cache_path),
             )
 
         elif deployment_type == "ssh":
@@ -3437,6 +3524,19 @@ def deploy_add(name: str, deployment_type: str):
                 workflows_str = click.prompt("  Workflow IDs (comma-separated)", type=str)
                 workflows = [w.strip() for w in workflows_str.split(",")]
 
+            console.print()
+            console.print("[cyan]Storage paths:[/]")
+            console.print("  Workspace stores NodeTool assets and temporary runtime data.")
+            workspace_default = str(Path.home() / ".nodetool-workspace")
+            workspace_path = click.prompt("  Workspace folder", type=str, default=workspace_default)
+            hf_cache_default = detect_hf_cache_default()
+            console.print("  HF cache stores Hugging Face models and downloaded artifacts.")
+            hf_cache_path = click.prompt(
+                "  HF cache folder (detected canonical location)",
+                type=str,
+                default=hf_cache_default,
+            )
+
             deployment = SSHDeployment(
                 host=host,
                 ssh=SSHConfig(user=ssh_user, key_path=ssh_key_path),
@@ -3444,6 +3544,7 @@ def deploy_add(name: str, deployment_type: str):
                 service_name=service_name,
                 gpu=gpu,
                 workflows=workflows,
+                paths=ServerPaths(workspace=workspace_path, hf_cache=hf_cache_path),
             )
         elif deployment_type == "local":
             console.print("[cyan]Local/Shell Configuration:[/]")
@@ -3466,12 +3567,26 @@ def deploy_add(name: str, deployment_type: str):
                 workflows_str = click.prompt("  Workflow IDs (comma-separated)", type=str)
                 workflows = [w.strip() for w in workflows_str.split(",")]
 
+            console.print()
+            console.print("[cyan]Storage paths:[/]")
+            console.print("  Workspace stores NodeTool assets and temporary runtime data.")
+            workspace_default = str(Path.home() / ".nodetool-workspace")
+            workspace_path = click.prompt("  Workspace folder", type=str, default=workspace_default)
+            hf_cache_default = detect_hf_cache_default()
+            console.print("  HF cache stores Hugging Face models and downloaded artifacts.")
+            hf_cache_path = click.prompt(
+                "  HF cache folder (detected canonical location)",
+                type=str,
+                default=hf_cache_default,
+            )
+
             deployment = LocalDeployment(
                 host=host,
                 port=container_port,
                 service_name=service_name,
                 gpu=gpu,
                 workflows=workflows,
+                paths=ServerPaths(workspace=workspace_path, hf_cache=hf_cache_path),
             )
 
         elif deployment_type == "runpod":

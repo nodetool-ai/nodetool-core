@@ -460,13 +460,15 @@ class TestDockerDeployer:
             deployment=localhost_deployment,
             state_manager=mock_state_manager,
         )
+        push_image_spy = Mock(wraps=deployer._push_image_to_remote)
+        deployer._push_image_to_remote = push_image_spy
 
         results = {"steps": []}
         with pytest.raises(RuntimeError, match="not found locally"):
             deployer._ensure_image(mock_ssh, results)
 
-        # Should only check local image presence; no pull attempted.
-        assert mock_ssh.execute.call_count == 1
+        # Should not attempt remote image transfer when localhost image is missing.
+        assert push_image_spy.call_count == 0
 
     def test_create_directories_custom_paths(self, mock_state_manager):
         """Test directory creation with custom paths."""
@@ -521,8 +523,8 @@ class TestDockerDeployer:
         # Should check, stop, and remove
         assert mock_ssh.execute.call_count == 3
         # Check if logs are correct based on implementation
-        assert any("Stopped container" in step for step in results["steps"])
-        assert any("Removed container" in step for step in results["steps"])
+        assert any("Stopped app container" in step for step in results["steps"])
+        assert any("Removed app container" in step for step in results["steps"])
 
     def test_stop_existing_container_not_found(self, basic_deployment, mock_state_manager):
         """Test stopping when no existing container."""
@@ -621,21 +623,16 @@ class TestDockerDeployer:
                 state_manager=mock_state_manager,
             )
 
-            results = {"steps": []}
-            deployer._check_health(mock_ssh, results, None)
+            results = {"steps": [], "errors": []}
+            deployer._check_health(mock_ssh, results)
 
             assert any("Container status" in step for step in results["steps"])
             assert any("Health endpoint OK" in step for step in results["steps"])
 
     def test_check_health_container_not_running(self, basic_deployment, mock_state_manager):
-        """Test health check when container not running."""
+        """Test health check raises after retries when container never starts."""
         mock_ssh = Mock()
-        mock_ssh.execute = Mock(
-            side_effect=[
-                (0, "", ""),  # status - empty
-                (0, "ok", ""),  # health curl
-            ]
-        )
+        mock_ssh.execute = Mock(side_effect=SSHCommandError("curl failed", 56, "", "Connection reset by peer"))
 
         with patch("nodetool.deploy.self_hosted.time.sleep"):
             deployer = DockerDeployer(
@@ -643,12 +640,13 @@ class TestDockerDeployer:
                 deployment=basic_deployment,
                 state_manager=mock_state_manager,
             )
+            deployer._get_container_status = Mock(return_value="")
 
             results = {"steps": [], "errors": []}
-            # Current implementation logs warning but does not raise
-            deployer._check_health(mock_ssh, results, "token-123")
+            with pytest.raises(RuntimeError, match="Deployment health check failed"):
+                deployer._check_health(mock_ssh, results)
 
-            assert any("not running" in step for step in results["steps"])
+            assert any("app container not running" in err for err in results["errors"])
 
     def test_check_health_without_proxy_uses_mapped_port(self, no_proxy_deployment, mock_state_manager):
         """Test direct app health check uses host-mapped port (7777 -> 8000)."""
@@ -667,11 +665,28 @@ class TestDockerDeployer:
                 state_manager=mock_state_manager,
             )
 
-            results = {"steps": []}
+            results = {"steps": [], "errors": []}
             deployer._check_health(mock_ssh, results)
 
             health_cmd = mock_ssh.execute.call_args_list[1][0][0]
             assert "127.0.0.1:8000/health" in health_cmd
+
+    def test_get_container_status_prefers_local_docker_api(self, localhost_deployment, mock_state_manager):
+        """Local status lookup should use Docker API path when available."""
+        mock_ssh = Mock()
+        mock_ssh.execute = Mock(return_value=(0, "shell status", ""))
+
+        deployer = DockerDeployer(
+            deployment_name="test",
+            deployment=localhost_deployment,
+            state_manager=mock_state_manager,
+        )
+        deployer._get_local_container_status_with_api = Mock(return_value="api status")
+
+        status = deployer._get_container_status(mock_ssh, "nodetool-test")
+
+        assert status == "api status"
+        mock_ssh.execute.assert_not_called()
 
     def test_destroy_success(self, basic_deployment, mock_state_manager):
         """Test successful deployment destruction."""

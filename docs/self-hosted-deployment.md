@@ -62,6 +62,9 @@ deployments:
     host: localhost
     port: 8000
     service_name: nodetool-8000
+    paths:
+      workspace: /home/me/.nodetool-workspace
+      hf_cache: /home/me/.cache/huggingface/hub
 ```
 
 ## Apply Flow
@@ -82,6 +85,133 @@ deployments:
 4. **Package Installation**: Installs `nodetool-core` and `nodetool-base` using `uv`.
 5. **Service Management**: Creates and enables a user-level `systemd` service (`nodetool-<name>.service`).
 6. **Health Check**: Verifies HTTP endpoint.
+
+## End-to-End: Local Docker Deployment
+
+This walkthrough matches a common local setup flow:
+
+1. Add a docker deployment interactively.
+2. Review the generated deployment.
+3. Apply deployment and validate health.
+4. Sync workflows.
+5. Run a synced workflow on the deployed instance.
+
+### 1. Add Local Docker Deployment
+
+```bash
+nodetool deploy add local
+```
+
+Use these values (or your own):
+
+- Deployment type: `docker`
+- Host address: `localhost`
+- Docker image name: `nodetool`
+- Docker image tag: `local`
+- Container name: `nodetool`
+- Port: `8000`
+- GPU/workflows assignment: optional
+- Workspace folder: `$HOME/.nodetool-workspace`
+- HF cache folder: canonical local HF cache (auto-detected, usually `$HOME/.cache/huggingface/hub`)
+
+Path meanings:
+
+- Workspace: stores assets and temporary runtime data.
+- HF cache: stores downloaded Hugging Face artifacts/models.
+
+### 2. Review Deployment Config
+
+```bash
+nodetool deploy show local
+```
+
+You should see:
+
+- `Type: DeploymentType.DOCKER`
+- `Image: nodetool:local`
+- `Workspace: $HOME/.nodetool-workspace`
+- `HF Cache: $HOME/.cache/huggingface/hub`
+- endpoint URL at `http://localhost:8000`
+
+You can also inspect the raw config:
+
+```bash
+cat ~/.config/nodetool/deployment.yaml
+```
+
+### 3. Apply Deployment
+
+```bash
+nodetool deploy apply local
+```
+
+Expected successful output includes:
+
+- directories created
+- image check passed
+- app container started
+- health checks passing for `http://127.0.0.1:8000/health`
+- `Deployment successful`
+- secrets synced
+
+If the first apply fails (for example due to container/port conflicts), run apply again:
+
+```bash
+nodetool deploy apply local
+```
+
+Then confirm runtime state:
+
+```bash
+nodetool deploy status local
+docker ps --filter name=nodetool --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+curl http://127.0.0.1:8000/health
+```
+
+### 4. Sync Workflows to the Deployment
+
+List local workflows first:
+
+```bash
+nodetool workflows list
+```
+
+Sync one workflow by ID to the deployed instance:
+
+```bash
+nodetool deploy workflows sync local <workflow_id>
+```
+
+This sync command also:
+
+- uploads referenced assets
+- downloads referenced models (HuggingFace/Ollama) on the target
+
+Verify remote workflows:
+
+```bash
+nodetool deploy workflows list local
+```
+
+### 5. Test Workflow Execution on Deployed Instance
+
+Run a synced workflow remotely:
+
+```bash
+nodetool deploy workflows run local <workflow_id>
+```
+
+Optional params example:
+
+```bash
+nodetool deploy workflows run local <workflow_id> -p prompt="hello"
+```
+
+If a run fails, inspect logs:
+
+```bash
+nodetool deploy logs local --tail 200
+```
 
 ## Manual Troubleshooting
 
