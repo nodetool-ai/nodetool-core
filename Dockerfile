@@ -88,36 +88,36 @@ ARG USE_LOCAL_REPO=1
 # Copy local repository if using local installation
 COPY --chown=root:root . /tmp/nodetool-core
 
-    # Install dependencies - we use uv pip install into the conda environment
-    RUN if [ "$USE_LOCAL_REPO" = "1" ]; then \
-            echo "Installing from local repository..." && \
-            uv pip install \
-                --python $VIRTUAL_ENV \
-                --index-strategy unsafe-best-match \
-                --index-url https://pypi.org/simple \
-                --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
-                nodetool-base && \
-            cd /tmp/nodetool-core && \
-            uv pip install \
-                --python $VIRTUAL_ENV \
-                --index-strategy unsafe-best-match \
-                --index-url https://pypi.org/simple \
-                -e . ; \
-        else \
-            echo "Installing from nodetool-registry..." && \
-            uv pip install \
-                --python $VIRTUAL_ENV \
-                --index-strategy unsafe-best-match \
-                --index-url https://pypi.org/simple \
-                --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
-                nodetool-core==0.6.3-rc.19 nodetool-base==0.6.3-rc.19 ; \
-        fi && \
-        # Clean up
-        rm -rf /tmp/nodetool-core && \
-        find /root/.cache -type d -exec rm -rf {} + 2>/dev/null || true && \
-        rm -rf /root/.cache/pip && \
-        rm -rf /tmp/* && \
-        rm -rf /var/tmp/*
+# Install dependencies - we use uv pip install into the conda environment
+RUN if [ "$USE_LOCAL_REPO" = "1" ]; then \
+        echo "Installing from local repository..." && \
+        uv pip install \
+            --python $VIRTUAL_ENV \
+            --index-strategy unsafe-best-match \
+            --index-url https://pypi.org/simple \
+            --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
+            nodetool-base && \
+        cd /tmp/nodetool-core && \
+        uv pip install \
+            --python $VIRTUAL_ENV \
+            --index-strategy unsafe-best-match \
+            --index-url https://pypi.org/simple \
+            -e . ; \
+    else \
+        echo "Installing from nodetool-registry..." && \
+        uv pip install \
+            --python $VIRTUAL_ENV \
+            --index-strategy unsafe-best-match \
+            --index-url https://pypi.org/simple \
+            --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
+            nodetool-core==0.6.3-rc.19 nodetool-base==0.6.3-rc.19 ; \
+    fi && \
+    # Clean up
+    rm -rf /tmp/nodetool-core && \
+    find /root/.cache -type d -exec rm -rf {} + 2>/dev/null || true && \
+    rm -rf /root/.cache/pip && \
+    rm -rf /tmp/* && \
+    rm -rf /var/tmp/*
 
 FROM base AS final
 
@@ -140,9 +140,9 @@ RUN if [ "$USE_LOCAL_REPO" = "1" ]; then \
 
 # Install Playwright browsers and system dependencies
 # Use /var/tmp for browser downloads to avoid /tmp space issues on some systems
-RUN TMPDIR=/var/tmp python -m playwright install-deps chromium firefox webkit && \
-    TMPDIR=/var/tmp python -m playwright install && \
-    rm -rf /var/tmp/* /tmp/*
+# RUN TMPDIR=/var/tmp python -m playwright install-deps chromium firefox webkit && \
+#    TMPDIR=/var/tmp python -m playwright install && \
+#    rm -rf /var/tmp/* /tmp/*
 
 # Expose port for the server
 EXPOSE 7777
