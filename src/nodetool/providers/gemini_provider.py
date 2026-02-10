@@ -830,48 +830,50 @@ class GeminiProvider(BaseProvider):
             from PIL import Image
 
             pil_image = Image.open(BytesIO(image))
+            try:
+                # Build contents with both prompt and image
+                contents = [params.prompt, pil_image]
 
-            # Build contents with both prompt and image
-            contents = [params.prompt, pil_image]
+                response = await self.get_client().models.generate_content(
+                    model=model_id,
+                    contents=contents,
+                    config=GenerateContentConfig(
+                        response_modalities=["IMAGE", "TEXT"],
+                    ),
+                )
 
-            response = await self.get_client().models.generate_content(
-                model=model_id,
-                contents=contents,
-                config=GenerateContentConfig(
-                    response_modalities=["IMAGE", "TEXT"],
-                ),
-            )
+                log.debug(f"Gemini API response: {response}")
 
-            log.debug(f"Gemini API response: {response}")
+                # Extract first inline image from response parts
+                if not response or not response.candidates:
+                    log.error("No response received from Gemini API")
+                    raise RuntimeError("No response received from Gemini API")
 
-            # Extract first inline image from response parts
-            if not response or not response.candidates:
-                log.error("No response received from Gemini API")
-                raise RuntimeError("No response received from Gemini API")
+                candidate = response.candidates[0]
 
-            candidate = response.candidates[0]
+                if candidate.finish_reason == FinishReason.PROHIBITED_CONTENT:
+                    log.error("Prohibited content in the input prompt or image")
+                    raise ValueError("Prohibited content in the input prompt or image")
 
-            if candidate.finish_reason == FinishReason.PROHIBITED_CONTENT:
-                log.error("Prohibited content in the input prompt or image")
-                raise ValueError("Prohibited content in the input prompt or image")
+                if not candidate or not candidate.content or not candidate.content.parts:
+                    log.error("Invalid response format from Gemini API")
+                    raise RuntimeError("Invalid response format from Gemini API")
 
-            if not candidate or not candidate.content or not candidate.content.parts:
-                log.error("Invalid response format from Gemini API")
-                raise RuntimeError("Invalid response format from Gemini API")
+                image_bytes = None
+                for part in candidate.content.parts:
+                    inline_data = getattr(part, "inline_data", None)
+                    if inline_data and getattr(inline_data, "data", None):
+                        image_bytes = inline_data.data
+                        break
 
-            image_bytes = None
-            for part in candidate.content.parts:
-                inline_data = getattr(part, "inline_data", None)
-                if inline_data and getattr(inline_data, "data", None):
-                    image_bytes = inline_data.data
-                    break
+                if not image_bytes:
+                    raise RuntimeError("No image bytes returned in response")
 
-            if not image_bytes:
-                raise RuntimeError("No image bytes returned in response")
+                self._log_api_response("image_to_image", image_count=1)
 
-            self._log_api_response("image_to_image", image_count=1)
-
-            return image_bytes
+                return image_bytes
+            finally:
+                pil_image.close()
 
         except Exception as e:
             log.error(f"Gemini image-to-image generation failed: {e}")
@@ -1461,12 +1463,6 @@ class GeminiProvider(BaseProvider):
                 )
 
             log.info(f"Using Gemini Veo model for image-to-video: {model_id}")
-
-            # Convert image bytes to PIL Image for Gemini API
-            from PIL import Image
-
-            pil_image: PIL.Image.Image = Image.open(BytesIO(image))
-            log.debug(f"Loaded input image: {pil_image.size}, format: {pil_image.format}")
 
             # Build the generation config using GenerateVideosConfig
             config_kwargs = {}

@@ -1265,35 +1265,37 @@ class HuggingFaceProvider(BaseProvider):
             from PIL import Image
 
             input_image = Image.open(io.BytesIO(image))
+            try:
+                # Use the image_to_image method from AsyncInferenceClient
+                client = self.get_client()
+                result_image = await client.image_to_image(
+                    image=input_image,
+                    prompt=params.prompt,
+                    model=params.model.id,
+                    negative_prompt=params.negative_prompt or None,
+                    num_inference_steps=params.num_inference_steps,
+                    guidance_scale=params.guidance_scale,
+                    target_size={  # type: ignore[arg-type]
+                        "width": params.target_width,
+                        "height": params.target_height,
+                    }
+                    if params.target_width and params.target_height
+                    else None,
+                )
 
-            # Use the image_to_image method from AsyncInferenceClient
-            client = self.get_client()
-            result_image = await client.image_to_image(
-                image=input_image,
-                prompt=params.prompt,
-                model=params.model.id,
-                negative_prompt=params.negative_prompt or None,
-                num_inference_steps=params.num_inference_steps,
-                guidance_scale=params.guidance_scale,
-                target_size={  # type: ignore[arg-type]
-                    "width": params.target_width,
-                    "height": params.target_height,
-                }
-                if params.target_width and params.target_height
-                else None,
-            )
+                log.debug("HuggingFace image-to-image API call successful")
 
-            log.debug("HuggingFace image-to-image API call successful")
+                # Convert PIL Image to bytes
+                img_bytes = io.BytesIO()
+                result_image.save(img_bytes, format="PNG")
+                img_bytes.seek(0)
 
-            # Convert PIL Image to bytes
-            img_bytes = io.BytesIO()
-            result_image.save(img_bytes, format="PNG")
-            img_bytes.seek(0)
+                result = img_bytes.read()
+                log.debug(f"Generated {len(result)} bytes of image data")
 
-            result = img_bytes.read()
-            log.debug(f"Generated {len(result)} bytes of image data")
-
-            return result
+                return result
+            finally:
+                input_image.close()
 
         except Exception as e:
             log.error(f"HuggingFace image-to-image generation failed: {e}")
