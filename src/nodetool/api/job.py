@@ -128,7 +128,7 @@ async def get_job(job_id: str, user_id: str = Depends(current_user)):
     job = await Job.find(user_id=user_id, job_id=job_id)
 
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=404, detail=f"Job with id '{job_id}' not found")
 
     # Status is now directly on the Job model
     return JobResponse(
@@ -191,7 +191,7 @@ async def cancel_job(job_id: str, user_id: str = Depends(current_user)) -> Backg
     # Verify the job belongs to the user
     job = await Job.find(user_id=user_id, job_id=job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=404, detail=f"Job with id '{job_id}' not found")
 
     # Cancel the background job if it's running
     job_manager = JobExecutionManager.get_instance()
@@ -268,12 +268,15 @@ async def start_trigger_workflow(workflow_id: str, user_id: str = Depends(curren
 
     workflow = await WorkflowModel.get(workflow_id)
     if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{workflow_id}' not found")
     if workflow.user_id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise HTTPException(status_code=403, detail=f"Not authorized to access workflow '{workflow_id}'")
 
     if not workflow_has_trigger_nodes(workflow):
-        raise HTTPException(status_code=400, detail="Workflow does not contain trigger nodes")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Workflow '{workflow_id}' cannot run as a trigger because it has no trigger nodes. Add a trigger node (like IntervalTrigger or WebhookTrigger) to enable this feature.",
+        )
 
     trigger_manager = TriggerWorkflowManager.get_instance()
     job = await trigger_manager.start_trigger_workflow(workflow, user_id)
@@ -286,7 +289,10 @@ async def start_trigger_workflow(workflow_id: str, user_id: str = Depends(curren
             is_running=job.is_running(),
         )
     else:
-        raise HTTPException(status_code=500, detail="Failed to start trigger workflow")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to start trigger workflow '{workflow_id}'. Check server logs for details.",
+        )
 
 
 @router.post("/triggers/{workflow_id}/stop", response_model=TriggerWorkflowResponse)
@@ -306,9 +312,9 @@ async def stop_trigger_workflow(workflow_id: str, user_id: str = Depends(current
 
     workflow = await WorkflowModel.get(workflow_id)
     if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{workflow_id}' not found")
     if workflow.user_id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise HTTPException(status_code=403, detail=f"Not authorized to access workflow '{workflow_id}'")
 
     trigger_manager = TriggerWorkflowManager.get_instance()
     stopped = await trigger_manager.stop_trigger_workflow(workflow_id)

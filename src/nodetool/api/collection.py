@@ -136,17 +136,20 @@ async def update_collection(name: str, req: CollectionModify):
     if workflow_id := metadata.get("workflow"):
         workflow = await Workflow.get(workflow_id)
         if not workflow:
-            raise HTTPException(status_code=404, detail="Workflow not found")
+            raise HTTPException(status_code=404, detail=f"Referenced workflow '{workflow_id}' not found")
 
         # Validate workflow input nodes
         graph = workflow.graph
         collection_input, file_input = find_input_nodes(graph)
         if not collection_input:
-            raise HTTPException(status_code=400, detail="Workflow must have a CollectionInput node")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Workflow '{workflow_id}' must have a CollectionInput node to be used with collections. Add a CollectionInput node to your workflow.",
+            )
         if not file_input:
             raise HTTPException(
                 status_code=400,
-                detail="Workflow must have a FileInput or DocumentFileInput node",
+                detail=f"Workflow '{workflow_id}' must have a FileInput or DocumentFileInput node to process files. Add one of these input nodes to your workflow.",
             )
 
     new_name = req.name if req.name is not None else collection.name
@@ -187,7 +190,7 @@ async def index(
     try:
         await get_async_collection(name)
     except chromadb.errors.NotFoundError as e:  # type: ignore[attr-defined]
-        raise HTTPException(status_code=404, detail="Collection not found") from e
+        raise HTTPException(status_code=404, detail=f"Collection '{name}' not found") from e
     except Exception as e:
         # Surface other failures as server errors
         raise HTTPException(status_code=500, detail=str(e)) from e

@@ -170,7 +170,10 @@ async def search_assets_global(
     """
     # Validate query length
     if len(query.strip()) < MIN_SEARCH_QUERY_LENGTH:
-        raise HTTPException(status_code=400, detail="Search query must be at least 2 characters long")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Search query must be at least {MIN_SEARCH_QUERY_LENGTH} characters long (got {len(query.strip())} character(s)). Please provide a more specific search term.",
+        )
 
     try:
         # Search assets globally using the model's search method
@@ -358,7 +361,7 @@ async def get(id: str, user: str = Depends(current_user)) -> Asset:
     asset = await AssetModel.find(user, id)
     if asset is None:
         log.info("Asset not found: %s", id)
-        raise HTTPException(status_code=404, detail="Asset not found")
+        raise HTTPException(status_code=404, detail=f"Asset with id '{id}' not found")
     return await from_model(asset)
 
 
@@ -374,7 +377,7 @@ async def update(
     asset = await AssetModel.find(user, id)
 
     if asset is None:
-        raise HTTPException(status_code=404, detail="Asset not found")
+        raise HTTPException(status_code=404, detail=f"Asset with id '{id}' not found")
     if req.content_type:
         asset.content_type = req.content_type
     if req.metadata:
@@ -407,10 +410,13 @@ async def generate_thumbnail(id: str, user: str = Depends(current_user)):
     """
     asset = await AssetModel.find(user, id)
     if asset is None:
-        raise HTTPException(status_code=404, detail="Asset not found")
+        raise HTTPException(status_code=404, detail=f"Asset with id '{id}' not found")
 
     if not asset.content_type.startswith("video/"):
-        raise HTTPException(status_code=400, detail="Asset is not a video")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Asset '{id}' is not a video (content type: {asset.content_type}). Thumbnails can only be generated for video assets.",
+        )
 
     storage = require_scope().get_asset_storage()
 
@@ -451,7 +457,7 @@ async def delete(id: str, user: str = Depends(current_user)):
         asset = await AssetModel.find(user, id)
         if asset is None:
             log.info(f"Asset not found: {id}")
-            raise HTTPException(status_code=404, detail="Asset not found")
+            raise HTTPException(status_code=404, detail=f"Asset with id '{id}' not found")
         deleted_asset_ids = []
         if asset.content_type == "folder":
             deleted_asset_ids = await delete_folder(user, id)
@@ -530,7 +536,7 @@ async def create(
     if req.workflow_id:
         workflow = await Workflow.get(req.workflow_id)
         if workflow and workflow.user_id != user:
-            raise HTTPException(status_code=404, detail="Workflow not found")
+            raise HTTPException(status_code=404, detail=f"Workflow with id '{req.workflow_id}' not found")
 
     try:
         storage = None
@@ -740,6 +746,6 @@ async def get_by_filename(filename: str, user: str = Depends(current_user)) -> A
 
     if asset is None:
         log.info("Asset not found with filename: %s", filename)
-        raise HTTPException(status_code=404, detail="Asset not found")
+        raise HTTPException(status_code=404, detail=f"Asset with id '{id}' not found")
 
     return await from_model(asset)

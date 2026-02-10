@@ -196,7 +196,10 @@ async def create(
             )
         )
     else:
-        raise HTTPException(status_code=400, detail="Invalid workflow")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid workflow: must provide either 'graph', 'comfy_workflow', or example parameters (from_example_package and from_example_name)",
+        )
 
     return workflow
 
@@ -239,9 +242,9 @@ async def public(
 async def get_public_workflow(id: str) -> Workflow:
     workflow = await WorkflowModel.get(id)
     if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     if workflow.access != "public":
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     return await from_model(workflow)
 
 
@@ -460,9 +463,9 @@ async def get_example(package_name: str, example_name: str) -> Workflow:
 async def get_workflow(id: str, user: str = Depends(current_user)) -> Workflow:
     workflow = await WorkflowModel.get(id)
     if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     if workflow.access != "public" and workflow.user_id != user:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     return await from_model(workflow)
 
 
@@ -477,11 +480,11 @@ async def get_workflow_app(id: str, user: str = Depends(current_user)) -> HTMLRe
     """
     workflow = await WorkflowModel.get(id)
     if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     if workflow.access != "public" and workflow.user_id != user:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     if not workflow.html_app:
-        raise HTTPException(status_code=404, detail="No HTML app configured for this workflow")
+        raise HTTPException(status_code=404, detail=f"Workflow '{id}' has no HTML app configured. Use the workflow editor to create and save an HTML app interface.")
 
     # Inject runtime configuration using JSON for safety
     import json as json_module
@@ -526,7 +529,7 @@ async def update_workflow(
     if not workflow:
         workflow = WorkflowModel(id=id, user_id=user)
     if workflow.user_id != user:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     if workflow_request.graph is None:
         raise HTTPException(status_code=400, detail="Invalid workflow")
 
@@ -560,9 +563,9 @@ async def delete_workflow(
 ) -> None:
     workflow = await WorkflowModel.get(id)
     if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     if workflow.user_id != user:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     await workflow.delete()
 
 
@@ -694,9 +697,9 @@ async def generate_workflow_name(
     """
     workflow = await WorkflowModel.get(id)
     if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     if workflow.user_id != user:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
 
     # Build a description of the workflow from its graph
     graph = workflow.get_api_graph()
@@ -787,9 +790,9 @@ async def create_version(
     """
     workflow = await WorkflowModel.get(id)
     if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     if workflow.user_id != user:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
 
     # Get the next version number once before creating
     next_version = await WorkflowVersionModel.get_next_version(id)
@@ -824,9 +827,9 @@ async def list_versions(
     """
     workflow = await WorkflowModel.get(id)
     if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     if workflow.user_id != user and workflow.access != "public":
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
 
     versions, next_cursor = await WorkflowVersionModel.paginate(
         workflow_id=id,
@@ -851,13 +854,13 @@ async def get_version(
     """
     workflow = await WorkflowModel.get(id)
     if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     if workflow.user_id != user and workflow.access != "public":
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
 
     version_model = await WorkflowVersionModel.get_by_version(id, version)
     if not version_model:
-        raise HTTPException(status_code=404, detail="Version not found")
+        raise HTTPException(status_code=404, detail=f"Version {version} not found for workflow '{id}'")
 
     return from_version_model(version_model)
 
@@ -876,13 +879,13 @@ async def restore_version(
     """
     workflow = await WorkflowModel.get(id)
     if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     if workflow.user_id != user:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
 
     version_model = await WorkflowVersionModel.get_by_version(id, version)
     if not version_model:
-        raise HTTPException(status_code=404, detail="Version not found")
+        raise HTTPException(status_code=404, detail=f"Version {version} not found for workflow '{id}'")
 
     # Restore the workflow graph from the version
     workflow.graph = version_model.graph
@@ -910,13 +913,13 @@ async def delete_version(
     """
     workflow = await WorkflowModel.get(id)
     if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     if workflow.user_id != user:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
 
     deleted = await WorkflowVersionModel.delete_by_id(version_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail="Version not found")
+        raise HTTPException(status_code=404, detail=f"Version with id '{version_id}' not found for workflow '{id}'")
 
     return {"success": True}
 
@@ -945,9 +948,9 @@ async def autosave_workflow(
     """
     workflow = await WorkflowModel.get(id)
     if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     if workflow.user_id != user:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
 
     if autosave_request.save_type == "autosave" and not autosave_request.force:
         latest_autosave = await WorkflowVersionModel.get_latest_autosave(id)
@@ -1081,9 +1084,9 @@ async def dsl_export(
 
     workflow = await WorkflowModel.get(id)
     if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     if workflow.access != "public" and workflow.user_id != user:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
 
     api_graph = workflow.get_api_graph()
     if api_graph is None:
@@ -1121,9 +1124,9 @@ async def gradio_export(
 
     workflow = await WorkflowModel.get(id)
     if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
     if workflow.access != "public" and workflow.user_id != user:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        raise HTTPException(status_code=404, detail=f"Workflow with id '{id}' not found")
 
     api_graph = workflow.get_api_graph()
     if api_graph is None:

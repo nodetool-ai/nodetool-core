@@ -246,7 +246,10 @@ register_secret(
     description="Gemini API key for accessing Google's Gemini AI models",
 )
 register_secret(
-    package_name="nodetool", env_var="HF_TOKEN", group="HF", description="Token for HuggingFace Inference Providers"
+    package_name="nodetool",
+    env_var="HF_TOKEN",
+    group="HF",
+    description="HuggingFace API token for accessing gated models and Inference API. Get your token at: https://huggingface.co/settings/tokens",
 )
 register_secret(
     package_name="nodetool",
@@ -327,7 +330,10 @@ register_secret(
     description="DataForSEO password for accessing DataForSEO's API",
 )
 register_secret(
-    package_name="nodetool", env_var="KIE_API_KEY", group="KIE", description="KIE API key for accessing kie.ai"
+    package_name="nodetool",
+    env_var="KIE_API_KEY",
+    group="KIE",
+    description="KIE API key for accessing kie.ai AI services",
 )
 register_secret(
     package_name="nodetool",

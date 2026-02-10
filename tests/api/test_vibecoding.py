@@ -149,7 +149,9 @@ async def test_workflow_app_no_html_returns_404(
 
     response = client.get(f"/api/workflows/{workflow.id}/app", headers=headers)
     assert response.status_code == 404
-    assert "No HTML app configured" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert "html app configured" in detail.lower()
+    assert workflow.id in detail
 
 
 @pytest.mark.asyncio
