@@ -104,7 +104,7 @@ def _is_valid_skill_description(description: str) -> bool:
 
 def _write_config_file(path: Path, config: dict) -> None:
     """Write config dict to a JSON file (blocking, intended for asyncio.to_thread)."""
-    with path.open("w") as f:
+    with path.open("w", encoding="utf-8") as f:
         json.dump(config, f)
 
 

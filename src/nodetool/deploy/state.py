@@ -89,7 +89,7 @@ class StateManager:
             start_time = time.time()
             acquired = False
 
-            with open(self.lock_path, "w") as lock_file:
+            with open(self.lock_path, "w", encoding="utf-8") as lock_file:
                 try:
                     # Try to acquire lock with timeout
                     while time.time() - start_time < timeout:
@@ -153,7 +153,7 @@ class StateManager:
 
             from nodetool.config.deployment import DeploymentConfig
 
-            with open(self.config_path) as f:
+            with open(self.config_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
             config = DeploymentConfig.model_validate(data)
 
@@ -188,7 +188,7 @@ class StateManager:
 
             from nodetool.config.deployment import DeploymentConfig
 
-            with open(self.config_path) as f:
+            with open(self.config_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
             config = DeploymentConfig.model_validate(data)
 
@@ -210,7 +210,7 @@ class StateManager:
             # Save config to our specific path
             data = config.model_dump(mode="json", exclude_none=True)
             temp_path = self.config_path.with_suffix(".tmp")
-            with open(temp_path, "w") as f:
+            with open(temp_path, "w", encoding="utf-8") as f:
                 yaml.dump(
                     data,
                     f,
@@ -244,7 +244,7 @@ class StateManager:
 
             from nodetool.config.deployment import DeploymentConfig
 
-            with open(self.config_path) as f:
+            with open(self.config_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
             config = DeploymentConfig.model_validate(data)
 
@@ -268,7 +268,7 @@ class StateManager:
 
             from nodetool.config.deployment import DeploymentConfig
 
-            with open(self.config_path) as f:
+            with open(self.config_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
             config = DeploymentConfig.model_validate(data)
 
@@ -288,7 +288,7 @@ class StateManager:
 
             data = config.model_dump(mode="json", exclude_none=True)
             temp_path = self.config_path.with_suffix(".tmp")
-            with open(temp_path, "w") as f:
+            with open(temp_path, "w", encoding="utf-8") as f:
                 yaml.dump(
                     data,
                     f,
@@ -318,7 +318,7 @@ class StateManager:
 
             from nodetool.config.deployment import DeploymentConfig
 
-            with open(self.config_path) as f:
+            with open(self.config_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
             config = DeploymentConfig.model_validate(data)
 
@@ -332,7 +332,7 @@ class StateManager:
             # Save config to our specific path
             data = config.model_dump(mode="json", exclude_none=True)
             temp_path = self.config_path.with_suffix(".tmp")
-            with open(temp_path, "w") as f:
+            with open(temp_path, "w", encoding="utf-8") as f:
                 yaml.dump(
                     data,
                     f,
@@ -430,7 +430,7 @@ def restore_state_from_snapshot(
         if resolved_config_path:
             import yaml
 
-            with open(resolved_config_path) as f:
+            with open(resolved_config_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
             config = DeploymentConfig.model_validate(data) if data else DeploymentConfig()
         else:
@@ -456,7 +456,7 @@ def restore_state_from_snapshot(
             import yaml
 
             data = config.model_dump(mode="json", exclude_none=True)
-            with open(resolved_config_path, "w") as f:
+            with open(resolved_config_path, "w", encoding="utf-8") as f:
                 yaml.dump(data, f, default_flow_style=False)
         else:
             save_deployment_config(config)

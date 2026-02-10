@@ -40,7 +40,7 @@ def load_deployment_config() -> dict:
         return {}
 
     try:
-        with open(DEPLOYMENT_CONFIG_FILE) as f:
+        with open(DEPLOYMENT_CONFIG_FILE, encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}
             return config
     except Exception:
@@ -57,7 +57,7 @@ def save_deployment_config(config: dict) -> None:
     # Ensure directory exists
     DEPLOYMENT_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(DEPLOYMENT_CONFIG_FILE, "w") as f:
+    with open(DEPLOYMENT_CONFIG_FILE, "w", encoding="utf-8") as f:
         yaml.dump(config, f, default_flow_style=False)
 
     # Set restrictive permissions (owner read/write only)

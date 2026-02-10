@@ -485,7 +485,7 @@ class BaseProvider:
             return
 
         try:
-            with open(self.log_file, "a") as f:
+            with open(self.log_file, "a", encoding="utf-8") as f:
                 timestamp = datetime.datetime.now().isoformat()
                 log_entry: dict[str, Any] = {
                     "timestamp": timestamp,
@@ -518,7 +518,7 @@ class BaseProvider:
             return
 
         try:
-            with open(self.log_file, "a") as f:
+            with open(self.log_file, "a", encoding="utf-8") as f:
                 timestamp = datetime.datetime.now().isoformat()
                 log_entry = {
                     "timestamp": timestamp,
@@ -586,7 +586,7 @@ class BaseProvider:
 
             log_entry.update(kwargs)
 
-            with open(self.log_file, "a") as f:
+            with open(self.log_file, "a", encoding="utf-8") as f:
                 f.write(json.dumps(log_entry) + "\n")
         except Exception as e:
             print(f"Error logging API response: {e}")

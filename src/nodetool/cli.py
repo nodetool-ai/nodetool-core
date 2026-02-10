@@ -1276,7 +1276,7 @@ def worker(
     dotenv.load_dotenv()
 
     def load_workflow(path: str) -> Workflow:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             workflow = json.load(f)
         return Workflow.model_validate(workflow)
 
@@ -1491,7 +1491,7 @@ def chat_server(
     dotenv.load_dotenv()
 
     def load_workflow(path: str) -> Workflow:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             workflow = json.load(f)
         return Workflow.model_validate(workflow)
 
@@ -2051,7 +2051,7 @@ packages = ["src/nodetool"]
 """
 
     # Write to pyproject.toml
-    with open("pyproject.toml", "w") as f:
+    with open("pyproject.toml", "w", encoding="utf-8") as f:
         f.write(pyproject_content)
 
     # Create basic directory structure
@@ -2165,7 +2165,7 @@ def docs(output_dir: str, compact: bool, verbose: bool):
 
             # Write to output file
             os.makedirs(output_dir, exist_ok=True)
-            with open(os.path.join(output_dir, "index.md"), "w") as f:
+            with open(os.path.join(output_dir, "index.md"), "w", encoding="utf-8") as f:
                 f.write(docs)
             bar.update(10)
 

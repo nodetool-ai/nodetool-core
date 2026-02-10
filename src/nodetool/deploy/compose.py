@@ -229,7 +229,7 @@ def generate_compose_file(deployment: SelfHostedDeployment, output_path: Optiona
     content = generator.generate()
 
     if output_path:
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(content)
 
     return content

@@ -452,7 +452,7 @@ def load_settings() -> dict[str, Any]:
     settings: dict[str, Any] = {}
 
     if settings_file.exists():
-        with open(settings_file) as f:
+        with open(settings_file, encoding="utf-8") as f:
             settings = yaml.safe_load(f) or {}
 
     return settings
@@ -466,7 +466,7 @@ def save_settings(settings: dict[str, Any]) -> None:
 
     os.makedirs(os.path.dirname(settings_file), exist_ok=True)
 
-    with open(settings_file, "w") as f:
+    with open(settings_file, "w", encoding="utf-8") as f:
         yaml.dump(settings, f)
 
 

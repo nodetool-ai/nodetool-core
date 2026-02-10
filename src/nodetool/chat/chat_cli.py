@@ -1333,7 +1333,7 @@ class ChatCLI:
         }
 
         try:
-            with open(self.settings_file, "w") as f:
+            with open(self.settings_file, "w", encoding="utf-8") as f:
                 json.dump(settings, f, indent=2)
         except Exception as e:
             self.console.print(f"[bold yellow]Warning:[/bold yellow] Failed to save settings: {e}")
@@ -1342,7 +1342,7 @@ class ChatCLI:
         """Load settings from the dotfile."""
         try:
             if os.path.exists(self.settings_file):
-                with open(self.settings_file) as f:
+                with open(self.settings_file, encoding="utf-8") as f:
                     settings = json.load(f)
 
                 # Load the model ID preference to be used in initialize()

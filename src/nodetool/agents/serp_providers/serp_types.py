@@ -125,7 +125,7 @@ if __name__ == "__main__":
     import json
 
     search_results_file = Path(__file__).parent / "search_results.json"
-    with open(search_results_file) as f:
+    with open(search_results_file, encoding="utf-8") as f:
         data = json.load(f)
     try:
         search_results = GoogleSearchResponse(**data)

@@ -470,7 +470,7 @@ def load_deployment_config() -> DeploymentConfig:
             f"Deployment configuration not found at {config_path}. Run 'nodetool deploy init' to create it."
         )
 
-    with open(config_path) as f:
+    with open(config_path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
 
     if not data:
@@ -515,7 +515,7 @@ def save_deployment_config(config: DeploymentConfig) -> None:
     temp_path = config_path.with_suffix(".tmp")
 
     try:
-        with open(temp_path, "w") as f:
+        with open(temp_path, "w", encoding="utf-8") as f:
             yaml.dump(
                 data,
                 f,

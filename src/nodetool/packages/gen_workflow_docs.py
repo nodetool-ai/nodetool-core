@@ -219,7 +219,7 @@ def create_jekyll_page(workflow_file: Path, output_dir: Path, package_filter: Op
         json.JSONDecodeError: If workflow file is not valid JSON
         IOError: If file cannot be read or written
     """
-    with open(workflow_file) as f:
+    with open(workflow_file, encoding="utf-8") as f:
         workflow = json.load(f)
 
     # Filter by package name if specified
@@ -276,7 +276,7 @@ Browse other [workflow examples](/cookbook.md) to discover more capabilities.
 """
 
     # Write the file
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(content)
 
     return True

@@ -792,7 +792,7 @@ class Registry:
         os.makedirs(path.parent, exist_ok=True)
 
         # Find the package folder
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(workflow.model_dump(), f, indent=2)
 
         # Invalidate the cached examples
@@ -1108,7 +1108,7 @@ def discover_node_packages() -> list[PackageModel]:
                 metadata_files = list(package_path.glob("*.json"))
                 for metadata_file in metadata_files:
                     try:
-                        with open(metadata_file) as f:
+                        with open(metadata_file, encoding="utf-8") as f:
                             metadata = json.load(f)
                             name = metadata.get("name")
                             if isinstance(name, str):
@@ -1143,7 +1143,7 @@ def discover_node_packages() -> list[PackageModel]:
         metadata_files = list(Path(base_path).glob("*.json"))
 
         for metadata_file in metadata_files:
-            with open(metadata_file) as f:
+            with open(metadata_file, encoding="utf-8") as f:
                 try:
                     metadata = json.load(f)
                     metadata["source_folder"] = str(Path(base_path).parent.parent)
@@ -1328,7 +1328,7 @@ async def scan_for_package_nodes(verbose: bool = False, fetch_model_info: bool =
         os.makedirs("src/nodetool/package_metadata", exist_ok=True)
         # Construct the metadata file path using package.name
         metadata_file_path = f"src/nodetool/package_metadata/{package.name}.json"
-        with open(metadata_file_path, "w") as f:
+        with open(metadata_file_path, "w", encoding="utf-8") as f:
             json.dump(
                 package.model_dump(exclude_defaults=True),
                 f,
@@ -1373,7 +1373,7 @@ def save_package_metadata(package: PackageModel, verbose: bool = False):
     if verbose:
         log.info(f"Saving package metadata to {metadata_path}")
 
-    with open(metadata_path, "w") as f:
+    with open(metadata_path, "w", encoding="utf-8") as f:
         json.dump(
             metadata,
             f,

@@ -205,7 +205,7 @@ This namespace contains {len(nodes)} node(s).
 
     # Write index file
     index_path = namespace_path / "index.md"
-    with open(index_path, "w") as f:
+    with open(index_path, "w", encoding="utf-8") as f:
         f.write(content)
 
 
@@ -287,7 +287,7 @@ def generate_node_docs(
 
             content = generate_node_page(node)
 
-            with open(file_path, "w") as f:
+            with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
 
             created_files += 1
@@ -349,5 +349,5 @@ Complete reference documentation for all {total_nodes} NodeTool nodes across {le
 
     # Write root index
     index_path = output_path / "index.md"
-    with open(index_path, "w") as f:
+    with open(index_path, "w", encoding="utf-8") as f:
         f.write(content)
