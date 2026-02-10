@@ -20,6 +20,7 @@ from .async_iterators import (
     async_reduce,
     async_slice,
     async_take,
+    async_zip,
 )
 from .async_lock import AsyncLock
 from .async_priority_queue import AsyncPriorityQueue
@@ -80,6 +81,7 @@ __all__ = [
     "async_reduce",
     "async_slice",
     "async_take",
+    "async_zip",
     "batched_async_iterable",
     "create_channel",
     "fan_in",
