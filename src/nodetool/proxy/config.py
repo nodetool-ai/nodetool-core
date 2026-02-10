@@ -157,7 +157,7 @@ def load_config(config_path: str) -> ProxyConfig:
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
     try:
-        with open(config_file) as f:
+        with open(config_file, encoding="utf-8") as f:
             raw_config = yaml.safe_load(f)
     except yaml.YAMLError as e:
         raise ValueError(f"Invalid YAML in config file: {e}") from e

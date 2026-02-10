@@ -220,7 +220,7 @@ def _hf_hub_download_to_cache_dir_with_progress(
             else:
                 ref_path = os.path.join(storage_folder, "refs", revision)
                 if os.path.isfile(ref_path):
-                    with open(ref_path) as f:
+                    with open(ref_path, encoding="utf-8") as f:
                         commit_hash = f.read()
             if commit_hash is not None:
                 pointer_path = _fd._get_pointer_path(storage_folder, commit_hash, relative_filename)

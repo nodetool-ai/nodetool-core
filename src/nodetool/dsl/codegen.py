@@ -136,7 +136,7 @@ def create_python_module_file(filename: str, content: str) -> None:
         None
     """
     os.makedirs(os.path.dirname(filename), exist_ok=True)
-    with open(filename, "w") as file:
+    with open(filename, "w", encoding="utf-8") as file:
         file.write(content)
     try:
         subprocess.run(["black", filename], check=True, capture_output=True)

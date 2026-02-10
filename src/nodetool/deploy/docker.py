@@ -442,7 +442,7 @@ def get_docker_username_from_config(registry: str = "docker.io") -> str | None:
         if not docker_config_path.exists():
             return None
 
-        with open(docker_config_path) as f:
+        with open(docker_config_path, encoding="utf-8") as f:
             config = json.load(f)
 
         # Check for authentication data

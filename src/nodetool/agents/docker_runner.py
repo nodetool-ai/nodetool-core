@@ -54,7 +54,7 @@ async def _run(cfg: dict[str, Any]) -> None:
 
 def main() -> None:
     config_path = sys.argv[1]
-    with Path(config_path).open() as f:
+    with Path(config_path).open(encoding="utf-8") as f:
         cfg = json.load(f)
     asyncio.run(_run(cfg))
 

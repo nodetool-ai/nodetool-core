@@ -101,7 +101,7 @@ class ModelCache:
             return None
 
         try:
-            with open(cache_path) as f:
+            with open(cache_path, encoding="utf-8") as f:
                 data = json.load(f, object_hook=_decode_cache_obj)
                 value = data["value"]
                 expiry_time = data["expiry"]
@@ -134,7 +134,7 @@ class ModelCache:
             log.debug(
                 f"Attempting to cache key: {key}, value type: {type(value)}, length: {len(value) if hasattr(value, '__len__') else 'N/A'}"
             )
-            with open(cache_path, "w") as f:
+            with open(cache_path, "w", encoding="utf-8") as f:
                 json.dump({"key": key, "value": value, "expiry": expiry_time}, f, cls=CacheJSONEncoder)
             log.debug(f"✓ Successfully cached value for key: {key} (TTL: {ttl}s) at {cache_path}")
         except Exception as e:
@@ -168,7 +168,7 @@ class ModelCache:
         deleted_count = 0
         for cache_file in self.cache_dir.glob("*.cache"):
             try:
-                with open(cache_file) as f:
+                with open(cache_file, encoding="utf-8") as f:
                     data = json.load(f, object_hook=_decode_cache_obj)
                     stored_key = data["key"]
 
