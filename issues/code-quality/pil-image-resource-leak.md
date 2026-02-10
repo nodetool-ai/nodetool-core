@@ -1,15 +1,17 @@
 # PIL.Image.open Resource Leak Fix
 
-**Problem**: The `create_image_thumbnail` function in `media_utils.py` opened a PIL Image without using a context manager, potentially causing resource leaks for large images.
+**Problem**: Several functions in provider code and media utilities opened PIL Images without using context managers, potentially causing resource leaks when processing images.
 
-**Solution**: Wrapped `PIL.Image.open()` call in a `with` statement to ensure proper resource cleanup.
+**Solution**: Wrapped `PIL.Image.open()` calls in `with` statements to ensure proper resource cleanup.
 
 **Files Modified**:
-- `src/nodetool/media/common/media_utils.py`
+- `src/nodetool/media/common/media_utils.py` (2026-01-14)
+- `src/nodetool/providers/gemini_provider.py` (2026-02-10) - Two instances fixed
+- `src/nodetool/providers/huggingface_provider.py` (2026-02-10) - One instance fixed
 
 **Impact**:
-- Ensures PIL Image resources are properly released after thumbnail generation
+- Ensures PIL Image resources are properly released after operations complete
 - Prevents potential memory leaks when processing large images
 - All existing tests continue to pass
 
-**Date**: 2026-01-14
+**Date**: 2026-01-14, updated 2026-02-10

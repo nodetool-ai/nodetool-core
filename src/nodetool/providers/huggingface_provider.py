@@ -1264,24 +1264,23 @@ class HuggingFaceProvider(BaseProvider):
 
             from PIL import Image
 
-            input_image = Image.open(io.BytesIO(image))
-
-            # Use the image_to_image method from AsyncInferenceClient
-            client = self.get_client()
-            result_image = await client.image_to_image(
-                image=input_image,
-                prompt=params.prompt,
-                model=params.model.id,
-                negative_prompt=params.negative_prompt or None,
-                num_inference_steps=params.num_inference_steps,
-                guidance_scale=params.guidance_scale,
-                target_size={  # type: ignore[arg-type]
-                    "width": params.target_width,
-                    "height": params.target_height,
-                }
-                if params.target_width and params.target_height
-                else None,
-            )
+            with Image.open(io.BytesIO(image)) as input_image:
+                # Use the image_to_image method from AsyncInferenceClient
+                client = self.get_client()
+                result_image = await client.image_to_image(
+                    image=input_image,
+                    prompt=params.prompt,
+                    model=params.model.id,
+                    negative_prompt=params.negative_prompt or None,
+                    num_inference_steps=params.num_inference_steps,
+                    guidance_scale=params.guidance_scale,
+                    target_size={  # type: ignore[arg-type]
+                        "width": params.target_width,
+                        "height": params.target_height,
+                    }
+                    if params.target_width and params.target_height
+                    else None,
+                )
 
             log.debug("HuggingFace image-to-image API call successful")
 
