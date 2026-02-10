@@ -22,6 +22,7 @@ from .async_iterators import (
     async_take,
 )
 from .async_lock import AsyncLock
+from .async_lru_cache import AsyncLRUCache
 from .async_priority_queue import AsyncPriorityQueue
 from .async_rwlock import AsyncReaderWriterLock
 from .async_task_group import AsyncTaskGroup, TaskExecutionError, TaskResult, TaskStats
@@ -49,6 +50,7 @@ __all__ = [
     "AsyncCondition",
     "AsyncDebounce",
     "AsyncEvent",
+    "AsyncLRUCache",
     "AsyncLock",
     "AsyncPriorityQueue",
     "AsyncRateLimiter",
