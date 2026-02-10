@@ -16,7 +16,9 @@ async def test_create_message(client: TestClient, thread: Thread, headers: dict[
 
     m = await Message.get(response.json()["id"])
     assert m is not None
-    assert m.content == "Hello"
+    # Content is encrypted at rest, use get_decrypted_content() to access
+    decrypted_content = await m.get_decrypted_content()
+    assert decrypted_content == "Hello"
 
 
 @pytest.mark.asyncio
@@ -28,7 +30,9 @@ async def test_create_message_no_thread(client: TestClient, headers: dict[str, s
 
     m = await Message.get(response.json()["id"])
     assert m is not None
-    assert m.content == "Hello"
+    # Content is encrypted at rest, use get_decrypted_content() to access
+    decrypted_content = await m.get_decrypted_content()
+    assert decrypted_content == "Hello"
     assert m.thread_id is not None
 
 

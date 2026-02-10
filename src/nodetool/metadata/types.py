@@ -1983,8 +1983,68 @@ class Message(BaseType):
 
         Returns:
             Message: The abstract Message object.
+
+        Note:
+            This method uses the in-memory content field. For messages loaded
+            from the database with encrypted content, use from_model_async()
+            to properly decrypt the content.
         """
         content = message.content
+        if message.role == "agent_execution" and isinstance(content, str):
+            try:
+                content = json.loads(content)
+                if isinstance(content, str):
+                    try:
+                        content = json.loads(content)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        execution_event_type = getattr(message, "execution_event_type", None)
+        agent_execution_id = getattr(message, "agent_execution_id", None)
+        if message.role == "agent_execution" and isinstance(content, dict):
+            if not execution_event_type:
+                execution_event_type = content.get("type")
+            if not agent_execution_id:
+                agent_execution_id = message.id
+
+        return Message(
+            id=message.id,
+            thread_id=message.thread_id,
+            tool_call_id=message.tool_call_id,
+            role=message.role,
+            name=message.name,
+            content=content,
+            tool_calls=message.tool_calls,
+            created_at=message.created_at.isoformat() if message.created_at else None,
+            provider=message.provider,
+            model=message.model,
+            agent_mode=message.agent_mode,
+            help_mode=message.help_mode,
+            agent_execution_id=agent_execution_id,
+            execution_event_type=execution_event_type,
+        )
+
+    @staticmethod
+    async def from_model_async(message: Any) -> "Message":
+        """
+        Convert a Model object to a Message object, decrypting content if needed.
+
+        This async version properly decrypts encrypted message content stored
+        in the database.
+
+        Args:
+            message: The database Message object to convert.
+
+        Returns:
+            Message: The abstract Message object with decrypted content.
+        """
+        # Get decrypted content if the method exists (for encrypted messages)
+        if hasattr(message, "get_decrypted_content"):
+            content = await message.get_decrypted_content()
+        else:
+            content = message.content
+
         if message.role == "agent_execution" and isinstance(content, str):
             try:
                 content = json.loads(content)
