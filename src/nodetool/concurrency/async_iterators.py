@@ -351,3 +351,50 @@ async def async_flat_map(
             result = await result  # type: ignore[misc]
         async for inner_item in result:  # type: ignore[misc]
             yield inner_item
+
+
+async def async_zip(*iterables: AsyncIterable[T]) -> AsyncIterator[tuple[T, ...]]:
+    """
+    Combine multiple async iterables into tuples of elements.
+
+    Yields tuples containing the i-th element from each of the argument
+    iterables. Stops when the shortest iterable is exhausted, similar to
+    the built-in zip() function.
+
+    Args:
+        *iterables: Variable number of async iterables to zip together.
+
+    Yields:
+        Tuples containing elements from each iterable at the same position.
+
+    Example:
+        >>> async def gen1():
+        ...     for i in range(3):
+        ...         yield i
+        >>> async def gen2():
+        ...     for c in "abc":
+        ...         yield c
+        >>> async def gen3():
+        ...     for i in range(10, 13):
+        ...         yield i
+        >>> result = await async_list(async_zip(gen1(), gen2(), gen3()))
+        >>> result
+        [(0, 'a', 10), (1, 'b', 11), (2, 'c', 12)]
+    """
+    # Create iterators from all iterables
+    iterators = [ait.__aiter__() for ait in iterables]
+
+    if not iterators:
+        return
+
+    while True:
+        # Try to get next item from each iterator
+        try:
+            items = []
+            for it in iterators:
+                item = await it.__anext__()
+                items.append(item)
+            yield tuple(items)  # type: ignore[misc]
+        except StopAsyncIteration:
+            # Any iterator exhausted - stop iteration
+            break
