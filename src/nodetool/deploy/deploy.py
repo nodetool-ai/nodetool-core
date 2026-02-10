@@ -37,7 +37,7 @@ def run_local_docker(
 
     console.print("[bold green]🐳 Starting local Docker container...[/]")
 
-    # Run the docker container using start.sh with RunPod parameters
+    # Run the Docker image directly with default container entrypoint/CMD.
     docker_run_cmd = [
         "docker",
         "run",

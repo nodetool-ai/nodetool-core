@@ -349,6 +349,7 @@ def info_cmd(as_json: bool):
     console.print(keys_table)
     console.print()
 
+
 @click.group(name="workflows")
 def workflows() -> None:
     """Workflow management commands (mirrors MCP workflow tools)."""
@@ -774,10 +775,70 @@ mcp.add_command(jobs)
 @click.option("--reload", is_flag=True, help="Enable auto-reload on file changes (development only).")
 @click.option("--production", is_flag=True, help="Enable production mode with stricter validation and optimizations.")
 @click.option(
+    "--mode",
+    type=click.Choice(["desktop", "public", "private"], case_sensitive=False),
+    default=None,
+    help="Server mode. Defaults to desktop; production defaults to private when omitted.",
+)
+@click.option(
     "--auth-provider",
-    type=click.Choice(["none", "local", "static", "supabase"], case_sensitive=False),
+    type=click.Choice(["none", "local", "static", "multi_user", "supabase"], case_sensitive=False),
     default=None,
     help="Select authentication provider (overrides ENV AUTH_PROVIDER)",
+)
+@click.option(
+    "--enable-default-api/--disable-default-api",
+    default=None,
+    help="Enable/disable default /api routers.",
+)
+@click.option(
+    "--enable-openai/--disable-openai",
+    default=None,
+    help="Enable/disable /v1 OpenAI-compatible routes.",
+)
+@click.option(
+    "--enable-deploy-admin/--disable-deploy-admin",
+    default=None,
+    help="Enable/disable deploy admin routes (/admin/*).",
+)
+@click.option(
+    "--enable-deploy-collections/--disable-deploy-collections",
+    default=None,
+    help="Enable/disable deploy collection upload route (/collections/*).",
+)
+@click.option(
+    "--enable-deploy-storage/--disable-deploy-storage",
+    default=None,
+    help="Enable/disable deploy storage routes (/admin/storage, /storage).",
+)
+@click.option(
+    "--enable-main-ws/--disable-main-ws",
+    default=None,
+    help="Enable/disable unified websocket endpoint (/ws).",
+)
+@click.option(
+    "--enable-updates-ws/--disable-updates-ws",
+    default=None,
+    help="Enable/disable updates websocket endpoint (/ws/updates).",
+)
+@click.option(
+    "--enable-terminal-ws/--disable-terminal-ws",
+    default=None,
+    help="Enable/disable terminal websocket endpoints (/ws/terminal, /terminal).",
+)
+@click.option(
+    "--enable-hf-download-ws/--disable-hf-download-ws",
+    default=None,
+    help="Enable/disable HuggingFace download websocket endpoint (/ws/download).",
+)
+@click.option(
+    "--ui-url",
+    help="URL to download and serve the UI from (zip file).",
+)
+@click.option(
+    "--ui",
+    is_flag=True,
+    help="Download and serve the UI matching the current NodeTool version.",
 )
 @click.option(
     "--verbose",
@@ -796,9 +857,21 @@ def serve(
     static_folder: str | None = None,
     reload: bool = False,
     force_fp16: bool = False,
+    mode: str | None = None,
     auth_provider: str | None = None,
+    enable_default_api: bool | None = None,
+    enable_openai: bool | None = None,
+    enable_deploy_admin: bool | None = None,
+    enable_deploy_collections: bool | None = None,
+    enable_deploy_storage: bool | None = None,
+    enable_main_ws: bool | None = None,
+    enable_updates_ws: bool | None = None,
+    enable_terminal_ws: bool | None = None,
+    enable_hf_download_ws: bool | None = None,
     apps_folder: str | None = None,
     production: bool = False,
+    ui_url: str | None = None,
+    ui: bool = False,
     verbose: bool = False,
     mock: bool = False,
 ):
@@ -806,8 +879,56 @@ def serve(
 
     Serves the REST API, WebSocket endpoints, and optionally static assets or app bundles.
 
+    Use --production to run the production server with full admin routers.
     Use --mock to start with pre-filled test data for development and testing.
     """
+    if auth_provider:
+        os.environ["AUTH_PROVIDER"] = auth_provider.lower()
+
+    effective_mode = mode.lower() if mode else ("private" if production else "desktop")
+
+    if production:
+        from nodetool.api.run_server import run_server
+
+        if static_folder:
+            console.print("[yellow]Warning: --static-folder ignored in production mode[/]")
+        if apps_folder:
+            console.print("[yellow]Warning: --apps-folder ignored in production mode[/]")
+        if mock:
+            console.print("[yellow]Warning: --mock ignored in production mode[/]")
+
+        run_kwargs: dict[str, Any] = {
+            "host": host,
+            "port": port,
+            "reload": reload,
+        }
+        if mode:
+            run_kwargs["mode"] = effective_mode
+        else:
+            os.environ.setdefault("NODETOOL_SERVER_MODE", "private")
+        if auth_provider:
+            run_kwargs["auth_provider"] = auth_provider
+        if enable_default_api is not None:
+            run_kwargs["include_default_api_routers"] = enable_default_api
+        if enable_openai is not None:
+            run_kwargs["include_openai_router"] = enable_openai
+        if enable_deploy_admin is not None:
+            run_kwargs["include_deploy_admin_router"] = enable_deploy_admin
+        if enable_deploy_collections is not None:
+            run_kwargs["include_deploy_collection_router"] = enable_deploy_collections
+        if enable_deploy_storage is not None:
+            run_kwargs["include_deploy_storage_router"] = enable_deploy_storage
+        if enable_main_ws is not None:
+            run_kwargs["enable_main_ws"] = enable_main_ws
+        if enable_updates_ws is not None:
+            run_kwargs["enable_updates_ws"] = enable_updates_ws
+        if enable_terminal_ws is not None:
+            run_kwargs["enable_terminal_ws"] = enable_terminal_ws
+        if enable_hf_download_ws is not None:
+            run_kwargs["enable_hf_download_ws"] = enable_hf_download_ws
+        run_server(**run_kwargs)
+        return
+
     from nodetool.api.server import create_app, run_uvicorn_server
 
     # Configure logging level based on verbose flag
@@ -830,11 +951,75 @@ def serve(
     except ImportError:
         pass
 
-    if auth_provider:
-        os.environ["AUTH_PROVIDER"] = auth_provider.lower()
+    # Handle UI download if requested
+    if ui or ui_url:
+        if ui and ui_url:
+             console.print("[yellow]Warning: --ui-url overrides --ui[/]")
+        
+        url_to_use = ui_url
+        
+        # If --ui flag is used and no explicit URL, infer it
+        if ui and not ui_url:
+            try:
+                version = get_package_version("nodetool-core")
+                # Fix normalized version if needed (e.g., 0.6.3rc12 -> 0.6.3-rc.12)
+                if "rc" in version and "-" not in version:
+                     version = version.replace("rc", "-rc.")
+                
+                url_to_use = f"https://github.com/nodetool-ai/nodetool/releases/download/v{version}/nodetool-web-{version}.zip"
+                console.print(f"[cyan]Inferring UI URL for version {version}: {url_to_use}[/]")
+            except PackageNotFoundError:
+                console.print("[red]Could not determine package version.[/]")
+                # We will try fallback below if we can't infer or if inference fails
+                pass
+
+        if static_folder:
+             console.print("[yellow]Warning: --ui-url/--ui overrides --static-folder[/]")
+
+        try:
+            if url_to_use:
+                static_folder = _download_and_cache_ui(url_to_use)
+            else:
+                raise Exception("No URL available")
+        except Exception as e:
+            if ui and not ui_url:
+                console.print(f"[yellow]Failed to download UI for current version ({e}). Trying latest release...[/]")
+                try:
+                    import httpx
+                    # Find latest tag
+                    resp = httpx.get("https://github.com/nodetool-ai/nodetool/releases/latest", follow_redirects=False)
+                    location = resp.headers.get("location", "")
+                    if "/tag/" in location:
+                        tag = location.split("/")[-1]
+                        version_str = tag.lstrip("v")
+                        latest_url = f"https://github.com/nodetool-ai/nodetool/releases/download/{tag}/nodetool-web-{version_str}.zip"
+                        console.print(f"[cyan]Downloading latest UI ({tag}): {latest_url}[/]")
+                        static_folder = _download_and_cache_ui(latest_url)
+                    else:
+                        raise Exception("Could not resolve latest release tag")
+                except Exception as inner_e:
+                     console.print(f"[red]Failed to download latest UI: {inner_e}[/]")
+                     sys.exit(1)
+            else:
+                console.print(f"[red]Failed to download UI: {e}[/]")
+                sys.exit(1)
 
     if not reload:
-        app = create_app(static_folder=static_folder, apps_folder=apps_folder)
+        app = create_app(
+            static_folder=static_folder,
+            apps_folder=apps_folder,
+            mode=effective_mode,
+            auth_provider=auth_provider,
+            include_default_api_routers=enable_default_api,
+            include_openai_router=enable_openai,
+            include_deploy_admin_router=enable_deploy_admin,
+            include_deploy_collection_router=enable_deploy_collections,
+            include_deploy_storage_router=enable_deploy_storage,
+            enable_main_ws=enable_main_ws,
+            enable_updates_ws=enable_updates_ws,
+            enable_terminal_ws=enable_terminal_ws,
+            enable_hf_download_ws=enable_hf_download_ws,
+        )
     else:
         if static_folder:
             raise Exception("static folder and reload are exclusive options")
@@ -843,6 +1028,63 @@ def serve(
         app = "nodetool.api.app:app"
 
     run_uvicorn_server(app=app, host=host, port=port, reload=reload)
+
+
+def _download_and_cache_ui(url: str) -> str:
+    """Download UI zip from URL and unpack to cache directory."""
+    import hashlib
+    import shutil
+    import zipfile
+    from io import BytesIO
+    import httpx
+    from nodetool.config.settings import get_system_cache_path
+
+    # Generate cache key from URL
+    url_hash = hashlib.md5(url.encode()).hexdigest()
+    cache_dir = get_system_cache_path("ui_cache") / url_hash
+    
+    # Check if already cached
+    if cache_dir.exists() and (cache_dir / "index.html").exists():
+        console.print(f"[green]Using cached UI from {cache_dir}[/]")
+        return str(cache_dir)
+
+    console.print(f"[cyan]Downloading UI from {url}...[/]")
+    
+    # Download
+    with httpx.Client(follow_redirects=True) as client:
+        resp = client.get(url)
+        if resp.status_code == 404:
+             raise Exception("404 Not Found")
+        resp.raise_for_status()
+        
+        # Unpack
+        console.print("[cyan]Unpacking UI...[/]")
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        with zipfile.ZipFile(BytesIO(resp.content)) as z:
+            z.extractall(cache_dir)
+            
+        # Handle case where zip contains a single top-level folder
+        # e.g. nodetool-web-0.6.3-rc.12/index.html -> move contents up
+        items = list(cache_dir.iterdir())
+        if len(items) == 1 and items[0].is_dir():
+            subdir = items[0]
+            # Move contents to temp dir first to avoid conflicts
+            temp_dir = cache_dir.parent / f"{url_hash}_temp"
+            subdir.rename(temp_dir)
+            try:
+                shutil.rmtree(cache_dir)
+                temp_dir.rename(cache_dir)
+            except Exception:
+                # Fallback cleanup
+                if temp_dir.exists():
+                    shutil.rmtree(temp_dir)
+                raise
+
+        console.print(f"[green]UI ready at {cache_dir}[/]")
+        return str(cache_dir)
 
 
 @cli.command()
@@ -1190,102 +1432,6 @@ def vibecoding(
     _run_async(run_vibecoding())
 
 
-@cli.command("worker")
-@click.option("--host", default="0.0.0.0", help="Host address to bind to (listen on all interfaces for deployments).")
-@click.option("--port", default=7777, help="Port to listen on.", type=int)
-@click.option(
-    "--auth-provider",
-    type=click.Choice(["none", "local", "static", "supabase"], case_sensitive=False),
-    default=None,
-    help="Select authentication provider (overrides ENV AUTH_PROVIDER)",
-)
-@click.option(
-    "--default-model",
-    default="gpt-oss:20b",
-    help="Fallback model when client doesn't specify one.",
-)
-@click.option(
-    "--provider",
-    default="ollama",
-    help="AI provider for the default model (e.g., openai, anthropic, ollama).",
-)
-@click.option(
-    "--tools",
-    default="",
-    help="Comma-separated list of tools to enable (e.g., google_search,browser).",
-)
-@click.option(
-    "--workflow",
-    "workflows",
-    multiple=True,
-    type=click.Path(exists=True, resolve_path=True, file_okay=True, dir_okay=False),
-    help="One or more workflow JSON files to register with the worker.",
-)
-@click.option(
-    "--verbose",
-    "-v",
-    is_flag=True,
-    help="Enable verbose logging (DEBUG level) for detailed output.",
-)
-def worker(
-    host: str,
-    port: int,
-    remote_auth: bool,
-    provider: str,
-    default_model: str,
-    tools: str,
-    workflows: list[str],
-    verbose: bool = False,
-):
-    """Start a deployable worker process with OpenAI-compatible endpoints.
-
-    Used for running NodeTool as a backend service with chat/completion API support.
-    admin operations, and collection management. It can be deployed anywhere.
-
-    Examples:
-      # Start worker on default port 8000
-      nodetool worker
-
-      # Start worker on custom port
-      nodetool worker --port 8080
-
-      # Start with specific provider and model
-      nodetool worker --provider openai --default-model gpt-4
-
-      # Start with tools enabled
-      nodetool worker --tools "google_search,browser"
-
-      # Start with verbose logging
-      nodetool worker --verbose
-    """
-    from nodetool.deploy.worker import run_worker
-
-    # Configure logging level based on verbose flag
-    if verbose:
-        from nodetool.config.logging_config import configure_logging
-
-        configure_logging(level="DEBUG")
-        console.print("[cyan]🐛 Verbose logging enabled (DEBUG level)[/]")
-
-    import json
-
-    import dotenv
-
-    from nodetool.types.workflow import Workflow
-
-    dotenv.load_dotenv()
-
-    def load_workflow(path: str) -> Workflow:
-        with open(path) as f:
-            workflow = json.load(f)
-        return Workflow.model_validate(workflow)
-
-    loaded_workflows = [load_workflow(f) for f in workflows]
-
-    # Parse comma-separated tools string into list
-    tools_list = [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else []
-
-    run_worker(host, port, provider, default_model, tools_list, loaded_workflows)
 
 
 @cli.command("dsl-export")
@@ -1418,7 +1564,12 @@ def gradio_export(
 @cli.command("chat-server")
 @click.option("--host", default="127.0.0.1", help="Host address to bind to.")
 @click.option("--port", default=8080, help="Port to listen on.", type=int)
-@click.option("--remote-auth", is_flag=True, help="Enable remote authentication (Supabase-backed auth).")
+@click.option(
+    "--auth-provider",
+    type=click.Choice(["none", "local", "static", "multi_user", "supabase"], case_sensitive=False),
+    default=None,
+    help="Select authentication provider (overrides ENV AUTH_PROVIDER)",
+)
 @click.option(
     "--default-model",
     default="gpt-oss:20b",
@@ -2430,6 +2581,7 @@ def download_ollama(
         # Download via HTTP API server
         nodetool admin download-ollama --model-name llama3.2:latest --server-url http://localhost:7777
     """
+
     async def run_download():
         console.print("[bold cyan]📥 Starting Ollama download...[/]")
         console.print(f"Model: {model_name}")
@@ -2841,7 +2993,9 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
     from nodetool.config.deployment import (
         GCPDeployment,
         RunPodDeployment,
-        SelfHostedDeployment,
+        DockerDeployment,
+        SSHDeployment,
+        LocalDeployment,
     )
 
     def _inject(env: Optional[dict[str, str]]) -> dict[str, str]:
@@ -2849,11 +3003,10 @@ def _populate_master_key_env(deployment: Any, master_key: str) -> None:
         env["SECRETS_MASTER_KEY"] = master_key
         return env
 
-    if isinstance(deployment, SelfHostedDeployment):
+    if isinstance(deployment, DockerDeployment):
         deployment.container.environment = _inject(deployment.container.environment)
-        if deployment.proxy and deployment.proxy.services:
-            for service in deployment.proxy.services:
-                service.environment = _inject(service.environment)
+    elif isinstance(deployment, SSHDeployment | LocalDeployment):
+        deployment.environment = _inject(deployment.environment)
     elif isinstance(deployment, RunPodDeployment | GCPDeployment):
         deployment.environment = _inject(getattr(deployment, "environment", None))
 
@@ -2886,21 +3039,81 @@ async def _import_secrets_to_worker(server_url: str, auth_token: str, payload: l
     return await client.import_secrets(payload)
 
 
+def _resolve_local_docker_container_token(deployment: Any) -> Optional[str]:
+    """Read SERVER_AUTH_TOKEN from the running local Docker container, if available."""
+    from nodetool.config.deployment import DockerDeployment
+    from nodetool.deploy.docker_run import DockerRunGenerator
+
+    if not isinstance(deployment, DockerDeployment):
+        return None
+    if deployment.host not in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}:
+        return None
+
+    container_name = DockerRunGenerator(deployment).get_container_name()
+
+    try:
+        import docker  # type: ignore[import-untyped]
+        from docker.errors import DockerException, NotFound  # type: ignore[import-untyped]
+    except Exception:
+        return None
+
+    client = None
+    try:
+        client = docker.from_env()  # type: ignore[attr-defined]
+        container = client.containers.get(container_name)
+        container.reload()
+        env_entries = (container.attrs.get("Config", {}) or {}).get("Env") or []
+        for entry in env_entries:
+            if not isinstance(entry, str):
+                continue
+            if entry.startswith("SERVER_AUTH_TOKEN="):
+                _, value = entry.split("=", 1)
+                if value:
+                    return value
+    except NotFound:
+        return None
+    except DockerException:
+        return None
+    except Exception:
+        return None
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+    return None
+
+
+def _resolve_deployment_auth_token(deployment: Any) -> Optional[str]:
+    """Resolve auth token for deployment admin operations."""
+    # Use the running local Docker container token first to avoid config/token drift.
+    token = _resolve_local_docker_container_token(deployment)
+    if token:
+        return token
+
+    token = getattr(deployment, "server_auth_token", None)
+    if token:
+        return token
+
+    env: Optional[dict[str, str]] = None
+    if hasattr(deployment, "environment") and deployment.environment:
+        env = deployment.environment
+    elif hasattr(deployment, "container") and getattr(deployment.container, "environment", None):
+        env = deployment.container.environment
+    if env:
+        return env.get("SERVER_AUTH_TOKEN")
+    return None
+
+
 def _sync_secrets_to_deployment(name: str, deployment: Any) -> None:
     server_url = getattr(deployment, "get_server_url", lambda: None)()
     if not server_url:
         console.print(f"[yellow]Skipping secret sync for '{name}': server URL unavailable.[/]")
         return
 
-    auth_token = getattr(deployment, "worker_auth_token", None)
-    if not auth_token:
-        env: Optional[dict[str, str]] = None
-        if hasattr(deployment, "environment") and deployment.environment:
-            env = deployment.environment
-        elif hasattr(deployment, "container") and getattr(deployment.container, "environment", None):
-            env = deployment.container.environment
-        if env:
-            auth_token = env.get("WORKER_AUTH_TOKEN")
+    auth_token = _resolve_deployment_auth_token(deployment)
 
     if not auth_token:
         console.print(f"[yellow]Skipping secret sync for '{name}': worker auth token unavailable.[/]")
@@ -2977,7 +3190,9 @@ def deploy_show(name: str):
     from nodetool.config.deployment import (
         GCPDeployment,
         RunPodDeployment,
-        SelfHostedDeployment,
+        DockerDeployment,
+        SSHDeployment,
+        LocalDeployment,
     )
     from nodetool.deploy.manager import DeploymentManager
 
@@ -3002,10 +3217,11 @@ def deploy_show(name: str):
         content.append("")
 
         # Type-specific configuration
-        if isinstance(deployment, SelfHostedDeployment):
-            content.append("[bold]Self-Hosted Configuration:[/]")
+        if isinstance(deployment, DockerDeployment):
+            content.append("[bold]Docker Configuration:[/]")
             content.append(f"  Host: {deployment.host}")
-            content.append(f"  SSH User: {deployment.ssh.user}")
+            if deployment.ssh:
+                content.append(f"  SSH User: {deployment.ssh.user}")
             content.append(f"  Image: {deployment.image.name}:{deployment.image.tag}")
             content.append("")
 
@@ -3020,6 +3236,47 @@ def deploy_show(name: str):
             content.append("")
 
             # Paths
+            content.append("[bold]Paths:[/]")
+            content.append(f"  Workspace: {deployment.paths.workspace}")
+            content.append(f"  HF Cache: {deployment.paths.hf_cache}")
+
+        elif isinstance(deployment, SSHDeployment):
+            content.append("[bold]SSH Configuration:[/]")
+            content.append(f"  Host: {deployment.host}")
+            if deployment.ssh:
+                content.append(f"  SSH User: {deployment.ssh.user}")
+            content.append("")
+
+            # Service details
+            content.append("[bold]Service:[/]")
+            content.append(f"  Port: {deployment.port}")
+            if deployment.service_name:
+                content.append(f"  Systemd Service: {deployment.service_name}")
+            if deployment.workflows:
+                content.append(f"  Workflows: {', '.join(deployment.workflows)}")
+            if deployment.gpu:
+                content.append(f"  GPU: {deployment.gpu}")
+            content.append("")
+
+            # Paths
+            content.append("[bold]Paths:[/]")
+            content.append(f"  Workspace: {deployment.paths.workspace}")
+            content.append(f"  HF Cache: {deployment.paths.hf_cache}")
+        elif isinstance(deployment, LocalDeployment):
+            content.append("[bold]Local Configuration:[/]")
+            content.append(f"  Host: {deployment.host}")
+            content.append("")
+
+            content.append("[bold]Service:[/]")
+            content.append(f"  Port: {deployment.port}")
+            if deployment.service_name:
+                content.append(f"  Systemd Service: {deployment.service_name}")
+            if deployment.workflows:
+                content.append(f"  Workflows: {', '.join(deployment.workflows)}")
+            if deployment.gpu:
+                content.append(f"  GPU: {deployment.gpu}")
+            content.append("")
+
             content.append("[bold]Paths:[/]")
             content.append(f"  Workspace: {deployment.paths.workspace}")
             content.append(f"  HF Cache: {deployment.paths.hf_cache}")
@@ -3061,18 +3318,23 @@ def deploy_show(name: str):
             if state.get("last_deployed"):
                 content.append(f"  Last Deployed: {state['last_deployed']}")
 
-            if state.get("compose_hash"):
-                content.append(f"  Compose Hash: {state['compose_hash'][:12]}...")
+            if state.get("container_hash"):
+                content.append(f"  Container Hash: {state['container_hash'][:12]}...")
         else:
             content.append("  Status: [yellow]Not deployed[/]")
 
         content.append("")
 
         # URLs and endpoints
-        if isinstance(deployment, SelfHostedDeployment):
+        if isinstance(deployment, DockerDeployment):
             content.append("[bold]Endpoints:[/]")
             url = f"http://{deployment.host}:{deployment.container.port}"
             content.append(f"  {deployment.container.name}: {url}")
+
+        elif isinstance(deployment, SSHDeployment | LocalDeployment):
+            content.append("[bold]Endpoints:[/]")
+            url = f"http://{deployment.host}:{deployment.port}"
+            content.append(f"  Service: {url}")
 
         elif isinstance(deployment, GCPDeployment):
             if state and state.get("service_url"):
@@ -3120,7 +3382,7 @@ def deploy_show(name: str):
 @click.option(
     "--type",
     "deployment_type",
-    type=click.Choice(["self-hosted", "runpod", "gcp"]),
+    type=click.Choice(["docker", "ssh", "local", "runpod", "gcp"]),
     prompt="Deployment type",
     help="Type of deployment",
 )
@@ -3135,7 +3397,10 @@ def deploy_add(name: str, deployment_type: str):
         ImageConfig,
         RunPodDeployment,
         RunPodImageConfig,
-        SelfHostedDeployment,
+        ServerPaths,
+        DockerDeployment,
+        SSHDeployment,
+        LocalDeployment,
         SSHConfig,
         get_deployment_config_path,
         load_deployment_config,
@@ -3143,6 +3408,16 @@ def deploy_add(name: str, deployment_type: str):
     )
 
     try:
+        from pathlib import Path
+
+        def detect_hf_cache_default() -> str:
+            try:
+                from huggingface_hub.constants import HF_HUB_CACHE
+
+                return str(Path(HF_HUB_CACHE).expanduser())
+            except Exception:
+                return str(Path("~/.cache/huggingface/hub").expanduser())
+
         config_path = get_deployment_config_path()
 
         # Load existing config
@@ -3162,37 +3437,53 @@ def deploy_add(name: str, deployment_type: str):
         console.print()
 
         # Gather deployment-specific configuration
-        if deployment_type == "self-hosted":
-            console.print("[cyan]Self-Hosted Configuration:[/]")
-            host = click.prompt("Host address", type=str)
-            ssh_user = click.prompt("SSH username", type=str)
-            ssh_key_path = click.prompt("SSH key path", type=str, default="~/.ssh/id_rsa")
+        if deployment_type == "docker":
+            console.print("[cyan]Docker Configuration:[/]")
 
-            # Image configuration
+            host = click.prompt("Host address", type=str)
+
+            # Check if localhost to skip SSH prompts
+            ssh_user = None
+            ssh_key_path = None
+            is_localhost = host.lower() in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]
+
+            if not is_localhost:
+                ssh_user = click.prompt("SSH username", type=str)
+                ssh_key_path = click.prompt("SSH key path", type=str, default="~/.ssh/id_rsa")
+
             console.print()
             console.print("[cyan]Image configuration:[/]")
-            image_name = click.prompt("  Docker image name", type=str, default="nodetool/nodetool")
+            image_name = click.prompt("  Docker image name", type=str, default="ghcr.io/nodetool-ai/nodetool")
             image_tag = click.prompt("  Docker image tag", type=str, default="latest")
 
-            # Container configuration
             console.print()
             console.print("[cyan]Container configuration:[/]")
+            container_name = click.prompt("  Container name", type=str, default=f"nodetool-{name}")
+            container_port = click.prompt("  Port", type=int, default=8000)
 
-            container_name = click.prompt("  Container name", type=str)
-            container_port = click.prompt("  Port", type=int)
-
-            # Optional GPU
             use_gpu = click.confirm("  Assign GPU?", default=False)
             gpu = None
             if use_gpu:
                 gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
 
-            # Optional workflows
             has_workflows = click.confirm("  Assign specific workflows?", default=False)
             workflows = None
             if has_workflows:
                 workflows_str = click.prompt("  Workflow IDs (comma-separated)", type=str)
                 workflows = [w.strip() for w in workflows_str.split(",")]
+
+            console.print()
+            console.print("[cyan]Storage paths:[/]")
+            console.print("  Workspace stores NodeTool assets and temporary runtime data.")
+            workspace_default = str(Path.home() / ".nodetool-workspace")
+            workspace_path = click.prompt("  Workspace folder", type=str, default=workspace_default)
+            hf_cache_default = detect_hf_cache_default()
+            console.print("  HF cache stores Hugging Face models and downloaded artifacts.")
+            hf_cache_path = click.prompt(
+                "  HF cache folder (detected canonical location)",
+                type=str,
+                default=hf_cache_default,
+            )
 
             container = ContainerConfig(
                 name=container_name,
@@ -3201,11 +3492,105 @@ def deploy_add(name: str, deployment_type: str):
                 workflows=workflows,
             )
 
-            deployment = SelfHostedDeployment(
+            # Create SSH config only if user provided details
+            ssh_config = None
+            if ssh_user:
+                ssh_config = SSHConfig(user=ssh_user, key_path=ssh_key_path)
+
+            deployment = DockerDeployment(
                 host=host,
-                ssh=SSHConfig(user=ssh_user, key_path=ssh_key_path),
+                ssh=ssh_config,
                 image=ImageConfig(name=image_name, tag=image_tag),
                 container=container,
+                paths=ServerPaths(workspace=workspace_path, hf_cache=hf_cache_path),
+            )
+
+        elif deployment_type == "ssh":
+            console.print("[cyan]SSH/Shell Configuration:[/]")
+
+            host = click.prompt("Host address", type=str)
+            ssh_user = click.prompt("SSH username", type=str)
+            ssh_key_path = click.prompt("SSH key path", type=str, default="~/.ssh/id_rsa")
+
+            console.print()
+            console.print("[cyan]Service configuration:[/]")
+            container_port = click.prompt("  Port", type=int, default=8000)
+            service_name = click.prompt("  Systemd service name", type=str, default=f"nodetool-{container_port}")
+            
+            use_gpu = click.confirm("  Assign GPU?", default=False)
+            gpu = None
+            if use_gpu:
+                 gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
+            
+            has_workflows = click.confirm("  Assign specific workflows?", default=False)
+            workflows = None
+            if has_workflows:
+                workflows_str = click.prompt("  Workflow IDs (comma-separated)", type=str)
+                workflows = [w.strip() for w in workflows_str.split(",")]
+
+            console.print()
+            console.print("[cyan]Storage paths:[/]")
+            console.print("  Workspace stores NodeTool assets and temporary runtime data.")
+            workspace_default = str(Path.home() / ".nodetool-workspace")
+            workspace_path = click.prompt("  Workspace folder", type=str, default=workspace_default)
+            hf_cache_default = detect_hf_cache_default()
+            console.print("  HF cache stores Hugging Face models and downloaded artifacts.")
+            hf_cache_path = click.prompt(
+                "  HF cache folder (detected canonical location)",
+                type=str,
+                default=hf_cache_default,
+            )
+
+            deployment = SSHDeployment(
+                host=host,
+                ssh=SSHConfig(user=ssh_user, key_path=ssh_key_path),
+                port=container_port,
+                service_name=service_name,
+                gpu=gpu,
+                workflows=workflows,
+                paths=ServerPaths(workspace=workspace_path, hf_cache=hf_cache_path),
+            )
+        elif deployment_type == "local":
+            console.print("[cyan]Local/Shell Configuration:[/]")
+
+            host = click.prompt("Host address", type=str, default="localhost")
+
+            console.print()
+            console.print("[cyan]Service configuration:[/]")
+            container_port = click.prompt("  Port", type=int, default=8000)
+            service_name = click.prompt("  Systemd service name", type=str, default=f"nodetool-{container_port}")
+
+            use_gpu = click.confirm("  Assign GPU?", default=False)
+            gpu = None
+            if use_gpu:
+                gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
+
+            has_workflows = click.confirm("  Assign specific workflows?", default=False)
+            workflows = None
+            if has_workflows:
+                workflows_str = click.prompt("  Workflow IDs (comma-separated)", type=str)
+                workflows = [w.strip() for w in workflows_str.split(",")]
+
+            console.print()
+            console.print("[cyan]Storage paths:[/]")
+            console.print("  Workspace stores NodeTool assets and temporary runtime data.")
+            workspace_default = str(Path.home() / ".nodetool-workspace")
+            workspace_path = click.prompt("  Workspace folder", type=str, default=workspace_default)
+            hf_cache_default = detect_hf_cache_default()
+            console.print("  HF cache stores Hugging Face models and downloaded artifacts.")
+            hf_cache_path = click.prompt(
+                "  HF cache folder (detected canonical location)",
+                type=str,
+                default=hf_cache_default,
+            )
+
+            deployment = LocalDeployment(
+                host=host,
+                port=container_port,
+                service_name=service_name,
+                gpu=gpu,
+                workflows=workflows,
+                paths=ServerPaths(workspace=workspace_path, hf_cache=hf_cache_path),
             )
 
         elif deployment_type == "runpod":
@@ -3859,58 +4244,57 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
             console.print(f"[cyan]Workflow ID: {workflow_id}[/]")
             console.print()
 
-            # Get local workflow
-            workflow = await Workflow.get(workflow_id)
-            if workflow is None:
-                console.print(f"[red]❌ Workflow not found locally: {workflow_id}[/]")
-                sys.exit(1)
+            from nodetool.runtime.resources import ResourceScope
 
-            # Get auth token from deployment (for self-hosted deployments)
-            from nodetool.config.deployment import SelfHostedDeployment
+            async with ResourceScope():
+                # Get local workflow
+                workflow = await Workflow.get(workflow_id)
+                if workflow is None:
+                    console.print(f"[red]❌ Workflow not found locally: {workflow_id}[/]")
+                    sys.exit(1)
 
-            auth_token = None
-            if isinstance(deployment, SelfHostedDeployment):
-                auth_token = deployment.worker_auth_token
+                # Get auth token from deployment (for self-hosted deployments)
+                from nodetool.config.deployment import SelfHostedDeployment
 
-            # Create client
-            client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
+                auth_token = None
+                if isinstance(deployment, SelfHostedDeployment):
+                    auth_token = deployment.server_auth_token
 
-            # Sync assets first
-            workflow_data = from_model(workflow).model_dump()
-            synced_assets = await extract_and_sync_assets(workflow_data, client)
-            if synced_assets > 0:
-                console.print(f"[green]✅ Synced {synced_assets} asset(s)[/]")
-                console.print()
+                # Create client
+                client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
 
-            # Download models required by the workflow
-            synced_models = await extract_and_download_models(workflow_data, client)
-            if synced_models > 0:
-                console.print(f"[green]✅ Downloaded {synced_models} model(s)[/]")
-                console.print()
+                # Sync assets first
+                workflow_data = (await from_model(workflow)).model_dump()
+                synced_assets = await extract_and_sync_assets(workflow_data, client)
+                if synced_assets > 0:
+                    console.print(f"[green]✅ Synced {synced_assets} asset(s)[/]")
+                    console.print()
 
-            # Sync workflow
-            result = await client.update_workflow(workflow_id, workflow_data)
+                # Download models required by the workflow
+                synced_models = await extract_and_download_models(workflow_data, client)
+                if synced_models > 0:
+                    console.print(f"[green]✅ Downloaded {synced_models} model(s)[/]")
+                    console.print()
 
-            if result.get("status") == "ok":
+                # Sync workflow
+                await client.update_workflow(workflow_id, workflow_data)
                 console.print("[green]✅ Workflow synced successfully[/]")
-            else:
-                console.print(f"[yellow]⚠️ Remote response: {result}[/]")
 
-            # Close database connections
-            from nodetool.models.base_model import close_all_database_adapters  # type: ignore
+                # Close database connections
+                from nodetool.runtime.db_sqlite import shutdown_all_sqlite_pools
 
-            with suppress(Exception):
-                await close_all_database_adapters()
+                with suppress(Exception):
+                    await shutdown_all_sqlite_pools()
 
-            # Give asyncio a chance to clean up any remaining tasks
-            await asyncio.sleep(0.1)
+                # Give asyncio a chance to clean up any remaining tasks
+                await asyncio.sleep(0.1)
 
-            # Cancel any remaining tasks to allow clean shutdown
-            tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-            if tasks:
-                for task in tasks:
-                    task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
+                # Cancel any remaining tasks to allow clean shutdown
+                tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+                if tasks:
+                    for task in tasks:
+                        task.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
 
             return 0
 
@@ -3957,7 +4341,7 @@ def deploy_workflows_list(deployment_name: str):
 
             auth_token = None
             if isinstance(deployment, SelfHostedDeployment):
-                auth_token = deployment.worker_auth_token
+                auth_token = deployment.server_auth_token
 
             # Get workflows from remote
             client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
@@ -4037,16 +4421,12 @@ def deploy_workflows_delete(deployment_name: str, workflow_id: str, force: bool)
 
             auth_token = None
             if isinstance(deployment, SelfHostedDeployment):
-                auth_token = deployment.worker_auth_token
+                auth_token = deployment.server_auth_token
 
             # Delete from remote
             client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
-            result = await client.delete_workflow(workflow_id)
-
-            if result.get("status") == "ok":
-                console.print("[green]✅ Workflow deleted successfully[/]")
-            else:
-                console.print(f"[yellow]⚠️ Remote response: {result}[/]")
+            await client.delete_workflow(workflow_id)
+            console.print("[green]✅ Workflow deleted successfully[/]")
 
         except KeyError:
             console.print(f"[red]Deployment '{deployment_name}' not found[/]")
@@ -4110,7 +4490,7 @@ def deploy_workflows_run(deployment_name: str, workflow_id: str, params: tuple):
 
             auth_token = None
             if isinstance(deployment, SelfHostedDeployment):
-                auth_token = deployment.worker_auth_token
+                auth_token = deployment.server_auth_token
 
             # Run workflow on remote
             client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
@@ -4168,7 +4548,7 @@ def deploy_database_get(deployment_name: str, table: str, key: str):
 
             auth_token = None
             if isinstance(deployment, SelfHostedDeployment):
-                auth_token = deployment.worker_auth_token
+                auth_token = deployment.server_auth_token
 
             # Get item from database
             client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
@@ -4223,7 +4603,7 @@ def deploy_database_save(deployment_name: str, table: str, json_data: str):
 
             auth_token = None
             if isinstance(deployment, SelfHostedDeployment):
-                auth_token = deployment.worker_auth_token
+                auth_token = deployment.server_auth_token
 
             # Save item to database
             client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
@@ -4276,7 +4656,7 @@ def deploy_database_delete(deployment_name: str, table: str, key: str, force: bo
 
             auth_token = None
             if isinstance(deployment, SelfHostedDeployment):
-                auth_token = deployment.worker_auth_token
+                auth_token = deployment.server_auth_token
 
             # Delete item from database
             client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
@@ -4335,7 +4715,7 @@ def deploy_collections_sync(deployment_name: str, collection_name: str):
 
             auth_token = None
             if isinstance(deployment, SelfHostedDeployment):
-                auth_token = deployment.worker_auth_token
+                auth_token = deployment.server_auth_token
 
             client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
 
@@ -4445,21 +4825,24 @@ def sync_workflow(workflow_id: str, server_url: str):
     async def run_sync():
         try:
             console.print("[bold cyan]🔄 Syncing workflow to remote...[/]")
-            # Get local workflow as a dict directly from the adapter
-            workflow = await Workflow.get(workflow_id)
-            if workflow is None:
-                console.print(f"[red]❌ Workflow not found: {workflow_id}[/]")
-                raise SystemExit(1)
-            # Use optional API key for auth if present
-            api_key = os.getenv("RUNPOD_API_KEY")
-            client = AdminHTTPClient(server_url, auth_token=api_key)
-            res = await client.update_workflow(workflow_id, from_model(workflow).model_dump())
+            from nodetool.runtime.resources import ResourceScope
 
-            status = res.get("status", "ok")
-            if status == "ok":
-                console.print("[green]✅ Workflow synced successfully[/]")
-            else:
-                console.print(f"[yellow]⚠️ Remote response: {res}[/]")
+            async with ResourceScope():
+                # Get local workflow as a dict directly from the adapter
+                workflow = await Workflow.get(workflow_id)
+                if workflow is None:
+                    console.print(f"[red]❌ Workflow not found: {workflow_id}[/]")
+                    raise SystemExit(1)
+                # Use optional API key for auth if present
+                api_key = os.getenv("RUNPOD_API_KEY")
+                client = AdminHTTPClient(server_url, auth_token=api_key)
+                res = await client.update_workflow(workflow_id, (await from_model(workflow)).model_dump())
+
+                status = res.get("status", "ok")
+                if status == "ok":
+                    console.print("[green]✅ Workflow synced successfully[/]")
+                else:
+                    console.print(f"[yellow]⚠️ Remote response: {res}[/]")
         except Exception as e:
             console.print(f"[red]❌ Failed to sync workflow: {e}[/]")
             raise SystemExit(1) from e
@@ -4767,7 +5150,6 @@ def proxy_validate_config(config: str):
             f"Idle timeout: {proxy_config.global_.idle_timeout}s"
         )
 
-        # Display services
         table = Table(title="Services")
         table.add_column("Name", style="cyan")
         table.add_column("Path", style="magenta")
@@ -4794,6 +5176,307 @@ def proxy_validate_config(config: str):
     except Exception as e:
         console.print(f"[red]❌ Error: {e}[/]")
         raise SystemExit(1) from e
+
+
+@cli.group()
+def users():
+    """User management for local NodeTool server."""
+    pass
+
+
+@users.command("add")
+@click.argument("username")
+@click.option("--role", type=click.Choice(["admin", "user"]), default="user", help="User role")
+def users_add(username: str, role: str):
+    """Add a new user and display their bearer token."""
+    from nodetool.security.user_manager import UserManager
+
+    manager = UserManager()
+    try:
+        result = manager.add_user(username, role)
+        console.print(Panel.fit(f"[green]✅ User '{username}' added successfully[/]"))
+        console.print()
+        console.print("[bold yellow]Bearer Token (save this - won't be shown again!):[/]")
+        console.print(f"[bold cyan]{result.token}[/]")
+        console.print()
+        console.print(f"[dim]User ID: {result.user_id}[/]")
+        console.print(f"[dim]Role: {result.role}[/]")
+        console.print(f"[dim]Created: {result.created_at}[/]")
+    except ValueError as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@users.command("list")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def users_list(as_json: bool):
+    """List all users (tokens masked)."""
+    from nodetool.security.user_manager import UserManager
+
+    manager = UserManager()
+    users = manager.list_users()
+
+    if not users:
+        console.print("[yellow]No users found.[/]")
+        return
+
+    if as_json:
+        output = {
+            username: {
+                "user_id": user.user_id,
+                "role": user.role,
+                "token_hash": user.token_hash[:16] + "...",
+                "created_at": user.created_at,
+            }
+            for username, user in users.items()
+        }
+        click.echo(json.dumps(output, indent=2, default=_json_default))
+        return
+
+    table = Table(title="Users")
+    table.add_column("Username", style="cyan")
+    table.add_column("User ID", style="green")
+    table.add_column("Role", style="magenta")
+    table.add_column("Token Hash", style="yellow")
+    table.add_column("Created", style="white")
+
+    for username, user in users.items():
+        table.add_row(username, user.user_id, user.role, user.token_hash[:16] + "...", user.created_at[:19])
+
+    console.print(table)
+
+
+@users.command("remove")
+@click.argument("username")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation")
+def users_remove(username: str, force: bool):
+    """Remove a user."""
+    from nodetool.security.user_manager import UserManager
+
+    manager = UserManager()
+
+    if not force:
+        if not click.confirm(f"Remove user '{username}'?"):
+            return
+
+    try:
+        manager.remove_user(username)
+        console.print(f"[green]✅ User '{username}' removed[/]")
+    except ValueError as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@users.command("reset-token")
+@click.argument("username")
+def users_reset_token(username: str):
+    """Generate new bearer token for a user."""
+    from nodetool.security.user_manager import UserManager
+
+    manager = UserManager()
+    try:
+        result = manager.reset_token(username)
+        console.print(Panel.fit(f"[green]✅ New token for '{username}' generated[/]"))
+        console.print()
+        console.print("[bold yellow]New Bearer Token (save this!):[/]")
+        console.print(f"[bold cyan]{result.token}[/]")
+        console.print()
+        console.print(f"[dim]User ID: {result.user_id}[/]")
+        console.print(f"[dim]Role: {result.role}[/]")
+        console.print(f"[dim]Created: {result.created_at}[/]")
+        console.print()
+        console.print("[yellow]⚠️  Previous token is now invalid[/]")
+    except ValueError as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@deploy.command("users")
+@click.argument("deployment_name")
+@click.pass_context
+def deploy_users(ctx: click.Context, deployment_name: str):
+    """Manage users on a remote deployment."""
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
+        return
+
+
+@deploy.command("users-add")
+@click.argument("deployment_name")
+@click.argument("username")
+@click.option("--role", type=click.Choice(["admin", "user"]), default="user")
+async def deploy_users_add(deployment_name: str, username: str, role: str):
+    """Add user to deployment via API (works for ALL deployment types)."""
+    from nodetool.config.deployment import load_deployment_config
+    from nodetool.deploy.api_user_manager import APIUserManager
+
+    config = load_deployment_config()
+    if deployment_name not in config.deployments:
+        console.print(f"[red]❌ Deployment '{deployment_name}' not found[/]")
+        sys.exit(1)
+
+    deployment = config.deployments[deployment_name]
+    server_url = deployment.get_server_url()
+
+    if not server_url:
+        console.print(f"[red]❌ Deployment '{deployment_name}' has no server URL[/]")
+        sys.exit(1)
+
+    admin_token = click.prompt("Enter admin bearer token", hide_input=True)
+    manager = APIUserManager(server_url, admin_token)
+
+    try:
+        result = await manager.add_user(username, role)
+        console.print(f"[green]✅ User '{username}' added to '{deployment_name}'[/]")
+        console.print()
+        console.print("[bold yellow]Bearer Token (save this - won't be shown again!):[/]")
+        console.print(f"[bold cyan]{result['token']}[/]")
+        console.print()
+        console.print(f"[dim]User ID: {result['user_id']}[/]")
+        console.print(f"[dim]Role: {result['role']}[/]")
+    except Exception as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@deploy.command("users-list")
+@click.argument("deployment_name")
+@click.option("--json", "as_json", is_flag=True)
+async def deploy_users_list(deployment_name: str, as_json: bool):
+    """List users on deployment via API."""
+    from nodetool.config.deployment import load_deployment_config
+    from nodetool.deploy.api_user_manager import APIUserManager
+
+    config = load_deployment_config()
+    deployment = config.deployments[deployment_name]
+    server_url = deployment.get_server_url()
+
+    admin_token = click.prompt("Enter admin bearer token", hide_input=True)
+    manager = APIUserManager(server_url, admin_token)
+
+    users = await manager.list_users()
+
+    if not users:
+        console.print("[yellow]No users found on deployment.[/]")
+        return
+
+    if as_json:
+        click.echo(json.dumps(users, indent=2, default=_json_default))
+        return
+
+    table = Table(title=f"Users on {deployment_name}")
+    table.add_column("Username", style="cyan")
+    table.add_column("User ID", style="green")
+    table.add_column("Role", style="magenta")
+    table.add_column("Token Hash", style="yellow")
+    table.add_column("Created", style="white")
+
+    for user in users:
+        table.add_row(
+            user["username"],
+            user["user_id"],
+            user["role"],
+            user.get("token_hash", "")[:16] + "...",
+            user.get("created_at", "")[:19],
+        )
+
+    console.print(table)
+
+
+@deploy.command("users-remove")
+@click.argument("deployment_name")
+@click.argument("username")
+@click.option("--force", "-f", is_flag=True)
+async def deploy_users_remove(deployment_name: str, username: str, force: bool):
+    """Remove user from deployment via API."""
+    from nodetool.config.deployment import load_deployment_config
+    from nodetool.deploy.api_user_manager import APIUserManager
+
+    config = load_deployment_config()
+    deployment = config.deployments[deployment_name]
+    server_url = deployment.get_server_url()
+
+    admin_token = click.prompt("Enter admin bearer token", hide_input=True)
+    manager = APIUserManager(server_url, admin_token)
+
+    if not force:
+        if not click.confirm(f"Remove user '{username}' from '{deployment_name}'?"):
+            return
+
+    try:
+        result = await manager.remove_user(username)
+        console.print(f"[green]✅ User '{username}' removed from '{deployment_name}'[/]")
+    except Exception as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@deploy.command("users-reset-token")
+@click.argument("deployment_name")
+@click.argument("username")
+async def deploy_users_reset_token(deployment_name: str, username: str):
+    """Reset user token on deployment via API."""
+    from nodetool.config.deployment import load_deployment_config
+    from nodetool.deploy.api_user_manager import APIUserManager
+
+    config = load_deployment_config()
+    deployment = config.deployments[deployment_name]
+    server_url = deployment.get_server_url()
+
+    admin_token = click.prompt("Enter admin bearer token", hide_input=True)
+    manager = APIUserManager(server_url, admin_token)
+
+    try:
+        result = await manager.reset_token(username)
+        console.print(Panel.fit(f"[green]✅ New token for '{username}' on '{deployment_name}'[/]"))
+        console.print()
+        console.print("[bold yellow]New Bearer Token (save this!):[/]")
+        console.print(f"[bold cyan]{result['token']}[/]")
+        console.print()
+        console.print("[yellow]⚠️  Previous token is now invalid[/]")
+    except Exception as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        sys.exit(1)
+
+
+@deploy.command("users-list")
+@click.argument("deployment_name")
+@click.option("--json", "as_json", is_flag=True)
+def deploy_users_list(deployment_name: str, as_json: bool):
+    """List users on remote deployment."""
+    console.print(
+        "[yellow]⚠️  Remote user management requires deployment config to support docker/ssh/local types and multi_user auth[/]"
+    )
+    console.print("[yellow]⚠️  This feature is being implemented as part of deployment config refactoring[/]")
+    console.print("[yellow]⚠️  Use 'nodetool users list' for local user management for now[/]")
+    sys.exit(1)
+
+
+@deploy.command("users-remove")
+@click.argument("deployment_name")
+@click.argument("username")
+@click.option("--force", "-f", is_flag=True)
+def deploy_users_remove(deployment_name: str, username: str, force: bool):
+    """Remove user from remote deployment."""
+    console.print(
+        "[yellow]⚠️  Remote user management requires deployment config to support docker/ssh/local types and multi_user auth[/]"
+    )
+    console.print("[yellow]⚠️  This feature is being implemented as part of deployment config refactoring[/]")
+    console.print("[yellow]⚠️  Use 'nodetool users remove' for local user management for now[/]")
+    sys.exit(1)
+
+
+@deploy.command("users-reset-token")
+@click.argument("deployment_name")
+@click.argument("username")
+def deploy_users_reset_token(deployment_name: str, username: str):
+    """Reset user token on remote deployment."""
+    console.print(
+        "[yellow]⚠️  Remote user management requires deployment config to support docker/ssh/local types and multi_user auth[/]"
+    )
+    console.print("[yellow]⚠️  This feature is being implemented as part of deployment config refactoring[/]")
+    console.print("[yellow]⚠️  Use 'nodetool users reset-token' for local user management for now[/]")
+    sys.exit(1)
 
 
 if __name__ == "__main__":

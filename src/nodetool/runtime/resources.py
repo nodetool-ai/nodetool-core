@@ -83,15 +83,15 @@ def get_static_auth_provider() -> Any:
         StaticTokenAuthProvider instance
 
     Raises:
-        ValueError: If WORKER_AUTH_TOKEN is not configured
+        ValueError: If SERVER_AUTH_TOKEN is not configured
     """
-    from nodetool.deploy.auth import get_worker_auth_token
+    from nodetool.deploy.auth import get_server_auth_token
     from nodetool.security.providers.static_token import StaticTokenAuthProvider
 
     if ResourceScope._class_static_auth_provider is None:
-        token = get_worker_auth_token()
+        token = get_server_auth_token()
         if not token:
-            raise ValueError("WORKER_AUTH_TOKEN is required for static authentication.")
+            raise ValueError("SERVER_AUTH_TOKEN is required for static authentication.")
         ResourceScope._class_static_auth_provider = StaticTokenAuthProvider(static_token=token)
     return ResourceScope._class_static_auth_provider
 
@@ -106,6 +106,7 @@ def get_user_auth_provider() -> Any:
     - none: Returns None (no auth enforcement)
     - local: LocalAuthProvider (always returns user "1")
     - static: StaticTokenAuthProvider (shared token auth)
+    - multi_user: MultiUserAuthProvider (users file bearer-token auth)
     - supabase: SupabaseAuthProvider (validates Supabase JWTs)
 
     Returns:
@@ -122,6 +123,11 @@ def get_user_auth_provider() -> Any:
         elif kind == "static":
             # Reuse static token provider for user auth path
             ResourceScope._class_user_auth_provider = get_static_auth_provider()
+        elif kind == "multi_user":
+            from nodetool.security.providers.multi_user import MultiUserAuthProvider
+
+            users_file = Environment.get("USERS_FILE")
+            ResourceScope._class_user_auth_provider = MultiUserAuthProvider(users_file=users_file)
         elif kind == "supabase":
             supabase_url = Environment.get("SUPABASE_URL")
             supabase_key = Environment.get("SUPABASE_KEY")
@@ -527,22 +533,22 @@ class ResourceScope:
     def get_static_auth_provider(self) -> Any:
         """Get or create the static token authentication provider.
 
-        The static auth provider validates worker tokens for internal services.
+        The static auth provider validates server tokens for internal services.
         Uses a class-level singleton shared across all scopes for performance.
 
         Returns:
             StaticTokenAuthProvider instance
 
         Raises:
-            ValueError: If WORKER_AUTH_TOKEN is not configured
+            ValueError: If SERVER_AUTH_TOKEN is not configured
         """
-        from nodetool.deploy.auth import get_worker_auth_token
+        from nodetool.deploy.auth import get_server_auth_token
         from nodetool.security.providers.static_token import StaticTokenAuthProvider
 
         if ResourceScope._class_static_auth_provider is None:
-            token = get_worker_auth_token()
+            token = get_server_auth_token()
             if not token:
-                raise ValueError("WORKER_AUTH_TOKEN is required for static authentication.")
+                raise ValueError("SERVER_AUTH_TOKEN is required for static authentication.")
             ResourceScope._class_static_auth_provider = StaticTokenAuthProvider(static_token=token)
         return ResourceScope._class_static_auth_provider
 
@@ -553,6 +559,7 @@ class ResourceScope:
         - none: Returns None (no auth enforcement)
         - local: LocalAuthProvider (always returns user "1")
         - static: StaticTokenAuthProvider (shared token auth)
+        - multi_user: MultiUserAuthProvider (users file bearer-token auth)
         - supabase: SupabaseAuthProvider (validates Supabase JWTs)
 
         Uses a class-level singleton shared across all scopes for performance.
@@ -571,6 +578,11 @@ class ResourceScope:
             elif kind == "static":
                 # Reuse static token provider for user auth path
                 ResourceScope._class_user_auth_provider = self.get_static_auth_provider()
+            elif kind == "multi_user":
+                from nodetool.security.providers.multi_user import MultiUserAuthProvider
+
+                users_file = Environment.get("USERS_FILE")
+                ResourceScope._class_user_auth_provider = MultiUserAuthProvider(users_file=users_file)
             elif kind == "supabase":
                 supabase_url = Environment.get("SUPABASE_URL")
                 supabase_key = Environment.get("SUPABASE_KEY")

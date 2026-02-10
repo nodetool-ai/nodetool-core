@@ -48,7 +48,7 @@ class AdminHTTPClient:
         """List all workflows."""
         async with (
             aiohttp.ClientSession() as session,
-            session.get(f"{self.base_url}/workflows", headers=self.headers) as response,
+            session.get(f"{self.base_url}/api/workflows/", headers=self.headers) as response,
         ):
             if response.status != 200:
                 raise Exception(f"Failed to list workflows: {response.status} {await response.text()}")
@@ -59,7 +59,7 @@ class AdminHTTPClient:
         async with (
             aiohttp.ClientSession() as session,
             session.put(
-                f"{self.base_url}/workflows/{workflow_id}",
+                f"{self.base_url}/api/workflows/{workflow_id}",
                 headers=self.headers,
                 json=workflow,
             ) as response,
@@ -70,7 +70,7 @@ class AdminHTTPClient:
         """Delete a workflow."""
         async with (
             aiohttp.ClientSession() as session,
-            session.delete(f"{self.base_url}/workflows/{workflow_id}", headers=self.headers) as response,
+            session.delete(f"{self.base_url}/api/workflows/{workflow_id}", headers=self.headers) as response,
         ):
             if response.status != 200:
                 raise Exception(f"Failed to delete workflow: {response.status} {await response.text()}")
@@ -84,9 +84,9 @@ class AdminHTTPClient:
         async with (
             aiohttp.ClientSession() as session,
             session.post(
-                f"{self.base_url}/workflows/{workflow_id}/run",
+                f"{self.base_url}/api/workflows/{workflow_id}/run",
                 headers=self.headers,
-                json=params,
+                json={"params": params},
             ) as response,
         ):
             if response.status != 200:

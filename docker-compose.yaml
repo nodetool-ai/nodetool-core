@@ -7,8 +7,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${CHROMA_PATH:-./.cache/chroma}:/chroma-data
     command:
-      - /app/venv/bin/nodetool
-      - serve
+      - python
+      - -m
+      - nodetool.api.run_server
       - --host
       - 0.0.0.0
       - --port

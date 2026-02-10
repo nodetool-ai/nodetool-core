@@ -4,6 +4,9 @@ Storage routes for the NodeTool worker.
 Provides two routers:
 1. Admin storage router (/admin/storage/*) - Full CRUD operations
 2. Public storage router (/storage/*) - Read-only public access
+
+Admin storage routes require admin access via require_admin dependency
+for multi_user auth provider, or X-Admin-Token header for legacy auth.
 """
 
 from __future__ import annotations
@@ -16,11 +19,12 @@ from io import BytesIO
 from tempfile import SpooledTemporaryFile
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from nodetool.config.logging_config import get_logger
 from nodetool.runtime.resources import require_scope
+from nodetool.security.admin_auth import require_admin
 from nodetool.types.content_types import EXTENSION_TO_CONTENT_TYPE
 
 log = get_logger(__name__)
@@ -169,49 +173,49 @@ def create_admin_storage_router() -> APIRouter:
     router = APIRouter()
 
     @router.head("/admin/storage/assets/{key}")
-    async def admin_head_asset(key: str):
+    async def admin_head_asset(key: str, _: None = Depends(require_admin)):
         """Returns metadata for an asset file."""
         storage = require_scope().get_asset_storage()
         return await _head_file(storage, key)
 
     @router.get("/admin/storage/assets/{key}")
-    async def admin_get_asset(key: str, request: Request):
+    async def admin_get_asset(key: str, request: Request, _: None = Depends(require_admin)):
         """Returns an asset file as a stream with range support."""
         storage = require_scope().get_asset_storage()
         return await _get_file(storage, key, request)
 
     @router.put("/admin/storage/assets/{key}")
-    async def admin_put_asset(key: str, request: Request):
+    async def admin_put_asset(key: str, request: Request, _: None = Depends(require_admin)):
         """Uploads or updates an asset file."""
         storage = require_scope().get_asset_storage()
         return await _put_file(storage, key, request)
 
     @router.delete("/admin/storage/assets/{key}")
-    async def admin_delete_asset(key: str):
+    async def admin_delete_asset(key: str, _: None = Depends(require_admin)):
         """Deletes an asset file."""
         storage = require_scope().get_asset_storage()
         return await _delete_file(storage, key)
 
     @router.head("/admin/storage/temp/{key}")
-    async def admin_head_temp(key: str):
+    async def admin_head_temp(key: str, _: None = Depends(require_admin)):
         """Returns metadata for a temp file."""
         storage = require_scope().get_temp_storage()
         return await _head_file(storage, key)
 
     @router.get("/admin/storage/temp/{key}")
-    async def admin_get_temp(key: str, request: Request):
+    async def admin_get_temp(key: str, request: Request, _: None = Depends(require_admin)):
         """Returns a temp file as a stream with range support."""
         storage = require_scope().get_temp_storage()
         return await _get_file(storage, key, request)
 
     @router.put("/admin/storage/temp/{key}")
-    async def admin_put_temp(key: str, request: Request):
+    async def admin_put_temp(key: str, request: Request, _: None = Depends(require_admin)):
         """Uploads or updates a temp file."""
         storage = require_scope().get_temp_storage()
         return await _put_file(storage, key, request)
 
     @router.delete("/admin/storage/temp/{key}")
-    async def admin_delete_temp(key: str):
+    async def admin_delete_temp(key: str, _: None = Depends(require_admin)):
         """Deletes a temp file."""
         storage = require_scope().get_temp_storage()
         return await _delete_file(storage, key)
