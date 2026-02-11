@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -269,6 +270,31 @@ class TestWorkflowsListDiagnostics:
 
 
 class TestDeploySecretSync:
+    def test_sync_secrets_missing_table_is_non_fatal(self, monkeypatch):
+        """Missing local secrets table should not fail deployment flow."""
+        import nodetool.cli as cli_module
+
+        class DummyDeployment:
+            def get_server_url(self):
+                return "http://127.0.0.1:7777"
+
+        printed: list[str] = []
+
+        def fake_run_async(coro):
+            coro.close()
+            raise sqlite3.OperationalError("no such table: nodetool_secrets")
+
+        monkeypatch.setattr(cli_module, "_run_async", fake_run_async)
+        monkeypatch.setattr(cli_module, "_resolve_deployment_auth_token", lambda _d: "token")
+        monkeypatch.setattr(cli_module.console, "print", lambda msg: printed.append(str(msg)))
+
+        cli_module._sync_secrets_to_deployment("docker02", DummyDeployment())
+
+        assert any(
+            "Skipping secret sync for 'docker02'" in line and "table not initialized" in line
+            for line in printed
+        )
+
     def test_export_encrypted_secrets_payload_uses_resource_scope(self, monkeypatch: pytest.MonkeyPatch):
         import nodetool.cli as cli_mod
         import nodetool.models.secret as secret_mod

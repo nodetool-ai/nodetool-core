@@ -3119,7 +3119,19 @@ def _sync_secrets_to_deployment(name: str, deployment: Any) -> None:
         console.print(f"[yellow]Skipping secret sync for '{name}': worker auth token unavailable.[/]")
         return
 
-    secrets_payload = _run_async(_export_encrypted_secrets_payload())
+    try:
+        secrets_payload = _run_async(_export_encrypted_secrets_payload())
+    except Exception as exc:
+        error_text = str(exc).lower()
+        if "no such table" in error_text and "nodetool_secrets" in error_text:
+            console.print(
+                f"[yellow]Skipping secret sync for '{name}': "
+                "local secrets table not initialized yet.[/]"
+            )
+            return
+        console.print(f"[yellow]Warning: failed to export local secrets for '{name}': {exc}[/]")
+        return
+
     if not secrets_payload:
         console.print(f"[green]No local secrets to sync for '{name}'.[/]")
         return
