@@ -13,19 +13,19 @@ import os
 import shlex
 import shutil
 import subprocess
-import time
 import sys
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Optional, Union, Generic, TypeVar
+from typing import Any, Generic, Optional, TypeVar, Union
 
 from nodetool.config.deployment import (
     DeploymentStatus,
     DockerDeployment,
-    SSHDeployment,
     LocalDeployment,
-    SelfHostedDeployment,
     NginxConfig,
+    SelfHostedDeployment,
+    SSHDeployment,
 )
 from nodetool.deploy.docker_run import DockerRunGenerator
 from nodetool.deploy.ssh import SSHCommandError, SSHConnection
@@ -121,7 +121,7 @@ class BaseSSHDeployer(ABC, Generic[TDeployment]):
             results["steps"].append(message)
         print(f"  {message}", flush=True)
 
-    def _get_executor(self) -> Union[LocalExecutor, SSHConnection]:
+    def _get_executor(self) -> LocalExecutor | SSHConnection:
         """Get appropriate executor (SSH or local) based on host."""
         if self.is_localhost:
             return LocalExecutor()
@@ -558,8 +558,9 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
             raise ValueError("Docker API not available for this deployment runtime")
 
         try:
-            import docker  # type: ignore[import-untyped]
             from docker.errors import DockerException, NotFound  # type: ignore[import-untyped]
+
+            import docker  # type: ignore[import-untyped]
         except Exception as exc:
             raise ValueError("Docker SDK not available") from exc
 
@@ -569,8 +570,8 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
             return client.containers.get(container_name)
         except NotFound:
             return None
-        except DockerException:
-            raise ValueError("Docker daemon unavailable")
+        except DockerException as exc:
+            raise ValueError("Docker daemon unavailable") from exc
         finally:
             if client is not None:
                 try:
@@ -735,8 +736,9 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
 
     def _ensure_local_image_with_api(self, image: str, results: dict[str, Any]) -> None:
         try:
-            import docker  # type: ignore[import-untyped]
             from docker.errors import DockerException, ImageNotFound  # type: ignore[import-untyped]
+
+            import docker  # type: ignore[import-untyped]
         except Exception:
             # If SDK is unavailable locally, fallback to shell behavior.
             runtime = self._runtime_command_for_shell()
@@ -748,20 +750,20 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
             raise RuntimeError(
                 f"Image '{image}' not found locally. "
                 "Pull or build it explicitly before running deploy apply."
-            )
+            ) from None
 
         client = None
         try:
             client = docker.from_env()  # type: ignore[attr-defined]
             client.images.get(image)
             self._log(results, "  Image already present.")
-        except ImageNotFound:
+        except ImageNotFound as exc:
             raise RuntimeError(
                 f"Image '{image}' not found locally. "
                 "Pull or build it explicitly before running deploy apply."
-            )
-        except DockerException:
-            raise RuntimeError("Could not query local Docker daemon for image presence.")
+            ) from exc
+        except DockerException as exc:
+            raise RuntimeError("Could not query local Docker daemon for image presence.") from exc
         finally:
             if client is not None:
                 try:
@@ -1160,7 +1162,7 @@ WantedBy=default.target
             temp_name = f.name
 
         try:
-            with open(temp_name, "r") as f:
+            with open(temp_name) as f:
                 content = f.read()
 
             if self.is_localhost:
@@ -1236,7 +1238,7 @@ WantedBy=default.target
         ssh.mkdir(config_dir, parents=True)
 
         # Check if nginx is installed
-        _code, nginx_version, _ = ssh.execute("nginx -v 2>&1", check=False)
+        _code, _nginx_version, _ = ssh.execute("nginx -v 2>&1", check=False)
         if _code != 0:
             self._log(results, "  Installing nginx...")
             # Install nginx based on OS
@@ -1415,12 +1417,12 @@ server {{
                 scp_base += ["-P", str(ssh_config.port)]
 
             subprocess.run(
-                scp_base + [str(cert_src), f"{ssh_config.user}@{self.deployment.host}:{cert_dest}"],
+                [*scp_base, str(cert_src), f"{ssh_config.user}@{self.deployment.host}:{cert_dest}"],
                 check=True,
                 capture_output=True,
             )
             subprocess.run(
-                scp_base + [str(key_src), f"{ssh_config.user}@{self.deployment.host}:{key_dest}"],
+                [*scp_base, str(key_src), f"{ssh_config.user}@{self.deployment.host}:{key_dest}"],
                 check=True,
                 capture_output=True,
             )

@@ -15,11 +15,11 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import Any, cast
 
 # Note: no need for urllib.parse after removing editable support
 from importlib import metadata as importlib_metadata
 from pathlib import Path
+from typing import Any, cast
 
 
 def _shell_escape(value: str) -> str:
@@ -272,7 +272,7 @@ def build_docker_image(
                 if not os.path.exists(str(direct_url_abs)):
                     return None
                 with open(str(direct_url_abs), encoding="utf-8") as f:
-                    return cast(dict, json.load(f))
+                    return cast("dict", json.load(f))
             except Exception:
                 return None
 
@@ -281,7 +281,7 @@ def build_docker_image(
             for dist in importlib_metadata.distributions():
                 try:
                     # Cast to Any to access .get() which might be missing in strict typing
-                    metadata = cast(Any, dist.metadata)
+                    metadata = cast("Any", dist.metadata)
                     raw_name = metadata.get("Name") or metadata.get("Summary") or ""
                 except Exception:
                     continue

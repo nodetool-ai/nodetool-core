@@ -5,21 +5,21 @@ Unit tests for SelfHostedDeployer.
 from unittest.mock import Mock, patch
 
 import pytest
+from nodetool.deploy.proxy_run import ProxyRunGenerator
 
 from nodetool.config.deployment import (
     ContainerConfig,
     DeploymentStatus,
-    ImageConfig,
     DockerDeployment,
+    ImageConfig,
     RootDeployment,
     ServerPaths,
     SSHConfig,
 )
 from nodetool.deploy.docker_run import DockerRunGenerator
-from nodetool.deploy.proxy_run import ProxyRunGenerator
 from nodetool.deploy.self_hosted import (
-    LocalExecutor,
     DockerDeployer,
+    LocalExecutor,
     RootDeployer,
     is_localhost,
 )
@@ -368,7 +368,7 @@ class TestDockerDeployer:
         mock_ssh = Mock()
         mock_ssh.__enter__ = Mock(return_value=mock_ssh)
         mock_ssh.__exit__ = Mock(return_value=False)
-        
+
         with patch("nodetool.deploy.self_hosted.SSHConnection") as mock_ssh_cls:
             mock_ssh_cls.return_value = mock_ssh
 
@@ -444,7 +444,7 @@ class TestDockerDeployer:
 
         # Should create workspace and subdirectories - check logic matches implementation
         # DockerDeployer calls _create_specific_directories which creates proxy and acme
-        # The paths are expanded from the default "~/nodetool_data/workspace" 
+        # The paths are expanded from the default "~/nodetool_data/workspace"
         workspace_path = os.path.expanduser("~/nodetool_data/workspace")
         assert mock_ssh.mkdir.call_count >= 2
         mock_ssh.mkdir.assert_any_call(f"{workspace_path}/proxy", parents=True)
@@ -565,7 +565,7 @@ class TestDockerDeployer:
         """Test starting container successfully."""
         mock_ssh = Mock()
         mock_ssh.execute = Mock(return_value=(0, "container_id_abc123", ""))
-        
+
         deployer = DockerDeployer(
             deployment_name="test",
             deployment=basic_deployment,
