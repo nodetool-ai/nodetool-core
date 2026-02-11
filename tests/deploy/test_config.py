@@ -121,10 +121,7 @@ class TestDockerDeployment:
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="wf1", port=8001),
-            use_proxy=False,
         )
-        assert deployment.use_proxy is False
-        assert deployment.proxy is None
         assert deployment.get_server_url() == "http://192.168.1.100:8001"
 
     def test_self_hosted_without_proxy_port_7777_maps_to_8000(self):
@@ -134,7 +131,6 @@ class TestDockerDeployment:
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="wf1", port=7777),
-            use_proxy=False,
         )
         assert deployment.get_server_url() == "http://192.168.1.100:8000"
 

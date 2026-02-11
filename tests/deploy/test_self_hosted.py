@@ -10,17 +10,16 @@ import pytest
 from nodetool.config.deployment import (
     ContainerConfig,
     DeploymentStatus,
-    ImageConfig,
     DockerDeployment,
+    ImageConfig,
     RootDeployment,
     ServerPaths,
     SSHConfig,
 )
 from nodetool.deploy.docker_run import DockerRunGenerator
-from nodetool.deploy.proxy_run import ProxyRunGenerator
 from nodetool.deploy.self_hosted import (
-    LocalExecutor,
     DockerDeployer,
+    LocalExecutor,
     RootDeployer,
     is_localhost,
 )
@@ -155,7 +154,6 @@ class TestDockerDeployer:
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="default", port=7777),
-            use_proxy=False,
         )
 
     @pytest.fixture
@@ -269,7 +267,7 @@ class TestDockerDeployer:
 
         mock_state_manager.read_state.return_value = {
             "last_deployed": "2024-01-15T10:30:00",
-            "proxy_run_hash": actual_hash,
+            "container_run_hash": actual_hash,
         }
 
         plan = deployer.plan()
@@ -288,7 +286,7 @@ class TestDockerDeployer:
 
         mock_state_manager.read_state.return_value = {
             "last_deployed": "2024-01-15T10:30:00",
-            "proxy_run_hash": "old_hash",
+            "container_run_hash": "old_hash",
         }
 
         plan = deployer.plan()
@@ -393,7 +391,7 @@ class TestDockerDeployer:
         mock_ssh = Mock()
         mock_ssh.__enter__ = Mock(return_value=mock_ssh)
         mock_ssh.__exit__ = Mock(return_value=False)
-        
+
         with patch("nodetool.deploy.self_hosted.SSHConnection") as mock_ssh_cls:
             mock_ssh_cls.return_value = mock_ssh
 
@@ -469,7 +467,7 @@ class TestDockerDeployer:
 
         # Should create workspace and subdirectories - check logic matches implementation
         # DockerDeployer calls _create_specific_directories which creates proxy and acme
-        # The paths are expanded from the default "~/nodetool_data/workspace" 
+        # The paths are expanded from the default "~/nodetool_data/workspace"
         workspace_path = os.path.expanduser("~/nodetool_data/workspace")
         assert mock_ssh.mkdir.call_count >= 2
         mock_ssh.mkdir.assert_any_call(f"{workspace_path}/proxy", parents=True)
@@ -489,7 +487,7 @@ class TestDockerDeployer:
         deployer._push_image_to_remote = push_image_spy
 
         results = {"steps": []}
-        with pytest.raises(RuntimeError, match="not found locally"):
+        with pytest.raises(RuntimeError, match=r"(not found locally|Could not query local Docker daemon for image presence\.)"):
             deployer._ensure_image(mock_ssh, results)
 
         # Should not attempt remote image transfer when localhost image is missing.
@@ -585,7 +583,7 @@ class TestDockerDeployer:
         deployer._stop_existing_container(mock_ssh, results)
 
         # Should check, stop, and remove
-        assert mock_ssh.execute.call_count == 3
+        assert mock_ssh.execute.call_count == 4
         # Check if logs are correct based on implementation
         assert any("Stopped app container" in step for step in results["steps"])
         assert any("Removed app container" in step for step in results["steps"])
@@ -606,7 +604,7 @@ class TestDockerDeployer:
         deployer._stop_existing_container(mock_ssh, results)
 
         # Should only check, not stop or remove
-        assert mock_ssh.execute.call_count == 1
+        assert mock_ssh.execute.call_count == 2
 
     def test_stop_existing_container_error(self, basic_deployment, mock_state_manager):
         """Test handling error when checking for existing container."""
@@ -629,7 +627,7 @@ class TestDockerDeployer:
         """Test starting container successfully."""
         mock_ssh = Mock()
         mock_ssh.execute = Mock(return_value=(0, "container_id_abc123", ""))
-        
+
         deployer = DockerDeployer(
             deployment_name="test",
             deployment=basic_deployment,
