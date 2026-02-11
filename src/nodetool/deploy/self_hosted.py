@@ -83,6 +83,11 @@ class LocalExecutor:
         This allows shell features like pipes, redirects, &&/|| operators,
         and environment variable assignments.
 
+        SECURITY NOTE: This method uses shell=True which can lead to command injection
+        if user-supplied input is interpolated into the command string. All callers MUST
+        ensure that any user input is properly quoted with shlex.quote() before
+        being passed to this method.
+
         Args:
             command: The command string to execute.
             check: If True, raises SSHCommandError on non-zero return code.
@@ -94,6 +99,7 @@ class LocalExecutor:
         try:
             # Use shell=True to mimic SSH command execution (which runs in user's shell)
             # This is necessary for commands using pipes, redirects, env vars, etc.
+            # WARNING: Only use this with properly sanitized/quoted commands!
             result = subprocess.run(
                 command,
                 shell=True,
@@ -176,10 +182,14 @@ class BaseSSHDeployer(ABC, Generic[TDeployment]):
             import base64
 
             b64_content = base64.b64encode(content.encode()).decode()
-            # Ensure directory exists
+            # Ensure directory exists - use shlex.quote to prevent command injection
             dir_name = os.path.dirname(remote_path)
-            ssh.execute(f"mkdir -p {dir_name}", check=True)
-            ssh.execute(f"echo {b64_content} | base64 -d > {remote_path}", check=True)
+            safe_dir = shlex.quote(dir_name)
+            ssh.execute(f"mkdir -p {safe_dir}", check=True)
+            # Use shlex.quote to prevent command injection
+            safe_b64 = shlex.quote(b64_content)
+            safe_path = shlex.quote(remote_path)
+            ssh.execute(f"echo {safe_b64} | base64 -d > {safe_path}", check=True)
 
     def _create_directories(self, ssh: Executor, results: dict[str, Any]) -> None:
         """Create required directories on remote host."""

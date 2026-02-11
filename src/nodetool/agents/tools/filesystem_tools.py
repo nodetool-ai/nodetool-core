@@ -40,7 +40,9 @@ class WriteFileTool(Tool):
             content = params["content"]
             append = params.get("append", False)
 
-            full_path = os.path.abspath(path)
+            # SECURITY: Resolve path through workspace to prevent path traversal attacks
+            # This ensures the resolved path stays within workspace directory
+            full_path = context.resolve_workspace_path(path)
 
             # Create parent directories if they don't exist
             parent_dir = os.path.dirname(full_path)
@@ -108,7 +110,9 @@ class ReadFileTool(Tool):
             max_tokens = 25000
             max_length_per_file = 100000
 
-            full_path = os.path.abspath(path)
+            # SECURITY: Resolve path through workspace to prevent path traversal attacks
+            # This ensures the resolved path stays within workspace directory
+            full_path = context.resolve_workspace_path(path)
 
             path_exists = await asyncio.to_thread(os.path.exists, full_path)
             if not path_exists:
@@ -266,7 +270,10 @@ class ListDirectoryTool(Tool):
         try:
             path = params["path"]
             recursive = params.get("recursive", False)
-            full_path = os.path.abspath(path)
+
+            # SECURITY: Resolve path through workspace to prevent path traversal attacks
+            # This ensures the resolved path stays within workspace directory
+            full_path = context.resolve_workspace_path(path)
 
             def _list_directory_blocking():
                 # Check if path exists and is a directory
