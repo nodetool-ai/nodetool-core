@@ -27,6 +27,7 @@ from .async_rwlock import AsyncReaderWriterLock
 from .async_task_group import AsyncTaskGroup, TaskExecutionError, TaskResult, TaskStats
 from .async_utils import AsyncSemaphore, gather_with_concurrency
 from .batching import batched_async_iterable, process_in_batches
+from .cancellation import AsyncCancellationScope, CancellationError
 from .circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
@@ -44,6 +45,7 @@ __all__ = [
     "AdaptiveThrottle",
     "AsyncBarrier",
     "AsyncByteStream",
+    "AsyncCancellationScope",
     "AsyncChannel",
     "AsyncChannelIterator",
     "AsyncCondition",
@@ -57,6 +59,7 @@ __all__ = [
     "AsyncTaskGroup",
     "AsyncThrottle",
     "AsyncTokenBucket",
+    "CancellationError",
     "ChannelClosedError",
     "CircuitBreaker",
     "CircuitBreakerConfig",
