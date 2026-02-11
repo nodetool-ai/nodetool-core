@@ -1,4 +1,5 @@
 from .async_barrier import AsyncBarrier
+from .async_cache import AsyncCache
 from .async_channel import (
     AsyncChannel,
     AsyncChannelIterator,
@@ -44,6 +45,7 @@ __all__ = [
     "AdaptiveThrottle",
     "AsyncBarrier",
     "AsyncByteStream",
+    "AsyncCache",
     "AsyncChannel",
     "AsyncChannelIterator",
     "AsyncCondition",
