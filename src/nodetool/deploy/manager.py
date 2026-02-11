@@ -16,12 +16,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 from nodetool.config.deployment import (
+    DockerDeployment,
     GCPDeployment,
+    LocalDeployment,
     RunPodDeployment,
     SelfHostedDeployment,
-    DockerDeployment,
     SSHDeployment,
-    LocalDeployment,
     load_deployment_config,
 )
 from nodetool.deploy.gcp import GCPDeployer
@@ -402,7 +402,7 @@ class DeploymentManager:
                         if not deployment.container:
                             results["errors"].append(f"{deployment_name}: No container configured")
                             results["valid"] = False
-                    
+
                     elif isinstance(deployment, SSHDeployment | LocalDeployment):
                          if not deployment.port:
                              results["errors"].append(f"{deployment_name}: No port configured")
