@@ -151,6 +151,14 @@ class DockerDeployment(BaseModel):
     )
     image: ImageConfig
     container: ContainerConfig = Field(..., description="Container configuration")
+    use_proxy: bool = Field(
+        True,
+        description="Deprecated legacy flag for proxy sidecar support (preserved for backward compatibility)",
+    )
+    proxy: Optional[dict[str, Any]] = Field(
+        None,
+        description="Deprecated legacy proxy configuration (retained for backward-compatible config parsing)",
+    )
     server_auth_token: Optional[str] = Field(
         None,
         description="Authentication token for server API (auto-generated if not set)",
