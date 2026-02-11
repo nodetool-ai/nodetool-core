@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import shlex
 import socket
 import subprocess
@@ -14,6 +15,54 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import LogUpdate, Notification
 
 log = get_logger(__name__)
+
+
+# Patterns for environment variables that should NOT be passed to subprocesses
+# This prevents secrets from being leaked to user code
+SECRET_ENV_PATTERNS = [
+    re.compile(r".*SECRET.*", re.IGNORECASE),
+    re.compile(r".*PASSWORD.*", re.IGNORECASE),
+    re.compile(r".*TOKEN.*", re.IGNORECASE),
+    re.compile(r".*API_KEY.*", re.IGNORECASE),
+    re.compile(r".*APIKEY.*", re.IGNORECASE),
+    re.compile(r".*PRIVATE.*", re.IGNORECASE),
+    re.compile(r".*CREDENTIAL.*", re.IGNORECASE),
+    # Specific secret keys
+    re.compile(r"^OPENAI_API_KEY$", re.IGNORECASE),
+    re.compile(r"^ANTHROPIC_API_KEY$", re.IGNORECASE),
+    re.compile(r"^GEMINI_API_KEY$", re.IGNORECASE),
+    re.compile(r"^HF_TOKEN$", re.IGNORECASE),
+    re.compile(r"^REPLICATE_API_TOKEN$", re.IGNORECASE),
+    re.compile(r"^ELEVENLABS_API_KEY$", re.IGNORECASE),
+    re.compile(r"^FAL_API_KEY$", re.IGNORECASE),
+    re.compile(r"^AIME_API_KEY$", re.IGNORECASE),
+    re.compile(r"^SERPAPI_API_KEY$", re.IGNORECASE),
+    re.compile(r"^DATA_FOR_SEO_.*$", re.IGNORECASE),
+    re.compile(r"^GOOGLE_APP_PASSWORD$", re.IGNORECASE),
+]
+
+
+def _filter_sensitive_env_vars(env: dict[str, str]) -> dict[str, str]:
+    """
+    Filter out sensitive environment variables before passing to subprocess.
+
+    This prevents API keys, tokens, and other secrets from being leaked
+    to user code executed in subprocesses.
+
+    Args:
+        env: Dictionary of environment variables
+
+    Returns:
+        Filtered dictionary with secrets removed
+    """
+    filtered = {}
+    for key, value in env.items():
+        # Skip if key matches any secret pattern
+        if any(pattern.match(key) for pattern in SECRET_ENV_PATTERNS):
+            log.debug(f"Filtering sensitive env var: {key}")
+            continue
+        filtered[key] = value
+    return filtered
 
 
 class ContainerFailureError(RuntimeError):
@@ -443,7 +492,9 @@ class StreamRunnerBase:
             cmd_str = self._format_command_str(command_vec)
 
             # Prepare environment and working directory
-            proc_env = os.environ.copy()
+            # SECURITY: Filter out sensitive environment variables (API keys, tokens, passwords)
+            # to prevent them from being leaked to user code
+            proc_env = _filter_sensitive_env_vars(os.environ.copy())
             proc_env.update(self.build_container_environment(env))
             cwd = getattr(context, "workspace_dir", None) or os.getcwd()
 

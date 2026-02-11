@@ -7,9 +7,11 @@ Operations are performed remotely via SSH, never transmitting plaintext tokens.
 
 import base64
 import hashlib
+import shlex
 import uuid
 from datetime import datetime
 from pathlib import Path
+
 import yaml
 from pydantic import BaseModel
 from rich.console import Console
@@ -50,8 +52,10 @@ class RemoteUserManager:
     def _load_remote_users(self) -> dict:
         """Load users from remote users.yaml."""
         try:
+            # Use shlex.quote to prevent command injection
+            safe_path = shlex.quote(self.users_file)
             exit_code, stdout, _stderr = self.ssh.execute(
-                f"cat {self.users_file} 2>/dev/null || echo '{{}}'",
+                f"cat {safe_path} 2>/dev/null || echo '{{}}'",
                 check=False,
             )
 
@@ -68,17 +72,22 @@ class RemoteUserManager:
         """Save users to remote users.yaml."""
         # Ensure directory exists
         users_dir = str(Path(self.users_file).parent)
-        self.ssh.execute(f"mkdir -p {users_dir}")
+        safe_dir = shlex.quote(users_dir)
+        self.ssh.execute(f"mkdir -p {safe_dir}")
 
         # Prepare file content
         content = yaml.dump({"users": users, "version": "1.0"}, default_flow_style=False)
 
         # Write via SSH (using base64 to avoid escaping issues)
         b64_content = base64.b64encode(content.encode()).decode()
-        self.ssh.execute(f"echo {b64_content} | base64 -d > {self.users_file}")
+        # Use shlex.quote to prevent command injection
+        safe_b64 = shlex.quote(b64_content)
+        safe_path = shlex.quote(self.users_file)
+        self.ssh.execute(f"echo {safe_b64} | base64 -d > {safe_path}")
 
         # Set restrictive permissions
-        self.ssh.execute(f"chmod 0600 {self.users_file}")
+        safe_path = shlex.quote(self.users_file)
+        self.ssh.execute(f"chmod 0600 {safe_path}")
 
     def add_user(self, username: str, role: str, token: str) -> None:
         """Add user to remote deployment.
