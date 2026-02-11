@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import time
 import sys
+import socket
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Optional, Union, Generic, TypeVar
@@ -36,9 +37,34 @@ TDeployment = TypeVar("TDeployment", bound=SelfHostedDeployment)
 
 
 def is_localhost(host: str) -> bool:
-    """Check if the host is localhost."""
-    localhost_names = ["localhost", "127.0.0.1", "::1", "0.0.0.0"]
-    return host.lower() in localhost_names
+    """Check if host resolves to the local machine."""
+    localhost_names = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+    normalized_host = host.strip().lower()
+    if normalized_host in localhost_names:
+        return True
+
+    def _resolve_ips(target: str) -> set[str]:
+        ips: set[str] = set()
+        for family, _socktype, _proto, _canonname, sockaddr in socket.getaddrinfo(target, None):
+            if family == socket.AF_INET:
+                ips.add(str(sockaddr[0]))
+            elif family == socket.AF_INET6:
+                ips.add(str(sockaddr[0]))
+        return ips
+
+    try:
+        host_ips = _resolve_ips(host)
+    except socket.gaierror:
+        return False
+
+    local_ips: set[str] = set()
+    for local_target in ("localhost", socket.gethostname(), socket.getfqdn()):
+        try:
+            local_ips.update(_resolve_ips(local_target))
+        except socket.gaierror:
+            continue
+
+    return bool(host_ips & local_ips)
 
 
 class LocalExecutor:
@@ -794,14 +820,15 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        if save_proc.stdout:
-            save_proc.stdout.close()
         load_proc = subprocess.Popen(
             ssh_cmd,
             stdin=save_proc.stdout,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
+        if save_proc.stdout:
+            # Parent should close its reference after handing the pipe to the consumer.
+            save_proc.stdout.close()
         _stdout, stderr = load_proc.communicate()
         _save_stdout, save_stderr = save_proc.communicate()
 

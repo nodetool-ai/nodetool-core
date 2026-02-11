@@ -2,6 +2,7 @@
 Unit tests for SelfHostedDeployer.
 """
 
+import socket
 from unittest.mock import Mock, patch
 
 import pytest
@@ -55,6 +56,30 @@ class TestIsLocalhost:
         assert is_localhost("192.168.1.100") is False
         assert is_localhost("example.com") is False
         assert is_localhost("10.0.0.1") is False
+
+    def test_detects_local_machine_ip(self):
+        """IP that belongs to this machine should be treated as localhost."""
+        fake_map = {
+            "192.168.1.42": [(2, 1, 6, "", ("192.168.1.42", 0))],
+            "localhost": [(2, 1, 6, "", ("127.0.0.1", 0))],
+            "my-host": [(2, 1, 6, "", ("192.168.1.42", 0))],
+            "my-host.local": [(2, 1, 6, "", ("192.168.1.42", 0))],
+        }
+
+        with (
+            patch("nodetool.deploy.self_hosted.socket.gethostname", return_value="my-host"),
+            patch("nodetool.deploy.self_hosted.socket.getfqdn", return_value="my-host.local"),
+            patch("nodetool.deploy.self_hosted.socket.getaddrinfo", side_effect=lambda host, _port: fake_map[host]),
+        ):
+            assert is_localhost("192.168.1.42") is True
+
+    def test_resolution_failure_returns_false(self):
+        """Unresolvable host should not be treated as localhost."""
+        with patch(
+            "nodetool.deploy.self_hosted.socket.getaddrinfo",
+            side_effect=socket.gaierror,
+        ):
+            assert is_localhost("not-a-real-hostname") is False
 
 
 class TestLocalExecutor:
@@ -469,6 +494,45 @@ class TestDockerDeployer:
 
         # Should not attempt remote image transfer when localhost image is missing.
         assert push_image_spy.call_count == 0
+
+    def test_push_image_to_remote_keeps_save_pipe_open_until_load_starts(
+        self, basic_deployment, mock_state_manager
+    ):
+        """docker save stdout must be handed to ssh docker load before closing in parent."""
+        deployer = DockerDeployer(
+            deployment_name="test",
+            deployment=basic_deployment,
+            state_manager=mock_state_manager,
+        )
+
+        save_stdout = Mock()
+        save_proc = Mock()
+        save_proc.stdout = save_stdout
+        save_proc.communicate.return_value = (b"", b"")
+        save_proc.returncode = 0
+
+        load_proc = Mock()
+        load_proc.communicate.return_value = (b"", b"")
+        load_proc.returncode = 0
+
+        popen_calls = {"count": 0}
+
+        def popen_side_effect(*args, **kwargs):
+            popen_calls["count"] += 1
+            if popen_calls["count"] == 1:
+                return save_proc
+            assert kwargs.get("stdin") is save_stdout
+            assert save_stdout.close.call_count == 0
+            return load_proc
+
+        with (
+            patch("nodetool.deploy.self_hosted.subprocess.run") as mock_run,
+            patch("nodetool.deploy.self_hosted.subprocess.Popen", side_effect=popen_side_effect),
+        ):
+            mock_run.return_value = Mock(returncode=0)
+            deployer._push_image_to_remote("ghcr.io/nodetool-ai/nodetool:latest")
+
+        save_stdout.close.assert_called_once()
 
     def test_create_directories_custom_paths(self, mock_state_manager):
         """Test directory creation with custom paths."""
