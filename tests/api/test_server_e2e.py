@@ -17,12 +17,12 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+from nodetool.api.run_server import run_server
 from nodetool.api.server import (
     _load_default_routers,
     _load_deploy_routers,
     create_app,
 )
-from nodetool.api.run_server import run_server
 
 
 class TestServerStartup:
@@ -236,6 +236,10 @@ class TestAdminAuthMiddleware:
                 {
                     "ADMIN_TOKEN": "test-admin-token-123",
                     "SECRETS_MASTER_KEY": "test-master-key-123",
+                    "ASSET_TEMP_BUCKET": "test-bucket",
+                    "S3_ACCESS_KEY_ID": "test-key-id",
+                    "S3_SECRET_ACCESS_KEY": "test-secret-key",
+                    "ASSET_TEMP_DOMAIN": "http://localhost:9000",
                 },
             ),
             patch("nodetool.security.admin_auth.Environment.is_production", return_value=True),
@@ -377,6 +381,7 @@ class TestCliServeCommandProductionFlag:
     def test_serve_production_flag_uses_run_server(self, monkeypatch):
         """Verify serve --production calls run_server instead of create_app."""
         from click.testing import CliRunner
+
         from nodetool.cli import cli
 
         run_server_called = []
@@ -387,7 +392,7 @@ class TestCliServeCommandProductionFlag:
         monkeypatch.setattr("nodetool.api.run_server.run_server", mock_run_server)
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["serve", "--production", "--port", "9000"])
+        runner.invoke(cli, ["serve", "--production", "--port", "9000"])
 
         assert len(run_server_called) == 1
         assert run_server_called[0]["host"] == "127.0.0.1"
@@ -396,6 +401,7 @@ class TestCliServeCommandProductionFlag:
     def test_serve_without_production_uses_create_app(self, monkeypatch):
         """Verify serve without --production uses create_app."""
         from click.testing import CliRunner
+
         from nodetool.cli import cli
 
         create_app_called = []
@@ -414,7 +420,7 @@ class TestCliServeCommandProductionFlag:
         monkeypatch.setattr("nodetool.api.server.run_uvicorn_server", mock_run_uvicorn_server)
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["serve", "--port", "9000"])
+        runner.invoke(cli, ["serve", "--port", "9000"])
 
         assert len(create_app_called) == 1
         assert len(uvicorn_called) == 1
@@ -422,6 +428,7 @@ class TestCliServeCommandProductionFlag:
 
     def test_serve_production_mode_flag_forwarded(self, monkeypatch):
         from click.testing import CliRunner
+
         from nodetool.cli import cli
 
         calls = []
