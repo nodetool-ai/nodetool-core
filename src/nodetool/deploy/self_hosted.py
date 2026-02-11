@@ -195,7 +195,7 @@ class BaseSSHDeployer(ABC, Generic[TDeployment]):
             return runtime_override
         if self.is_localhost:
             return self._resolve_local_runtime_command()
-        return "$(command -v docker >/dev/null 2>&1 && echo docker || command -v podman >/dev/null 2>&1 && echo podman || echo docker)"
+        return "$((command -v docker >/dev/null 2>&1 && echo docker) || (command -v podman >/dev/null 2>&1 && echo podman) || echo docker)"
 
     def _container_generator(self, runtime_command: Optional[str] = None) -> DockerRunGenerator:
         runtime_command = runtime_command or self._runtime_command_for_shell()
