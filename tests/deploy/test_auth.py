@@ -12,8 +12,8 @@ from fastapi import HTTPException
 from nodetool.deploy.auth import (
     DEPLOYMENT_CONFIG_FILE,
     generate_secure_token,
-    get_token_source,
     get_server_auth_token,
+    get_token_source,
     is_auth_enabled,
     load_deployment_config,
     save_deployment_config,
