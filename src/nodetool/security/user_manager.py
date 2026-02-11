@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -94,7 +94,7 @@ class UserManager:
 
         token = self._generate_token()
         user_id = self._generate_user_id(username)
-        created_at = datetime.utcnow().isoformat() + "Z"
+        created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
         user_info = UserInfo(
             user_id=user_id, username=username, role=role, token_hash=self._hash_token(token), created_at=created_at
@@ -134,7 +134,7 @@ class UserManager:
 
         existing_user = users_file.users[username]
         token = self._generate_token()
-        created_at = datetime.utcnow().isoformat() + "Z"
+        created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
         updated_user = UserInfo(
             user_id=existing_user.user_id,
