@@ -3449,7 +3449,7 @@ wheels = [
 
 [[package]]
 name = "nodetool-core"
-version = "0.6.3rc20"
+version = "0.6.3rc21"
 source = { editable = "." }
 dependencies = [
     { name = "aioconsole" },
