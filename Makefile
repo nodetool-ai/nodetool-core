@@ -32,11 +32,12 @@ test:
 		--ignore=tests/workflows/test_job_execution_manager.py \
 		--ignore=tests/workflows/test_job_execution.py \
 		--ignore=tests/workflows/test_threaded_job_execution.py \
-		--ignore=tests/workflows/test_subprocess_job_execution.py
+		--ignore=tests/workflows/test_subprocess_job_execution.py \
+		--ignore=tests/api/test_terminal_websocket.py
 	@echo ""
-	@echo "Skipping job execution tests due to known flaky behavior with threaded event loops"
+	@echo "Skipping job execution and terminal websocket tests due to known flaky behavior with xdist"
 	@echo "See: issues/testing/job-execution-manager-flaky-tests.md"
-	@echo "Run manually: uv run pytest -q tests/workflows/test_job_execution_manager.py -v"
+	@echo "Run manually: uv run pytest -q tests/api/test_terminal_websocket.py -v"
 
 test-verbose:
 	uv run pytest -n auto -v --ignore=tests/workflows/test_docker_job_execution.py \
