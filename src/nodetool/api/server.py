@@ -143,7 +143,7 @@ class ServerMode(str, Enum):
     PRIVATE = "private"
 
     @classmethod
-    def from_value(cls, value: str | "ServerMode" | None) -> "ServerMode":
+    def from_value(cls, value: str | ServerMode | None) -> ServerMode:
         if isinstance(value, cls):
             return value
         normalized = (value or "desktop").lower()
