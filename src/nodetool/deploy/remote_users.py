@@ -8,8 +8,9 @@ Operations are performed remotely via SSH, never transmitting plaintext tokens.
 import base64
 import hashlib
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime, timezone
 from pathlib import Path
+
 import yaml
 from pydantic import BaseModel
 from rich.console import Console
@@ -95,7 +96,7 @@ class RemoteUserManager:
 
         # Generate user data
         user_id = self._generate_user_id(username)
-        created_at = datetime.utcnow().isoformat() + "Z"
+        created_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
         user_info = {
             "user_id": user_id,
@@ -132,7 +133,7 @@ class RemoteUserManager:
 
         # Update user with new token hash
         existing_user = users[username]
-        created_at = datetime.utcnow().isoformat() + "Z"
+        created_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
         users[username] = {
             "user_id": existing_user["user_id"],
