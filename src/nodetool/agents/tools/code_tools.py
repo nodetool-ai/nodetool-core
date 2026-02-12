@@ -9,11 +9,14 @@ from nodetool.code_runners.javascript_runner import JavaScriptDockerRunner
 from nodetool.code_runners.python_runner import PythonDockerRunner
 from nodetool.code_runners.ruby_runner import RubyDockerRunner
 from nodetool.code_runners.runtime_base import ContainerFailureError, StreamRunnerBase
+from nodetool.config.logging_config import get_logger
 
 if TYPE_CHECKING:
     from nodetool.workflows.processing_context import ProcessingContext
 
 RunnerMode = Literal["docker", "subprocess"]
+
+logger = get_logger(__name__)
 
 
 class RunnerExecutionError(RuntimeError):
@@ -167,13 +170,13 @@ class RunnerExecutionTool(Tool):
                 elif slot == "stderr":
                     stderr_lines.append(value)
         except ContainerFailureError as exc:
-            print(f"Container execution failed with exit code {exc.exit_code}: {exc.args[0]}")
-            print(f"mode: {self._runner_mode(runner)}")
-            print(f"original: {exc}")
+            logger.error(f"Container execution failed with exit code {exc.exit_code}: {exc.args[0]}")
+            logger.error(f"mode: {self._runner_mode(runner)}")
+            logger.error(f"original: {exc}")
             stdout = "".join(stdout_lines)
             stderr = "".join(stderr_lines)
-            print(f"stdout: {stdout}")
-            print(f"stderr: {stderr}")
+            logger.error(f"stdout: {stdout}")
+            logger.error(f"stderr: {stderr}")
             raise RunnerExecutionError(
                 f"Container execution failed with exit code {exc.exit_code}: {exc.args[0]}",
                 stdout_lines=stdout_lines,
