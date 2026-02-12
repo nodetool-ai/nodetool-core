@@ -440,8 +440,17 @@ class ResourceScope:
                             client=client,
                         )
                     except Exception as e:
-                        log.error(f"Failed to initialize Supabase temp storage, falling back to S3. Error: {e}")
-                        assert Environment.get_s3_access_key_id() is not None or use_s3, "S3 access key ID is required"
+                        log.error(f"Failed to initialize Supabase temp storage, falling back to memory. Error: {e}")
+                        from nodetool.storage.memory_storage import MemoryStorage
+
+                        log.info("Using memory storage for temp asset storage")
+                        self._temp_storage = MemoryStorage(
+                            base_url=Environment.get_temp_storage_api_url(),
+                        )
+                else:
+                    # Only use S3 if explicitly requested, otherwise fall back to memory
+                    if use_s3:
+                        assert Environment.get_s3_access_key_id() is not None, "S3 access key ID is required"
                         assert Environment.get_asset_temp_bucket() is not None, "Asset temp bucket is required"
                         assert Environment.get_asset_temp_domain() is not None, "Asset temp domain is required"
                         log.info("Using S3 storage for temp asset storage")
@@ -449,15 +458,13 @@ class ResourceScope:
                             Environment.get_asset_temp_bucket(),
                             Environment.get_asset_temp_domain(),
                         )
-                else:
-                    assert Environment.get_s3_access_key_id() is not None or use_s3, "S3 access key ID is required"
-                    assert Environment.get_asset_temp_bucket() is not None, "Asset temp bucket is required"
-                    assert Environment.get_asset_temp_domain() is not None, "Asset temp domain is required"
-                    log.info("Using S3 storage for temp asset storage")
-                    self._temp_storage = self.get_s3_storage(
-                        Environment.get_asset_temp_bucket(),
-                        Environment.get_asset_temp_domain(),
-                    )
+                    else:
+                        from nodetool.storage.memory_storage import MemoryStorage
+
+                        log.info("Using memory storage for temp asset storage")
+                        self._temp_storage = MemoryStorage(
+                            base_url=Environment.get_temp_storage_api_url(),
+                        )
 
         return self._temp_storage
 

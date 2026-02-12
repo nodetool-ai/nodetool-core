@@ -22,10 +22,10 @@ try:
     PARAMIKO_AVAILABLE = True
 except ImportError:
     PARAMIKO_AVAILABLE = False
-    paramiko = None
-    SSHClient = None
-    AutoAddPolicy = None
-    SFTPClient = None
+    paramiko: Any = None  # type: ignore[assignment]
+    SSHClient: Any = None  # type: ignore[assignment]
+    AutoAddPolicy: Any = None  # type: ignore[assignment]
+    SFTPClient: Any = None  # type: ignore[assignment]
 
 
 class SSHConnectionError(Exception):
@@ -103,9 +103,14 @@ class SSHConnection:
         Raises:
             SSHConnectionError: If connection fails after all retry attempts
         """
+        if not PARAMIKO_AVAILABLE:
+            raise SSHConnectionError("paramiko library is not available")
+
         for attempt in range(self.retry_attempts):
             try:
+                assert SSHClient is not None
                 self._client = SSHClient()
+                assert AutoAddPolicy is not None
                 self._client.set_missing_host_key_policy(AutoAddPolicy())
 
                 connect_kwargs: dict[str, Any] = {
