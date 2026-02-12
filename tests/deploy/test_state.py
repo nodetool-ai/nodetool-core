@@ -11,8 +11,8 @@ import pytest
 from nodetool.config.deployment import (
     ContainerConfig,
     DeploymentConfig,
-    ImageConfig,
     DockerDeployment,
+    ImageConfig,
     SSHConfig,
 )
 from nodetool.deploy.state import (
