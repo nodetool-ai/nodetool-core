@@ -123,17 +123,18 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext):
         await node.send_update(context, status="waiting")
 
     # Acquire the threading lock without blocking the event loop.
-    # Use short timeouts so task cancellation does not leak a held lock.
+    # Use adaptive timeouts: shorter initially for responsiveness, longer later to reduce CPU.
     loop = asyncio.get_running_loop()
     start_time = time.time()
     attempts = 0
+    adaptive_timeout = 0.5  # Start with 0.5s timeout for responsiveness
 
     try:
         while True:
             # Check for cancellation before trying to acquire
             # This allows clean shutdown when workflow is cancelled
             try:
-                acquired = await loop.run_in_executor(None, lambda: gpu_lock.acquire(timeout=0.2))
+                acquired = await loop.run_in_executor(None, lambda t=adaptive_timeout: gpu_lock.acquire(timeout=t))
             except asyncio.CancelledError:
                 log.info(f"Node {node.get_title()} cancelled while waiting for GPU lock")
                 raise
@@ -147,9 +148,13 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext):
             elapsed = time.time() - start_time
 
             # Log progress every 10 seconds
-            if attempts % 40 == 0:  # 40 * 0.25s = 10s
+            if attempts % 20 == 0:  # Fewer iterations now with adaptive timeout
                 holder_info = f" (held by: {_gpu_lock_holder})" if _gpu_lock_holder else ""
                 log.warning(f"Node {node.get_title()} still waiting for GPU lock after {elapsed:.1f}s{holder_info}")
+
+            # Increase timeout gradually to reduce CPU usage during long waits
+            # Start at 0.5s, max out at 2.0s after 5 seconds of waiting
+            adaptive_timeout = min(0.5 + (elapsed / 5.0) * 1.5, 2.0)
 
             # Timeout after GPU_LOCK_TIMEOUT seconds
             if elapsed > GPU_LOCK_TIMEOUT:
