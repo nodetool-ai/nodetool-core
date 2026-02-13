@@ -9,6 +9,7 @@ from dataclasses import asdict
 from fnmatch import fnmatch
 from typing import Any, Optional
 
+from nodetool.integrations.huggingface.hf_auth import get_hf_token
 from nodetool.integrations.huggingface.huggingface_models import read_cached_hf_models
 
 
@@ -93,8 +94,6 @@ class HfTools:
         Returns:
             List of files in repository with metadata
         """
-        from nodetool.api.mcp_server import get_hf_token  # type: ignore
-
         try:
             from huggingface_hub import HfApi
             token = await get_hf_token()
@@ -154,8 +153,6 @@ class HfTools:
         if limit > 50:
             limit = 50
 
-        from nodetool.api.mcp_server import get_hf_token  # type: ignore
-
         try:
             from huggingface_hub import HfApi
             token = await get_hf_token()
@@ -195,8 +192,6 @@ class HfTools:
         Returns:
             Detailed model information including README, tags, metrics
         """
-        from nodetool.api.mcp_server import get_hf_token  # type: ignore
-
         try:
             from huggingface_hub import HfApi
             token = await get_hf_token()

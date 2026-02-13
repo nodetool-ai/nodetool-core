@@ -85,6 +85,7 @@ def initialize_sentry():
 log = get_logger(__name__)
 
 # Silence SQLite and SQLAlchemy logging
+_LOG_SEPARATOR_WIDTH = 72
 
 
 class HealthCheckFilter(logging.Filter):
@@ -100,6 +101,26 @@ class HealthCheckFilter(logging.Filter):
 def create_health_check_filter():
     """Create a filter to suppress logging for /health endpoint requests."""
     return HealthCheckFilter()
+
+
+def _fmt_log_value(value: Any) -> str:
+    return "<not set>" if value in (None, "") else str(value)
+
+
+def _log_section(title: str) -> None:
+    bar = "=" * _LOG_SEPARATOR_WIDTH
+    log.info(bar)
+    log.info(" %s", title)
+    log.info(bar)
+
+
+def _log_kv(title: str, entries: dict[str, Any]) -> None:
+    if not entries:
+        return
+    max_key = max(len(key) for key in entries)
+    log.info("[%s]", title)
+    for key, value in entries.items():
+        log.info("  %-*s : %s", max_key, key, _fmt_log_value(value))
 
 
 def get_nodetool_package_source_folders() -> list[str]:
@@ -143,7 +164,7 @@ class ServerMode(str, Enum):
     PRIVATE = "private"
 
     @classmethod
-    def from_value(cls, value: str | "ServerMode" | None) -> "ServerMode":
+    def from_value(cls, value: str | ServerMode | None) -> ServerMode:
         if isinstance(value, cls):
             return value
         normalized = (value or "desktop").lower()
@@ -165,6 +186,7 @@ class ServerFeatures:
     enable_terminal_ws: bool = True
     enable_hf_download_ws: bool = True
     mount_static: bool = True
+    enable_mcp: bool = False  # MCP server disabled by default, enable via --mcp
 
 
 def _features_for_mode(mode: ServerMode) -> ServerFeatures:
@@ -360,6 +382,7 @@ def create_app(
     enable_terminal_ws: bool | None = None,
     enable_hf_download_ws: bool | None = None,
     mount_static: bool | None = None,
+    enable_mcp: bool | None = None,
 ):
     # Initialize Sentry only when the application is created, not on module import
     initialize_sentry()
@@ -377,6 +400,7 @@ def create_app(
         "enable_terminal_ws": enable_terminal_ws,
         "enable_hf_download_ws": enable_hf_download_ws,
         "mount_static": mount_static,
+        "enable_mcp": enable_mcp,
     }
     for key, value in feature_overrides.items():
         if value is not None:
@@ -403,60 +427,103 @@ def create_app(
 
     init_tracing(service_name="nodetool-api")
 
-    # Log loaded environment configuration
-    env_name = os.environ.get("ENV", "development")
-    log_level = os.environ.get("LOG_LEVEL", "INFO")
-    debug = os.environ.get("DEBUG")
+    # Log loaded environment configuration (with defaults resolved by Environment)
+    _log_section("NodeTool Server Startup")
+    startup_vars = {
+        "ENV": Environment.get("ENV"),
+        "LOG_LEVEL": Environment.get("LOG_LEVEL"),
+        "DEBUG": Environment.get("DEBUG"),
+        "AUTH_PROVIDER": Environment.get("AUTH_PROVIDER"),
+        "DB_PATH": Environment.get("DB_PATH"),
+        "CHROMA_PATH": Environment.get("CHROMA_PATH"),
+        "JOB_EXECUTION_STRATEGY": Environment.get("JOB_EXECUTION_STRATEGY"),
+        "OLLAMA_API_URL": Environment.get("OLLAMA_API_URL"),
+        "NODETOOL_API_URL": Environment.get("NODETOOL_API_URL"),
+        "NODETOOL_ENABLE_TERMINAL_WS": Environment.get("NODETOOL_ENABLE_TERMINAL_WS"),
+        "WORKER_ID": Environment.get("WORKER_ID"),
+    }
+    _log_kv("Environment", startup_vars)
 
-    log.info(
-        "Environment configuration loaded: ENV=%s | LOG_LEVEL=%s | DEBUG=%s",
-        env_name,
-        log_level,
-        debug,
-    )
+    feature_flags = {
+        "mode": server_mode.value,
+        "include_default_api_routers": features.include_default_api_routers,
+        "include_openai_router": features.include_openai_router,
+        "include_deploy_admin_router": features.include_deploy_admin_router,
+        "include_deploy_collection_router": features.include_deploy_collection_router,
+        "include_deploy_storage_router": features.include_deploy_storage_router,
+        "enable_main_ws": features.enable_main_ws,
+        "enable_updates_ws": features.enable_updates_ws,
+        "enable_terminal_ws": features.enable_terminal_ws,
+        "enable_hf_download_ws": features.enable_hf_download_ws,
+        "enable_mcp": features.enable_mcp,
+        "mount_static": features.mount_static,
+    }
+    _log_kv("Feature Flags", feature_flags)
 
     # Log key configuration details
-    supabase_url = os.environ.get("SUPABASE_URL")
-    postgres_db = os.environ.get("POSTGRES_DB")
-    db_path = os.environ.get("DB_PATH")
-    auth_provider = os.environ.get("AUTH_PROVIDER", "local")
+    supabase_url = Environment.get("SUPABASE_URL")
+    postgres_db = Environment.get("POSTGRES_DB")
+    db_path = Environment.get("DB_PATH")
+    auth_provider = Environment.get("AUTH_PROVIDER", "local")
 
+    db_summary: dict[str, Any]
     if supabase_url:
-        log.info(f"Database: Supabase ({supabase_url})")
+        db_summary = {
+            "backend": "Supabase",
+            "supabase_url": supabase_url,
+        }
     elif postgres_db:
-        postgres_host = os.environ.get("POSTGRES_HOST", "localhost")
-        log.info(f"Database: PostgreSQL ({postgres_host}/{postgres_db})")
+        postgres_host = Environment.get("POSTGRES_HOST", "localhost")
+        db_summary = {
+            "backend": "PostgreSQL",
+            "postgres_host": postgres_host,
+            "postgres_db": postgres_db,
+        }
     elif db_path:
-        log.info(f"Database: SQLite ({db_path})")
+        db_summary = {
+            "backend": "SQLite",
+            "db_path": db_path,
+        }
     else:
+        db_summary = {
+            "backend": "<not configured>",
+        }
         log.warning("No database configured (SUPABASE_URL, POSTGRES_DB, or DB_PATH)")
+    _log_kv("Database", db_summary)
 
-    log.info(f"Authentication provider: {auth_provider}")
+    _log_kv("Authentication", {"provider": auth_provider, "enforce_auth": Environment.enforce_auth()})
 
     # Log storage configuration
-    asset_bucket = os.environ.get("ASSET_BUCKET", "images")
-    asset_temp_bucket = os.environ.get("ASSET_TEMP_BUCKET")
-    asset_domain = os.environ.get("ASSET_DOMAIN")
-    s3_endpoint = os.environ.get("S3_ENDPOINT_URL")
+    asset_bucket = Environment.get("ASSET_BUCKET", "images")
+    asset_temp_bucket = Environment.get("ASSET_TEMP_BUCKET")
+    asset_domain = Environment.get("ASSET_DOMAIN")
+    s3_endpoint = Environment.get("S3_ENDPOINT_URL")
 
+    storage_summary: dict[str, Any]
     if supabase_url:
-        log.info("Asset storage: Supabase")
-        log.debug(f"  - Asset bucket: {asset_bucket}")
-        if asset_temp_bucket:
-            log.debug(f"  - Temp bucket: {asset_temp_bucket}")
-        if asset_domain:
-            log.debug(f"  - Domain: {asset_domain}")
+        storage_summary = {
+            "backend": "Supabase",
+            "asset_bucket": asset_bucket,
+            "asset_temp_bucket": asset_temp_bucket,
+            "asset_domain": asset_domain,
+        }
     elif s3_endpoint:
-        log.info(f"Asset storage: S3 (endpoint={s3_endpoint})")
-        log.debug(f"  - Asset bucket: {asset_bucket}")
-        if asset_temp_bucket:
-            log.debug(f"  - Temp bucket: {asset_temp_bucket}")
-        log.debug(f"  - Region: {os.environ.get('S3_REGION', 'us-east-1')}")
-        if asset_domain:
-            log.debug(f"  - Domain: {asset_domain}")
+        storage_summary = {
+            "backend": "S3",
+            "s3_endpoint_url": s3_endpoint,
+            "s3_region": Environment.get("S3_REGION", "us-east-1"),
+            "asset_bucket": asset_bucket,
+            "asset_temp_bucket": asset_temp_bucket,
+            "asset_domain": asset_domain,
+        }
     else:
-        log.info("Asset storage: File-based")
-        log.debug(f"  - Asset bucket: {asset_bucket}")
+        storage_summary = {
+            "backend": "File",
+            "asset_bucket": asset_bucket,
+            "asset_temp_bucket": asset_temp_bucket,
+            "asset_domain": asset_domain,
+        }
+    _log_kv("Asset Storage", storage_summary)
 
     # Check if Ollama is available and set OLLAMA_API_URL if not already set
     setup_ollama_url()
@@ -489,58 +556,61 @@ def create_app(
                     "additional admin authentication beyond standard auth"
                 )
 
+        _log_section("NodeTool Runtime Initialization")
+
         # Run database migrations before starting
         from nodetool.models.migrations import run_startup_migrations
 
         if not RUNNING_PYTEST:
             try:
                 await run_startup_migrations()
-                log.info("Database migrations completed successfully")
+                log.info("[Startup] Database migrations completed successfully")
             except Exception as e:
-                log.error(f"Failed to run database migrations: {e}", exc_info=True)
+                log.error(f"[Startup] Failed to run database migrations: {e}", exc_info=True)
                 raise
 
         # Populate mock data if --mock flag is enabled
         if os.environ.get("NODETOOL_MOCK_MODE") == "1":
-            log.info("Mock mode enabled - populating database with test data")
+            log.info("[Startup] Mock mode enabled; populating database with test data")
             try:
                 from nodetool.api.mock_data import populate_mock_data
                 from nodetool.runtime.resources import ResourceScope
 
                 async with ResourceScope():
                     result = await populate_mock_data(user_id="1")
-                    log.info(f"Mock data populated successfully: {result}")
+                    log.info(f"[Startup] Mock data populated successfully: {result}")
             except Exception as e:
-                log.error(f"Failed to populate mock data: {e}", exc_info=True)
+                log.error(f"[Startup] Failed to populate mock data: {e}", exc_info=True)
 
         # Start job execution manager cleanup task
         from nodetool.workflows.job_execution_manager import JobExecutionManager
 
         job_manager = JobExecutionManager.get_instance()
         await job_manager.start_cleanup_task()
-        log.info("JobExecutionManager cleanup task started")
+        log.info("[Startup] JobExecutionManager cleanup task started")
 
         # Hand control back to the app
         yield
 
         # Shutdown: cleanup resources
-        log.info("Server shutdown initiated - cleaning up resources")
+        _log_section("NodeTool Server Shutdown")
+        log.info("[Shutdown] Cleaning up resources")
 
         # Import here to avoid circular imports
         from nodetool.integrations.websocket.websocket_updates import websocket_updates
 
         await websocket_updates.shutdown()
-        log.info("WebSocket updates shutdown complete")
+        log.info("[Shutdown] WebSocket updates shutdown complete")
 
         job_manager = JobExecutionManager.get_instance()
         await job_manager.shutdown()
-        log.info("JobExecutionManager shutdown complete")
+        log.info("[Shutdown] JobExecutionManager shutdown complete")
 
         # Shutdown SQLite connection pools with WAL checkpointing
         from nodetool.runtime.db_sqlite import shutdown_all_sqlite_pools
 
         await shutdown_all_sqlite_pools()
-        log.info("SQLite connection pools shutdown complete")
+        log.info("[Shutdown] SQLite connection pools shutdown complete")
 
     app = FastAPI(lifespan=lifespan)
 
@@ -745,8 +815,32 @@ def create_app(
         async def updates_websocket_endpoint(websocket: WebSocket):
             await websocket_updates.handle_client(websocket)
 
+    # =========================================================================
+    # MCP Server Integration
+    # =========================================================================
+    # Mount the FastMCP server to expose NodeTool tools and resources to
+    # MCP-compatible clients (e.g., Claude Desktop, AI assistants).
+    # Enabled via --mcp flag. Endpoints available when enabled:
+    #   - /mcp/sse      : SSE endpoint for streaming communication
+    #   - /mcp/messages : POST endpoint for message handling
+    # The MCP server is unprotected by default; authentication should be
+    # configured separately if required for production use.
+    if features.enable_mcp:
+        import warnings
+
+        from nodetool.api.mcp_server import mcp
+
+        # Use sse_app() for SSE transport (provides /sse and /messages routes)
+        # Note: sse_app() is deprecated in favor of http_app() but provides
+        # the endpoint structure expected by existing MCP clients.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            app.mount("/mcp", mcp.sse_app())
+
+        log.info("[Startup] MCP server mounted at /mcp (endpoints: /mcp/sse, /mcp/messages)")
+
     if features.mount_static and static_folder and os.path.exists(static_folder):
-        log.info(f"Mounting static folder: {static_folder}")
+        log.info(f"[Startup] Mounting static folder: {static_folder}")
         app.mount("/", StaticFiles(directory=static_folder, html=True), name="static")
 
     return app
@@ -862,17 +956,17 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
             workers=1,
         )
     except KeyboardInterrupt:
-        log.info("Server interrupted by user (Ctrl+C)")
+        log.info("[Shutdown] Server interrupted by user (Ctrl+C)")
         # On Windows, uvicorn shutdown can hang - force exit immediately after cleanup
         if platform.system() == "Windows":
-            log.info("Windows detected: forcing immediate exit to prevent hanging...")
+            log.info("[Shutdown] Windows detected: forcing immediate exit to prevent hanging...")
             # Use a separate thread to force exit after a short delay
             import threading
             import time
 
             def force_exit():
                 time.sleep(1)  # Give cleanup handlers time to run
-                log.info("Forcing process termination...")
+                log.info("[Shutdown] Forcing process termination...")
                 os._exit(0)
 
             # Start the force exit timer

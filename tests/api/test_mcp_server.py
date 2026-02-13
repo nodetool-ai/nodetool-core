@@ -242,6 +242,37 @@ class TestWorkflowOperations:
         assert result["workflows"][0]["name"] in ["test_workflow", "Workflow 2"]
 
     @pytest.mark.asyncio
+    @pytest.mark.no_setup
+    async def test_list_workflows_binds_scope_when_unbound(self, monkeypatch):
+        """list_workflows should create a ResourceScope when none is active."""
+        entered = 0
+
+        class DummyScope:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                nonlocal entered
+                entered += 1
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        paginate_mock = AsyncMock(return_value=([], None))
+        monkeypatch.setattr("nodetool.tools.workflow_tools.maybe_scope", lambda: None)
+        monkeypatch.setattr("nodetool.tools.workflow_tools.ResourceScope", DummyScope)
+        monkeypatch.setattr(Workflow, "paginate", paginate_mock)
+
+        result = await list_workflows(limit=10, user_id="1")
+
+        assert entered == 1
+        paginate_mock.assert_awaited_once_with(user_id="1", limit=10)
+        assert result["workflows"] == []
+        assert result["next"] is None
+        assert result["total"] == 0
+
+    @pytest.mark.asyncio
     async def test_run_graph_simple(self):
         """Test running a workflow graph directly."""
         graph = {

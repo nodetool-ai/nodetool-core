@@ -277,29 +277,6 @@ async def run_agent(
     return await AgentTools.run_agent(objective, provider, model, tools, output_schema, ctx)
 
 
-@mcp.tool()
-async def run_web_research_agent(
-    query: str,
-    provider: str = "openai",
-    model: str = "gpt-4o",
-    num_sources: int = 3,
-    ctx: Context | None = None,
-) -> dict:
-    """Run a specialized agent for web research tasks."""
-    return await AgentTools.run_web_research_agent(query, provider, model, num_sources, ctx)
-
-
-@mcp.tool()
-async def run_email_agent(
-    task: str,
-    provider: str = "openai",
-    model: str = "gpt-4o",
-    ctx: Context | None = None,
-) -> dict:
-    """Run a specialized agent for email-related tasks."""
-    return await AgentTools.run_email_agent(task, provider, model, ctx)
-
-
 # Register all storage tools
 @mcp.tool()
 async def download_file_from_storage(key: str, temp: bool = False) -> dict:

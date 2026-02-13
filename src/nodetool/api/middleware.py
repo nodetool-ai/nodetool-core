@@ -9,9 +9,7 @@ Note: API call tracing is handled automatically by OpenTelemetry auto-instrument
 from collections.abc import Callable
 from typing import Optional
 
-from fastapi import Request
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from nodetool.config.logging_config import get_logger
 from nodetool.runtime.resources import ResourceScope
@@ -19,7 +17,7 @@ from nodetool.runtime.resources import ResourceScope
 log = get_logger(__name__)
 
 
-class ResourceScopeMiddleware(BaseHTTPMiddleware):
+class ResourceScopeMiddleware:
     """Middleware to provide ResourceScope for each API request.
 
     This middleware:
@@ -39,7 +37,7 @@ class ResourceScopeMiddleware(BaseHTTPMiddleware):
 
     def __init__(
         self,
-        app: Callable,
+        app: ASGIApp,
         exempt_paths: Optional[set[str]] = None,
     ):
         """Initialize the middleware.
@@ -48,7 +46,7 @@ class ResourceScopeMiddleware(BaseHTTPMiddleware):
             app: The FastAPI application
             exempt_paths: Set of paths that should skip ResourceScope
         """
-        super().__init__(app)
+        self.app = app
         self.exempt_paths = exempt_paths or {
             "/health",
             "/ping",
@@ -57,29 +55,23 @@ class ResourceScopeMiddleware(BaseHTTPMiddleware):
             "/redoc",
         }
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """Process the request with ResourceScope binding.
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Process ASGI requests with ResourceScope binding."""
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
 
-        Args:
-            request: The incoming request
-            call_next: The next middleware/handler
-
-        Returns:
-            The response
-        """
-        # Skip ResourceScope for exempt paths
-        if request.url.path in self.exempt_paths:
-            return await call_next(request)
+        path = scope.get("path", "")
+        if path in self.exempt_paths:
+            await self.app(scope, receive, send)
+            return
 
         try:
-            # Create and use ResourceScope for the request
-            # ResourceScope auto-detects database type and uses shared pools
             async with ResourceScope():
-                return await call_next(request)
+                await self.app(scope, receive, send)
         except Exception as e:
             log.error(
-                f"Error in ResourceScope middleware for {request.url.path}: {e}",
+                f"Error in ResourceScope middleware for {path}: {e}",
                 exc_info=True,
             )
-            # Let the exception propagate so normal handlers run and avoid double execution
             raise

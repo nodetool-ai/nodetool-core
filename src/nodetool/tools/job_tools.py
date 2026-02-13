@@ -5,11 +5,24 @@ These tools provide functionality for managing workflow executions.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from typing import Any
 
 from nodetool.models.job import Job as JobModel
 from nodetool.models.run_event import RunEvent
+from nodetool.runtime.resources import ResourceScope, maybe_scope
 from nodetool.workflows.job_execution_manager import JobExecutionManager
+
+
+@asynccontextmanager
+async def _ensure_resource_scope():
+    """Bind a ResourceScope only when one is not already active."""
+    if maybe_scope() is not None:
+        yield
+        return
+
+    async with ResourceScope():
+        yield
 
 
 class JobTools:
@@ -33,12 +46,13 @@ class JobTools:
         Returns:
             Dictionary containing jobs and pagination cursor
         """
-        jobs, next_start_key = await JobModel.paginate(
-            user_id=user_id,
-            workflow_id=workflow_id,
-            limit=limit,
-            start_key=start_key,
-        )
+        async with _ensure_resource_scope():
+            jobs, next_start_key = await JobModel.paginate(
+                user_id=user_id,
+                workflow_id=workflow_id,
+                limit=limit,
+                start_key=start_key,
+            )
 
         return {
             "jobs": [
@@ -70,21 +84,22 @@ class JobTools:
         Returns:
             Job details
         """
-        job = await JobModel.find(user_id=user_id, job_id=job_id)
-        if not job:
-            raise ValueError(f"Job {job_id} not found")
+        async with _ensure_resource_scope():
+            job = await JobModel.find(user_id=user_id, job_id=job_id)
+            if not job:
+                raise ValueError(f"Job {job_id} not found")
 
-        return {
-            "id": job.id,
-            "user_id": job.user_id,
-            "job_type": job.job_type,
-            "status": job.status,
-            "workflow_id": job.workflow_id,
-            "started_at": job.started_at.isoformat() if job.started_at else "",
-            "finished_at": job.finished_at.isoformat() if job.finished_at else None,
-            "error": job.error,
-            "cost": job.cost,
-        }
+            return {
+                "id": job.id,
+                "user_id": job.user_id,
+                "job_type": job.job_type,
+                "status": job.status,
+                "workflow_id": job.workflow_id,
+                "started_at": job.started_at.isoformat() if job.started_at else "",
+                "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+                "error": job.error,
+                "cost": job.cost,
+            }
 
     @staticmethod
     async def get_job_logs(job_id: str, limit: int = 200, user_id: str = "1") -> dict[str, Any]:
@@ -99,15 +114,16 @@ class JobTools:
         Returns:
             Job logs
         """
-        job = await JobModel.find(user_id=user_id, job_id=job_id)
-        if not job:
-            raise ValueError(f"Job {job_id} not found")
+        async with _ensure_resource_scope():
+            job = await JobModel.find(user_id=user_id, job_id=job_id)
+            if not job:
+                raise ValueError(f"Job {job_id} not found")
 
-        manager = JobExecutionManager.get_instance()
-        live = manager.get_job(job_id)
-        logs = live.get_live_logs(limit=limit) if live is not None else (job.logs or [])[: max(0, limit)]
+            manager = JobExecutionManager.get_instance()
+            live = manager.get_job(job_id)
+            logs = live.get_live_logs(limit=limit) if live is not None else (job.logs or [])[: max(0, limit)]
 
-        return {"job_id": job_id, "logs": logs}
+            return {"job_id": job_id, "logs": logs}
 
     @staticmethod
     async def start_background_job(
@@ -135,27 +151,28 @@ class JobTools:
         )
         from nodetool.workflows.run_job_request import ExecutionStrategy, RunJobRequest
 
-        workflow = await WorkflowModel.find(user_id, workflow_id)
-        if not workflow:
-            raise ValueError(f"Workflow {workflow_id} not found")
+        async with _ensure_resource_scope():
+            workflow = await WorkflowModel.find(user_id, workflow_id)
+            if not workflow:
+                raise ValueError(f"Workflow {workflow_id} not found")
 
-        try:
-            strategy = ExecutionStrategy(execution_strategy)
-        except ValueError as exc:
-            raise ValueError(f"Invalid execution_strategy: {execution_strategy}") from exc
+            try:
+                strategy = ExecutionStrategy(execution_strategy)
+            except ValueError as exc:
+                raise ValueError(f"Invalid execution_strategy: {execution_strategy}") from exc
 
-        request = RunJobRequest(
-            user_id=user_id,
-            workflow_id=workflow_id,
-            params=params or {},
-            graph=workflow.get_api_graph(),
-            execution_strategy=strategy,
-        )
-        context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
+            request = RunJobRequest(
+                user_id=user_id,
+                workflow_id=workflow_id,
+                params=params or {},
+                graph=workflow.get_api_graph(),
+                execution_strategy=strategy,
+            )
+            context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
 
-        manager = JobExecutionManager.get_instance()
-        job = await manager.start_job(request, context)
-        return {"job_id": job.job_id, "status": job.status, "workflow_id": workflow_id}
+            manager = JobExecutionManager.get_instance()
+            job = await manager.start_job(request, context)
+            return {"job_id": job.job_id, "status": job.status, "workflow_id": workflow_id}
 
     @staticmethod
     def get_tool_functions() -> dict[str, Any]:

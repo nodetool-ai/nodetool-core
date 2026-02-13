@@ -832,6 +832,11 @@ mcp.add_command(jobs)
     help="Enable/disable HuggingFace download websocket endpoint (/ws/download).",
 )
 @click.option(
+    "--mcp",
+    is_flag=True,
+    help="Enable MCP server endpoints (/mcp/sse, /mcp/messages) for AI assistant integration.",
+)
+@click.option(
     "--ui-url",
     help="URL to download and serve the UI from (zip file).",
 )
@@ -868,6 +873,7 @@ def serve(
     enable_updates_ws: bool | None = None,
     enable_terminal_ws: bool | None = None,
     enable_hf_download_ws: bool | None = None,
+    mcp: bool = False,
     apps_folder: str | None = None,
     production: bool = False,
     ui_url: str | None = None,
@@ -926,6 +932,8 @@ def serve(
             run_kwargs["enable_terminal_ws"] = enable_terminal_ws
         if enable_hf_download_ws is not None:
             run_kwargs["enable_hf_download_ws"] = enable_hf_download_ws
+        if mcp:
+            run_kwargs["enable_mcp"] = mcp
         run_server(**run_kwargs)
         return
 
@@ -1019,12 +1027,19 @@ def serve(
             enable_updates_ws=enable_updates_ws,
             enable_terminal_ws=enable_terminal_ws,
             enable_hf_download_ws=enable_hf_download_ws,
+            enable_mcp=mcp,
         )
+        if mcp:
+            console.print("[green]🔗 MCP server enabled at /mcp (endpoints: /mcp/sse, /mcp/messages)[/]")
     else:
         if static_folder:
             raise Exception("static folder and reload are exclusive options")
         if apps_folder:
             raise Exception("apps folder and reload are exclusive options")
+        # Pass MCP flag via environment variable for reload mode
+        if mcp:
+            os.environ["NODETOOL_ENABLE_MCP"] = "1"
+            console.print("[green]🔗 MCP server enabled at /mcp (endpoints: /mcp/sse, /mcp/messages)[/]")
         app = "nodetool.api.app:app"
 
     run_uvicorn_server(app=app, host=host, port=port, reload=reload)

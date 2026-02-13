@@ -128,79 +128,8 @@ class AgentTools:
                 }
 
     @staticmethod
-    async def run_web_research_agent(
-        query: str,
-        provider: str = "openai",
-        model: str = "gpt-4o",
-        num_sources: int = 3,
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """
-        Run a specialized agent for web research tasks.
-
-        Args:
-            query: The research query or objective
-            provider: AI provider (default: "openai")
-            model: Model to use (default: "gpt-4o")
-            num_sources: Number of sources to research (default: 3)
-            ctx: FastMCP context for progress reporting
-
-        Returns:
-            Dictionary with research results and workspace directory
-        """
-        objective = f"""
-    Research following topic by finding and analyzing {num_sources} relevant web sources:
-
-    {query}
-
-    For each source:
-    1. Use Google Search to find relevant URLs
-    2. Use Browser tool to extract content from each URL
-    3. Summarize key findings
-
-    Provide a comprehensive summary with citations.
-    """
-
-        return await AgentTools.run_agent(
-            objective=objective,
-            provider=provider,
-            model=model,
-            tools=["google_search", "browser"],
-            ctx=ctx,
-        )
-
-    @staticmethod
-    async def run_email_agent(
-        task: str,
-        provider: str = "openai",
-        model: str = "gpt-4o",
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """
-        Run a specialized agent for email-related tasks.
-
-        Args:
-            task: The email task description
-            provider: AI provider (default: "openai")
-            model: Model to use (default: "gpt-4o")
-            ctx: FastMCP context for progress reporting
-
-        Returns:
-            Dictionary with task results and workspace directory
-        """
-        return await AgentTools.run_agent(
-            objective=task,
-            provider=provider,
-            model=model,
-            tools=["email"],
-            ctx=ctx,
-        )
-
-    @staticmethod
     def get_tool_functions() -> dict[str, Any]:
         """Get all agent tool functions."""
         return {
             "run_agent": AgentTools.run_agent,
-            "run_web_research_agent": AgentTools.run_web_research_agent,
-            "run_email_agent": AgentTools.run_email_agent,
         }
