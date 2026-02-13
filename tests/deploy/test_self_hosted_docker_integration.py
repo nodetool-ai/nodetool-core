@@ -17,12 +17,12 @@ import docker
 from nodetool.config.deployment import (
     ContainerConfig,
     DeploymentStatus,
-    ImageConfig,
     DockerDeployment,
+    ImageConfig,
     ServerPaths,
     SSHConfig,
 )
-from nodetool.deploy.self_hosted import LocalExecutor, DockerDeployer
+from nodetool.deploy.self_hosted import DockerDeployer, LocalExecutor
 from nodetool.deploy.state import StateManager
 
 

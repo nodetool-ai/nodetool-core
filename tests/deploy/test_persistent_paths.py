@@ -9,9 +9,9 @@ import pytest
 
 from nodetool.config.deployment import (
     ContainerConfig,
+    DockerDeployment,
     ImageConfig,
     PersistentPaths,
-    DockerDeployment,
     ServerPaths,
     SSHConfig,
 )
