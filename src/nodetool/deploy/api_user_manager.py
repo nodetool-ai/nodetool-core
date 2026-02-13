@@ -13,13 +13,15 @@ import httpx
 class APIUserManager:
     """Manages users via API (works with ALL deployment types)."""
 
-    def __init__(self, server_url: str, admin_token: str):
+    def __init__(self, server_url: str, admin_token: str | None):
         """Initialize API user manager.
 
         Args:
             server_url: Base URL of the deployment (e.g., http://example.com:7777)
             admin_token: Bearer token of an admin user
         """
+        if admin_token is None:
+            raise ValueError("admin_token is required")
         self.server_url = server_url.rstrip("/")
         self.admin_token = admin_token
 
