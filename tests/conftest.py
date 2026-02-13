@@ -204,6 +204,11 @@ async def setup_and_teardown(request, test_db_pool):
             except Exception:
                 pass
 
+            # Clear model observers to prevent leaks between tests
+            from nodetool.models.base_model import ModelObserver
+
+            ModelObserver.clear()
+
     max_truncate_retries = 3
     for attempt in range(max_truncate_retries):
         try:

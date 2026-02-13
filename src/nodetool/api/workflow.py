@@ -98,6 +98,7 @@ async def from_model(
         run_mode=workflow.run_mode,
         workspace_id=workflow.workspace_id,
         html_app=workflow.html_app,
+        etag=workflow.get_etag(),
     )
 
 
