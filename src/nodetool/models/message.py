@@ -1,5 +1,8 @@
+import json
 from datetime import datetime
 from typing import Any
+
+from pydantic import field_validator
 
 from nodetool.metadata.types import MessageContent, MessageFile, Provider, ToolCall
 from nodetool.models.base_model import DBField, DBModel, create_time_ordered_uuid
@@ -7,6 +10,32 @@ from nodetool.models.condition_builder import Field
 
 
 class Message(DBModel):
+
+    @field_validator("tools", "collections", mode="before")
+    @classmethod
+    def _deserialize_str_list(cls, v: Any) -> Any:
+        """Handle list fields arriving as JSON strings from SQLite."""
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return v
+
+    @field_validator("tool_calls", "input_files", "output_files", mode="before")
+    @classmethod
+    def _deserialize_obj_list(cls, v: Any) -> Any:
+        """Handle complex list fields arriving as JSON strings from SQLite."""
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return v
     @classmethod
     def get_table_schema(cls):
         return {
