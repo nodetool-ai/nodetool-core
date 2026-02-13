@@ -1,5 +1,7 @@
+import hashlib
+from enum import Enum
 from random import randint
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid1
 
 from pydantic import BaseModel, Field
@@ -17,15 +19,93 @@ This module provides the core database modeling functionality, including:
 - DBModel: A base class for database models that extends Pydantic's BaseModel
 - Field decorators and utilities for defining database schemas
 - Index management functionality
+- ModelObserver: Observer pattern for monitoring model changes
 
 Key Components:
 - DBModel: Base class that provides CRUD operations, query capabilities, and index management
 - DBField: Field decorator for marking model attributes as database columns
 - DBIndex: Decorator for defining database indexes on models
+- ModelChangeEvent: Enum for model change event types
+- ModelObserver: Global observer registry for model change notifications
 """
 
 
 log = get_logger(__name__)
+
+
+class ModelChangeEvent(str, Enum):
+    """Types of model change events."""
+
+    CREATED = "created"
+    UPDATED = "updated"
+    DELETED = "deleted"
+
+
+# Type alias for observer callbacks
+ModelObserverCallback = Callable[["DBModel", ModelChangeEvent], Any]
+
+
+class ModelObserver:
+    """
+    Global observer registry for model change notifications.
+
+    Observers can subscribe to specific model classes or all models.
+    Callbacks receive the model instance and the event type.
+    """
+
+    _observers: dict[type | None, list[ModelObserverCallback]] = {}
+
+    @classmethod
+    def subscribe(
+        cls,
+        callback: ModelObserverCallback,
+        model_class: type | None = None,
+    ) -> None:
+        """Subscribe to model changes.
+
+        Args:
+            callback: Function called with (model_instance, event_type).
+            model_class: If provided, only changes to this model class trigger
+                the callback. If None, all model changes are observed.
+        """
+        if model_class not in cls._observers:
+            cls._observers[model_class] = []
+        cls._observers[model_class].append(callback)
+
+    @classmethod
+    def unsubscribe(
+        cls,
+        callback: ModelObserverCallback,
+        model_class: type | None = None,
+    ) -> None:
+        """Remove a previously registered observer."""
+        if model_class in cls._observers:
+            try:
+                cls._observers[model_class].remove(callback)
+            except ValueError:
+                pass
+
+    @classmethod
+    def notify(cls, instance: "DBModel", event: ModelChangeEvent) -> None:
+        """Notify all relevant observers of a model change."""
+        # Notify observers for the specific model class
+        for observer in cls._observers.get(type(instance), []):
+            try:
+                observer(instance, event)
+            except Exception as e:
+                log.error(f"Error in model observer: {e}")
+
+        # Notify global observers (subscribed with model_class=None)
+        for observer in cls._observers.get(None, []):
+            try:
+                observer(instance, event)
+            except Exception as e:
+                log.error(f"Error in global model observer: {e}")
+
+    @classmethod
+    def clear(cls) -> None:
+        """Remove all observers. Primarily useful for testing."""
+        cls._observers.clear()
 
 
 def create_time_ordered_uuid() -> str:
@@ -60,6 +140,18 @@ def DBIndex(columns: list[str], unique: bool = False, name: str | None = None):
         return cls
 
     return decorator
+
+
+def compute_etag(data: dict[str, Any]) -> str:
+    """Compute an ETag from a model's data dictionary.
+
+    Uses a stable JSON serialization (sorted keys) + MD5 hash to produce a
+    short, deterministic fingerprint that changes whenever any field changes.
+    """
+    import json
+
+    raw = json.dumps(data, sort_keys=True, default=str)
+    return hashlib.md5(raw.encode()).hexdigest()
 
 
 class DBModel(BaseModel):
@@ -216,6 +308,7 @@ class DBModel(BaseModel):
         """
         instance = cls(**kwargs)
         await instance.save()
+        ModelObserver.notify(instance, ModelChangeEvent.CREATED)
         return instance
 
     def before_save(self):
@@ -232,6 +325,7 @@ class DBModel(BaseModel):
         self.before_save()
         adapter = await self.__class__.adapter()
         await adapter.save(self.model_dump())
+        ModelObserver.notify(self, ModelChangeEvent.UPDATED)
         return self
 
     @classmethod
@@ -279,6 +373,7 @@ class DBModel(BaseModel):
         """
         adapter = await self.__class__.adapter()
         await adapter.delete(self.partition_value())
+        ModelObserver.notify(self, ModelChangeEvent.DELETED)
 
     async def update(self, **kwargs):
         """
@@ -288,6 +383,10 @@ class DBModel(BaseModel):
             setattr(self, key, value)
         await self.save()
         return self
+
+    def get_etag(self) -> str:
+        """Compute an ETag for this model instance."""
+        return compute_etag(self.model_dump())
 
     @classmethod
     async def list_indexes(cls) -> list[dict[str, Any]]:

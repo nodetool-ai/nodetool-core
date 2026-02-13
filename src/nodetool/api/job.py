@@ -31,6 +31,7 @@ class JobResponse(BaseModel):
     error_message: Optional[str] = None
     execution_strategy: Optional[str] = None
     is_resumable: bool = False
+    etag: Optional[str] = None
 
 
 
@@ -106,6 +107,7 @@ async def list_jobs(
                 error_message=job.error_message,
                 execution_strategy=job.execution_strategy,
                 is_resumable=job.is_resumable(),
+                etag=job.get_etag(),
             )
             for job in jobs
         ],
@@ -146,6 +148,7 @@ async def get_job(job_id: str, user_id: str = Depends(current_user)):
         error_message=job.error_message,
         execution_strategy=job.execution_strategy,
         is_resumable=job.is_resumable(),
+        etag=job.get_etag(),
     )
 
 

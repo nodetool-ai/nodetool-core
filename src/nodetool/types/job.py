@@ -16,6 +16,7 @@ class Job(BaseModel):
     finished_at: str | None
     error: str | None
     cost: float | None
+    etag: str | None = None
 
 
 class JobRequest(BaseModel):

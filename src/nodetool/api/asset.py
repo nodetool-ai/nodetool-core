@@ -69,6 +69,7 @@ async def from_model(asset: AssetModel):
         duration=asset.duration,
         node_id=asset.node_id,
         job_id=asset.job_id,
+        etag=asset.get_etag(),
     )
 
 
