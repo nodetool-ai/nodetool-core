@@ -1,4 +1,5 @@
 import hashlib
+import json
 from enum import Enum
 from random import randint
 from typing import Any, Callable, ClassVar
@@ -148,8 +149,6 @@ def compute_etag(data: dict[str, Any]) -> str:
     Uses a stable JSON serialization (sorted keys) + MD5 hash to produce a
     short, deterministic fingerprint that changes whenever any field changes.
     """
-    import json
-
     raw = json.dumps(data, sort_keys=True, default=str)
     return hashlib.md5(raw.encode()).hexdigest()
 

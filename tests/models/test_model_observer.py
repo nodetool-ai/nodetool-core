@@ -94,10 +94,13 @@ async def test_observer_create_notification(observer_model):
     ModelObserver.subscribe(on_change, ObserverTestModel)
     await ObserverTestModel.create(id="1", name="test")
 
-    # create calls save internally, so we get UPDATED from save + CREATED from create
+    # create() calls save() internally which fires UPDATED, then create() fires CREATED
     created = [e for e in events if e[1] == ModelChangeEvent.CREATED]
     assert len(created) == 1
     assert created[0][0].id == "1"  # type: ignore[attr-defined]
+
+    updated = [e for e in events if e[1] == ModelChangeEvent.UPDATED]
+    assert len(updated) >= 1
 
 
 @pytest.mark.asyncio

@@ -140,6 +140,8 @@ class WebSocketUpdates:
             websocket: The WebSocket connection object.
         """
         async with self._lock:
+            if websocket not in self.active_connections:
+                self.log.debug("WebSocketUpdates: disconnect called for unknown websocket")
             self.active_connections.discard(websocket)
             self.log.info(f"WebSocketUpdates: disconnected. Remaining: {len(self.active_connections)}")
             # Stop stats broadcasting if no connections remain
