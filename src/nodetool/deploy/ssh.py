@@ -22,10 +22,10 @@ try:
     PARAMIKO_AVAILABLE = True
 except ImportError:
     PARAMIKO_AVAILABLE = False
-    paramiko = None
-    SSHClient = None
-    AutoAddPolicy = None
-    SFTPClient = None
+    paramiko: Any = None  # type: ignore[assignment]
+    SSHClient: Any = None  # type: ignore[assignment]
+    AutoAddPolicy: Any = None  # type: ignore[assignment]
+    SFTPClient: Any = None  # type: ignore[assignment]
 
 
 class SSHConnectionError(Exception):
@@ -105,8 +105,8 @@ class SSHConnection:
         """
         for attempt in range(self.retry_attempts):
             try:
-                self._client = SSHClient()
-                self._client.set_missing_host_key_policy(AutoAddPolicy())
+                self._client = SSHClient()  # type: ignore[misc]
+                self._client.set_missing_host_key_policy(AutoAddPolicy())  # type: ignore[misc]
 
                 connect_kwargs: dict[str, Any] = {
                     "hostname": self.host,
