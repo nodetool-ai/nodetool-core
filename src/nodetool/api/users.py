@@ -5,18 +5,12 @@ This module provides REST endpoints for managing users via API.
 Works with all deployment types: Docker, Root, GCP, RunPod.
 """
 
-from typing import TYPE_CHECKING
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
 from nodetool.security.admin_auth import is_admin_user, require_admin
 from nodetool.security.user_manager import CreateUserResult, UserManager
-
-if TYPE_CHECKING:
-    pass
-
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -53,7 +47,7 @@ async def list_users(request: Request) -> dict:
         )
 
     # Check if user has admin role
-    if not is_admin_user(user_id):
+    if not user_id or not is_admin_user(user_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
@@ -93,7 +87,7 @@ async def get_user(username: str, request: Request) -> dict:
             detail="User management not available for current auth provider",
         )
 
-    if not is_admin_user(user_id):
+    if not user_id or not is_admin_user(user_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
@@ -134,7 +128,7 @@ async def add_user(req: AddUserRequest, request: Request) -> dict:
             detail="User management not available for current auth provider",
         )
 
-    if not is_admin_user(user_id):
+    if not user_id or not is_admin_user(user_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
@@ -152,9 +146,7 @@ async def add_user(req: AddUserRequest, request: Request) -> dict:
             "created_at": result.created_at,
         }
     except ValueError as e:
-        from fastapi import HTTPException
-
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
 
 @router.post("/reset-token")
@@ -174,7 +166,7 @@ async def reset_token(req: ResetTokenRequest, request: Request) -> dict:
             detail="User management not available for current auth provider",
         )
 
-    if not is_admin_user(user_id):
+    if not user_id or not is_admin_user(user_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
@@ -192,7 +184,7 @@ async def reset_token(req: ResetTokenRequest, request: Request) -> dict:
             "created_at": result.created_at,
         }
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
 
 
 @router.delete("/{username}")
@@ -211,7 +203,7 @@ async def delete_user(username: str, request: Request) -> dict:
             detail="User management not available for current auth provider",
         )
 
-    if not is_admin_user(user_id):
+    if not user_id or not is_admin_user(user_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
@@ -223,4 +215,4 @@ async def delete_user(username: str, request: Request) -> dict:
         manager.remove_user(username)
         return {"message": f"User '{username}' removed successfully"}
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e

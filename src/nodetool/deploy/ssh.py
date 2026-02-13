@@ -22,10 +22,10 @@ try:
     PARAMIKO_AVAILABLE = True
 except ImportError:
     PARAMIKO_AVAILABLE = False
-    paramiko = None
-    SSHClient = None
-    AutoAddPolicy = None
-    SFTPClient = None
+    paramiko: Any = None
+    SSHClient: Any = None
+    AutoAddPolicy: Any = None
+    SFTPClient: Any = None
 
 
 class SSHConnectionError(Exception):
