@@ -20,10 +20,10 @@ import time
 from pathlib import Path
 from typing import Any
 
-import docker
 import pytest
 import requests
 
+import docker
 from nodetool.config.deployment import (
     ContainerConfig,
     DeploymentStatus,
@@ -531,7 +531,7 @@ class TestDockerAPIIntegration:
                                 # without additional API calls or checking logs
                                 return
                             elif status == "failed":
-                                pytest.fail(f"Workflow execution failed")
+                                pytest.fail("Workflow execution failed")
 
                 time.sleep(1)
 
@@ -626,7 +626,7 @@ class TestDockerAPIIntegration:
                             if job.get("status") == "completed":
                                 return  # Success!
                             elif job.get("status") == "failed":
-                                pytest.fail(f"Workflow execution failed")
+                                pytest.fail("Workflow execution failed")
 
                 time.sleep(1)
 
@@ -779,6 +779,7 @@ class TestDockerDeploymentManagerIntegration:
     def test_deployment_executor_type(self, test_deployment):
         """Test that LocalExecutor is used for localhost."""
         from unittest.mock import Mock
+
         from nodetool.deploy.self_hosted import LocalExecutor
 
         mock_state = Mock(spec=StateManager)
