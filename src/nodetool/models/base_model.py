@@ -1,7 +1,7 @@
 import hashlib
 from enum import Enum
 from random import randint
-from typing import Any, Callable
+from typing import Any, Callable, ClassVar
 from uuid import uuid1
 
 from pydantic import BaseModel, Field
@@ -53,7 +53,7 @@ class ModelObserver:
     Callbacks receive the model instance and the event type.
     """
 
-    _observers: dict[type | None, list[ModelObserverCallback]] = {}
+    _observers: ClassVar[dict[type | None, list[ModelObserverCallback]]] = {}
 
     @classmethod
     def subscribe(

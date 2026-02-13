@@ -4,7 +4,7 @@ including system statistics and database model resource changes, to connected cl
 """
 
 import asyncio
-from typing import Any, Literal, Union
+from typing import Any, Literal
 
 from fastapi import WebSocket
 from pydantic import BaseModel
@@ -32,7 +32,7 @@ class ResourceChangeUpdate(BaseModel):
     resource: dict[str, Any]  # Serialised API model (or minimal dict for deletes)
 
 
-WebSocketUpdate = Union[SystemStatsUpdate, ResourceChangeUpdate]
+WebSocketUpdate = SystemStatsUpdate | ResourceChangeUpdate
 
 
 class WebSocketUpdates:
@@ -102,7 +102,7 @@ class WebSocketUpdates:
                 self.broadcast_update(update),
             )
         except RuntimeError:
-            # Event loop closed – nothing to do
+            # Event loop closed - nothing to do
             pass
 
     # ------------------------------------------------------------------
