@@ -628,7 +628,7 @@ class ChatCLI:
         )
 
         # Initialize state
-        self.context = ProcessingContext(user_id="1", auth_token="local_token")
+        self.context = ProcessingContext(user_id="1")
         self.messages: list[Message] = []
         self.agent_mode = True  # Default to agent mode ON - omnipotent agent
         self.debug_mode = False  # Debug mode for displaying tool calls and results

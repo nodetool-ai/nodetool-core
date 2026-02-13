@@ -192,7 +192,8 @@ async def index(
         # Surface other failures as server errors
         raise HTTPException(status_code=500, detail=str(e)) from e
 
-    token = "local_token"
+    # Extract token from authorization header, defaulting to local_token for development
+    token = _authorization or "local_token"
 
     # Save uploaded file temporarily
     tmp_dir = tempfile.mkdtemp()
