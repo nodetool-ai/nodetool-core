@@ -1,4 +1,5 @@
 from .async_barrier import AsyncBarrier
+from .async_cache import AsyncCache, async_cache
 from .async_channel import (
     AsyncChannel,
     AsyncChannelIterator,
@@ -42,7 +43,10 @@ from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_
 
 __all__ = [
     "AdaptiveThrottle",
+    "async_cache",
     "AsyncBarrier",
+    "AsyncByteStream",
+    "AsyncCache",
     "AsyncByteStream",
     "AsyncChannel",
     "AsyncChannelIterator",
