@@ -118,6 +118,36 @@ async def test_create(client: TestClient, headers: dict[str, str], user_id: str)
 
 
 @pytest.mark.asyncio
+async def test_create_image_with_invalid_payload_still_succeeds(
+    client: TestClient, headers: dict[str, str], user_id: str
+):
+    """
+    Invalid image payloads should not fail asset creation; thumbnail generation is best-effort.
+    """
+    response = client.post(
+        "/api/assets",
+        files={"file": ("broken.jpg", BytesIO(b"not-an-image"), "image/jpeg")},
+        data={
+            "json": AssetCreateRequest(
+                parent_id=user_id,
+                name="broken.jpg",
+                content_type="image/jpeg",
+            ).model_dump_json()
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    created = response.json()
+
+    asset_reloaded = await Asset.find(user_id, created["id"])
+    assert asset_reloaded is not None
+    assert asset_reloaded.name == "broken.jpg"
+    storage = require_scope().get_asset_storage()
+    assert not await storage.file_exists(asset_reloaded.thumb_file_name)
+
+
+@pytest.mark.asyncio
 async def test_storage_stream_content_length(client: TestClient, headers: dict[str, str], user_id: str):
     image = await make_image(user_id)
     storage = require_scope().get_asset_storage()

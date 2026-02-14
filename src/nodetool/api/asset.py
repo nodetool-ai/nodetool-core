@@ -10,6 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+from PIL import UnidentifiedImageError
 from pydantic import BaseModel
 from pydantic import Field as PydanticField
 
@@ -546,7 +547,15 @@ async def create(
             elif "audio" in req.content_type:
                 duration = get_audio_duration(file_io)
             elif "image" in req.content_type:
-                thumbnail = await create_image_thumbnail(file_io, 512, 512)
+                try:
+                    thumbnail = await create_image_thumbnail(file_io, 512, 512)
+                except UnidentifiedImageError:
+                    # Keep upload successful even when the payload is not a decodable image.
+                    log.warning(
+                        "Skipping thumbnail generation for invalid image upload: name=%s content_type=%s",
+                        req.name,
+                        req.content_type,
+                    )
 
         asset = await AssetModel.create(
             workflow_id=req.workflow_id,
