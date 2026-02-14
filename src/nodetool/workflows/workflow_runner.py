@@ -97,7 +97,7 @@ _gpu_lock_holder_time: float = 0.0
 GPU_LOCK_TIMEOUT = 300  # 5 minutes
 
 
-async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext):
+async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext) -> None:
     """
     Asynchronously acquires the global GPU lock for a given node.
 

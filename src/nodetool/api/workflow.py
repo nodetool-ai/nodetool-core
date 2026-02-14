@@ -102,7 +102,7 @@ async def from_model(
     )
 
 
-def _graph_has_input_and_output(graph: Graph):
+def _graph_has_input_and_output(graph: Graph) -> bool:
     has_input = False
     has_output = False
 

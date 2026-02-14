@@ -1315,7 +1315,7 @@ class BaseNode(BaseModel):
         return is_assignable(prop.type, value)
 
     @classmethod
-    def is_cacheable(cls):
+    def is_cacheable(cls) -> bool:
         """
         Check if the node is cacheable.
         Nodes that implement gen_process (i.e., have overridden it) are not cacheable.
