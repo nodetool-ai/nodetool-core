@@ -105,6 +105,7 @@ class TestRunServerModule:
     def test_run_server_accepts_host_port_reload(self):
         """Test that run_server accepts host, port, and reload parameters."""
         import inspect
+
         from nodetool.api.run_server import run_server
 
         sig = inspect.signature(run_server)
@@ -117,6 +118,7 @@ class TestRunServerModule:
     def test_run_server_default_host_is_all_interfaces(self):
         """Test that run_server defaults to 0.0.0.0 for deployment use."""
         import inspect
+
         from nodetool.api.run_server import run_server
 
         sig = inspect.signature(run_server)
@@ -127,6 +129,7 @@ class TestRunServerModule:
     def test_run_server_default_port_is_7777(self):
         """Test that run_server defaults to port 7777."""
         import inspect
+
         from nodetool.api.run_server import run_server
 
         sig = inspect.signature(run_server)

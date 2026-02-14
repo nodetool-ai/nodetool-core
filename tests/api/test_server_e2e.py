@@ -17,12 +17,12 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+from nodetool.api.run_server import run_server
 from nodetool.api.server import (
     _load_default_routers,
     _load_deploy_routers,
     create_app,
 )
-from nodetool.api.run_server import run_server
 
 
 class TestServerStartup:
@@ -377,6 +377,7 @@ class TestCliServeCommandProductionFlag:
     def test_serve_production_flag_uses_run_server(self, monkeypatch):
         """Verify serve --production calls run_server instead of create_app."""
         from click.testing import CliRunner
+
         from nodetool.cli import cli
 
         run_server_called = []
@@ -396,6 +397,7 @@ class TestCliServeCommandProductionFlag:
     def test_serve_without_production_uses_create_app(self, monkeypatch):
         """Verify serve without --production uses create_app."""
         from click.testing import CliRunner
+
         from nodetool.cli import cli
 
         create_app_called = []
@@ -422,6 +424,7 @@ class TestCliServeCommandProductionFlag:
 
     def test_serve_production_mode_flag_forwarded(self, monkeypatch):
         from click.testing import CliRunner
+
         from nodetool.cli import cli
 
         calls = []
