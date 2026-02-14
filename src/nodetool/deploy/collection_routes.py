@@ -28,7 +28,8 @@ def create_collection_router() -> APIRouter:
         file: UploadFile = File(...),
         authorization: Optional[str] = Header(None),
     ):
-        token = "local_token"
+        # Extract token from authorization header, defaulting to local_token for development
+        token = authorization or "local_token"
 
         tmp_dir = tempfile.mkdtemp()
         tmp_path = os.path.join(tmp_dir, file.filename or "uploaded_file")
