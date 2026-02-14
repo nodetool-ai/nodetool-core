@@ -9,6 +9,7 @@ from .async_channel import (
 )
 from .async_condition import AsyncCondition
 from .async_event import AsyncEvent
+from .async_pool import AsyncPool, AsyncPoolContext
 from .async_iterators import (
     AsyncByteStream,
     async_filter,
@@ -50,6 +51,8 @@ __all__ = [
     "AsyncDebounce",
     "AsyncEvent",
     "AsyncLock",
+    "AsyncPool",
+    "AsyncPoolContext",
     "AsyncPriorityQueue",
     "AsyncRateLimiter",
     "AsyncReaderWriterLock",
