@@ -7,8 +7,8 @@ import yaml
 
 from nodetool.config.deployment import (
     ContainerConfig,
-    ImageConfig,
     DockerDeployment,
+    ImageConfig,
     ServerPaths,
     SSHConfig,
 )

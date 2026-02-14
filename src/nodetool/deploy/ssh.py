@@ -12,7 +12,12 @@ import os
 import time
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Union
+
+if TYPE_CHECKING:
+    import paramiko
+    from paramiko import AutoAddPolicy, SSHClient
+    from paramiko.sftp_client import SFTPClient
 
 try:
     import paramiko
@@ -22,10 +27,11 @@ try:
     PARAMIKO_AVAILABLE = True
 except ImportError:
     PARAMIKO_AVAILABLE = False
-    paramiko = None
-    SSHClient = None
-    AutoAddPolicy = None
-    SFTPClient = None
+    # These will only be accessed at runtime when PARAMIKO_AVAILABLE is True
+    paramiko = None  # type: ignore[assignment]
+    SSHClient = None  # type: ignore[assignment]
+    AutoAddPolicy = None  # type: ignore[assignment]
+    SFTPClient = None  # type: ignore[assignment]
 
 
 class SSHConnectionError(Exception):
@@ -103,10 +109,13 @@ class SSHConnection:
         Raises:
             SSHConnectionError: If connection fails after all retry attempts
         """
+        if not PARAMIKO_AVAILABLE:
+            raise SSHConnectionError("Paramiko library is not available")
+
         for attempt in range(self.retry_attempts):
             try:
-                self._client = SSHClient()
-                self._client.set_missing_host_key_policy(AutoAddPolicy())
+                self._client = SSHClient()  # type: ignore[misc]
+                self._client.set_missing_host_key_policy(AutoAddPolicy())  # type: ignore[misc]
 
                 connect_kwargs: dict[str, Any] = {
                     "hostname": self.host,
