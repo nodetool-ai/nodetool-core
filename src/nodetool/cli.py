@@ -955,9 +955,9 @@ def serve(
     if ui or ui_url:
         if ui and ui_url:
              console.print("[yellow]Warning: --ui-url overrides --ui[/]")
-        
+
         url_to_use = ui_url
-        
+
         # If --ui flag is used and no explicit URL, infer it
         if ui and not ui_url:
             try:
@@ -965,7 +965,7 @@ def serve(
                 # Fix normalized version if needed (e.g., 0.6.3rc12 -> 0.6.3-rc.12)
                 if "rc" in version and "-" not in version:
                      version = version.replace("rc", "-rc.")
-                
+
                 url_to_use = f"https://github.com/nodetool-ai/nodetool/releases/download/v{version}/nodetool-web-{version}.zip"
                 console.print(f"[cyan]Inferring UI URL for version {version}: {url_to_use}[/]")
             except PackageNotFoundError:
@@ -1042,36 +1042,38 @@ def _download_and_cache_ui(url: str) -> str:
     import shutil
     import zipfile
     from io import BytesIO
+
     import httpx
+
     from nodetool.config.settings import get_system_cache_path
 
     # Generate cache key from URL
     url_hash = hashlib.md5(url.encode()).hexdigest()
     cache_dir = get_system_cache_path("ui_cache") / url_hash
-    
+
     # Check if already cached
     if cache_dir.exists() and (cache_dir / "index.html").exists():
         console.print(f"[green]Using cached UI from {cache_dir}[/]")
         return str(cache_dir)
 
     console.print(f"[cyan]Downloading UI from {url}...[/]")
-    
+
     # Download
     with httpx.Client(follow_redirects=True) as client:
         resp = client.get(url)
         if resp.status_code == 404:
              raise Exception("404 Not Found")
         resp.raise_for_status()
-        
+
         # Unpack
         console.print("[cyan]Unpacking UI...[/]")
         if cache_dir.exists():
             shutil.rmtree(cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
-        
+
         with zipfile.ZipFile(BytesIO(resp.content)) as z:
             z.extractall(cache_dir)
-            
+
         # Handle case where zip contains a single top-level folder
         # e.g. nodetool-web-0.6.3-rc.12/index.html -> move contents up
         items = list(cache_dir.iterdir())
@@ -2997,11 +2999,11 @@ def env_for_deploy(
 
 def _populate_master_key_env(deployment: Any, master_key: str) -> None:
     from nodetool.config.deployment import (
-        GCPDeployment,
-        RunPodDeployment,
         DockerDeployment,
-        SSHDeployment,
+        GCPDeployment,
         LocalDeployment,
+        RunPodDeployment,
+        SSHDeployment,
     )
 
     def _inject(env: Optional[dict[str, str]]) -> dict[str, str]:
@@ -3058,8 +3060,9 @@ def _resolve_local_docker_container_token(deployment: Any) -> Optional[str]:
     container_name = DockerRunGenerator(deployment).get_container_name()
 
     try:
-        import docker  # type: ignore[import-untyped]
         from docker.errors import DockerException, NotFound  # type: ignore[import-untyped]
+
+        import docker  # type: ignore[import-untyped]
     except Exception:
         return None
 
@@ -3206,11 +3209,11 @@ def deploy_init():
 def deploy_show(name: str):
     """Display detailed information about a specific deployment."""
     from nodetool.config.deployment import (
-        GCPDeployment,
-        RunPodDeployment,
         DockerDeployment,
-        SSHDeployment,
+        GCPDeployment,
         LocalDeployment,
+        RunPodDeployment,
+        SSHDeployment,
     )
     from nodetool.deploy.manager import DeploymentManager
 
@@ -3409,17 +3412,17 @@ def deploy_add(name: str, deployment_type: str):
     from nodetool.config.deployment import (
         ContainerConfig,
         DeploymentConfig,
+        DockerDeployment,
         GCPDeployment,
         GCPImageConfig,
         GCPResourceConfig,
         ImageConfig,
+        LocalDeployment,
         RunPodDeployment,
         RunPodImageConfig,
         ServerPaths,
-        DockerDeployment,
-        SSHDeployment,
-        LocalDeployment,
         SSHConfig,
+        SSHDeployment,
         get_deployment_config_path,
         load_deployment_config,
         save_deployment_config,
@@ -3534,12 +3537,12 @@ def deploy_add(name: str, deployment_type: str):
             console.print("[cyan]Service configuration:[/]")
             container_port = click.prompt("  Port", type=int, default=8000)
             service_name = click.prompt("  Systemd service name", type=str, default=f"nodetool-{container_port}")
-            
+
             use_gpu = click.confirm("  Assign GPU?", default=False)
             gpu = None
             if use_gpu:
                  gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
-            
+
             has_workflows = click.confirm("  Assign specific workflows?", default=False)
             workflows = None
             if has_workflows:
@@ -5340,8 +5343,12 @@ async def deploy_users_add(deployment_name: str, username: str, role: str):
         console.print(f"[red]❌ Deployment '{deployment_name}' has no server URL[/]")
         sys.exit(1)
 
-    admin_token = click.prompt("Enter admin bearer token", hide_input=True)
-    manager = APIUserManager(server_url, admin_token)
+    admin_token: str | None = click.prompt("Enter admin bearer token", hide_input=True)
+    if not admin_token:
+        console.print("[red]❌ Admin token is required[/]")
+        sys.exit(1)
+
+    manager = APIUserManager(server_url, admin_token)  # type: ignore[arg-type]
 
     try:
         result = await manager.add_user(username, role)
@@ -5369,8 +5376,12 @@ async def deploy_users_list(deployment_name: str, as_json: bool):
     deployment = config.deployments[deployment_name]
     server_url = deployment.get_server_url()
 
-    admin_token = click.prompt("Enter admin bearer token", hide_input=True)
-    manager = APIUserManager(server_url, admin_token)
+    admin_token: str | None = click.prompt("Enter admin bearer token", hide_input=True)
+    if not admin_token:
+        console.print("[red]❌ Admin token is required[/]")
+        sys.exit(1)
+
+    manager = APIUserManager(server_url, admin_token)  # type: ignore[arg-type]
 
     users = await manager.list_users()
 
@@ -5414,15 +5425,19 @@ async def deploy_users_remove(deployment_name: str, username: str, force: bool):
     deployment = config.deployments[deployment_name]
     server_url = deployment.get_server_url()
 
-    admin_token = click.prompt("Enter admin bearer token", hide_input=True)
-    manager = APIUserManager(server_url, admin_token)
+    admin_token: str | None = click.prompt("Enter admin bearer token", hide_input=True)
+    if not admin_token:
+        console.print("[red]❌ Admin token is required[/]")
+        sys.exit(1)
+
+    manager = APIUserManager(server_url, admin_token)  # type: ignore[arg-type]
 
     if not force:
         if not click.confirm(f"Remove user '{username}' from '{deployment_name}'?"):
             return
 
     try:
-        result = await manager.remove_user(username)
+        await manager.remove_user(username)
         console.print(f"[green]✅ User '{username}' removed from '{deployment_name}'[/]")
     except Exception as e:
         console.print(f"[red]❌ Error: {e}[/]")
@@ -5441,8 +5456,12 @@ async def deploy_users_reset_token(deployment_name: str, username: str):
     deployment = config.deployments[deployment_name]
     server_url = deployment.get_server_url()
 
-    admin_token = click.prompt("Enter admin bearer token", hide_input=True)
-    manager = APIUserManager(server_url, admin_token)
+    admin_token: str | None = click.prompt("Enter admin bearer token", hide_input=True)
+    if not admin_token:
+        console.print("[red]❌ Admin token is required[/]")
+        sys.exit(1)
+
+    manager = APIUserManager(server_url, admin_token)  # type: ignore[arg-type]
 
     try:
         result = await manager.reset_token(username)
