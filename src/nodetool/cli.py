@@ -1039,10 +1039,11 @@ def serve(
 def _download_and_cache_ui(url: str) -> str:
     """Download UI zip from URL and unpack to cache directory."""
     import hashlib
-    import httpx
     import shutil
     import zipfile
     from io import BytesIO
+
+    import httpx
 
     from nodetool.config.settings import get_system_cache_path
 
@@ -2998,11 +2999,11 @@ def env_for_deploy(
 
 def _populate_master_key_env(deployment: Any, master_key: str) -> None:
     from nodetool.config.deployment import (
-        GCPDeployment,
-        RunPodDeployment,
         DockerDeployment,
-        SSHDeployment,
+        GCPDeployment,
         LocalDeployment,
+        RunPodDeployment,
+        SSHDeployment,
     )
 
     def _inject(env: Optional[dict[str, str]]) -> dict[str, str]:
@@ -3059,8 +3060,9 @@ def _resolve_local_docker_container_token(deployment: Any) -> Optional[str]:
     container_name = DockerRunGenerator(deployment).get_container_name()
 
     try:
-        import docker  # type: ignore[import-untyped]
         from docker.errors import DockerException, NotFound  # type: ignore[import-untyped]
+
+        import docker  # type: ignore[import-untyped]
     except Exception:
         return None
 
@@ -3207,11 +3209,11 @@ def deploy_init():
 def deploy_show(name: str):
     """Display detailed information about a specific deployment."""
     from nodetool.config.deployment import (
-        GCPDeployment,
-        RunPodDeployment,
         DockerDeployment,
-        SSHDeployment,
+        GCPDeployment,
         LocalDeployment,
+        RunPodDeployment,
+        SSHDeployment,
     )
     from nodetool.deploy.manager import DeploymentManager
 
@@ -3410,17 +3412,17 @@ def deploy_add(name: str, deployment_type: str):
     from nodetool.config.deployment import (
         ContainerConfig,
         DeploymentConfig,
+        DockerDeployment,
         GCPDeployment,
         GCPImageConfig,
         GCPResourceConfig,
         ImageConfig,
+        LocalDeployment,
         RunPodDeployment,
         RunPodImageConfig,
         ServerPaths,
-        DockerDeployment,
-        SSHDeployment,
-        LocalDeployment,
         SSHConfig,
+        SSHDeployment,
         get_deployment_config_path,
         load_deployment_config,
         save_deployment_config,
@@ -3535,12 +3537,12 @@ def deploy_add(name: str, deployment_type: str):
             console.print("[cyan]Service configuration:[/]")
             container_port = click.prompt("  Port", type=int, default=8000)
             service_name = click.prompt("  Systemd service name", type=str, default=f"nodetool-{container_port}")
-            
+
             use_gpu = click.confirm("  Assign GPU?", default=False)
             gpu = None
             if use_gpu:
                  gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
-            
+
             has_workflows = click.confirm("  Assign specific workflows?", default=False)
             workflows = None
             if has_workflows:
