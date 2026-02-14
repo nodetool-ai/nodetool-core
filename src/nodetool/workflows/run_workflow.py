@@ -159,21 +159,12 @@ async def run_workflow(
     # a full WorkflowRunner / ProcessingContext. --
     run_mode: str | None = None
     if request.graph is None:
-        from nodetool.workflows.processing_context import ProcessingContext as _PC
+        from nodetool.models.workflow import Workflow as WorkflowModel
 
-        _tmp_ctx = _PC(
-            user_id=request.user_id,
-            job_id="",
-            auth_token=request.auth_token,
-            workflow_id=request.workflow_id,
-        )
-        wf = await _tmp_ctx.get_workflow(request.workflow_id)
+        wf = await WorkflowModel.find(request.user_id, request.workflow_id)
         if wf is not None:
-            if hasattr(wf, "get_api_graph"):
-                request.graph = wf.get_api_graph()  # type: ignore[attr-defined]
-            elif hasattr(wf, "graph"):
-                request.graph = wf.graph
-            run_mode = getattr(wf, "run_mode", None)
+            request.graph = wf.get_api_graph()
+            run_mode = wf.run_mode
 
     # -- Route to Comfy runner when applicable --
     if should_use_comfy_runner(run_mode, request.graph):

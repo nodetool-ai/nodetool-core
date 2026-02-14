@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 COMFY_HOST: str = os.environ.get("COMFYUI_ADDR", "127.0.0.1:8188")
+COMFY_WS_TIMEOUT: int = int(os.environ.get("COMFY_WS_TIMEOUT", "300"))
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +108,7 @@ class ComfyEventTranslator:
         node_id = data.get("node")
         if node_id is None:
             # Terminal pattern: execution finished
-            return self._finalize()
+            return self.finalize()
         self._running_nodes.add(node_id)
         self._current_node = node_id
         return [
@@ -179,7 +180,7 @@ class ComfyEventTranslator:
         return msgs
 
     def _handle_execution_success(self, data: dict[str, Any]) -> list[ProcessingMessage]:
-        return self._finalize()
+        return self.finalize()
 
     def _handle_execution_error(self, data: dict[str, Any]) -> list[ProcessingMessage]:
         node_id = data.get("node_id", "")
@@ -223,7 +224,7 @@ class ComfyEventTranslator:
 
     # -- helpers --
 
-    def _finalize(self) -> list[ProcessingMessage]:
+    def finalize(self) -> list[ProcessingMessage]:
         """Force-complete lingering running nodes and emit job completion."""
         if self._completed:
             return []
@@ -345,7 +346,7 @@ async def run_comfy_workflow(
     ws: websocket.WebSocket | None = None
     try:
         ws = websocket.WebSocket()
-        ws.settimeout(300)  # 5 min timeout for long jobs
+        ws.settimeout(COMFY_WS_TIMEOUT)
         ws.connect(ws_url, timeout=10)
         log.info("Comfy WS connected: %s [job=%s]", ws_url, job_id)
     except Exception as exc:
@@ -433,7 +434,7 @@ async def run_comfy_workflow(
 
         # If we exited without a terminal message, emit one
         if not translator.is_completed:
-            for msg in translator._finalize():
+            for msg in translator.finalize():
                 yield msg
 
     finally:
