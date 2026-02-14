@@ -43,7 +43,6 @@ class TestServerModeRouteMatrix:
         assert "/collections/{name}/index" in routes
         assert "/storage/assets/{key}" in routes
         assert "/ws" in routes
-        assert "/ws/updates" in routes
         assert "/ws/terminal" in routes
         assert "/ws/download" in routes
 
@@ -62,7 +61,6 @@ class TestServerModeRouteMatrix:
         assert "/terminal" not in routes
         assert "/ws/download" not in routes
         assert "/ws" in routes
-        assert "/ws/updates" in routes
 
     def test_private_mode_includes_deploy_routes_without_terminal(self, monkeypatch):
         monkeypatch.setenv("AUTH_PROVIDER", "multi_user")
@@ -76,7 +74,6 @@ class TestServerModeRouteMatrix:
         assert "/terminal" not in routes
         assert "/ws/download" not in routes
         assert "/ws" in routes
-        assert "/ws/updates" in routes
 
     def test_mode_feature_override_reenables_admin_routes(self, monkeypatch):
         monkeypatch.setenv("AUTH_PROVIDER", "supabase")

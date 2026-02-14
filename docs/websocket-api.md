@@ -1,12 +1,13 @@
 # Unified WebSocket API
 
-This document describes the unified WebSocket API for NodeTool, which combines workflow execution and chat communications into a single endpoint.
+This document describes the unified WebSocket API for NodeTool, which combines workflow execution, chat communications, and system updates into a single endpoint.
 
 ## Overview
 
 The unified WebSocket endpoint (`/ws`) provides a single connection point for:
 - **Workflow execution**: Running, monitoring, and managing workflow jobs
 - **Chat communications**: Real-time AI chat with message persistence
+- **System updates**: System stats broadcasting and resource change notifications
 - **Bidirectional updates**: Receive workflow updates during chat or chat updates during workflows
 
 ### Benefits of the Unified Endpoint
@@ -19,10 +20,7 @@ The unified WebSocket endpoint (`/ws`) provides a single connection point for:
 
 | Endpoint | Description | Status |
 |----------|-------------|--------|
-| `/ws` | Unified WebSocket for workflows and chat | **Recommended** |
-| `/ws/predict` | Legacy workflow-only endpoint | Deprecated |
-| `/ws/chat` | Legacy chat-only endpoint | Deprecated |
-| `/ws/updates` | System stats broadcasts | Active |
+| `/ws` | Unified WebSocket for workflows, chat, and system updates | **Recommended** |
 | `/ws/terminal` | Terminal access (dev only) | Active |
 
 ## Protocol
@@ -482,42 +480,14 @@ Errors are returned in a consistent format:
 
 ## Migration Guide
 
-### From `/ws/predict` to `/ws`
+### From `/ws/updates` to `/ws`
 
-The unified endpoint supports all workflow commands identically. No changes needed to your command structure.
-
-**Before:**
-```javascript
-const ws = new WebSocket('wss://api.example.com/ws/predict');
-```
-
-**After:**
-```javascript
-const ws = new WebSocket('wss://api.example.com/ws');
-```
-
-### From `/ws/chat` to `/ws`
-
-Chat messages must now use the `chat_message` command with a `thread_id`.
-
-**Before:**
-```javascript
-const chatWs = new WebSocket('wss://api.example.com/ws/chat');
-chatWs.send(JSON.stringify({ role: 'user', content: 'Hello' }));
-```
-
-**After:**
-```javascript
-const ws = new WebSocket('wss://api.example.com/ws');
-ws.send(JSON.stringify({
-  command: 'chat_message',
-  data: { role: 'user', content: 'Hello', thread_id: 'uuid-of-thread' }
-}));
-```
+System stats and resource change updates are now sent through the unified `/ws` endpoint.
+Clients no longer need a separate connection for updates.
 
 ### Combined Usage
 
-With the unified endpoint, you can use both features on the same connection:
+With the unified endpoint, you can use all features on the same connection:
 
 ```javascript
 const ws = new WebSocket('wss://api.example.com/ws');
