@@ -26,23 +26,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
-from nodetool.security.admin_auth import require_admin
 
 logger = logging.getLogger("nodetool.admin")
-from nodetool.deploy.admin_operations import (
-    calculate_cache_size,
-    delete_hf_model,
-    download_hf_model,
-    download_ollama_model,
-    scan_hf_cache,
-)
-from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
-    get_async_chroma_client,
-)
-from nodetool.models.asset import Asset as AssetModel
-from nodetool.models.workflow import Workflow
-from nodetool.runtime.resources import require_scope
-from nodetool.types.asset import Asset, AssetList
 
 if TYPE_CHECKING:
     from nodetool.models.database_adapter import DatabaseAdapter
@@ -83,8 +68,11 @@ class IndexResponse(BaseModel):
     error: Optional[str] = None
 
 
-async def asset_from_model(asset: AssetModel) -> Asset:
+async def asset_from_model(asset) -> dict:
     """Convert AssetModel to Asset API response."""
+    from nodetool.runtime.resources import require_scope
+    from nodetool.types.asset import Asset
+
     storage = require_scope().get_asset_storage()
     if asset.content_type != "folder":
         get_url = await storage.get_url(asset.file_name)
@@ -113,6 +101,9 @@ async def asset_from_model(asset: AssetModel) -> Asset:
 
 
 async def get_model_adapter(table: str) -> DatabaseAdapter:
+    from nodetool.models.asset import Asset as AssetModel
+    from nodetool.models.workflow import Workflow
+
     if table == "workflows":
         return await Workflow.adapter()
     elif table == "assets":
@@ -122,6 +113,22 @@ async def get_model_adapter(table: str) -> DatabaseAdapter:
 
 
 def create_admin_router() -> APIRouter:
+    from nodetool.deploy.admin_operations import (
+        calculate_cache_size,
+        delete_hf_model,
+        download_hf_model,
+        download_ollama_model,
+        scan_hf_cache,
+    )
+    from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
+        get_async_chroma_client,
+    )
+    from nodetool.models.asset import Asset as AssetModel
+    from nodetool.models.workflow import Workflow
+    from nodetool.runtime.resources import require_scope
+    from nodetool.security.admin_auth import require_admin
+    from nodetool.types.asset import Asset, AssetList
+
     router = APIRouter()
 
     @router.post("/admin/models/huggingface/download")

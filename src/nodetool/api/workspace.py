@@ -18,8 +18,6 @@ import os
 from datetime import UTC, datetime
 from typing import Optional
 
-import aiofiles
-import aiofiles.os
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -286,6 +284,8 @@ class FileInfo(BaseModel):
 
 async def get_file_info(path: str) -> FileInfo:
     """Helper function to get file information."""
+    import aiofiles.os
+
     try:
         stat = await aiofiles.os.stat(path)
         is_dir = await asyncio.to_thread(os.path.isdir, path)
@@ -375,6 +375,8 @@ async def list_workflow_files(
             raise HTTPException(status_code=404, detail=f"Path not found: {path}")
 
         files = []
+        import aiofiles.os
+
         entries = await aiofiles.os.listdir(resolved_path)
         for entry in entries:
             # Include hidden files in workspace view
@@ -465,6 +467,8 @@ async def download_workflow_file(
             raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
 
         async def file_iterator():
+            import aiofiles
+
             chunk_size = 8192  # 8KB chunks
             async with aiofiles.open(full_path, "rb") as f:
                 while chunk := await f.read(chunk_size):
@@ -519,6 +523,8 @@ async def upload_workflow_file(
         await asyncio.to_thread(os.makedirs, os.path.dirname(full_path), exist_ok=True)
 
         # Read and write in chunks to handle large files
+        import aiofiles
+
         async with aiofiles.open(full_path, "wb") as f:
             while chunk := await file.read(8192):
                 await f.write(chunk)

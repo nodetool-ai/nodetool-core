@@ -9,8 +9,6 @@ import logging
 from typing import TYPE_CHECKING, Optional
 from uuid import uuid4
 
-from pandas._libs.tslibs.offsets import BDay
-
 from nodetool.agents.tools.browser_tools import BrowserTool
 from nodetool.agents.tools.filesystem_tools import ReadFileTool, WriteFileTool
 from nodetool.agents.tools.serp_tools import GoogleSearchTool
