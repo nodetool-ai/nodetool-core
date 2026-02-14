@@ -12,11 +12,24 @@
   - Line 340: `datetime.utcnow().isoformat()` → `datetime.now(UTC).isoformat()`
   - Updated import: `from datetime import UTC, datetime`
 
+- `src/nodetool/deploy/remote_users.py`:
+  - Line 98: `datetime.utcnow().isoformat() + "Z"` → `datetime.now(UTC).isoformat()`
+  - Line 135: `datetime.utcnow().isoformat() + "Z"` → `datetime.now(UTC).isoformat()`
+  - Updated import: `from datetime import UTC, datetime`
+
+- `src/nodetool/security/user_manager.py`:
+  - Line 97: `datetime.utcnow().isoformat() + "Z"` → `datetime.now(UTC).isoformat()`
+  - Line 137: `datetime.utcnow().isoformat() + "Z"` → `datetime.now(UTC).isoformat()`
+  - Updated import: `from datetime import UTC, datetime`
+
 **Why**: 
 - `datetime.now(UTC)` returns a timezone-aware datetime in UTC
 - Using `UTC` constant is more idiomatic in Python 3.11+
 - Avoids deprecation warnings and potential bugs
 
-**Files**: `src/nodetool/migrations/runner.py`
+**Files**:
+- `src/nodetool/migrations/runner.py`
+- `src/nodetool/deploy/remote_users.py`
+- `src/nodetool/security/user_manager.py`
 
-**Date**: 2026-01-16
+**Date**: 2026-01-16 (updated 2026-02-14)
