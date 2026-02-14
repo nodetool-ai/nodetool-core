@@ -1988,7 +1988,14 @@ class Preview(BaseNode):
     def is_cacheable(cls):
         return False
 
-    async def process(self, context: Any) -> Any:
+    class OutputType(TypedDict):
+        output: Any
+
+    @classmethod
+    def get_return_type(cls):
+        return cls.OutputType
+
+    async def gen_process(self, context: Any) -> Any:
         """Stream previews from inbound values with fallback to configured value.
 
         Mirrors the stream-first pattern used by `OutputNode`. If no inbound
@@ -1999,6 +2006,8 @@ class Preview(BaseNode):
         async for _handle, value in self.iter_any_input():
             result = await context.normalize_output_value(value)
             context.post_message(PreviewUpdate(node_id=self.id, value=result))
+            yield {"output": result}
+        
 
     @classmethod
     def is_streaming_input(cls) -> bool:  # type: ignore[override]
