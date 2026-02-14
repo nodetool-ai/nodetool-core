@@ -308,6 +308,7 @@ async def fan_out(
 
     Each item from the input channel is sent to all output channels.
     Stops when the input channel is closed and empty.
+    Closes all output channels when done.
 
     Args:
         channel: Input channel.
@@ -324,9 +325,15 @@ async def fan_out(
         await source.send("hello")
         # Both out1 and out2 receive "hello"
     """
-    async for item in channel:
+    try:
+        async for item in channel:
+            # Send to all output channels concurrently to avoid deadlock
+            # when one channel is full or slow
+            await asyncio.gather(*[out_ch.send(item) for out_ch in output_channels])
+    finally:
+        # Close all output channels when input is exhausted
         for out_ch in output_channels:
-            await out_ch.send(item)
+            out_ch.close()
 
 
 __all__ = [
