@@ -27,7 +27,7 @@ log = get_logger(__name__)
 router = APIRouter(prefix="/api/models", tags=["models"])
 
 
-def dedupe_models(models: list) -> list:
+def dedupe_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
     seen_ids = set()
     deduped_models = []
     for model in models:
@@ -42,7 +42,7 @@ def dedupe_models(models: list) -> list:
 
 
 # Exported functions for direct use (e.g., by MCP server)
-async def get_all_models(_user: str) -> list:
+async def get_all_models(_user: str) -> list[UnifiedModel]:
     """Get all available models of all types."""
     from nodetool.chat.ollama_service import get_ollama_models_unified
     from nodetool.integrations.huggingface.huggingface_models import read_cached_hf_models
@@ -90,7 +90,7 @@ async def get_all_models(_user: str) -> list:
     return dedupe_models(all_models)
 
 
-async def recommended_models(_user: str) -> list:
+async def recommended_models(_user: str) -> list[UnifiedModel]:
     """Get recommended models."""
     from nodetool.workflows.recommended_models import get_recommended_models
 
@@ -99,7 +99,7 @@ async def recommended_models(_user: str) -> list:
     return models
 
 
-async def get_language_models(user: str = "1") -> list:
+async def get_language_models(user: str = "1") -> list[LanguageModel]:
     """Get all available language models."""
     from nodetool.ml.models.language_models import get_all_language_models
 
@@ -199,7 +199,7 @@ async def recommended_models_endpoint(
 @router.get("/recommended/image")
 async def recommended_image_models_endpoint(
     _user: str = Depends(current_user),
-) -> list:
+) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_image_models
 
     # Determine platform on the server; do not accept client override
@@ -210,7 +210,7 @@ async def recommended_image_models_endpoint(
 @router.get("/recommended/image/text-to-image")
 async def recommended_text_to_image_models_endpoint(
     _user: str = Depends(current_user),
-) -> list:
+) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_text_to_image_models
 
     models = get_recommended_text_to_image_models()
@@ -220,7 +220,7 @@ async def recommended_text_to_image_models_endpoint(
 @router.get("/recommended/image/image-to-image")
 async def recommended_image_to_image_models_endpoint(
     _user: str = Depends(current_user),
-) -> list:
+) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_image_to_image_models
 
     models = get_recommended_image_to_image_models()
@@ -230,7 +230,7 @@ async def recommended_image_to_image_models_endpoint(
 @router.get("/recommended/language")
 async def recommended_language_models_endpoint(
     _user: str = Depends(current_user),
-) -> list:
+) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_language_models
 
     models = get_recommended_language_models()
@@ -240,7 +240,7 @@ async def recommended_language_models_endpoint(
 @router.get("/recommended/language/text-generation")
 async def recommended_language_text_generation_models_endpoint(
     _user: str = Depends(current_user),
-) -> list:
+) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_language_text_generation_models
 
     models = get_recommended_language_text_generation_models()
@@ -250,7 +250,7 @@ async def recommended_language_text_generation_models_endpoint(
 @router.get("/recommended/language/embedding")
 async def recommended_language_embedding_models_endpoint(
     user: str = Depends(current_user),
-) -> list:
+) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_language_embedding_models
 
     models = get_recommended_language_embedding_models()
@@ -260,7 +260,7 @@ async def recommended_language_embedding_models_endpoint(
 @router.get("/recommended/asr")
 async def recommended_asr_models_endpoint(
     user: str = Depends(current_user),
-) -> list:
+) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_asr_models
 
     models = get_recommended_asr_models()
@@ -270,7 +270,7 @@ async def recommended_asr_models_endpoint(
 @router.get("/recommended/tts")
 async def recommended_tts_models_endpoint(
     user: str = Depends(current_user),
-) -> list:
+) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_tts_models
 
     models = get_recommended_tts_models()
@@ -280,7 +280,7 @@ async def recommended_tts_models_endpoint(
 @router.get("/recommended/video/text-to-video")
 async def recommended_text_to_video_models_endpoint(
     user: str = Depends(current_user),
-) -> list:
+) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_text_to_video_models
 
     models = get_recommended_text_to_video_models()
@@ -290,7 +290,7 @@ async def recommended_text_to_video_models_endpoint(
 @router.get("/recommended/video/image-to-video")
 async def recommended_image_to_video_models_endpoint(
     user: str = Depends(current_user),
-) -> list:
+) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_image_to_video_models
 
     models = get_recommended_image_to_video_models()
@@ -300,14 +300,14 @@ async def recommended_image_to_video_models_endpoint(
 @router.get("/all")
 async def get_all_models_endpoint(
     user: str = Depends(current_user),
-) -> list:
+) -> list[UnifiedModel]:
     return await get_all_models(user)
 
 
 @router.get("/huggingface")
 async def get_huggingface_models(
     user: str = Depends(current_user),
-) -> list:
+) -> list[UnifiedModel]:
     from nodetool.integrations.huggingface.huggingface_models import read_cached_hf_models
 
     return await read_cached_hf_models()
@@ -318,7 +318,7 @@ async def search_huggingface_models_endpoint(
     repo_pattern: list[str] | None = Query(None),
     filename_pattern: list[str] | None = Query(None),
     user: str = Depends(current_user),
-) -> list:
+) -> list[UnifiedModel]:
     """
     Search cached Hugging Face repos/files using offline cache data.
     """
@@ -338,7 +338,7 @@ async def search_huggingface_models_endpoint(
 async def get_huggingface_models_by_type_endpoint(
     model_type: str,
     user: str = Depends(current_user),
-) -> list:
+) -> list[UnifiedModel]:
     """
     Return cached Hugging Face models matching an hf.* type using server-side heuristics.
     """
@@ -361,7 +361,7 @@ async def delete_huggingface_model(repo_id: str) -> bool:
 @router.get("/ollama")
 async def get_ollama_models_endpoint(
     user: str = Depends(current_user),
-) -> list:
+) -> list[LlamaModel]:
     from nodetool.chat.ollama_service import get_ollama_models
 
     try:
@@ -386,7 +386,7 @@ async def delete_ollama_model_endpoint(model_name: str) -> bool:
     return await _delete_ollama_model(model_name)
 
 
-async def get_language_models_by_provider(provider, user: str) -> list:
+async def get_language_models_by_provider(provider: Provider, user: str) -> list[LanguageModel]:
     """Get language models for a specific provider."""
     from nodetool.providers import get_provider
 
@@ -409,9 +409,8 @@ async def get_language_models_by_provider(provider, user: str) -> list:
         return []
 
 
-async def get_image_models_by_provider(provider, user: str) -> list:
+async def get_image_models_by_provider(provider: Provider, user: str) -> list[ImageModel]:
     """Get image models for a specific provider."""
-    from nodetool.metadata.types import Provider
     from nodetool.providers import get_provider
 
     try:
@@ -469,7 +468,7 @@ async def get_image_models_by_provider(provider, user: str) -> list:
         return []
 
 
-async def get_tts_models_by_provider(provider, user: str) -> list:
+async def get_tts_models_by_provider(provider: Provider, user: str) -> list[TTSModel]:
     """Get TTS models for a specific provider."""
     from nodetool.providers import get_provider
 
@@ -484,7 +483,7 @@ async def get_tts_models_by_provider(provider, user: str) -> list:
         return []
 
 
-async def get_asr_models_by_provider(provider, user: str) -> list:
+async def get_asr_models_by_provider(provider: Provider, user: str) -> list[ASRModel]:
     """Get ASR models for a specific provider."""
     from nodetool.providers import get_provider
 
@@ -499,7 +498,7 @@ async def get_asr_models_by_provider(provider, user: str) -> list:
         return []
 
 
-async def get_video_models_by_provider(provider, user: str) -> list:
+async def get_video_models_by_provider(provider: Provider, user: str) -> list[VideoModel]:
     """Get video models for a specific provider."""
     from nodetool.providers import get_provider
 
@@ -514,7 +513,7 @@ async def get_video_models_by_provider(provider, user: str) -> list:
         return []
 
 
-async def get_embedding_models_by_provider(provider, user: str) -> list:
+async def get_embedding_models_by_provider(provider: Provider, user: str) -> list[EmbeddingModel]:
     """Get embedding models for a specific provider."""
     from nodetool.providers import get_provider
 
@@ -554,7 +553,7 @@ async def get_image_models_endpoint(
 @router.get("/tts")
 async def get_all_tts_models_endpoint(
     user: str = Depends(current_user),
-) -> list:
+) -> list[TTSModel]:
     """
     Get all available text-to-speech models from all providers.
     """
