@@ -12,21 +12,21 @@ This module handles deployment to self-hosted servers via SSH or locally, includ
 import os
 import shlex
 import shutil
-import subprocess
-import time
-import sys
 import socket
+import subprocess
+import sys
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Optional, Union, Generic, TypeVar
+from typing import Any, Generic, Optional, TypeVar, Union
 
 from nodetool.config.deployment import (
     DeploymentStatus,
     DockerDeployment,
-    SSHDeployment,
     LocalDeployment,
-    SelfHostedDeployment,
     NginxConfig,
+    SelfHostedDeployment,
+    SSHDeployment,
 )
 from nodetool.deploy.docker_run import DockerRunGenerator
 from nodetool.deploy.ssh import SSHCommandError, SSHConnection
@@ -46,9 +46,7 @@ def is_localhost(host: str) -> bool:
     def _resolve_ips(target: str) -> set[str]:
         ips: set[str] = set()
         for family, _socktype, _proto, _canonname, sockaddr in socket.getaddrinfo(target, None):
-            if family == socket.AF_INET:
-                ips.add(str(sockaddr[0]))
-            elif family == socket.AF_INET6:
+            if family == socket.AF_INET or family == socket.AF_INET6:
                 ips.add(str(sockaddr[0]))
         return ips
 
@@ -147,7 +145,7 @@ class BaseSSHDeployer(ABC, Generic[TDeployment]):
             results["steps"].append(message)
         print(f"  {message}", flush=True)
 
-    def _get_executor(self) -> Union[LocalExecutor, SSHConnection]:
+    def _get_executor(self) -> LocalExecutor | SSHConnection:
         """Get appropriate executor (SSH or local) based on host."""
         if self.is_localhost:
             return LocalExecutor()
@@ -584,8 +582,9 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
             raise ValueError("Docker API not available for this deployment runtime")
 
         try:
-            import docker  # type: ignore[import-untyped]
             from docker.errors import DockerException, NotFound  # type: ignore[import-untyped]
+
+            import docker  # type: ignore[import-untyped]
         except Exception as exc:
             raise ValueError("Docker SDK not available") from exc
 
@@ -761,8 +760,9 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
 
     def _ensure_local_image_with_api(self, image: str, results: dict[str, Any]) -> None:
         try:
-            import docker  # type: ignore[import-untyped]
             from docker.errors import DockerException, ImageNotFound  # type: ignore[import-untyped]
+
+            import docker  # type: ignore[import-untyped]
         except Exception:
             # If SDK is unavailable locally, fallback to shell behavior.
             runtime = self._runtime_command_for_shell()
@@ -1187,7 +1187,7 @@ WantedBy=default.target
             temp_name = f.name
 
         try:
-            with open(temp_name, "r") as f:
+            with open(temp_name) as f:
                 content = f.read()
 
             if self.is_localhost:
