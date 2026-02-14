@@ -29,40 +29,63 @@ class WorkflowNode(BaseNode):
     - Handle progress updates, error reporting, and logging during workflow execution to facilitate debugging and monitoring.
     """
 
-    _dynamic = True
+    _is_dynamic: ClassVar[bool] = True
     _supports_dynamic_outputs: ClassVar[bool] = True
 
-    workflow_json: dict[str, Any] = Field(default_factory=dict)
+    workflow_id: str = Field(default="", description="The ID of the workflow to execute")
 
     @classmethod
     def is_streaming_output(cls):
         return True
 
-    def load_graph(self):
-        edges, nodes = read_graph(self.workflow_json)
-        return Graph.from_dict(
-            {
-                "nodes": [node.model_dump() for node in nodes],
-                "edges": [edge.model_dump() for edge in edges],
-            }
-        )
+    
+    async def get_workflow_json(self, context: ProcessingContext) -> Any:
+        workflow = await context.get_workflow(self.workflow_id)
+        if workflow is None:
+            raise ValueError(f"Workflow with ID {self.workflow_id} not found")
+        # read_graph expects the workflow graph payload, not the workflow model object
+        if isinstance(workflow, dict):
+            return workflow.get("graph", workflow)
+        graph = getattr(workflow, "graph", None)
+        if graph is None:
+            raise ValueError(f"Workflow {self.workflow_id} has no graph")
+        return graph
 
-    def get_api_graph(self) -> APIGraph:
-        edges, nodes = read_graph(self.workflow_json)
+    def _to_api_graph(self, workflow_graph: Any) -> APIGraph:
+        # Current persisted workflows use API graph shape: {"nodes": [...], "edges": [...]}
+        if (
+            isinstance(workflow_graph, dict)
+            and "nodes" in workflow_graph
+            and "edges" in workflow_graph
+            and isinstance(workflow_graph["nodes"], list)
+        ):
+            return APIGraph.model_validate(workflow_graph)
+
+        # Backward compatibility for keyed/comfy-like dict graphs
+        edges, nodes = read_graph(workflow_graph)
         return APIGraph(edges=edges, nodes=nodes)
+
+    async def load_graph(self, context: ProcessingContext):
+        workflow_graph = await self.get_workflow_json(context)
+        api_graph = self._to_api_graph(workflow_graph)
+        return Graph.from_dict(api_graph.model_dump())
+
+    async def get_api_graph(self, context: ProcessingContext) -> APIGraph:
+        workflow_graph = await self.get_workflow_json(context)
+        return self._to_api_graph(workflow_graph)
 
     async def gen_process(self, context: ProcessingContext):
         req = RunJobRequest(
             user_id=context.user_id,
             auth_token=context.auth_token,
-            graph=self.get_api_graph(),
+            graph=await self.get_api_graph(context),
             params=self._dynamic_properties,
         )
         async for msg in run_workflow(req):
             if isinstance(msg, Error):
                 raise Exception(msg.message)
             if isinstance(msg, OutputUpdate):
-                yield msg.output_name, msg.value
+                yield {msg.output_name: msg.value}
             if isinstance(msg, NodeProgress):
                 context.post_message(
                     NodeProgress(

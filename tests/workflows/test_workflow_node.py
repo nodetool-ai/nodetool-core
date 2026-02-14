@@ -53,6 +53,10 @@ def test_read_workflow():
     assert graph
 
 
+def test_workflow_node_is_dynamic():
+    assert WorkflowNode.is_dynamic() is True
+
+
 @pytest.mark.asyncio
 async def test_process(context: ProcessingContext):
     workflow_node = WorkflowNode(

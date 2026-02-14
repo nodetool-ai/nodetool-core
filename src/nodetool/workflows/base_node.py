@@ -2115,16 +2115,23 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
         The `BaseNode` subclass corresponding to `node_type` if found,
         otherwise `None`.
     """
-    if node_type in NODE_BY_TYPE:
-        return NODE_BY_TYPE[node_type]
+    def _lookup(type_name: str) -> type[BaseNode] | None:
+        if type_name in NODE_BY_TYPE:
+            return NODE_BY_TYPE[type_name]
+        return None
+
+    found = _lookup(node_type)
+    if found:
+        return found
 
     parts = node_type.split(".")
 
     if len(parts) == 1:
         return None
 
-    # Handle special case for test_helper nodes under nodetool.workflows.test_helper
-    if parts[0] == "nodetool" and parts[1] == "workflows" and parts[2] == "test_helper":
+    # Handle workflow-internal nodes under nodetool.workflows.*
+    # (e.g. nodetool.workflows.workflow_node.Workflow)
+    if len(parts) >= 3 and parts[0] == "nodetool" and parts[1] == "workflows":
         module_prefix = ".".join(parts[:-1])
     else:
         # Try to load the module under the standard nodes namespace
@@ -2141,8 +2148,9 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
 
         traceback.print_exc()
         return None
-    if node_type in NODE_BY_TYPE:
-        return NODE_BY_TYPE[node_type]
+    found = _lookup(node_type)
+    if found:
+        return found
 
     return None
 
