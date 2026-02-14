@@ -273,6 +273,7 @@ class TestIsAssignable:
 
         # Asset types
         assert is_assignable(list_image, ImageRef(uri="test.jpg")) is True
+        assert is_assignable(list_image, {"type": "image", "uri": "test.jpg"}) is True
         assert is_assignable(list_image, VideoRef(uri="test.mp4")) is False
 
         # List with no type args should accept any single value

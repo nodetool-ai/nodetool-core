@@ -152,21 +152,6 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
     if type_meta.is_comfy_type():
         return True
 
-    # Handle dictionary values
-    if python_type is dict and "type" in value:
-        return value["type"] == type_meta.type
-
-    # Handle dict values without explicit 'type' field - check if they validate
-    # against the target model. This supports types like ToolName with default type values.
-    if python_type is dict and "type" not in value:
-        target_class = NameToType.get(type_meta.type)
-        if target_class is not None and hasattr(target_class, "model_validate"):
-            try:
-                target_class.model_validate(value)
-            except (ValidationError, ValueError, TypeError):
-                return False
-            return True
-
     # Handle list types.
     if type_meta.type == "list":
         if python_type is list:
@@ -185,6 +170,21 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
             element_type = type_meta.type_args[0]
             return is_assignable(element_type, value)
         return False
+
+    # Handle dictionary values
+    if python_type is dict and "type" in value:
+        return value["type"] == type_meta.type
+
+    # Handle dict values without explicit 'type' field - check if they validate
+    # against the target model. This supports types like ToolName with default type values.
+    if python_type is dict and "type" not in value:
+        target_class = NameToType.get(type_meta.type)
+        if target_class is not None and hasattr(target_class, "model_validate"):
+            try:
+                target_class.model_validate(value)
+            except (ValidationError, ValueError, TypeError):
+                return False
+            return True
     # Handle dictionary types.
     if type_meta.type == "dict" and python_type is dict:
         if len(type_meta.type_args) != 2:
