@@ -565,19 +565,19 @@ def pytest_sessionfinish(session, exitstatus):
     gc.collect()
 
     # Close any lingering event loops
+    loop = None
     try:
         # Try to get running loop first (preferred in Python 3.10+)
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            # No running loop, try the deprecated method for cleanup purposes
-            loop = asyncio.get_event_loop_policy().get_event_loop()
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # Avoid creating a new event loop during shutdown cleanup.
+        loop = None
+
+    if loop is not None:
         if loop.is_running():
             loop.stop()
         if not loop.is_closed():
             loop.close()
-    except RuntimeError:
-        pass  # No event loop in current thread
 
     # Log any non-daemon threads that might prevent exit
     main_thread = threading.main_thread()
