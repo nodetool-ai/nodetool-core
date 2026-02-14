@@ -187,15 +187,15 @@ async def index(
     file: UploadFile = File(...),
     _authorization: Optional[str] = Header(None),
 ) -> IndexResponse:
+    import chromadb
+
+    from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_collection
+
     try:
-        from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_collection
-
         await get_async_collection(name)
+    except chromadb.errors.NotFoundError as e:  # type: ignore[attr-defined]
+        raise HTTPException(status_code=404, detail="Collection not found") from e
     except Exception as e:
-        import chromadb
-
-        if isinstance(e, chromadb.errors.NotFoundError):  # type: ignore[attr-defined]
-            raise HTTPException(status_code=404, detail="Collection not found") from e
         # Surface other failures as server errors
         raise HTTPException(status_code=500, detail=str(e)) from e
 
