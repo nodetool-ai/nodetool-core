@@ -11,16 +11,15 @@ from nodetool.config.deployment import (
     ContainerConfig,
     DeploymentConfig,
     DeploymentType,
+    DockerDeployment,
     GCPDeployment,
     GCPImageConfig,
     ImageConfig,
+    RootDeployment,
     RunPodDeployment,
     RunPodEndpointConfig,
     RunPodImageConfig,
     RunPodTemplateConfig,
-    RunPodTemplateConfig,
-    DockerDeployment,
-    RootDeployment,
     SSHConfig,
 )
 from nodetool.deploy.manager import DeploymentManager
