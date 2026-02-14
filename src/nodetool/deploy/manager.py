@@ -16,12 +16,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 from nodetool.config.deployment import (
+    DockerDeployment,
     GCPDeployment,
+    LocalDeployment,
     RunPodDeployment,
     SelfHostedDeployment,
-    DockerDeployment,
     SSHDeployment,
-    LocalDeployment,
     load_deployment_config,
 )
 from nodetool.deploy.gcp import GCPDeployer
@@ -394,7 +394,8 @@ class DeploymentManager:
 
                 if isinstance(deployment, SelfHostedDeployment):
                     # Validate SSH config
-                    if hasattr(deployment, "ssh") and deployment.ssh and not deployment.ssh.key_path and not deployment.ssh.password:
+                    ssh_config = getattr(deployment, "ssh", None)
+                    if ssh_config and not ssh_config.key_path and not ssh_config.password:
                         results["warnings"].append(f"{deployment_name}: No SSH authentication method configured")
 
                     # Validate type specific requirements
@@ -402,7 +403,7 @@ class DeploymentManager:
                         if not deployment.container:
                             results["errors"].append(f"{deployment_name}: No container configured")
                             results["valid"] = False
-                    
+
                     elif isinstance(deployment, SSHDeployment | LocalDeployment):
                          if not deployment.port:
                              results["errors"].append(f"{deployment_name}: No port configured")

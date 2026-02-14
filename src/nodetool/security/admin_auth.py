@@ -99,7 +99,7 @@ def create_admin_auth_middleware(
     return middleware
 
 
-def is_admin_user(user_id: str) -> bool:
+def is_admin_user(user_id: str | None) -> bool:
     """Check if user has admin role.
 
     Only works with multi_user auth provider. Other providers
@@ -111,6 +111,9 @@ def is_admin_user(user_id: str) -> bool:
     Returns:
         True if user is admin, False otherwise
     """
+    if user_id is None:
+        return False
+
     auth_provider = Environment.get_auth_provider_kind()
 
     # Only multi_user has admin roles
