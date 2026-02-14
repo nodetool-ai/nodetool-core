@@ -182,7 +182,6 @@ class ServerFeatures:
     include_deploy_collection_router: bool = True
     include_deploy_storage_router: bool = True
     enable_main_ws: bool = True
-    enable_updates_ws: bool = True
     enable_terminal_ws: bool = True
     enable_hf_download_ws: bool = True
     mount_static: bool = True
@@ -378,7 +377,6 @@ def create_app(
     include_deploy_collection_router: bool | None = None,
     include_deploy_storage_router: bool | None = None,
     enable_main_ws: bool | None = None,
-    enable_updates_ws: bool | None = None,
     enable_terminal_ws: bool | None = None,
     enable_hf_download_ws: bool | None = None,
     mount_static: bool | None = None,
@@ -396,7 +394,6 @@ def create_app(
         "include_deploy_collection_router": include_deploy_collection_router,
         "include_deploy_storage_router": include_deploy_storage_router,
         "enable_main_ws": enable_main_ws,
-        "enable_updates_ws": enable_updates_ws,
         "enable_terminal_ws": enable_terminal_ws,
         "enable_hf_download_ws": enable_hf_download_ws,
         "mount_static": mount_static,
@@ -452,7 +449,6 @@ def create_app(
         "include_deploy_collection_router": features.include_deploy_collection_router,
         "include_deploy_storage_router": features.include_deploy_storage_router,
         "enable_main_ws": features.enable_main_ws,
-        "enable_updates_ws": features.enable_updates_ws,
         "enable_terminal_ws": features.enable_terminal_ws,
         "enable_hf_download_ws": features.enable_hf_download_ws,
         "enable_mcp": features.enable_mcp,
@@ -596,12 +592,6 @@ def create_app(
         _log_section("NodeTool Server Shutdown")
         log.info("[Shutdown] Cleaning up resources")
 
-        # Import here to avoid circular imports
-        from nodetool.integrations.websocket.websocket_updates import websocket_updates
-
-        await websocket_updates.shutdown()
-        log.info("[Shutdown] WebSocket updates shutdown complete")
-
         job_manager = JobExecutionManager.get_instance()
         await job_manager.shutdown()
         log.info("[Shutdown] JobExecutionManager shutdown complete")
@@ -635,7 +625,6 @@ def create_app(
     from nodetool.integrations.websocket.unified_websocket_runner import (
         UnifiedWebSocketRunner,
     )
-    from nodetool.integrations.websocket.websocket_updates import websocket_updates
     from nodetool.metadata.types import Provider
     from nodetool.runtime.resources import (
         get_static_auth_provider,
@@ -807,13 +796,6 @@ def create_app(
         @app.websocket("/terminal")
         async def terminal_websocket_endpoint_legacy(websocket: WebSocket):
             await terminal_websocket_endpoint(websocket)
-
-    if features.enable_updates_ws:
-
-        # WebSocket endpoint for periodic system updates (e.g., system stats)
-        @app.websocket("/ws/updates")
-        async def updates_websocket_endpoint(websocket: WebSocket):
-            await websocket_updates.handle_client(websocket)
 
     # =========================================================================
     # MCP Server Integration

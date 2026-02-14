@@ -1,15 +1,15 @@
 """
-Unified WebSocket runner for handling both workflow execution and chat communications.
+Unified WebSocket runner for handling workflow execution, chat communications,
+and system updates.
 
-This module provides a single WebSocket endpoint that handles both workflow execution
-(previously /ws/predict) and chat communications (previously /ws/chat), enabling:
-- Bidirectional workflow and chat updates through a single channel
-- Workflow updates during chat conversations
-- Chat updates during workflow execution
-- More efficient resource usage with a single connection
+This module provides a single WebSocket endpoint that handles:
+- Workflow execution and management
+- Chat communications with AI providers
+- System stats broadcasting and resource change notifications
+- Bidirectional real-time updates through a single channel
 
 The runner routes messages based on their command/type field and supports all
-functionality from previous legacy runners.
+real-time communication needs.
 
 Message Routing:
 - Workflow commands: run_job, cancel_job, get_status, set_mode, clear_models, etc.
@@ -31,6 +31,10 @@ Architecture:
     │                        [Route by type]  ───>│  Chat Handler         │  │
     │                                              │  (via BaseChatRunner) │  │
     │                                              └───────────────────────┘  │
+    │                                                                          │
+    │  ┌──────────────────────────────────────────────────────────────────┐   │
+    │  │  System Updates (stats broadcasting, resource change observer)  │   │
+    │  └──────────────────────────────────────────────────────────────────┘   │
     │                                                                          │
     └─────────────────────────────────────────────────────────────────────────┘
 """
@@ -54,7 +58,13 @@ from nodetool.chat.token_counter import count_json_tokens
 from nodetool.config.env_guard import RUNNING_PYTEST
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
+from nodetool.integrations.websocket.websocket_updates import (
+    ResourceChangeUpdate,
+    SystemStatsUpdate,
+    WebSocketUpdate,
+)
 from nodetool.ml.core.model_manager import ModelManager
+from nodetool.models.base_model import DBModel, ModelChangeEvent, ModelObserver
 from nodetool.models.job import Job
 from nodetool.models.workflow import Workflow
 from nodetool.models.workspace import Workspace
@@ -62,6 +72,7 @@ from nodetool.observability.tracing import (
     trace_websocket_message,
 )
 from nodetool.runtime.resources import ResourceScope, get_user_auth_provider
+from nodetool.system.system_stats import get_system_stats
 from nodetool.types.job import JobUpdate, RunStateInfo
 from nodetool.types.wrap_primitive_types import wrap_primitive_types
 from nodetool.workflows.job_execution_manager import (
@@ -254,14 +265,15 @@ async def process_workflow_messages(
 
 class UnifiedWebSocketRunner(BaseChatRunner):
     """
-    Unified WebSocket runner that handles both workflow execution and chat communications.
+    Unified WebSocket runner that handles workflow execution, chat communications,
+    and system updates.
 
-    This runner combines the functionality of previous legacy runners,
-    providing a single WebSocket endpoint for all real-time communications.
-
-    Features:
+    This runner provides a single WebSocket endpoint for all real-time communications,
+    including:
     - Workflow job execution and management
     - Chat message processing with AI providers
+    - System stats broadcasting (CPU, memory, disk usage)
+    - Resource change notifications (model create/update/delete events)
     - Binary (MessagePack) and text (JSON) protocol support
     - Heartbeat for connection keep-alive
     - Tool bridge for frontend-executed tools
@@ -309,6 +321,10 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         self.chat_request_seq = 0
         self.tool_bridge = ToolBridge()
         self.client_tools_manifest: dict[str, dict] = {}
+
+        # System updates (stats broadcasting + resource change observer)
+        self._stats_task: asyncio.Task | None = None
+        self._observer_registered = False
 
         # Store user_id if provided
         if user_id:
@@ -377,6 +393,11 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             if not self.heartbeat_task or self.heartbeat_task.done():
                 self.heartbeat_task = asyncio.create_task(self._heartbeat())
 
+        # Start system stats broadcasting and resource change observer (skip in tests)
+        if not RUNNING_PYTEST:
+            self._start_stats_broadcast()
+            self._register_observer()
+
     async def disconnect(self):
         """
         Close the WebSocket connection and clean up resources.
@@ -399,6 +420,10 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             with suppress(asyncio.CancelledError):
                 await self.heartbeat_task
         self.heartbeat_task = None
+
+        # Stop system stats broadcasting and model observer
+        self._stop_stats_broadcast()
+        self._unregister_observer()
 
         # Stop all streaming tasks for jobs
         for job_ctx in self.active_jobs.values():
@@ -1315,6 +1340,86 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         else:
             log.warning(f"Unknown command received: {command.command}")
             return {"error": "Unknown command"}
+
+    # =========================================================================
+    # System Updates (stats broadcasting + resource change observer)
+    # =========================================================================
+
+    def _start_stats_broadcast(self) -> None:
+        """Start the background task that periodically broadcasts system stats."""
+        if self._stats_task is None or self._stats_task.done():
+            self._stats_task = asyncio.create_task(self._broadcast_stats())
+            log.info("UnifiedWebSocketRunner: Started system stats broadcasting")
+
+    def _stop_stats_broadcast(self) -> None:
+        """Stop the background task that broadcasts system stats."""
+        if self._stats_task and not self._stats_task.done():
+            self._stats_task.cancel()
+        self._stats_task = None
+
+    async def _broadcast_stats(self) -> None:
+        """Periodically fetch system stats and send them to the client."""
+        while True:
+            try:
+                stats = get_system_stats()
+                update = SystemStatsUpdate(stats=stats)
+                await self.send_message(update.model_dump())
+                await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.debug(f"Stats broadcast failed: {e}")
+                await asyncio.sleep(1)
+
+    def _register_observer(self) -> None:
+        """Register a model observer to forward resource changes to this client."""
+        if self._observer_registered:
+            return
+        ModelObserver.subscribe(self._on_model_change)
+        self._observer_registered = True
+        log.debug("UnifiedWebSocketRunner: Model observer registered")
+
+    def _unregister_observer(self) -> None:
+        """Remove the model observer."""
+        if not self._observer_registered:
+            return
+        ModelObserver.unsubscribe(self._on_model_change)
+        self._observer_registered = False
+        log.debug("UnifiedWebSocketRunner: Model observer unregistered")
+
+    def _on_model_change(self, instance: DBModel, event: ModelChangeEvent) -> None:
+        """Callback invoked synchronously by ModelObserver.notify().
+
+        Schedules async send on the event loop.
+        """
+        if not self.websocket:
+            return
+
+        resource_type = type(instance).__name__.lower()
+        resource_data = {
+            "id": instance.partition_value(),
+            "etag": instance.get_etag(),
+        }
+
+        update = ResourceChangeUpdate(
+            event=event.value,
+            resource_type=resource_type,
+            resource=resource_data,
+        )
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        try:
+            loop.call_soon_threadsafe(
+                asyncio.ensure_future,
+                self.send_message(update.model_dump()),
+            )
+        except RuntimeError:
+            # Event loop closed
+            pass
 
     async def _heartbeat(self):
         """Periodically send a lightweight heartbeat message to keep the WebSocket alive."""

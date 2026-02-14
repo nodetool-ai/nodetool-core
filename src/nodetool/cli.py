@@ -817,11 +817,6 @@ mcp.add_command(jobs)
     help="Enable/disable unified websocket endpoint (/ws).",
 )
 @click.option(
-    "--enable-updates-ws/--disable-updates-ws",
-    default=None,
-    help="Enable/disable updates websocket endpoint (/ws/updates).",
-)
-@click.option(
     "--enable-terminal-ws/--disable-terminal-ws",
     default=None,
     help="Enable/disable terminal websocket endpoints (/ws/terminal, /terminal).",
@@ -870,7 +865,6 @@ def serve(
     enable_deploy_collections: bool | None = None,
     enable_deploy_storage: bool | None = None,
     enable_main_ws: bool | None = None,
-    enable_updates_ws: bool | None = None,
     enable_terminal_ws: bool | None = None,
     enable_hf_download_ws: bool | None = None,
     mcp: bool = False,
@@ -926,8 +920,6 @@ def serve(
             run_kwargs["include_deploy_storage_router"] = enable_deploy_storage
         if enable_main_ws is not None:
             run_kwargs["enable_main_ws"] = enable_main_ws
-        if enable_updates_ws is not None:
-            run_kwargs["enable_updates_ws"] = enable_updates_ws
         if enable_terminal_ws is not None:
             run_kwargs["enable_terminal_ws"] = enable_terminal_ws
         if enable_hf_download_ws is not None:
@@ -1024,7 +1016,6 @@ def serve(
             include_deploy_collection_router=enable_deploy_collections,
             include_deploy_storage_router=enable_deploy_storage,
             enable_main_ws=enable_main_ws,
-            enable_updates_ws=enable_updates_ws,
             enable_terminal_ws=enable_terminal_ws,
             enable_hf_download_ws=enable_hf_download_ws,
             enable_mcp=mcp,

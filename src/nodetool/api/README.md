@@ -20,10 +20,7 @@ interact with Nodetool.
   definitions (GET, POST, PUT, DELETE) for managing those resources.
 - **`auth.py`**: Handles authentication-related endpoints.
 - **WebSocket Endpoints**: Defined within `server.py`, these handle real-time communication for tasks like:
-  - Unified workflow and chat (`/ws`) - **Recommended for new integrations**
-  - Workflow execution (`/ws/predict`) - Legacy endpoint
-  - Chat interactions (`/ws/chat`) - Legacy endpoint
-  - General updates (`/ws/updates`)
+  - Unified workflow, chat, and system updates (`/ws`) - **Recommended for all integrations**
   - Hugging Face downloads (`/ws/download`, non-production)
 
   See [WebSocket API Documentation](../../../docs/websocket-api.md) for detailed endpoint documentation.
