@@ -39,6 +39,16 @@ from .debounce_throttle import AdaptiveThrottle, AsyncDebounce, AsyncThrottle
 from .rate_limit import AsyncRateLimiter, AsyncTokenBucket
 from .retry import RetryPolicy, retry_with_exponential_backoff
 from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_timeout
+from .validation import (
+    AnyValidatorComposer,
+    AsyncValidator,
+    ConditionalValidator,
+    ValidationError,
+    ValidationResult,
+    ValidatorComposer,
+    validate_async,
+    validate_with_retries,
+)
 
 __all__ = [
     "AdaptiveThrottle",
@@ -57,12 +67,15 @@ __all__ = [
     "AsyncTaskGroup",
     "AsyncThrottle",
     "AsyncTokenBucket",
+    "AnyValidatorComposer",
+    "AsyncValidator",
     "ChannelClosedError",
     "CircuitBreaker",
     "CircuitBreakerConfig",
     "CircuitBreakerError",
     "CircuitBreakerStats",
     "CircuitState",
+    "ConditionalValidator",
     "MultiCircuitBreaker",
     "RetryPolicy",
     "TaskExecutionError",
@@ -71,6 +84,9 @@ __all__ = [
     "TimeoutContext",
     "TimeoutError",
     "TimeoutPolicy",
+    "ValidationError",
+    "ValidationResult",
+    "ValidatorComposer",
     "async_filter",
     "async_first",
     "async_flat_map",
@@ -88,5 +104,7 @@ __all__ = [
     "process_in_batches",
     "retry_with_exponential_backoff",
     "timeout",
+    "validate_async",
+    "validate_with_retries",
     "with_timeout",
 ]
