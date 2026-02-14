@@ -314,12 +314,14 @@ class JobExecutionManager:
             self._cleanup_task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._cleanup_task
+            self._cleanup_task = None
 
         # Cancel heartbeat task
         if self._heartbeat_task:
             self._heartbeat_task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._heartbeat_task
+            self._heartbeat_task = None
 
         # Cancel and cleanup all jobs
         for job in list(self._jobs.values()):
