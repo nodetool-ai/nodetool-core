@@ -954,18 +954,18 @@ def serve(
     # Handle UI download if requested
     if ui or ui_url:
         if ui and ui_url:
-             console.print("[yellow]Warning: --ui-url overrides --ui[/]")
-        
+            console.print("[yellow]Warning: --ui-url overrides --ui[/]")
+
         url_to_use = ui_url
-        
+
         # If --ui flag is used and no explicit URL, infer it
         if ui and not ui_url:
             try:
                 version = get_package_version("nodetool-core")
                 # Fix normalized version if needed (e.g., 0.6.3rc12 -> 0.6.3-rc.12)
                 if "rc" in version and "-" not in version:
-                     version = version.replace("rc", "-rc.")
-                
+                    version = version.replace("rc", "-rc.")
+
                 url_to_use = f"https://github.com/nodetool-ai/nodetool/releases/download/v{version}/nodetool-web-{version}.zip"
                 console.print(f"[cyan]Inferring UI URL for version {version}: {url_to_use}[/]")
             except PackageNotFoundError:
@@ -1039,39 +1039,40 @@ def serve(
 def _download_and_cache_ui(url: str) -> str:
     """Download UI zip from URL and unpack to cache directory."""
     import hashlib
+    import httpx
     import shutil
     import zipfile
     from io import BytesIO
-    import httpx
+
     from nodetool.config.settings import get_system_cache_path
 
     # Generate cache key from URL
     url_hash = hashlib.md5(url.encode()).hexdigest()
     cache_dir = get_system_cache_path("ui_cache") / url_hash
-    
+
     # Check if already cached
     if cache_dir.exists() and (cache_dir / "index.html").exists():
         console.print(f"[green]Using cached UI from {cache_dir}[/]")
         return str(cache_dir)
 
     console.print(f"[cyan]Downloading UI from {url}...[/]")
-    
+
     # Download
     with httpx.Client(follow_redirects=True) as client:
         resp = client.get(url)
         if resp.status_code == 404:
-             raise Exception("404 Not Found")
+            raise Exception("404 Not Found")
         resp.raise_for_status()
-        
+
         # Unpack
         console.print("[cyan]Unpacking UI...[/]")
         if cache_dir.exists():
             shutil.rmtree(cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
-        
+
         with zipfile.ZipFile(BytesIO(resp.content)) as z:
             z.extractall(cache_dir)
-            
+
         # Handle case where zip contains a single top-level folder
         # e.g. nodetool-web-0.6.3-rc.12/index.html -> move contents up
         items = list(cache_dir.iterdir())
@@ -5422,7 +5423,7 @@ async def deploy_users_remove(deployment_name: str, username: str, force: bool):
             return
 
     try:
-        result = await manager.remove_user(username)
+        await manager.remove_user(username)
         console.print(f"[green]✅ User '{username}' removed from '{deployment_name}'[/]")
     except Exception as e:
         console.print(f"[red]❌ Error: {e}[/]")
