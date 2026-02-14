@@ -1,19 +1,14 @@
 #!/usr/bin/env python
 
-from __future__ import annotations
-
 import asyncio
 import os
 import shutil
 import tempfile
 import traceback
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, File, Header, HTTPException, UploadFile
 from pydantic import BaseModel
-
-if TYPE_CHECKING:
-    import chromadb
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 
@@ -29,7 +24,7 @@ class Document(BaseModel):
 class CollectionResponse(BaseModel):
     name: str
     count: int
-    metadata: chromadb.CollectionMetadata
+    metadata: dict[str, Any]
     workflow_name: str | None = None
 
 
