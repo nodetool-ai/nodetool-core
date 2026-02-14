@@ -1418,8 +1418,8 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 self.send_message(update.model_dump()),
             )
         except RuntimeError:
-            # Event loop closed
-            pass
+            # Event loop closed - nothing to do
+            log.debug("UnifiedWebSocketRunner: Resource change update skipped (event loop closed)")
 
     async def _heartbeat(self):
         """Periodically send a lightweight heartbeat message to keep the WebSocket alive."""
