@@ -18,11 +18,10 @@ import json
 import logging
 import os
 import uuid
-from typing import Any, AsyncGenerator
+from typing import TYPE_CHECKING, Any, AsyncGenerator
 
 import websocket
 
-from nodetool.types.api_graph import Graph
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.comfy_graph_converter import graph_to_prompt, has_comfy_nodes
 from nodetool.workflows.types import (
@@ -31,6 +30,9 @@ from nodetool.workflows.types import (
     OutputUpdate,
     ProcessingMessage,
 )
+
+if TYPE_CHECKING:
+    from nodetool.types.api_graph import Graph
 
 log = logging.getLogger(__name__)
 
@@ -456,6 +458,4 @@ def should_use_comfy_runner(
     """
     if run_mode == "comfy":
         return True
-    if graph is not None and has_comfy_nodes(graph):
-        return True
-    return False
+    return bool(graph is not None and has_comfy_nodes(graph))

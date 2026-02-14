@@ -183,7 +183,7 @@ def prompt_to_graph(prompt: dict[str, Any]) -> Graph:
         data: dict[str, Any] = {}
         for key, value in raw_inputs.items():
             if isinstance(value, list) and len(value) == 2 and isinstance(value[1], int):
-                # This is a connection tuple – generate an edge instead
+                # This is a connection tuple - generate an edge instead
                 source_id = str(value[0])
                 output_index = value[1]
                 edges.append(
