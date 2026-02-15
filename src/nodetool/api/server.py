@@ -420,10 +420,6 @@ def create_app(
     if server_mode == ServerMode.PRIVATE and auth_kind not in ("static", "multi_user", "supabase"):
         raise RuntimeError("Private server mode requires AUTH_PROVIDER=static, multi_user, or supabase.")
 
-    from nodetool.observability.tracing import init_tracing
-
-    init_tracing(service_name="nodetool-api")
-
     # Log loaded environment configuration (with defaults resolved by Environment)
     _log_section("NodeTool Server Startup")
     startup_vars = {
@@ -554,6 +550,11 @@ def create_app(
 
         _log_section("NodeTool Runtime Initialization")
 
+        # Initialize tracing (may load instrumentation libraries)
+        from nodetool.observability.tracing import init_tracing
+
+        await asyncio.to_thread(init_tracing, service_name="nodetool-api")
+
         # Run database migrations before starting
         from nodetool.models.migrations import run_startup_migrations
 
@@ -615,17 +616,6 @@ def create_app(
     )
 
     from nodetool.api.middleware import ResourceScopeMiddleware
-    from nodetool.api.openai import create_openai_compatible_router
-    from nodetool.integrations.huggingface.hf_websocket import (
-        huggingface_download_endpoint,
-    )
-    from nodetool.integrations.websocket.terminal_runner import (
-        TerminalWebSocketRunner,
-    )
-    from nodetool.integrations.websocket.unified_websocket_runner import (
-        UnifiedWebSocketRunner,
-    )
-    from nodetool.metadata.types import Provider
     from nodetool.runtime.resources import (
         get_static_auth_provider,
         get_user_auth_provider,
@@ -654,12 +644,16 @@ def create_app(
 
     # Mount OpenAI-compatible endpoints
     # In production, use environment variables for configuration
+    from nodetool.metadata.types import Provider
+
     default_provider = os.environ.get("CHAT_PROVIDER", Provider.Ollama.value)
     default_model = os.environ.get("DEFAULT_MODEL", "llama3.2:latest")
     tools_str = os.environ.get("NODETOOL_TOOLS", "")
     tools_list = [t.strip() for t in tools_str.split(",") if t.strip()] if tools_str else []
 
     if features.include_openai_router:
+        from nodetool.api.openai import create_openai_compatible_router
+
         app.include_router(
             create_openai_compatible_router(
                 provider=default_provider,
@@ -706,6 +700,10 @@ def create_app(
         return RedirectResponse(url="/")
 
     if features.enable_hf_download_ws and not Environment.is_production():
+        from nodetool.integrations.huggingface.hf_websocket import (
+            huggingface_download_endpoint,
+        )
+
         app.add_websocket_route("/ws/download", huggingface_download_endpoint)
 
     async def _authenticate_websocket(websocket: WebSocket):
@@ -763,6 +761,10 @@ def create_app(
 
             See docs/websocket-api.md for detailed API documentation.
             """
+            from nodetool.integrations.websocket.unified_websocket_runner import (
+                UnifiedWebSocketRunner,
+            )
+
             token, user_id = await _authenticate_websocket(websocket)
             if user_id is None:
                 return
@@ -773,6 +775,10 @@ def create_app(
 
         @app.websocket("/ws/terminal")
         async def terminal_websocket_endpoint(websocket: WebSocket):
+            from nodetool.integrations.websocket.terminal_runner import (
+                TerminalWebSocketRunner,
+            )
+
             # Only allow terminal access when explicitly enabled and never in production
             if Environment.is_production() or not TerminalWebSocketRunner.is_enabled():
                 # Must accept before closing to raise WebSocketDisconnect in tests

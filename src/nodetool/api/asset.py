@@ -16,11 +16,6 @@ from pydantic import Field as PydanticField
 
 from nodetool.api.utils import current_user
 from nodetool.config.logging_config import get_logger
-from nodetool.media.common.media_utils import (
-    create_image_thumbnail,
-    create_video_thumbnail,
-    get_audio_duration,
-)
 from nodetool.models.asset import Asset as AssetModel
 from nodetool.models.condition_builder import Field
 from nodetool.models.workflow import Workflow
@@ -427,6 +422,8 @@ async def generate_thumbnail(id: str, user: str = Depends(current_user)):
 
     # Generate thumbnail
     try:
+        from nodetool.media.common.media_utils import create_video_thumbnail
+
         thumbnail = await create_video_thumbnail(video_content, 512, 512)
     except Exception as e:
         log.exception(f"Error generating thumbnail for asset {id}: {e}")
@@ -543,19 +540,17 @@ async def create(
             storage = require_scope().get_asset_storage()
 
             if "video" in req.content_type:
+                from nodetool.media.common.media_utils import create_video_thumbnail
+
                 thumbnail = await create_video_thumbnail(file_io, 512, 512)
             elif "audio" in req.content_type:
+                from nodetool.media.common.media_utils import get_audio_duration
+
                 duration = get_audio_duration(file_io)
             elif "image" in req.content_type:
-                try:
-                    thumbnail = await create_image_thumbnail(file_io, 512, 512)
-                except UnidentifiedImageError:
-                    # Keep upload successful even when the payload is not a decodable image.
-                    log.warning(
-                        "Skipping thumbnail generation for invalid image upload: name=%s content_type=%s",
-                        req.name,
-                        req.content_type,
-                    )
+                from nodetool.media.common.media_utils import create_image_thumbnail
+
+                thumbnail = await create_image_thumbnail(file_io, 512, 512)
 
         asset = await AssetModel.create(
             workflow_id=req.workflow_id,

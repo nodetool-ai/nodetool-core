@@ -26,9 +26,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
-from nodetool.security.admin_auth import require_admin
-
-logger = logging.getLogger("nodetool.admin")
 from nodetool.deploy.admin_operations import (
     calculate_cache_size,
     delete_hf_model,
@@ -42,7 +39,10 @@ from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
 from nodetool.models.asset import Asset as AssetModel
 from nodetool.models.workflow import Workflow
 from nodetool.runtime.resources import require_scope
+from nodetool.security.admin_auth import require_admin
 from nodetool.types.asset import Asset, AssetList
+
+logger = logging.getLogger("nodetool.admin")
 
 if TYPE_CHECKING:
     from nodetool.models.database_adapter import DatabaseAdapter

@@ -7,17 +7,8 @@ import tempfile
 import traceback
 from typing import Any, Optional
 
-import aiofiles
-import chromadb
 from fastapi import APIRouter, File, Header, HTTPException, UploadFile
 from pydantic import BaseModel
-
-from nodetool.indexing.service import index_file_to_collection
-from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
-    get_async_chroma_client,
-    get_async_collection,
-)
-from nodetool.models.workflow import Workflow
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 
@@ -33,7 +24,7 @@ class Document(BaseModel):
 class CollectionResponse(BaseModel):
     name: str
     count: int
-    metadata: chromadb.CollectionMetadata
+    metadata: dict[str, Any]
     workflow_name: str | None = None
 
 
@@ -65,6 +56,8 @@ async def create_collection(
             - embedding_model: Model ID for embeddings (e.g., "text-embedding-3-small", "nomic-embed-text")
             - embedding_provider: Optional provider (e.g., "openai", "ollama"). Auto-detected if not specified.
     """
+    from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_chroma_client
+
     client = await get_async_chroma_client()
     metadata: dict[str, Any] = {
         "embedding_model": req.embedding_model,
@@ -85,6 +78,9 @@ async def list_collections(
     _limit: Optional[int] = None,
 ) -> CollectionList:
     """List all collections"""
+    from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_chroma_client
+    from nodetool.models.workflow import Workflow
+
     client = await get_async_chroma_client()
     collections = await client.list_collections()
 
@@ -115,6 +111,8 @@ async def list_collections(
 @router.get("/{name}", response_model=CollectionResponse)
 async def get(name: str) -> CollectionResponse:
     """Get a specific collection by name"""
+    from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_chroma_client
+
     client = await get_async_chroma_client()
     collection = await client.get_collection(name=name)
     count = await collection.count()
@@ -128,6 +126,9 @@ async def get(name: str) -> CollectionResponse:
 @router.put("/{name}")
 async def update_collection(name: str, req: CollectionModify):
     """Update a collection"""
+    from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_chroma_client
+    from nodetool.models.workflow import Workflow
+
     client = await get_async_chroma_client()
     collection = await client.get_collection(name=name)
     metadata = dict(collection.metadata or {})
@@ -161,6 +162,8 @@ async def update_collection(name: str, req: CollectionModify):
 @router.delete("/{name}")
 async def delete_collection(name: str):
     """Delete a collection"""
+    from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_chroma_client
+
     client = await get_async_chroma_client()
     await client.delete_collection(name=name)
     return {"message": f"Collection {name} deleted successfully"}
@@ -184,6 +187,10 @@ async def index(
     file: UploadFile = File(...),
     _authorization: Optional[str] = Header(None),
 ) -> IndexResponse:
+    import chromadb
+
+    from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_collection
+
     try:
         await get_async_collection(name)
     except chromadb.errors.NotFoundError as e:  # type: ignore[attr-defined]
@@ -199,6 +206,10 @@ async def index(
     tmp_dir = tempfile.mkdtemp()
     tmp_path = os.path.join(tmp_dir, file.filename or "uploaded_file")
     try:
+        import aiofiles
+
+        from nodetool.indexing.service import index_file_to_collection
+
         # Write uploaded file to disk asynchronously in chunks
         async with aiofiles.open(tmp_path, "wb") as buffer:
             while True:

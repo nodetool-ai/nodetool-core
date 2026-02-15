@@ -27,7 +27,10 @@ async def test_list_collections_awaits_counts(client: TestClient, monkeypatch):
     async def _fake_get_async_chroma_client(*args: object, **kwargs: object) -> object:
         return dummy_client
 
-    monkeypatch.setattr(collection_api, "get_async_chroma_client", _fake_get_async_chroma_client)
+    monkeypatch.setattr(
+        "nodetool.integrations.vectorstores.chroma.async_chroma_client.get_async_chroma_client",
+        _fake_get_async_chroma_client,
+    )
 
     response = client.get("/api/collections")
     assert response.status_code == 200

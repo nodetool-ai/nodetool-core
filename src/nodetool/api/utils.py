@@ -1,11 +1,14 @@
-from typing import Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Optional
 
 from fastapi import HTTPException, Request, status
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.metadata.types import HuggingFaceModel
-from nodetool.security.auth_provider import TokenType
+
+if TYPE_CHECKING:
+    from nodetool.metadata.types import HuggingFaceModel
 
 log = get_logger(__name__)
 
@@ -14,6 +17,8 @@ async def current_user(request: Request) -> str:
     """
     Resolve the current user ID using the configured authentication providers.
     """
+    from nodetool.security.auth_provider import TokenType
+
     user_id = getattr(request.state, "user_id", None)
     if user_id:
         return str(user_id)

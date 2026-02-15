@@ -4,12 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from nodetool.api.utils import current_user
-from nodetool.api.workflow import from_model
-from nodetool.chat.chat_sse_runner import ChatSSERunner
 from nodetool.config.logging_config import get_logger
-from nodetool.ml.models.language_models import get_all_language_models
-from nodetool.models.workflow import Workflow as WorkflowModel
-from nodetool.runtime.resources import get_static_auth_provider
 
 log = get_logger(__name__)
 
@@ -33,6 +28,11 @@ def create_openai_compatible_router(
     @router.post("/chat/completions")
     async def openai_chat_completions(request: Request, user: str = Depends(current_user)):
         """OpenAI-compatible chat completions endpoint mirroring /chat/sse behaviour."""
+        from nodetool.api.workflow import from_model
+        from nodetool.chat.chat_sse_runner import ChatSSERunner
+        from nodetool.models.workflow import Workflow as WorkflowModel
+        from nodetool.runtime.resources import get_static_auth_provider
+
         try:
             data = await request.json()
             static_provider = get_static_auth_provider()
@@ -81,6 +81,8 @@ def create_openai_compatible_router(
     @router.get("/models")
     async def openai_models(user: str = Depends(current_user)):
         """Returns list of models in OpenAI format."""
+        from nodetool.ml.models.language_models import get_all_language_models
+
         try:
             all_models = await get_all_language_models(user)
             data = [
