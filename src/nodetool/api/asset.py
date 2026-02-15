@@ -10,7 +10,6 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
-from PIL import UnidentifiedImageError
 from pydantic import BaseModel
 from pydantic import Field as PydanticField
 

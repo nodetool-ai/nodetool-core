@@ -6,7 +6,6 @@ including single-file formats (GLB) and multi-file formats (OBJ with MTL and tex
 """
 
 import asyncio
-from pathlib import Path
 
 from nodetool.metadata.types import AssetRef, ImageRef, Model3DRef
 from nodetool.workflows.processing_context import ProcessingContext

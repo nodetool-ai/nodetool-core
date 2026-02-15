@@ -25,7 +25,7 @@ import tempfile
 from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from typing_extensions import override
 
