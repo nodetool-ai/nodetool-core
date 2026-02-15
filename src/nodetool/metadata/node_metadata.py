@@ -36,6 +36,7 @@ class NodeMetadata(BaseModel):
                 "the_model_info",
                 "recommended_models",
                 "basic_fields",
+                "required_settings",
             ]
         }
     )
@@ -50,6 +51,10 @@ class NodeMetadata(BaseModel):
     the_model_info: dict[str, Any] = Field(default_factory=dict, description="HF Model info for the node")
     recommended_models: list[UnifiedModel] = Field(default_factory=list, description="Recommended models for the node")
     basic_fields: list[str] = Field(default_factory=list, description="Basic fields of the node")
+    required_settings: list[str] = Field(
+        default_factory=list,
+        description="Environment setting/secret keys required to run the node",
+    )
     is_dynamic: bool = Field(default=False, description="Whether the node is dynamic")
     is_streaming_output: bool = Field(default=False, description="Whether the node can stream output")
     expose_as_tool: bool = Field(default=False, description="Whether the node is exposed as a tool")

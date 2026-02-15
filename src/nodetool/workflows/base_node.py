@@ -377,6 +377,7 @@ class BaseNode(BaseModel):
         _layout: ClassVar[str] (str): The layout style for the node in the UI.
         _requires_grad: ClassVar[bool] (bool): Whether the node requires torch backward pass.
         _expose_as_tool (bool): Whether the node should be exposed as a tool for agents.
+        _required_settings: ClassVar[list[str]] (list[str]): Environment settings/secrets required to run the node.
         _supports_dynamic_outputs: ClassVar[bool]  (bool): Whether the node can declare outputs dynamically at runtime (only for dynamic nodes).
         _auto_save_asset: ClassVar[bool] (bool): Whether to automatically save the node output as an asset.
         _sync_mode (str): The input synchronization mode for the node.
@@ -395,6 +396,7 @@ class BaseNode(BaseModel):
     _is_dynamic: ClassVar[bool] = False
     _requires_grad: ClassVar[bool] = False
     _expose_as_tool: ClassVar[bool] = False
+    _required_settings: ClassVar[list[str]] = []
     _supports_dynamic_outputs: ClassVar[bool] = False
     _auto_save_asset: ClassVar[bool] = False
     _inbox: NodeInbox | None = PrivateAttr(default=None)
@@ -570,6 +572,18 @@ class BaseNode(BaseModel):
             return attr
         # If it's a Pydantic Field / FieldInfo return its default, else direct.
         return bool(getattr(attr, "default", False))
+
+    @classmethod
+    def required_settings(cls) -> list[str]:
+        attr = getattr(cls, "_required_settings", [])
+        if isinstance(attr, list):
+            return list(attr)
+        default_value = getattr(attr, "default", [])
+        if isinstance(default_value, list):
+            return list(default_value)
+        if isinstance(default_value, tuple):
+            return list(default_value)
+        return []
 
     @classmethod
     def supports_dynamic_outputs(cls) -> bool:
@@ -865,6 +879,7 @@ class BaseNode(BaseModel):
                 is_dynamic=cls.is_dynamic(),
                 is_streaming_output=cls.is_streaming_output(),
                 expose_as_tool=cls.expose_as_tool(),
+                required_settings=cls.required_settings(),
                 supports_dynamic_outputs=cls.supports_dynamic_outputs(),
                 model_packs=cls.get_model_packs(),
             )

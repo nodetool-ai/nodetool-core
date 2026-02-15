@@ -78,6 +78,7 @@ class StreamNode(BaseNode):
 
 class ConfigurableDynamicNode(BaseNode):
     _expose_as_tool: ClassVar[bool] = True
+    _required_settings: ClassVar[list[str]] = ["OPENAI_API_KEY", "SERPAPI_API_KEY"]
     _supports_dynamic_outputs: ClassVar[bool] = True
     _is_dynamic: ClassVar[bool] = True
     _layout: ClassVar[str] = "custom"
@@ -130,6 +131,11 @@ def test_node_creation():
 def test_node_metadata_method():
     node = DummyClass()
     assert isinstance(node.get_metadata(), NodeMetadata)
+
+
+def test_node_metadata_includes_required_settings():
+    metadata = ConfigurableDynamicNode.get_metadata()
+    assert metadata.required_settings == ["OPENAI_API_KEY", "SERPAPI_API_KEY"]
 
 
 def test_node_find_property_method():
@@ -506,6 +512,7 @@ def test_node_assign_property_list_of_base_types():
 def test_configurable_dynamic_node_flags():
     node = ConfigurableDynamicNode()
     assert node.expose_as_tool() is True
+    assert node.required_settings() == ["OPENAI_API_KEY", "SERPAPI_API_KEY"]
     assert node.supports_dynamic_outputs() is True
     assert node.is_dynamic() is True
     assert node.layout() == "custom"
@@ -668,6 +675,7 @@ def test_required_inputs_default():
 
 def test_expose_visibility_helpers():
     assert ConfigurableDynamicNode.expose_as_tool() is True
+    assert ConfigurableDynamicNode.required_settings() == ["OPENAI_API_KEY", "SERPAPI_API_KEY"]
     assert ConfigurableDynamicNode.supports_dynamic_outputs() is True
     assert ConfigurableDynamicNode.is_visible() is True
 
