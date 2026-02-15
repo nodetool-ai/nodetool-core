@@ -115,6 +115,26 @@ from nodetool.workflows.torch_support import (
 log = get_logger(__name__)
 
 
+async def _read_buffer(buffer: IO) -> bytes:
+    """Read all bytes from a buffer, handling both sync IO and async (aiofiles) handles.
+
+    aiofiles file objects have async read() methods that return coroutines.
+    Calling them via _in_thread would store the coroutine as data instead of bytes.
+    """
+    if inspect.iscoroutinefunction(getattr(buffer, 'read', None)):
+        # Async file handle (e.g. aiofiles) — await directly
+        try:
+            seek_result = buffer.seek(0)  # type: ignore[union-attr]
+            if inspect.isawaitable(seek_result):
+                await seek_result
+        except Exception:
+            pass
+        return await buffer.read()  # type: ignore[misc]
+    else:
+        # Regular sync IO — offload to thread
+        return await _in_thread(_read_all_bytes_from_start, buffer)
+
+
 
 def _ensure_numpy():
     import numpy as np
@@ -1301,7 +1321,7 @@ class ProcessingContext:
         if content is None:
             raise ValueError("Asset content is required")
 
-        content_bytes = await _in_thread(_read_all_bytes_from_start, content)
+        content_bytes = await _read_buffer(content)
         with suppress(Exception):
             content.seek(0)
 
@@ -1936,7 +1956,7 @@ class ProcessingContext:
             url = await storage.get_url(asset.file_name)
             return AudioRef(asset_id=asset.id, uri=url)
         else:
-            return AudioRef(data=await _in_thread(buffer.read))
+            return AudioRef(data=await _read_buffer(buffer))
 
     async def audio_from_bytes(
         self,
@@ -2127,7 +2147,7 @@ class ProcessingContext:
             url = await storage.get_url(asset.file_name)
             return ImageRef(asset_id=asset.id, uri=url, metadata=metadata)
         else:
-            data_bytes = await _in_thread(_read_all_bytes_from_start, buffer)
+            data_bytes = await _read_buffer(buffer)
             return ImageRef(data=data_bytes, metadata=metadata)
 
     async def image_from_url(
@@ -2564,7 +2584,7 @@ class ProcessingContext:
             url = await storage.get_url(asset.file_name)
             return VideoRef(asset_id=asset.id, uri=url, metadata=metadata)
         else:
-            return VideoRef(data=await _in_thread(buffer.read), metadata=metadata)
+            return VideoRef(data=await _read_buffer(buffer), metadata=metadata)
 
     async def video_from_bytes(
         self,
@@ -2636,7 +2656,7 @@ class ProcessingContext:
             url = await storage.get_url(asset.file_name)
             return Model3DRef(asset_id=asset.id, uri=url, format=format, metadata=metadata)
         else:
-            data_bytes = await _in_thread(_read_all_bytes_from_start, buffer)
+            data_bytes = await _read_buffer(buffer)
             return Model3DRef(data=data_bytes, format=format, metadata=metadata)
 
     async def model3d_from_bytes(
