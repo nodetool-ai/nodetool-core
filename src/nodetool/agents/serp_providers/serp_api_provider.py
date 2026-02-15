@@ -5,7 +5,7 @@ from typing import Any
 from httpx import AsyncClient, HTTPStatusError, RequestError
 
 from nodetool.agents.serp_providers.serp_providers import ErrorResponse, SerpProvider
-from nodetool.agents.tools._remove_base64_images import _remove_base64_images
+from nodetool.agents.serp_providers._remove_base64_images import _remove_base64_images
 from nodetool.config.environment import Environment
 from nodetool.runtime.resources import maybe_scope, require_scope
 
