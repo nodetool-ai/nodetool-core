@@ -7,6 +7,7 @@ from nodetool.config.logging_config import get_logger
 from nodetool.models.workspace import Workspace
 from nodetool.runtime.resources import ResourceScope
 from nodetool.types.job import JobUpdate
+from nodetool.workflows.comfy_workflow_runner import run_comfy_workflow, should_use_comfy_runner
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
@@ -154,6 +155,33 @@ async def run_workflow(
     Returns:
         AsyncGenerator[Any, None]: An asynchronous generator that yields job updates and messages from the workflow.
     """
+    # -- Resolve graph early so we can detect Comfy workflows before creating
+    # a full WorkflowRunner / ProcessingContext. --
+    run_mode: str | None = None
+    if request.graph is None:
+        from nodetool.models.workflow import Workflow as WorkflowModel
+
+        wf = await WorkflowModel.find(request.user_id, request.workflow_id)
+        if wf is not None:
+            request.graph = wf.get_api_graph()
+            run_mode = wf.run_mode
+
+    # -- Route to Comfy runner when applicable --
+    if should_use_comfy_runner(run_mode, request.graph):
+        log.info(
+            "Routing to Comfy backend runner: workflow_id=%s, run_mode=%s",
+            request.workflow_id,
+            run_mode,
+        )
+        job_id = uuid4().hex
+        async for msg in run_comfy_workflow(
+            graph=request.graph,  # type: ignore[arg-type]
+            workflow_id=request.workflow_id,
+            job_id=job_id,
+        ):
+            yield msg
+        return
+
     if runner is None:
         runner = WorkflowRunner(job_id=uuid4().hex)
 

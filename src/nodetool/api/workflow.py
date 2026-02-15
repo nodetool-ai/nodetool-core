@@ -590,7 +590,8 @@ async def update_workflow(
     workflow.access = workflow_request.access
     workflow.graph = new_graph
     workflow.settings = workflow_request.settings
-    workflow.run_mode = workflow_request.run_mode
+    if workflow_request.run_mode is not None:
+        workflow.run_mode = workflow_request.run_mode
     workflow.workspace_id = workflow_request.workspace_id
     workflow.html_app = workflow_request.html_app
     workflow.updated_at = datetime.now()
