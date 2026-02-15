@@ -177,7 +177,7 @@ class TestApifyProviderSearch:
         """Test image search fails without keyword or image_url."""
         result = await apify_provider.search_images(keyword=None, image_url=None)
         assert "error" in result
-        assert "keyword" in result["error"].lower() or "image_url" in result["error"].lower()
+        assert result["error"] == "One of 'keyword' or 'image_url' is required for image search."
 
     async def test_search_images_reverse_not_supported(self, apify_provider):
         """Test reverse image search is not supported."""
@@ -185,7 +185,7 @@ class TestApifyProviderSearch:
             keyword=None, image_url="https://example.com/image.jpg"
         )
         assert "error" in result
-        assert "not" in result["error"].lower() and "supported" in result["error"].lower()
+        assert result["error"] == "Reverse image search is not currently supported by ApifyProvider."
 
     async def test_search_finance_not_supported(self, apify_provider):
         """Test finance search is not supported."""
@@ -247,8 +247,9 @@ class TestApifyProviderCleanup:
 
     async def test_context_manager(self, mock_api_key):
         """Test provider as context manager."""
-        async with ApifyProvider(api_key=mock_api_key) as provider:
-            assert provider.api_key == mock_api_key
+        with patch("nodetool.agents.serp_providers.apify_provider.ApifyProvider.close") as mock_close:
+            async with ApifyProvider(api_key=mock_api_key) as provider:
+                assert provider.api_key == mock_api_key
 
-        # Cleanup should have been called
-        # Note: We can't easily verify this without mocking, but the context manager should work
+            # Verify close was called when exiting context manager
+            mock_close.assert_called_once()
