@@ -61,11 +61,15 @@ def _safe_download_to(path: Path, url: str) -> None:
 
 
 def _ensure_executable(p: Path) -> None:
+    """Make a file executable, ignoring permission errors."""
     try:
         mode = p.stat().st_mode
         p.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    except Exception:
-        pass
+    except OSError as e:
+        # Ignore permission errors (file might not exist or we don't have permission)
+        # This is a best-effort operation
+        import logging
+        logging.getLogger(__name__).debug("Failed to make file executable: %s: %s", p, e)
 
 
 def _safe_extract_zip(zf: zipfile.ZipFile, dest_dir: Path) -> None:
