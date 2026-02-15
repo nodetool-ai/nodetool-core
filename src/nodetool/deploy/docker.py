@@ -231,12 +231,11 @@ def build_docker_image(
     print("Building Docker image")
     print(f"Platform: {platform}")
 
-    # Get the deploy directory where Dockerfile, handlers, and scripts are located
+    # Get paths to build inputs
     script_dir = os.path.dirname(os.path.abspath(__file__))
     # The Dockerfile is at the project root, which is 3 levels up
     project_root = os.path.abspath(os.path.join(script_dir, "../../.."))
     deploy_dockerfile_path = os.path.join(project_root, "Dockerfile")
-    start_script_path = os.path.join(script_dir, "start.sh")
 
     # Create a temporary build directory
     build_dir = tempfile.mkdtemp(prefix="nodetool_build_")
@@ -244,7 +243,6 @@ def build_docker_image(
 
     try:
         shutil.copy(deploy_dockerfile_path, os.path.join(build_dir, "Dockerfile"))
-        shutil.copy(start_script_path, os.path.join(build_dir, "start.sh"))
 
         # Discover installed nodetool-* packages from the current environment
         def _read_direct_url_info(dist: importlib_metadata.Distribution) -> dict | None:
@@ -332,15 +330,15 @@ def build_docker_image(
 
             # Build RUN command
             run_lines: list[str] = []
-            run_lines.append("RUN --mount=type=cache,target=/root/.cache/uv \\\n")
-            run_lines.append('    echo "Installing nodetool packages..." \\\n')
+            run_lines.append("RUN --mount=type=cache,target=/root/.cache/uv \\")
+            run_lines.append('    echo "Installing nodetool packages..." \\')
 
             for idx, pkg in enumerate(nodetool_packages):
                 install_url = str(pkg.get("install_url") or "").strip()
                 install_arg = install_url
                 # Add continuation except for the last line
                 is_last = idx == len(nodetool_packages) - 1
-                suffix = "" if is_last else " \\\n"
+                suffix = "" if is_last else " \\"
                 run_lines.append(f"    && uv pip install {install_arg}{suffix}")
 
             # Insert before CMD
@@ -348,43 +346,63 @@ def build_docker_image(
             with open(dockerfile_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(new_lines) + ("\n" if not new_lines[-1].endswith("\n") else ""))
 
-        # Build with the Dockerfile from the build directory
+        # Build using project root as context so local editable install works.
+        # Keep temp Dockerfile support via -f.
+        dockerfile_for_build = os.path.join(build_dir, "Dockerfile")
+        build_context = project_root
+
         original_dir = os.getcwd()
-        os.chdir(build_dir)
+        os.chdir(project_root)
         image_pushed = False
+        try:
+            if use_cache:
+                print("Building with Docker Hub cache optimization...")
 
-        if use_cache:
-            print("Building with Docker Hub cache optimization...")
+                # Ensure docker buildx builder exists; ignore failures (e.g., builder already exists).
+                try:
+                    run_command("docker buildx create --use --name nodetool-builder --driver docker-container")
+                except SystemExit:
+                    print("Warning: docker buildx create failed; continuing with existing/default builder.")
 
-            # Ensure docker buildx is available
-            run_command("docker buildx create --use --name nodetool-builder --driver docker-container || true")
+                # Try to build with cache from/to Docker Hub registry
+                cache_from = f"--cache-from=type=registry,ref={_shell_escape(image_name)}:buildcache"
+                cache_to = f"--cache-to=type=registry,ref={_shell_escape(image_name)}:buildcache,mode=max"
 
-            # Try to build with cache from/to Docker Hub registry
-            cache_from = f"--cache-from=type=registry,ref={_shell_escape(image_name)}:buildcache"
-            cache_to = f"--cache-to=type=registry,ref={_shell_escape(image_name)}:buildcache,mode=max"
+                push_flag = "--push" if auto_push else "--load"
 
-            push_flag = "--push" if auto_push else "--load"
+                build_cmd_with_cache = (
+                    f"docker buildx build -f {_shell_escape(dockerfile_for_build)} "
+                    f"--platform {_shell_escape(platform)} "
+                    f"-t {_shell_escape(image_name)}:{_shell_escape(tag)} "
+                    f"{cache_from} {cache_to} {push_flag} "
+                    f"{_shell_escape(build_context)}"
+                )
 
-            build_cmd_with_cache = f"docker buildx build --platform {_shell_escape(platform)} -t {_shell_escape(image_name)}:{_shell_escape(tag)} {cache_from} {cache_to} {push_flag} ."
+                print(f"Cache image: {image_name}:buildcache")
 
-            print(f"Cache image: {image_name}:buildcache")
-
-            try:
-                run_command(build_cmd_with_cache)
-                image_pushed = auto_push
-            except subprocess.CalledProcessError:
-                print("Cache build failed, falling back to build without cache import...")
-                build_cmd_fallback = f"docker buildx build --platform {_shell_escape(platform)} -t {_shell_escape(image_name)}:{_shell_escape(tag)} {cache_to} {push_flag} ."
-                run_command(build_cmd_fallback)
-                image_pushed = auto_push
-        else:
-            print("Building without cache optimization...")
-            run_command(
-                f"docker build --platform {_shell_escape(platform)} -t {_shell_escape(image_name)}:{_shell_escape(tag)} ."
-            )
-            image_pushed = False
-
-        os.chdir(original_dir)
+                try:
+                    run_command(build_cmd_with_cache)
+                    image_pushed = auto_push
+                except (subprocess.CalledProcessError, SystemExit):
+                    print("Cache/buildx build failed, falling back to standard docker build...")
+                    run_command(
+                        f"docker build -f {_shell_escape(dockerfile_for_build)} "
+                        f"--platform {_shell_escape(platform)} "
+                        f"-t {_shell_escape(image_name)}:{_shell_escape(tag)} "
+                        f"{_shell_escape(build_context)}"
+                    )
+                    image_pushed = False
+            else:
+                print("Building without cache optimization...")
+                run_command(
+                    f"docker build -f {_shell_escape(dockerfile_for_build)} "
+                    f"--platform {_shell_escape(platform)} "
+                    f"-t {_shell_escape(image_name)}:{_shell_escape(tag)} "
+                    f"{_shell_escape(build_context)}"
+                )
+                image_pushed = False
+        finally:
+            os.chdir(original_dir)
 
         print("Docker image built successfully")
         return image_pushed

@@ -34,7 +34,7 @@ def _write_users_file(path: Path, *, username: str, user_id: str, role: str, tok
 class TestServerModeRouteMatrix:
     def test_desktop_mode_includes_full_surface(self, monkeypatch):
         monkeypatch.setenv("AUTH_PROVIDER", "local")
-        monkeypatch.setenv("WORKER_AUTH_TOKEN", "desktop-worker-token")
+        monkeypatch.setenv("SERVER_AUTH_TOKEN", "desktop-worker-token")
         app = create_app(mode="desktop")
         routes = _route_paths(app)
 
@@ -42,7 +42,6 @@ class TestServerModeRouteMatrix:
         assert "/admin/models/huggingface/download" in routes
         assert "/collections/{name}/index" in routes
         assert "/storage/assets/{key}" in routes
-        assert "/workflows" in routes
         assert "/ws" in routes
         assert "/ws/updates" in routes
         assert "/ws/terminal" in routes
@@ -50,7 +49,7 @@ class TestServerModeRouteMatrix:
 
     def test_public_mode_excludes_admin_and_terminal(self, monkeypatch):
         monkeypatch.setenv("AUTH_PROVIDER", "supabase")
-        monkeypatch.setenv("WORKER_AUTH_TOKEN", "public-worker-token")
+        monkeypatch.setenv("SERVER_AUTH_TOKEN", "public-worker-token")
         monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
         monkeypatch.setenv("SUPABASE_KEY", "supabase-key")
         app = create_app(mode="public")
@@ -64,17 +63,15 @@ class TestServerModeRouteMatrix:
         assert "/ws/download" not in routes
         assert "/ws" in routes
         assert "/ws/updates" in routes
-        assert "/workflows" in routes
 
     def test_private_mode_includes_deploy_routes_without_terminal(self, monkeypatch):
         monkeypatch.setenv("AUTH_PROVIDER", "multi_user")
-        monkeypatch.setenv("WORKER_AUTH_TOKEN", "private-worker-token")
+        monkeypatch.setenv("SERVER_AUTH_TOKEN", "private-worker-token")
         app = create_app(mode="private")
         routes = _route_paths(app)
 
         assert "/admin/models/huggingface/download" in routes
         assert "/collections/{name}/index" in routes
-        assert "/workflows" in routes
         assert "/ws/terminal" not in routes
         assert "/terminal" not in routes
         assert "/ws/download" not in routes
@@ -83,7 +80,7 @@ class TestServerModeRouteMatrix:
 
     def test_mode_feature_override_reenables_admin_routes(self, monkeypatch):
         monkeypatch.setenv("AUTH_PROVIDER", "supabase")
-        monkeypatch.setenv("WORKER_AUTH_TOKEN", "public-worker-token")
+        monkeypatch.setenv("SERVER_AUTH_TOKEN", "public-worker-token")
         monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
         monkeypatch.setenv("SUPABASE_KEY", "supabase-key")
         app = create_app(mode="public", include_deploy_admin_router=True)
@@ -94,7 +91,7 @@ class TestServerModeRouteMatrix:
 class TestServerAuthMatrix:
     def test_static_auth_enforced_for_private_mode(self, monkeypatch):
         monkeypatch.setenv("AUTH_PROVIDER", "static")
-        monkeypatch.setenv("WORKER_AUTH_TOKEN", "static-auth-token")
+        monkeypatch.setenv("SERVER_AUTH_TOKEN", "static-auth-token")
         app = create_app(mode="private")
         client = TestClient(app)
 
@@ -116,7 +113,7 @@ class TestServerAuthMatrix:
         )
 
         monkeypatch.setenv("AUTH_PROVIDER", "multi_user")
-        monkeypatch.setenv("WORKER_AUTH_TOKEN", "worker-static-token")
+        monkeypatch.setenv("SERVER_AUTH_TOKEN", "worker-static-token")
         monkeypatch.setenv("USERS_FILE", str(users_file))
         app = create_app(mode="private")
         client = TestClient(app)
@@ -129,7 +126,7 @@ class TestServerAuthMatrix:
 
     def test_supabase_auth_path_works_in_public_mode(self, monkeypatch):
         monkeypatch.setenv("AUTH_PROVIDER", "supabase")
-        monkeypatch.setenv("WORKER_AUTH_TOKEN", "worker-static-token")
+        monkeypatch.setenv("SERVER_AUTH_TOKEN", "worker-static-token")
         monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
         monkeypatch.setenv("SUPABASE_KEY", "supabase-key")
 
@@ -143,7 +140,7 @@ class TestServerAuthMatrix:
             unauthorized = client.get("/editor/abc")
             assert unauthorized.status_code == 401
 
-            # Does not match WORKER_AUTH_TOKEN, so middleware falls back to user provider (mocked supabase).
+            # Does not match SERVER_AUTH_TOKEN, so middleware falls back to user provider (mocked supabase).
             authorized = client.get("/editor/abc", headers={"Authorization": "Bearer supabase-user-token"})
             assert authorized.status_code != 401
 
@@ -151,12 +148,12 @@ class TestServerAuthMatrix:
 class TestModeValidation:
     def test_public_mode_rejects_non_supabase(self, monkeypatch):
         monkeypatch.setenv("AUTH_PROVIDER", "local")
-        monkeypatch.setenv("WORKER_AUTH_TOKEN", "tok")
+        monkeypatch.setenv("SERVER_AUTH_TOKEN", "tok")
         with pytest.raises(RuntimeError, match="Public server mode requires AUTH_PROVIDER=supabase"):
             create_app(mode="public")
 
     def test_private_mode_rejects_local(self, monkeypatch):
         monkeypatch.setenv("AUTH_PROVIDER", "local")
-        monkeypatch.setenv("WORKER_AUTH_TOKEN", "tok")
+        monkeypatch.setenv("SERVER_AUTH_TOKEN", "tok")
         with pytest.raises(RuntimeError, match="Private server mode requires AUTH_PROVIDER"):
             create_app(mode="private")

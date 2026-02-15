@@ -160,7 +160,6 @@ class ServerFeatures:
     include_deploy_admin_router: bool = True
     include_deploy_collection_router: bool = True
     include_deploy_storage_router: bool = True
-    include_deploy_workflow_router: bool = True
     enable_main_ws: bool = True
     enable_updates_ws: bool = True
     enable_terminal_ws: bool = True
@@ -249,7 +248,6 @@ def _load_deploy_routers(
     include_admin_router: bool = True,
     include_collection_router: bool = True,
     include_storage_router: bool = True,
-    include_workflow_router: bool = True,
 ) -> list[APIRouter]:
     """
     Load deployment/admin routers.
@@ -258,7 +256,7 @@ def _load_deploy_routers(
     - Admin operations (model downloads, cache management)
     - Collection management via /admin/collections/*
     - Storage management via /admin/storage/* and /storage/*
-    - Workflow execution via /workflows/*
+    - Workflow execution via /api/workflows/*
     """
     from nodetool.deploy.admin_routes import create_admin_router
     from nodetool.deploy.collection_routes import create_collection_router
@@ -266,7 +264,6 @@ def _load_deploy_routers(
         create_admin_storage_router,
         create_public_storage_router,
     )
-    from nodetool.deploy.workflow_routes import create_workflow_router
 
     routers: list[APIRouter] = []
     if include_admin_router:
@@ -276,8 +273,6 @@ def _load_deploy_routers(
     if include_storage_router:
         routers.append(create_admin_storage_router())
         routers.append(create_public_storage_router())
-    if include_workflow_router:
-        routers.append(create_workflow_router())
     return routers
 
 
@@ -358,7 +353,6 @@ def create_app(
     include_deploy_admin_router: bool | None = None,
     include_deploy_collection_router: bool | None = None,
     include_deploy_storage_router: bool | None = None,
-    include_deploy_workflow_router: bool | None = None,
     enable_main_ws: bool | None = None,
     enable_updates_ws: bool | None = None,
     enable_terminal_ws: bool | None = None,
@@ -376,7 +370,6 @@ def create_app(
         "include_deploy_admin_router": include_deploy_admin_router,
         "include_deploy_collection_router": include_deploy_collection_router,
         "include_deploy_storage_router": include_deploy_storage_router,
-        "include_deploy_workflow_router": include_deploy_workflow_router,
         "enable_main_ws": enable_main_ws,
         "enable_updates_ws": enable_updates_ws,
         "enable_terminal_ws": enable_terminal_ws,
@@ -622,7 +615,6 @@ def create_app(
         include_admin_router=features.include_deploy_admin_router,
         include_collection_router=features.include_deploy_collection_router,
         include_storage_router=features.include_deploy_storage_router,
-        include_workflow_router=features.include_deploy_workflow_router,
     ):
         app.include_router(router)
 

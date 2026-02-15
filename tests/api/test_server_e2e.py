@@ -5,7 +5,7 @@ These tests verify:
 1. Server startup with correct routers
 2. Health and ping endpoints work
 3. OpenAI-compatible endpoints are mounted
-4. Deploy routers are loaded (admin, collections, storage, workflows)
+4. Deploy routers are loaded (admin, collections, storage)
 5. Admin auth middleware behavior in production vs development
 6. Environment variable configuration is applied correctly
 7. CLI serve command with --production flag
@@ -87,12 +87,12 @@ class TestDefaultRoutersConfiguration:
 class TestDeployRoutersConfiguration:
     """Tests for deploy router loading."""
 
-    def test_load_deploy_routers_returns_five_routers(self):
-        """Verify _load_deploy_routers returns exactly 5 routers."""
+    def test_load_deploy_routers_returns_four_routers(self):
+        """Verify _load_deploy_routers returns exactly 4 routers."""
         routers = _load_deploy_routers()
 
         assert isinstance(routers, list)
-        assert len(routers) == 5  # admin, collection, admin_storage, public_storage, workflow
+        assert len(routers) == 4  # admin, collection, admin_storage, public_storage
 
     def test_deploy_routers_have_expected_routes(self):
         """Verify deploy routers contain expected route patterns."""
@@ -108,10 +108,6 @@ class TestDeployRoutersConfiguration:
         assert any("/admin/" in path for path in all_paths)
         # Check for storage routes
         assert any("/storage/" in path for path in all_paths)
-        # Check for workflows routes
-        assert any("/workflows" in path for path in all_paths)
-
-
 class TestEndpointsAvailability:
     """E2E tests for endpoint availability after server startup."""
 
@@ -148,12 +144,12 @@ class TestEndpointsAvailability:
         # May return 401 (auth required), 404 (asset missing), or 500 depending on backend state.
         assert response.status_code in (200, 401, 404, 500)
 
-    def test_workflows_endpoint_exists(self):
-        """Verify /workflows endpoint exists."""
+    def test_api_workflows_endpoint_exists(self):
+        """Verify /api/workflows/ endpoint exists."""
         app = create_app()
         client = TestClient(app)
 
-        response = client.get("/workflows")
+        response = client.get("/api/workflows/")
 
         # Should not be 404 (endpoint exists)
         assert response.status_code != 404

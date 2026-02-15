@@ -154,7 +154,7 @@ class TestDeploymentCriticalVars:
         assert "docker" in DEPLOYMENT_CRITICAL_VARS
         docker_vars = DEPLOYMENT_CRITICAL_VARS["docker"]
         # Should include auth token for exposed deployments
-        assert "WORKER_AUTH_TOKEN" in docker_vars
+        assert "SERVER_AUTH_TOKEN" in docker_vars
         # Should include network configuration
         assert "OLLAMA_API_URL" in docker_vars
 
@@ -163,7 +163,7 @@ class TestDeploymentCriticalVars:
         assert "production" in DEPLOYMENT_CRITICAL_VARS
         prod_vars = DEPLOYMENT_CRITICAL_VARS["production"]
         # Should include authentication
-        assert "WORKER_AUTH_TOKEN" in prod_vars
+        assert "SERVER_AUTH_TOKEN" in prod_vars
         # Should include S3 storage
         assert "S3_ENDPOINT_URL" in prod_vars
 
@@ -182,7 +182,7 @@ class TestGetCriticalEnvVarsForDeployment:
         """Should return info for docker deployment vars."""
         vars_info = get_critical_env_vars_for_deployment("docker")
         var_names = [info.name for info in vars_info]
-        assert "WORKER_AUTH_TOKEN" in var_names
+        assert "SERVER_AUTH_TOKEN" in var_names
 
 
 class TestFormatEnvDiagnostics:

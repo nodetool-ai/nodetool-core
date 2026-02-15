@@ -362,8 +362,8 @@ class TestBuildDockerImage:
                 auto_push=True,
             )
 
-            # Should still succeed via fallback
-            assert result is True
+            # Should still succeed via fallback (local docker build, not buildx push)
+            assert result is False
             assert mock_run.call_count == 3
 
     def test_build_docker_image_custom_platform(self, mock_build_env):

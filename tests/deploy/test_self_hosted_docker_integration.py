@@ -306,7 +306,8 @@ class TestDeploymentPlanWithDocker:
 
         assert plan["deployment_name"] == "test"
         assert plan["host"] == "localhost"
-        assert "nodetool-test" in str(plan["will_create"])
+        container_name = deployer._container_name()
+        assert container_name in str(plan["will_create"])
 
     def test_plan_with_docker_running(self, test_deployment, mock_state_manager):
         """Test planning when Docker is running."""

@@ -22,7 +22,7 @@ class DockerRunGenerator:
     into a docker run command suitable for single container deployment.
     """
 
-    def __init__(self, deployment: SelfHostedDeployment):
+    def __init__(self, deployment: SelfHostedDeployment, runtime_command: str = "docker"):
         """
         Initialize the docker run generator.
 
@@ -31,6 +31,7 @@ class DockerRunGenerator:
         """
         self.deployment = deployment
         self.container = deployment.container
+        self.runtime_command = runtime_command
 
     def generate_command(self) -> str:
         """
@@ -39,7 +40,7 @@ class DockerRunGenerator:
         Returns:
             Docker run command string
         """
-        parts = ["docker run"]
+        parts = [f"{self.runtime_command} run"]
 
         # Detached mode
         parts.append("-d")
@@ -174,9 +175,9 @@ class DockerRunGenerator:
         if self.container.workflows:
             env["NODETOOL_WORKFLOWS"] = ",".join(self.container.workflows)
 
-        # Add worker authentication token (for self-hosted deployments)
-        if self.deployment.worker_auth_token:
-            env["WORKER_AUTH_TOKEN"] = self.deployment.worker_auth_token
+        # Add authentication token for self-hosted deployments.
+        if self.deployment.server_auth_token:
+            env["SERVER_AUTH_TOKEN"] = self.deployment.server_auth_token
 
         # Convert to KEY=value format
         return [f"{key}={value}" for key, value in env.items()]
