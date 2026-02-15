@@ -32,10 +32,7 @@ from nodetool.types.workflow import (
     WorkflowVersion,
     WorkflowVersionList,
 )
-from nodetool.workflows.http_stream_runner import HTTPStreamRunner
-from nodetool.workflows.read_graph import read_graph
 from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import Error, OutputUpdate
 
 log = get_logger(__name__)
@@ -213,6 +210,8 @@ async def create(
         )
     elif workflow_request.comfy_workflow:
         try:
+            from nodetool.workflows.read_graph import read_graph
+
             edges, nodes = read_graph(workflow_request.comfy_workflow)
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
@@ -690,9 +689,13 @@ async def run_workflow_by_id(
         job_request.api_url = f"{server_protocol}://{server_host_name}:{server_port}"
 
     if stream:
+        from nodetool.workflows.http_stream_runner import HTTPStreamRunner
+
         runner = HTTPStreamRunner()
         return StreamingResponse(runner.run_job(job_request), media_type="application/x-ndjson")
     else:
+        from nodetool.workflows.run_workflow import run_workflow
+
         result = {}
         async for msg in run_workflow(job_request):
             # Ensure msg is a dictionary-like object for uniform access
