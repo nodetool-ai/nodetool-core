@@ -3,12 +3,10 @@
 import asyncio
 import tempfile
 
-from nodetool.nodes.lib.math import Add, Multiply
-from nodetool.nodes.nodetool.text import Concat, FormatText
-
 from nodetool.config.logging_config import get_logger
 from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.test_nodes import Add, Multiply
 
 logger = get_logger(__name__)
 
@@ -28,26 +26,6 @@ async def simple_math_example():
         multiply_node = Multiply(a=result, b=2.0)
         final_result = await multiply_node.process(context)
         logger.info(f"(5 + 3) * 2 = {final_result}")
-
-
-async def simple_text_example():
-    """Direct execution of text nodes"""
-
-    with tempfile.TemporaryDirectory() as workspace:
-        context = ProcessingContext(workspace_dir=workspace, user_id="test_user", auth_token="test_token")
-
-        # Concatenate strings
-        concat_node = Concat(a="Hello, ", b="World!")
-        result = await concat_node.process(context)
-        logger.info(f"Concatenated: {result}")
-
-        # Format text with template
-        format_node = FormatText(
-            template="Welcome {{ name }}! Today is {{ day }}.",
-            values={"name": "Alice", "day": "Monday"},
-        )
-        formatted = await format_node.process(context)
-        logger.info(f"Formatted: {formatted}")
 
 
 async def calculation_chain_example():
@@ -71,9 +49,6 @@ async def run_examples():
 
     print("\n=== Simple Math Example ===")
     await simple_math_example()
-
-    print("\n=== Simple Text Example ===")
-    await simple_text_example()
 
     print("\n=== Calculation Chain Example ===")
     await calculation_chain_example()

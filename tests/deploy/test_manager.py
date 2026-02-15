@@ -11,14 +11,15 @@ from nodetool.config.deployment import (
     ContainerConfig,
     DeploymentConfig,
     DeploymentType,
+    DockerDeployment,
     GCPDeployment,
     GCPImageConfig,
     ImageConfig,
+    RootDeployment,
     RunPodDeployment,
     RunPodEndpointConfig,
     RunPodImageConfig,
     RunPodTemplateConfig,
-    SelfHostedDeployment,
     SSHConfig,
 )
 from nodetool.deploy.manager import DeploymentManager
@@ -34,7 +35,7 @@ class TestDeploymentManager:
     def mock_config(self):
         """Create a mock deployment config."""
         # Create self-hosted deployment
-        self_hosted = SelfHostedDeployment(
+        self_hosted = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -132,7 +133,7 @@ class TestDeploymentManager:
 
         assert len(deployments) == 3
         assert deployments[0]["name"] == "production"
-        assert deployments[0]["type"] == DeploymentType.SELF_HOSTED
+        assert deployments[0]["type"] == DeploymentType.DOCKER
         assert deployments[0]["status"] == "unknown"
         assert deployments[0]["host"] == "192.168.1.100"
         assert deployments[0]["container"] == "wf1"
@@ -176,7 +177,7 @@ class TestDeploymentManager:
         """Test getting deployment by name."""
         deployment = manager.get_deployment("production")
 
-        assert isinstance(deployment, SelfHostedDeployment)
+        assert isinstance(deployment, DockerDeployment)
         assert deployment.host == "192.168.1.100"
 
     def test_get_deployment_not_found(self, manager):
@@ -184,12 +185,12 @@ class TestDeploymentManager:
         with pytest.raises(KeyError, match="Deployment 'nonexistent' not found"):
             manager.get_deployment("nonexistent")
 
-    def test_plan_self_hosted(self, manager):
-        """Test generating plan for self-hosted deployment."""
+    def test_plan_docker(self, manager):
+        """Test generating plan for docker deployment."""
         mock_deployer = Mock()
         mock_deployer.plan.return_value = {"changes": ["deploy compose file"]}
 
-        with patch("nodetool.deploy.manager.SelfHostedDeployer") as mock_deployer_cls:
+        with patch("nodetool.deploy.manager.DockerDeployer") as mock_deployer_cls:
             mock_deployer_cls.return_value = mock_deployer
 
             result = manager.plan("production")
@@ -235,12 +236,12 @@ class TestDeploymentManager:
         with pytest.raises(KeyError):
             manager.plan("nonexistent")
 
-    def test_apply_self_hosted(self, manager):
-        """Test applying self-hosted deployment."""
+    def test_apply_docker(self, manager):
+        """Test applying docker deployment."""
         mock_deployer = Mock()
         mock_deployer.apply.return_value = {"success": True}
 
-        with patch("nodetool.deploy.manager.SelfHostedDeployer") as mock_deployer_cls:
+        with patch("nodetool.deploy.manager.DockerDeployer") as mock_deployer_cls:
             mock_deployer_cls.return_value = mock_deployer
 
             result = manager.apply("production")
@@ -254,7 +255,7 @@ class TestDeploymentManager:
         mock_deployer = Mock()
         mock_deployer.apply.return_value = {"dry_run": True}
 
-        with patch("nodetool.deploy.manager.SelfHostedDeployer") as mock_deployer_cls:
+        with patch("nodetool.deploy.manager.DockerDeployer") as mock_deployer_cls:
             mock_deployer_cls.return_value = mock_deployer
 
             result = manager.apply("production", dry_run=True)
@@ -290,12 +291,12 @@ class TestDeploymentManager:
             mock_deployer_cls.assert_called_once()
             mock_deployer.apply.assert_called_once()
 
-    def test_status_self_hosted(self, manager):
-        """Test getting status of self-hosted deployment."""
+    def test_status_docker(self, manager):
+        """Test getting status of docker deployment."""
         mock_deployer = Mock()
         mock_deployer.status.return_value = {"status": "running", "containers": 1}
 
-        with patch("nodetool.deploy.manager.SelfHostedDeployer") as mock_deployer_cls:
+        with patch("nodetool.deploy.manager.DockerDeployer") as mock_deployer_cls:
             mock_deployer_cls.return_value = mock_deployer
 
             result = manager.status("production")
@@ -330,12 +331,12 @@ class TestDeploymentManager:
             assert result == {"status": "serving", "instances": 1}
             mock_deployer.status.assert_called_once()
 
-    def test_logs_self_hosted(self, manager):
-        """Test getting logs from self-hosted deployment."""
+    def test_logs_docker(self, manager):
+        """Test getting logs from docker deployment."""
         mock_deployer = Mock()
         mock_deployer.logs.return_value = "container logs here"
 
-        with patch("nodetool.deploy.manager.SelfHostedDeployer") as mock_deployer_cls:
+        with patch("nodetool.deploy.manager.DockerDeployer") as mock_deployer_cls:
             mock_deployer_cls.return_value = mock_deployer
 
             result = manager.logs("production", service="wf1", tail=50)
@@ -349,7 +350,7 @@ class TestDeploymentManager:
         mock_deployer = Mock()
         mock_deployer.logs.return_value = "streaming logs..."
 
-        with patch("nodetool.deploy.manager.SelfHostedDeployer") as mock_deployer_cls:
+        with patch("nodetool.deploy.manager.DockerDeployer") as mock_deployer_cls:
             mock_deployer_cls.return_value = mock_deployer
 
             result = manager.logs("production", follow=True)
@@ -383,12 +384,12 @@ class TestDeploymentManager:
             assert result == "cloud run logs here"
             mock_deployer.logs.assert_called_once()
 
-    def test_destroy_self_hosted(self, manager):
-        """Test destroying self-hosted deployment."""
+    def test_destroy_docker(self, manager):
+        """Test destroying docker deployment."""
         mock_deployer = Mock()
         mock_deployer.destroy.return_value = {"destroyed": True}
 
-        with patch("nodetool.deploy.manager.SelfHostedDeployer") as mock_deployer_cls:
+        with patch("nodetool.deploy.manager.DockerDeployer") as mock_deployer_cls:
             mock_deployer_cls.return_value = mock_deployer
 
             result = manager.destroy("production")
@@ -447,10 +448,10 @@ class TestDeploymentManager:
         assert len(result["errors"]) > 0
         assert "nonexistent" in result["errors"][0]
 
-    def test_validate_self_hosted_no_ssh_auth(self, manager):
+    def test_validate_docker_no_ssh_auth(self, manager):
         """Test validation warns about missing SSH authentication."""
         # Create deployment without SSH key or password
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -466,10 +467,10 @@ class TestDeploymentManager:
         assert "no-auth" in result["warnings"][0]
         assert "authentication" in result["warnings"][0].lower()
 
-    def test_validate_self_hosted_valid_container(self, manager):
+    def test_validate_docker_valid_container(self, manager):
         """Test validation passes for deployment with valid container."""
         # Create deployment with valid container
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -488,7 +489,7 @@ class TestDeploymentManager:
         mock_deployer = Mock()
         mock_deployer.plan.return_value = {"changes": ["deploy compose file"]}
 
-        with patch("nodetool.deploy.manager.SelfHostedDeployer") as mock_deployer_cls:
+        with patch("nodetool.deploy.manager.DockerDeployer") as mock_deployer_cls:
             mock_deployer_cls.return_value = mock_deployer
 
             result = manager.has_changes("production")
@@ -500,7 +501,7 @@ class TestDeploymentManager:
         mock_deployer = Mock()
         mock_deployer.plan.return_value = {"changes": []}
 
-        with patch("nodetool.deploy.manager.SelfHostedDeployer") as mock_deployer_cls:
+        with patch("nodetool.deploy.manager.DockerDeployer") as mock_deployer_cls:
             mock_deployer_cls.return_value = mock_deployer
 
             result = manager.has_changes("production")
@@ -512,7 +513,7 @@ class TestDeploymentManager:
         mock_deployer = Mock()
         mock_deployer.plan.side_effect = Exception("Connection failed")
 
-        with patch("nodetool.deploy.manager.SelfHostedDeployer") as mock_deployer_cls:
+        with patch("nodetool.deploy.manager.DockerDeployer") as mock_deployer_cls:
             mock_deployer_cls.return_value = mock_deployer
 
             result = manager.has_changes("production")

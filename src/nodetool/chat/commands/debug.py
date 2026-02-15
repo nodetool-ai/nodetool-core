@@ -18,7 +18,9 @@ class DebugCommand(Command):
             current_state = "[bold green]ON[/bold green]" if cli.debug_mode else "[bold red]OFF[/bold red]"
             cli.console.print(f"Debug mode is currently: {current_state}")
             # Ask user if they want to toggle
-            if Confirm.ask("Toggle debug mode?", default=cli.debug_mode, console=cli.console):
+            # Use the underlying base console to avoid type issues with _ConsoleProxy
+            base_console = getattr(cli.console, "_base", None)
+            if Confirm.ask("Toggle debug mode?", default=cli.debug_mode, console=base_console):
                 new_state = not cli.debug_mode
             else:
                 return False  # No change

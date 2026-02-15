@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import time
+from contextlib import contextmanager
 
 import msgpack
 import pytest
@@ -14,7 +15,9 @@ from nodetool.api.server import create_app
 pytestmark = pytest.mark.xdist_group(name="database")
 
 
-def _make_client(monkeypatch, env: str = "development", enable_flag: str | None = None) -> TestClient:
+@contextmanager
+def _make_client(monkeypatch, env: str = "development", enable_flag: str | None = None):
+    """Context manager for creating a test client with proper cleanup."""
     monkeypatch.setenv("ENV", env)
     # Some production paths require this to be set; use a benign value for tests.
     if env == "production":
@@ -29,7 +32,8 @@ def _make_client(monkeypatch, env: str = "development", enable_flag: str | None 
         monkeypatch.delenv("NODETOOL_ENABLE_TERMINAL_WS", raising=False)
     else:
         monkeypatch.setenv("NODETOOL_ENABLE_TERMINAL_WS", enable_flag)
-    return TestClient(create_app())
+    with TestClient(create_app()) as client:
+        yield client
 
 
 def test_terminal_ws_rejects_when_disabled(monkeypatch):

@@ -76,7 +76,7 @@ def convert_from_supabase_format(value: Any, py_type: type | None) -> Any:
             log.warning(f"Could not cast value '{value}' to Enum {py_type}")
             return value
     # Handle integer to boolean conversion for PostgreSQL integer columns
-    elif (py_type is bool or py_type == bool) and isinstance(value, int):
+    elif py_type is bool and isinstance(value, int):
         return value != 0
     # Basic types and JSON usually handled correctly by supabase-py
     return value

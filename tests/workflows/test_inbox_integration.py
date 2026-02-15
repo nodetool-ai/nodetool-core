@@ -88,11 +88,11 @@ async def test_streaming_producer_to_streaming_consumer():
 
     original_send = runner.send_messages
 
-    async def capture_send_async(node, result, context):
+    async def capture_send_async(node, result, context, metadata=None):
         for key, value in result.items():
             for edge in context.graph.find_edges(node.id, key):
                 routed.append((edge.targetHandle, value))
-        await original_send(node, result, context)
+        await original_send(node, result, context, metadata)
 
     runner.send_messages = capture_send_async  # type: ignore
 
@@ -186,11 +186,11 @@ async def test_streaming_multi_input_fanin_iter_any():
 
     original_send = runner.send_messages
 
-    async def capture_send_async(node, result, context):
+    async def capture_send_async(node, result, context, metadata=None):
         for key, value in result.items():
             for edge in context.graph.find_edges(node.id, key):
                 routed.append((edge.targetHandle, value))
-        await original_send(node, result, context)
+        await original_send(node, result, context, metadata)
 
     runner.send_messages = capture_send_async  # type: ignore
 
@@ -238,11 +238,11 @@ async def test_non_streaming_node_unchanged_edge_queue_path():
 
     original_send = runner.send_messages
 
-    async def capture_send_async(node, result, context):
+    async def capture_send_async(node, result, context, metadata=None):
         for key, value in result.items():
             for edge in context.graph.find_edges(node.id, key):
                 routed.append((edge.targetHandle, value))
-        await original_send(node, result, context)
+        await original_send(node, result, context, metadata)
 
     runner.send_messages = capture_send_async  # type: ignore
 

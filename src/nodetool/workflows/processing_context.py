@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     import PIL.ImageOps
     from chromadb.api import ClientAPI
     from pydub import AudioSegment
-    from sklearn.base import BaseEstimator
+    from sklearn.base import BaseEstimator  # type: ignore
 
     from nodetool.providers.base import BaseProvider, ProviderCapability
     from nodetool.types.message_types import MessageCreateRequest
@@ -50,6 +50,7 @@ from typing import IO, Any, AsyncGenerator, Callable
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
+
 # NOTE: ChromaDB imports are done lazily in get_chroma_client() to avoid
 # heavy initialization of chromadb/langchain during CLI startup
 from nodetool.io.uri_utils import create_file_uri as _create_file_uri
@@ -232,6 +233,7 @@ MODEL_3D_FORMAT_MAPPING: dict[str, tuple[str, str]] = {
     "glb": ("model/gltf-binary", "glb"),
     "gltf": ("model/gltf+json", "gltf"),
     "obj": ("model/obj", "obj"),
+    "mtl": ("model/mtl", "mtl"),  # Material file for OBJ models
     "stl": ("model/stl", "stl"),
     "ply": ("application/x-ply", "ply"),
     "fbx": ("application/octet-stream", "fbx"),
@@ -843,7 +845,7 @@ class ProcessingContext:
         node_id: str,
         provider: Provider | str,
         model: str,
-        capability: "ProviderCapability",
+        capability: ProviderCapability,
         params: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> Any:
@@ -874,10 +876,7 @@ class ProcessingContext:
             params = {}
 
         # Convert string provider to enum if needed
-        if isinstance(provider, str):
-            provider_enum = Provider(provider)
-        else:
-            provider_enum = provider
+        provider_enum = Provider(provider) if isinstance(provider, str) else provider
 
         # Get provider instance
         provider_instance = await self.get_provider(provider_enum)
@@ -937,8 +936,8 @@ class ProcessingContext:
 
     async def _dispatch_capability(
         self,
-        provider: "BaseProvider",
-        capability: "ProviderCapability",
+        provider: BaseProvider,
+        capability: ProviderCapability,
         model: str,
         params: dict[str, Any],
         **kwargs: Any,
@@ -1051,10 +1050,7 @@ class ProcessingContext:
         if params is None:
             params = {}
 
-        if isinstance(provider, str):
-            provider_enum = Provider(provider)
-        else:
-            provider_enum = provider
+        provider_enum = Provider(provider) if isinstance(provider, str) else provider
 
         provider_instance = await self.get_provider(provider_enum)
 
@@ -1121,6 +1117,15 @@ class ProcessingContext:
             asset (AssetRef): The asset to refresh.
         """
         if asset.asset_id:
+            # Preserve extension from existing URI when available (e.g. /api/storage/<id>.jpg)
+            # to avoid forcing a type-default extension that may not match stored content.
+            if asset.uri:
+                uri_path = urlparse(asset.uri).path or asset.uri
+                extension = Path(uri_path).suffix
+                if extension:
+                    asset.uri = f"asset://{asset.asset_id}{extension}"
+                    return
+
             from nodetool.workflows.asset_storage import (
                 get_content_type_for_asset_ref,
                 get_extension_for_content_type,

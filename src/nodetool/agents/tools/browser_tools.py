@@ -424,7 +424,9 @@ class ScreenshotTool(Tool):
         # headless = True # Controlled by _initialize_browser
         output_file = params.get("output_file", "screenshot.png")
         full_path = context.resolve_workspace_path(output_file)
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        parent_dir = os.path.dirname(full_path)
+        if parent_dir:
+            await asyncio.to_thread(os.makedirs, parent_dir, exist_ok=True)
 
         browser_context = None
 
@@ -909,7 +911,9 @@ class DOMExtractTool(Tool):
             # Save to file if requested
             if output_file and extracted_data:
                 full_path = context.resolve_workspace_path(output_file)
-                os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                parent_dir = os.path.dirname(full_path)
+                if parent_dir:
+                    await asyncio.to_thread(os.makedirs, parent_dir, exist_ok=True)
 
                 async with aiofiles.open(full_path, "w", encoding="utf-8") as f:
                     if output_file.endswith(".json"):
@@ -1133,7 +1137,9 @@ class AgenticBrowserTool(Tool):
         # Save to file if requested
         if output_file and result.get("extracted_content"):
             full_path = context.resolve_workspace_path(output_file)
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            parent_dir = os.path.dirname(full_path)
+            if parent_dir:
+                await asyncio.to_thread(os.makedirs, parent_dir, exist_ok=True)
 
             async with aiofiles.open(full_path, "w", encoding="utf-8") as f:
                 await f.write(

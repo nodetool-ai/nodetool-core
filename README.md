@@ -53,14 +53,18 @@ pip install .
 import asyncio
 import tempfile
 
-from nodetool.nodes.lib.math import Add, Multiply
+from nodetool.workflows.test_nodes import Add, Multiply
 from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
 
 async def main():
     async with ResourceScope():
         with tempfile.TemporaryDirectory() as workspace:
-            context = ProcessingContext(workspace_dir=workspace)
+            context = ProcessingContext(
+                workspace_dir=workspace,
+                user_id="test_user",
+                auth_token="test_token"
+            )
 
             # Create and run a simple math workflow
             add_node = Add(a=5.0, b=3.0)

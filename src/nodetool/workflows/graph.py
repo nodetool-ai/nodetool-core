@@ -57,15 +57,22 @@ class Graph(BaseModel):
 
     nodes: Sequence[BaseNode] = Field(default_factory=list)
     edges: Sequence[Edge] = Field(default_factory=list)
+    _node_index: dict[str, BaseNode] | None = None
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        # Build node ID index for O(1) lookup
+        self._node_index = {node._id: node for node in self.nodes} if self.nodes else {}
+
+    def model_post_init(self, __context: Any):
+        # Build node ID index after model initialization
+        self._node_index = {node._id: node for node in self.nodes} if self.nodes else {}
 
     def find_node(self, node_id: str) -> BaseNode | None:
         """
-        Find a node by its id.
+        Find a node by its id using O(1) dictionary lookup.
         """
-        for node in self.nodes:
-            if node._id == node_id:
-                return node
-        return None
+        return self._node_index.get(node_id) if self._node_index else None
 
     def find_edges(self, source: str, source_handle: str) -> list[Edge]:
         """

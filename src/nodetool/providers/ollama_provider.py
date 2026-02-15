@@ -21,7 +21,7 @@ from nodetool.chat.token_counter import count_messages_tokens
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.media.image.image_utils import (
-    image_ref_to_base64_jpeg,
+    image_ref_to_base64_jpeg_async,
 )
 from nodetool.metadata.types import (
     EmbeddingModel,
@@ -313,11 +313,8 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                 log.debug(f"User message has {len(text_parts)} text parts")
 
                 # Handle image content
-                image_parts = [
-                    image_ref_to_base64_jpeg(part.image)
-                    for part in message.content
-                    if isinstance(part, MessageImageContent)
-                ]
+                image_refs = [part.image for part in message.content if isinstance(part, MessageImageContent)]
+                image_parts = await asyncio.gather(*[image_ref_to_base64_jpeg_async(img) for img in image_refs])
                 if image_parts:
                     message_dict["images"] = image_parts
                     log.debug(f"User message has {len(image_parts)} images")
@@ -655,32 +652,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             return res
 
     # Textual tools support removed
-
-    def _process_image_content(self, image: ImageRef) -> str:
-        """
-        Process an image reference to a base64-encoded JPEG.
-        Converts all images to JPEG format, resizes to 512x512 bounds,
-        and returns as a base64 string without data URI prefix.
-
-        DEPRECATED: Use nodetool.media.image.image_utils.image_ref_to_base64_jpeg instead.
-
-        Args:
-            image: The ImageRef object containing the image URI or data
-
-        Returns:
-            str: The processed image as a base64 string
-        """
-        import warnings
-
-        log.debug("Processing image content (deprecated method)")
-        warnings.warn(
-            "_process_image_content is deprecated. Use nodetool.media.image.image_utils.image_ref_to_base64_jpeg instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        result = image_ref_to_base64_jpeg(image)
-        log.debug(f"Processed image to base64 string of length: {len(result)}")
-        return result
 
     async def get_available_embedding_models(self) -> list[EmbeddingModel]:
         """

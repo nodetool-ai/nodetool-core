@@ -1,11 +1,11 @@
+from contextlib import asynccontextmanager
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional, Protocol, AsyncIterator
-from contextlib import asynccontextmanager
+from typing import AsyncIterator, Dict, List, Optional, Protocol
 
+import aiosqlite
 import pytest
 import pytest_asyncio
-import aiosqlite
 
 from nodetool.models.base_model import DBField, DBModel
 from nodetool.models.condition_builder import Field
@@ -46,8 +46,9 @@ class TestModel(DBModel):
 # Fixture for in-memory SQLite database
 @pytest_asyncio.fixture
 async def db_adapter():
-    import aiosqlite
     from contextlib import asynccontextmanager
+
+    import aiosqlite
 
     # Create a connection to an in-memory database
     connection = await aiosqlite.connect(":memory:")

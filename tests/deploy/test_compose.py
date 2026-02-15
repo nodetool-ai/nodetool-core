@@ -7,9 +7,9 @@ import yaml
 
 from nodetool.config.deployment import (
     ContainerConfig,
+    DockerDeployment,
     ImageConfig,
-    SelfHostedDeployment,
-    SelfHostedPaths,
+    ServerPaths,
     SSHConfig,
 )
 from nodetool.deploy.compose import (
@@ -28,7 +28,7 @@ class TestComposeGenerator:
     @pytest.fixture
     def basic_deployment(self):
         """Create a basic deployment configuration."""
-        return SelfHostedDeployment(
+        return DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -38,7 +38,7 @@ class TestComposeGenerator:
     @pytest.fixture
     def multi_container_deployment(self):
         """Create a multi-container deployment configuration."""
-        return SelfHostedDeployment(
+        return DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -48,7 +48,7 @@ class TestComposeGenerator:
     @pytest.fixture
     def gpu_deployment(self):
         """Create a deployment with GPU configuration."""
-        return SelfHostedDeployment(
+        return DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -133,11 +133,11 @@ class TestComposeGenerator:
 
         # Check workspace volume (read-write)
         workspace_vol = next(v for v in volumes if "/workspace" in v)
-        assert "/data/workspace:/workspace" in workspace_vol
+        assert "~/nodetool_data/workspace:/workspace" in workspace_vol
 
         # Check HF cache volume (read-only)
         hf_vol = next(v for v in volumes if "/hf-cache:ro" in v)
-        assert "/data/hf-cache:/hf-cache:ro" in hf_vol
+        assert "~/nodetool_data/hf-cache:/hf-cache:ro" in hf_vol
 
     def test_environment_variables(self, basic_deployment):
         """Test environment variable configuration."""
@@ -252,14 +252,14 @@ class TestComposeGenerator:
 
     def test_hash_changes_with_config(self):
         """Test that hash changes when configuration changes."""
-        deployment1 = SelfHostedDeployment(
+        deployment1 = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="wf1", port=8001),
         )
 
-        deployment2 = SelfHostedDeployment(
+        deployment2 = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -273,12 +273,12 @@ class TestComposeGenerator:
 
     def test_custom_paths(self):
         """Test custom path configuration."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="wf1", port=8001),
-            paths=SelfHostedPaths(
+            paths=ServerPaths(
                 workspace="/custom/workspace",
                 hf_cache="/custom/hf-cache",
             ),
@@ -303,7 +303,7 @@ class TestComposeHelperFunctions:
 
     def test_generate_compose_file_without_output(self):
         """Test generating compose file without writing to disk."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -318,7 +318,7 @@ class TestComposeHelperFunctions:
 
     def test_generate_compose_file_with_output(self, tmp_path):
         """Test generating compose file with output to disk."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -346,7 +346,7 @@ class TestComposeHelperFunctions:
 
     def test_get_compose_hash(self):
         """Test get_compose_hash helper function."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -370,7 +370,7 @@ class TestComposeEdgeCases:
 
     def test_container_with_special_characters(self):
         """Test container with special characters in name."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -389,7 +389,7 @@ class TestComposeEdgeCases:
 
     def test_multiple_workflows_per_container(self):
         """Test container with multiple workflow IDs."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -409,7 +409,7 @@ class TestComposeEdgeCases:
 
     def test_container_with_custom_environment(self):
         """Test container with custom environment variables."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -429,7 +429,7 @@ class TestComposeEdgeCases:
 
     def test_default_container(self):
         """Test deployment with default container."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),

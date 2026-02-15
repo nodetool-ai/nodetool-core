@@ -8,7 +8,7 @@ deployments (self-hosted, RunPod, GCP) are managed through a single deployment.y
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, Union
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -19,7 +19,9 @@ from nodetool.config.settings import get_system_file_path
 class DeploymentType(str, Enum):
     """Supported deployment types."""
 
-    SELF_HOSTED = "self-hosted"
+    DOCKER = "docker"
+    SSH = "ssh"
+    LOCAL = "local"
     RUNPOD = "runpod"
     GCP = "gcp"
 
@@ -70,11 +72,40 @@ class ContainerConfig(BaseModel):
     workflows: Optional[list[str]] = Field(None, description="Workflow IDs to run in this container")
 
 
-class SelfHostedPaths(BaseModel):
-    """Paths on the remote self-hosted server."""
+class ServerPaths(BaseModel):
+    """Paths on the remote server."""
 
-    workspace: str = "/data/workspace"
-    hf_cache: str = "/data/hf-cache"
+    workspace: str = "~/nodetool_data/workspace"
+    hf_cache: str = "~/nodetool_data/hf-cache"
+
+
+class PersistentPaths(BaseModel):
+    """Persistent storage paths for deployment data.
+
+    These paths should be mounted as volumes in containerized deployments
+    to ensure data survives container restarts and redeployments.
+
+    For local/ssh deployments, these are direct filesystem paths.
+    For Docker/RunPod/GCP deployments, these should be mounted volumes.
+    """
+
+    users_file: str = "/workspace/users.yaml"
+    """User authentication file for multi-user bearer token auth."""
+
+    db_path: str = "/workspace/nodetool.db"
+    """SQLite database path for workflow and asset metadata."""
+
+    chroma_path: str = "/workspace/chroma"
+    """ChromaDB path for vector storage and embeddings."""
+
+    hf_cache: str = "/workspace/hf-cache"
+    """HuggingFace model cache location."""
+
+    asset_bucket: str = "/workspace/assets"
+    """Asset storage location (can be S3 bucket or filesystem path)."""
+
+    logs_path: Optional[str] = "/workspace/logs"
+    """Log files directory."""
 
 
 class SelfHostedState(BaseModel):
@@ -85,8 +116,7 @@ class SelfHostedState(BaseModel):
     container_id: Optional[str] = None
     container_name: Optional[str] = None
     url: Optional[str] = None
-    proxy_run_hash: Optional[str] = None
-    proxy_bearer_token: Optional[str] = None
+    container_hash: Optional[str] = None
 
 
 class ImageConfig(BaseModel):
@@ -99,115 +129,136 @@ class ImageConfig(BaseModel):
     @property
     def full_name(self) -> str:
         """Get full image name with tag."""
+        if "@" in self.name:
+            return self.name
+        last_segment = self.name.rsplit("/", 1)[-1]
+        if ":" in last_segment:
+            return self.name
         return f"{self.name}:{self.tag}"
 
 
-class ServiceSpec(BaseModel):
-    """Service definition managed by the self-hosted proxy."""
+class DockerDeployment(BaseModel):
+    """Self-hosted deployment configuration for Docker."""
 
-    name: str = Field(..., description="Unique service identifier")
-    path: str = Field(..., description="Path prefix to proxy (e.g., /app)")
-    image: str = Field(..., description="Docker image for the service")
-    auth_token: Optional[str] = Field(default=None, description="Bearer token for upstream service authentication")
-    environment: Optional[dict[str, str]] = Field(default=None, description="Environment variables for the service")
-    volumes: Optional[dict[str, str | dict[str, str]]] = Field(
-        default=None,
-        description="Volume mounts (host -> container or detailed dict with bind/mode)",
-    )
-    mem_limit: Optional[str] = Field(default=None, description="Memory limit (e.g., 512m, 1g)")
-    cpus: Optional[float] = Field(default=None, description="CPU quota in cores (e.g., 0.5, 1.0)")
-
-
-class ProxySpec(BaseModel):
-    """Proxy container specification for self-hosted deployments."""
-
-    image: str = Field(..., description="Proxy image (e.g., nodetool/proxy:1.0.0)")
-    listen_http: int = Field(80, ge=1, le=65535, description="HTTP port for ACME and health checks")
-    listen_https: int = Field(443, ge=1, le=65535, description="HTTPS port for proxied traffic")
-    domain: str = Field(..., description="Public domain served by the proxy")
-    email: str = Field(..., description="Email for ACME/Let's Encrypt registration")
-    tls_certfile: Optional[str] = Field(default=None, description="Path to TLS certificate (inside container)")
-    tls_keyfile: Optional[str] = Field(default=None, description="Path to TLS private key (inside container)")
-    local_tls_certfile: Optional[str] = Field(
-        default=None,
-        description="Local path to TLS certificate copied to remote host before deployment",
-    )
-    local_tls_keyfile: Optional[str] = Field(
-        default=None,
-        description="Local path to TLS private key copied to remote host before deployment",
-    )
-    acme_webroot: str = Field(
-        "/var/www/acme",
-        description="Webroot directory for HTTP-01 challenges (inside container)",
-    )
-    docker_network: str = Field("nodetool-net", description="Docker network shared between proxy and services")
-    connect_mode: Literal["docker_dns", "host_port"] = Field(
-        "docker_dns",
-        description="How the proxy connects to services",
-    )
-    http_redirect_to_https: bool = Field(True, description="Redirect HTTP traffic to HTTPS (except ACME)")
-    bearer_token: Optional[str] = Field(
-        default=None,
-        description="Bearer token for proxy authentication (auto-generated if omitted)",
-    )
-    idle_timeout: int = Field(
-        300,
-        ge=30,
-        description="Seconds before idle services are stopped by the proxy",
-    )
-    log_level: str = Field("INFO", description="Log level for proxy process")
-    services: list[ServiceSpec] = Field(..., description="List of services managed by the proxy")
-    auto_certbot: bool = Field(
-        False,
-        description="When true, run certbot on the remote host to obtain/renew TLS certificates",
-    )
-
-
-class SelfHostedDeployment(BaseModel):
-    """Self-hosted deployment configuration for a single container."""
-
-    type: Literal[DeploymentType.SELF_HOSTED] = DeploymentType.SELF_HOSTED
+    type: Literal[DeploymentType.DOCKER] = DeploymentType.DOCKER
     enabled: bool = Field(True, description="Whether this deployment is enabled")
     host: str = Field(..., description="Remote host address (IP or hostname)")
-    ssh: SSHConfig
-    paths: SelfHostedPaths = SelfHostedPaths()
+    ssh: Optional[SSHConfig] = Field(None, description="SSH configuration (required for remote hosts)")
+    paths: ServerPaths = ServerPaths()
+    persistent_paths: Optional[PersistentPaths] = Field(
+        None,
+        description="Persistent storage paths for users, database, and cache",
+    )
     image: ImageConfig
     container: ContainerConfig = Field(..., description="Container configuration")
-    worker_auth_token: Optional[str] = Field(
+    server_auth_token: Optional[str] = Field(
         None,
-        description="Authentication token for worker API (auto-generated if not set)",
+        description="Authentication token for server API (auto-generated if not set)",
     )
-    proxy: Optional[ProxySpec] = Field(default=None, description="Proxy container specification")
     state: SelfHostedState = Field(default_factory=SelfHostedState)
-
-    @model_validator(mode="after")
-    def _ensure_proxy(self) -> "SelfHostedDeployment":
-        """Provide a minimal proxy specification when omitted for backward compatibility."""
-        if self.proxy is None:
-            default_service = ServiceSpec(
-                name=self.container.name,
-                path="/",
-                image="nodetool/nodetool:latest",
-            )
-            self.proxy = ProxySpec(
-                image="nodetool/proxy:latest",
-                domain=self.host,
-                email="admin@example.com",
-                services=[default_service],
-            )
-        return self
 
     def get_server_url(self) -> str:
         """Get the server URL for this deployment."""
-        if self.proxy:
-            has_tls = bool(self.proxy.tls_certfile and self.proxy.tls_keyfile)
-            scheme = "https" if has_tls else "http"
-            port = self.proxy.listen_https if has_tls else self.proxy.listen_http
-            host = self.proxy.domain or self.host
-            if (scheme == "https" and port == 443) or (scheme == "http" and port == 80):
-                return f"{scheme}://{host}"
-            return f"{scheme}://{host}:{port}"
-        return f"http://{self.host}:{self.container.port}"
+        # Keep URL aligned with docker run host-port remapping (7777 -> 8000).
+        host_port = 8000 if self.container.port == 7777 else self.container.port
+        return f"http://{self.host}:{host_port}"
+
+
+class NginxConfig(BaseModel):
+    """Nginx reverse proxy configuration for self-hosted deployments."""
+
+    enabled: bool = Field(False, description="Whether to enable nginx reverse proxy")
+    # SSL configuration
+    ssl_cert_path: Optional[str] = Field(None, description="Path to SSL certificate file (e.g., ./cert.pem)")
+    ssl_key_path: Optional[str] = Field(None, description="Path to SSL private key file (e.g., ./key.pem)")
+    # Port configuration
+    http_port: int = Field(80, description="HTTP port for nginx (usually 80)")
+    https_port: int = Field(443, description="HTTPS port for nginx (usually 443)")
+    # Nginx configuration directory
+    config_dir: str = Field(
+        "~/nodetool_data/nginx/conf.d",
+        description="Directory for nginx configuration files",
+    )
+    # Custom nginx config template path (optional)
+    custom_config_path: Optional[str] = Field(
+        None,
+        description="Path to custom nginx config template (uses default if not provided)",
+    )
+
+    @field_validator("ssl_cert_path", "ssl_key_path", "config_dir", "custom_config_path")
+    @classmethod
+    def expand_path(cls, v: Optional[str]) -> Optional[str]:
+        """Expand ~ in path."""
+        if v:
+            return str(Path(v).expanduser())
+        return v
+
+    @model_validator(mode="after")
+    def validate_ssl_config(self) -> "NginxConfig":
+        """Validate that both cert and key are provided if SSL is enabled."""
+        if self.ssl_cert_path and not self.ssl_key_path:
+            raise ValueError("ssl_key_path is required when ssl_cert_path is provided")
+        if self.ssl_key_path and not self.ssl_cert_path:
+            raise ValueError("ssl_cert_path is required when ssl_key_path is provided")
+        return self
+
+
+class _BaseShellDeployment(BaseModel):
+    """Shared configuration for shell-based self-hosted deployments."""
+
+    enabled: bool = Field(True, description="Whether this deployment is enabled")
+    host: str = Field(..., description="Host address (IP or hostname)")
+    paths: ServerPaths = ServerPaths()
+    persistent_paths: Optional[PersistentPaths] = Field(
+        None,
+        description="Persistent storage paths for users, database, and cache",
+    )
+
+    # Service configuration
+    port: int = Field(..., description="Service port")
+    service_name: Optional[str] = Field(None, description="Systemd service name")
+    gpu: Optional[str] = Field(None, description="GPU device ID(s)")
+    environment: Optional[dict[str, str]] = Field(None, description="Environment variables")
+    workflows: Optional[list[str]] = Field(None, description="Workflow IDs to run")
+
+    server_auth_token: Optional[str] = Field(
+        None,
+        description="Authentication token for server API (auto-generated if not set)",
+    )
+    nginx: Optional[NginxConfig] = Field(
+        None,
+        description="Nginx reverse proxy configuration",
+    )
+    state: SelfHostedState = Field(default_factory=SelfHostedState)
+
+    def get_server_url(self) -> str:
+        """Get the server URL for this deployment."""
+        if self.nginx and self.nginx.enabled:
+            if self.nginx.ssl_cert_path:
+                return f"https://{self.host}:{self.nginx.https_port}"
+            return f"http://{self.host}:{self.nginx.http_port}"
+        return f"http://{self.host}:{self.port}"
+
+
+class SSHDeployment(_BaseShellDeployment):
+    """Self-hosted deployment configuration for remote shell deployment via SSH."""
+
+    type: Literal[DeploymentType.SSH] = DeploymentType.SSH
+    ssh: SSHConfig
+
+
+class LocalDeployment(_BaseShellDeployment):
+    """Self-hosted deployment configuration for local shell deployment."""
+
+    type: Literal[DeploymentType.LOCAL] = DeploymentType.LOCAL
+    host: str = Field("localhost", description="Local host address")
+
+
+# Backward-compatibility alias for older imports/usages.
+RootDeployment = SSHDeployment
+
+
+SelfHostedDeployment = DockerDeployment | SSHDeployment | LocalDeployment
 
 
 # ============================================================================
@@ -299,6 +350,10 @@ class RunPodDeployment(BaseModel):
     execution_timeout: Optional[int] = None
     flashboot: bool = False
     environment: Optional[dict[str, str]] = Field(None, description="Environment variables for the deployment")
+    persistent_paths: Optional[PersistentPaths] = Field(
+        None,
+        description="Persistent storage paths for users, database, and cache",
+    )
     workflows: list[str] = Field(default_factory=list, description="Workflow IDs to deploy")
     state: RunPodState = Field(default=RunPodState())
 
@@ -378,6 +433,10 @@ class GCPDeployment(BaseModel):
     resources: GCPResourceConfig = Field(default_factory=GCPResourceConfig)
     storage: Optional[GCPStorageConfig] = None
     iam: GCPIAMConfig = Field(default_factory=GCPIAMConfig)
+    persistent_paths: Optional[PersistentPaths] = Field(
+        None,
+        description="Persistent storage paths for users, database, and cache",
+    )
     workflows: list[str] = Field(default_factory=list, description="Workflow IDs to deploy")
     state: GCPState = Field(default_factory=GCPState)
 
@@ -418,6 +477,23 @@ class DeploymentConfig(BaseModel):
                 raise ValueError(f"Deployment '{name}' missing 'type' field")
         return v
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_root_type(cls, data: Any) -> Any:
+        """Map legacy self-hosted type 'root' to 'ssh' for backward compatibility."""
+        if not isinstance(data, dict):
+            return data
+
+        deployments = data.get("deployments")
+        if not isinstance(deployments, dict):
+            return data
+
+        for _name, deployment in deployments.items():
+            if isinstance(deployment, dict) and deployment.get("type") == "root":
+                deployment["type"] = "ssh"
+
+        return data
+
 
 # ============================================================================
 # Configuration Loading and Saving
@@ -435,7 +511,7 @@ def load_deployment_config() -> DeploymentConfig:
     """
     Load deployment configuration from deployment.yaml.
 
-    Automatically generates and saves worker_auth_token for self-hosted
+    Automatically generates and saves server_auth_token for self-hosted
     deployments that don't have one.
 
     Returns:
@@ -463,12 +539,12 @@ def load_deployment_config() -> DeploymentConfig:
 
     config = DeploymentConfig.model_validate(data)
 
-    # Auto-generate worker_auth_token for self-hosted deployments that don't have one
+    # Auto-generate server_auth_token for self-hosted deployments that don't have one
     config_updated = False
     for _name, deployment in config.deployments.items():
         if isinstance(deployment, SelfHostedDeployment):
-            if not deployment.worker_auth_token:
-                deployment.worker_auth_token = secrets.token_urlsafe(32)
+            if not deployment.server_auth_token:
+                deployment.server_auth_token = secrets.token_urlsafe(32)
                 config_updated = True
 
     # Save the config if we generated any tokens

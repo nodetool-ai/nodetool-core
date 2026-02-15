@@ -17,7 +17,7 @@ from pydantic import Field
 from nodetool.api.server import create_app
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import configure_logging
-from nodetool.deploy.auth import get_worker_auth_token
+from nodetool.deploy.auth import get_server_auth_token
 from nodetool.models.asset import Asset
 from nodetool.models.job import Job
 from nodetool.models.message import Message
@@ -203,6 +203,11 @@ async def setup_and_teardown(request, test_db_pool):
                     await manager.shutdown()
             except Exception:
                 pass
+
+            # Clear model observers to prevent leaks between tests
+            from nodetool.models.base_model import ModelObserver
+
+            ModelObserver.clear()
 
     max_truncate_retries = 3
     for attempt in range(max_truncate_retries):
@@ -470,7 +475,7 @@ def headers(user_id: str):
 
     This fixture is scoped to the function, so it will be created once for each test function.
     """
-    token = get_worker_auth_token()
+    token = get_server_auth_token()
     return {"Authorization": f"Bearer {token}"}
 
 

@@ -1004,11 +1004,6 @@ class NodeActor:
             node.get_node_type(),
         )
 
-        # Record node_id for state updates via StateManager
-        node_id = node._id
-        # Record start time for duration calculation
-        start_time = asyncio.get_running_loop().time()
-
         try:
             streaming_input = node.__class__.is_streaming_input()
             streaming_output = node.__class__.is_streaming_output()
@@ -1019,9 +1014,6 @@ class NodeActor:
                 await self._run_streaming_output_batched_node()
             else:
                 await self._run_buffered_node()
-
-            # Calculate duration
-            duration_ms = int((asyncio.get_running_loop().time() - start_time) * 1000)
 
         except asyncio.CancelledError:
             self.logger.info(

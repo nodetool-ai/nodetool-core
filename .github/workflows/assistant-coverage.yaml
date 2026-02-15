@@ -1,0 +1,105 @@
+name: Assistant Coverage Improvement
+
+on:
+  schedule:
+    - cron: "0 9 * * 6" # Weekly on Saturdays at 9 AM UTC
+  workflow_dispatch:
+
+jobs:
+  assistant-coverage:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create feature branch
+        run: |
+          git fetch origin main
+          git checkout -b assistant/coverage-$(date +%Y%m%d-%H%M%S) origin/main
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libgl1 libglib2.0-0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run tests with coverage
+        run: |
+          pytest --cov=src --cov-report=json:coverage.json || true
+          cat coverage.json || true
+
+      - name: Run Assistant
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: https://api.z.ai/api/anthropic
+          ANTHROPIC_MODEL: glm-5
+          ANTHROPIC_DEFAULT_OPUS_MODEL: GLM-5
+          ANTHROPIC_DEFAULT_SONNET_MODEL: GLM-5
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: GLM-5
+        with:
+          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          additional_permissions: |
+            actions: read
+          claude_args: |
+            --allowedTools "Bash,WebFetch,Edit,Read,Replace"
+          prompt: |
+            # NodeTool Core Coverage Improvement
+
+            You are an autonomous testing agent improving coverage in **nodetool-core**.
+
+            ## Step 0: Avoid Duplicate Work
+            1. Run `git branch -a` to check existing branches
+            2. Continue related branches instead of duplicating work
+
+            ## Step 1: Read Memory (Required)
+            - `.github/opencode-memory/README.md`
+            - `.github/opencode-memory/repository-context.md`
+            - `.github/opencode-memory/features.md`
+            - List `issues/` and `insights/` to find descriptive files
+
+            ## Step 2: Analyze Coverage
+            Coverage data is in `coverage.json` (if generated).
+
+            Focus on critical areas:
+            - Workflow execution and nodes
+            - API routes and request validation
+            - Agent/LLM orchestration
+            - Storage backends and persistence
+
+            ## Step 3: Add Focused Tests
+            - Add tests only for meaningful behavior
+            - Follow `tests/` structure and existing patterns
+            - Prefer unit tests over heavy integration tests
+
+            ## Step 4: Validate
+            ```bash
+            make typecheck
+            make lint
+            make test
+            ```
+
+            ## Step 5: Update Memory
+            - Add insight files under `insights/testing/`
+            - Add issue files under `issues/testing/`
+
+            ## Pull Request Rule
+            - NEVER commit or push directly to the main branch.
+            - Always work on the current feature branch (not main).
+            - Do NOT run `git checkout main` or `git switch main`.
+            - If `git status --porcelain` shows changed files, commit, push the current branch, and create or update a PR targeting main.
+            - If there are no file changes, do not commit, do not push, and do not create or update a PR.

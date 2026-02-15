@@ -1,13 +1,6 @@
 {
-  "include": [
-    "src",
-    "tests"
-  ],
-  "exclude": [
-    "**/__pycache__",
-    "dist",
-    "build"
-  ],
+  "include": ["src", "tests"],
+  "exclude": ["**/__pycache__", "dist", "build"],
   "extraPaths": [
     "src",
     "../nodetool-base/src",
@@ -16,8 +9,9 @@
     "../nodetool-apple/src",
     "../nodetool-lib-ml/src",
     "../nodetool-fal/src",
-    "../nodetool-huggingface/src"
+    "../nodetool-huggingface/src",
   ],
   "pythonVersion": "3.11",
-  "reportMissingImports": "none"
+  "reportMissingImports": "none",
+  "reportAny": "none",
 }

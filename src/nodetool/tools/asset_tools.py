@@ -8,10 +8,23 @@ These tools provide functionality for managing NodeTool assets including:
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from typing import Any, Optional
 
 from nodetool.models.asset import Asset as AssetModel
 from nodetool.packages.registry import Registry
+from nodetool.runtime.resources import ResourceScope, maybe_scope
+
+
+@asynccontextmanager
+async def _ensure_resource_scope():
+    """Bind a ResourceScope only when one is not already active."""
+    if maybe_scope() is not None:
+        yield
+        return
+
+    async with ResourceScope():
+        yield
 
 
 class AssetTools:
@@ -42,62 +55,85 @@ class AssetTools:
         Returns:
             Dictionary with assets list and pagination info
         """
-        if source == "package":
-            registry = Registry.get_instance()
-            all_assets = registry.list_assets()
+        async with _ensure_resource_scope():
+            if source == "package":
+                registry = Registry.get_instance()
+                all_assets = registry.list_assets()
 
-            if package_name:
-                all_assets = [a for a in all_assets if a.package_name == package_name]
+                if package_name:
+                    all_assets = [a for a in all_assets if a.package_name == package_name]
 
-            if query and len(query.strip()) >= 2:
-                query_lower = query.strip().lower()
-                all_assets = [a for a in all_assets if query_lower in a.name.lower()]
+                if query and len(query.strip()) >= 2:
+                    query_lower = query.strip().lower()
+                    all_assets = [a for a in all_assets if query_lower in a.name.lower()]
 
-            all_assets = all_assets[:limit]
+                all_assets = all_assets[:limit]
 
-            results = [
-                {
-                    "id": f"pkg:{asset.package_name}/{asset.name}",
-                    "name": asset.name,
-                    "package_name": asset.package_name,
-                    "virtual_path": f"/api/assets/packages/{asset.package_name}/{asset.name}",
-                    "source": "package",
+                results = [
+                    {
+                        "id": f"pkg:{asset.package_name}/{asset.name}",
+                        "name": asset.name,
+                        "package_name": asset.package_name,
+                        "virtual_path": f"/api/assets/packages/{asset.package_name}/{asset.name}",
+                        "source": "package",
+                    }
+                    for asset in all_assets
+                ]
+
+                return {
+                    "assets": results,
+                    "next": None,
+                    "total": len(results),
                 }
-                for asset in all_assets
-            ]
 
-            return {
-                "assets": results,
-                "next": None,
-                "total": len(results),
-            }
+            if query:
+                if len(query.strip()) < 2:
+                    raise ValueError("Search query must be at least 2 characters long")
 
-        if query:
-            if len(query.strip()) < 2:
-                raise ValueError("Search query must be at least 2 characters long")
+                assets, next_cursor, folder_paths = await AssetModel.search_assets_global(
+                    user_id=user_id,
+                    query=query.strip(),
+                    content_type=content_type,
+                    limit=limit,
+                )
 
-            assets, next_cursor, folder_paths = await AssetModel.search_assets_global(
+                results = []
+                for i, asset in enumerate(assets):
+                    asset_dict = await _asset_to_dict(asset)
+                    folder_info = (
+                        folder_paths[i]
+                        if i < len(folder_paths)
+                        else {
+                            "folder_name": "Unknown",
+                            "folder_path": "Unknown",
+                            "folder_id": "",
+                        }
+                    )
+                    asset_dict["folder_name"] = folder_info["folder_name"]
+                    asset_dict["folder_path"] = folder_info["folder_path"]
+                    asset_dict["folder_id"] = folder_info["folder_id"]
+                    asset_dict["source"] = "user"
+                    results.append(asset_dict)
+
+                return {
+                    "assets": results,
+                    "next": next_cursor,
+                    "total": len(results),
+                }
+
+            if content_type is None and parent_id is None:
+                parent_id = user_id
+
+            assets, next_cursor = await AssetModel.paginate(
                 user_id=user_id,
-                query=query.strip(),
+                parent_id=parent_id,
                 content_type=content_type,
                 limit=limit,
             )
 
             results = []
-            for i, asset in enumerate(assets):
+            for asset in assets:
                 asset_dict = await _asset_to_dict(asset)
-                folder_info = (
-                    folder_paths[i]
-                    if i < len(folder_paths)
-                    else {
-                        "folder_name": "Unknown",
-                        "folder_path": "Unknown",
-                        "folder_id": "",
-                    }
-                )
-                asset_dict["folder_name"] = folder_info["folder_name"]
-                asset_dict["folder_path"] = folder_info["folder_path"]
-                asset_dict["folder_id"] = folder_info["folder_id"]
                 asset_dict["source"] = "user"
                 results.append(asset_dict)
 
@@ -106,28 +142,6 @@ class AssetTools:
                 "next": next_cursor,
                 "total": len(results),
             }
-
-        if content_type is None and parent_id is None:
-            parent_id = user_id
-
-        assets, next_cursor = await AssetModel.paginate(
-            user_id=user_id,
-            parent_id=parent_id,
-            content_type=content_type,
-            limit=limit,
-        )
-
-        results = []
-        for asset in assets:
-            asset_dict = await _asset_to_dict(asset)
-            asset_dict["source"] = "user"
-            results.append(asset_dict)
-
-        return {
-            "assets": results,
-            "next": next_cursor,
-            "total": len(results),
-        }
 
     @staticmethod
     async def get_asset(
@@ -144,11 +158,12 @@ class AssetTools:
         Returns:
             Asset details including URLs and metadata
         """
-        asset = await AssetModel.find(user_id, asset_id)
-        if not asset:
-            raise ValueError(f"Asset {asset_id} not found")
+        async with _ensure_resource_scope():
+            asset = await AssetModel.find(user_id, asset_id)
+            if not asset:
+                raise ValueError(f"Asset {asset_id} not found")
 
-        return await _asset_to_dict(asset)
+            return await _asset_to_dict(asset)
 
     @staticmethod
     def get_tool_functions() -> dict[str, Any]:

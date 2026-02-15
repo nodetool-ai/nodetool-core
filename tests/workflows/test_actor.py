@@ -297,11 +297,11 @@ async def test_run_streaming_happy_path_sends_updates_and_messages():
 
     sent = []
 
-    def capture_send(node, result, context):
+    def capture_send(node, result, context, metadata=None):
         sent.append((node.id, result))
 
-    async def capture_send_async(node, result, context):
-        capture_send(node, result, context)
+    async def capture_send_async(node, result, context, metadata=None):
+        capture_send(node, result, context, metadata)
 
     runner.send_messages = capture_send_async  # type: ignore
 
@@ -403,7 +403,7 @@ async def test_should_route_output_suppresses_routing():
 
     routed = {"count": 0}
 
-    def capture(node, result, context):
+    def capture(node, result, context, metadata=None):
         routed["count"] += 1
 
     runner.send_messages = capture  # type: ignore
@@ -1046,11 +1046,11 @@ async def test_run_streaming_output_batched_respects_sync_mode_zip_all():
 
     routed = []
 
-    def capture_send(node, result, context):
+    def capture_send(node, result, context, metadata=None):
         routed.append((node.id, result))
 
-    async def capture_send_async(node, result, context):
-        capture_send(node, result, context)
+    async def capture_send_async(node, result, context, metadata=None):
+        capture_send(node, result, context, metadata)
 
     runner.send_messages = capture_send_async  # type: ignore
 
@@ -1143,7 +1143,7 @@ async def test_always_on_streaming_sticky_inputs():
         ),
     ]
     graph = Graph(nodes=[producer_a, producer_c, target_b], edges=edges)
-    actor, runner, ctx = await make_actor_for_target_async(graph, target_b)
+    actor, _runner, _ctx = await make_actor_for_target_async(graph, target_b)
 
     # Non-streaming producer C provides a single sticky value for handle 'b'
     await actor.inbox.put("b", 100)
@@ -1196,7 +1196,7 @@ async def test_always_on_streaming_triggers_on_every_input():
         ),
     ]
     graph = Graph(nodes=[producer_a, producer_b, target], edges=edges)
-    actor, runner, ctx = await make_actor_for_target_async(graph, target)
+    actor, _runner, _ctx = await make_actor_for_target_async(graph, target)
 
     # Both handles are non-streaming but treated as streaming
     # First provide initial values for both handles

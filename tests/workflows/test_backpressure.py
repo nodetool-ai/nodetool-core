@@ -14,6 +14,9 @@ from nodetool.workflows.inbox import NodeInbox
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.workflow_runner import WorkflowRunner
 
+# Import test node classes to register them
+from tests.workflows.test_graph_module import InNode, OutNode
+
 
 @pytest.mark.asyncio
 async def test_inbox_backpressure():

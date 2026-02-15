@@ -11,7 +11,7 @@ import pytest
 import pytest_asyncio
 
 from nodetool.config.environment import Environment
-from nodetool.metadata.types import AssetRef
+from nodetool.metadata.types import AssetRef, ImageRef
 from nodetool.models.asset import Asset
 from nodetool.models.job import Job
 from nodetool.models.message import Message
@@ -212,6 +212,15 @@ class TestAssetMethods:
         # refresh_uri now sets the URI directly as asset:// format
         assert asset_ref.uri is not None
         assert asset_ref.uri.startswith("asset://test_id")
+
+    @pytest.mark.asyncio
+    async def test_refresh_uri_preserves_existing_extension(self, context: ProcessingContext):
+        """Test refreshing image URI preserves extension from existing URI."""
+        image_ref = ImageRef(asset_id="test_id", uri="/api/storage/test_id.jpg")
+
+        await context.refresh_uri(image_ref)
+
+        assert image_ref.uri == "asset://test_id.jpg"
 
 
 class TestWorkflowMethods:

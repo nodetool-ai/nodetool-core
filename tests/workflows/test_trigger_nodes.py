@@ -35,43 +35,45 @@ class TestIntervalTrigger(TriggerNode):
                     "interval_seconds": self.interval_seconds,
                 }
             )
+            # Unreachable - suspend_for_inactivity raises WorkflowSuspendedException
+            raise AssertionError("suspend_for_inactivity should raise") from None
 
 
 def test_trigger_node_is_trigger():
     """Test that trigger node reports as trigger node."""
-    node = TestIntervalTrigger(id="test1")
+    node = TestIntervalTrigger(id="test1")  # type: ignore[call-arg]
     assert node.is_trigger_node() is True
 
 
 def test_trigger_node_is_suspendable():
     """Test that trigger node is also suspendable."""
-    node = TestIntervalTrigger(id="test2")
+    node = TestIntervalTrigger(id="test2")  # type: ignore[call-arg]
     assert node.is_suspendable() is True
 
 
 def test_trigger_node_default_timeout():
     """Test default inactivity timeout."""
-    node = TestIntervalTrigger(id="test3")
+    node = TestIntervalTrigger(id="test3")  # type: ignore[call-arg]
     assert node.get_inactivity_timeout() == DEFAULT_INACTIVITY_TIMEOUT
 
 
 def test_trigger_node_set_timeout():
     """Test setting custom inactivity timeout."""
-    node = TestIntervalTrigger(id="test4")
+    node = TestIntervalTrigger(id="test4")  # type: ignore[call-arg]
     node.set_inactivity_timeout(180)
     assert node.get_inactivity_timeout() == 180
 
 
 def test_trigger_node_set_invalid_timeout():
     """Test that invalid timeout raises error."""
-    node = TestIntervalTrigger(id="test5")
+    node = TestIntervalTrigger(id="test5")  # type: ignore[call-arg]
     with pytest.raises(ValueError):
         node.set_inactivity_timeout(0)
 
 
 def test_trigger_node_activity_tracking():
     """Test activity time tracking."""
-    node = TestIntervalTrigger(id="test6")
+    node = TestIntervalTrigger(id="test6")  # type: ignore[call-arg]
 
     # Initially no activity
     assert node.get_last_activity_time() is None
@@ -80,14 +82,15 @@ def test_trigger_node_activity_tracking():
     # Update activity
     node._update_activity_time()
     assert node.get_last_activity_time() is not None
-    assert node.get_inactivity_duration() is not None
-    assert node.get_inactivity_duration().total_seconds() < 1
+    duration = node.get_inactivity_duration()
+    assert duration is not None
+    assert duration.total_seconds() < 1
 
 
 @pytest.mark.asyncio
 async def test_trigger_node_wait_timeout():
     """Test that wait_for_trigger_event times out correctly."""
-    node = TestIntervalTrigger(id="test7")
+    node = TestIntervalTrigger(id="test7")  # type: ignore[call-arg]
     node.set_inactivity_timeout(1)  # 1 second timeout
 
     with pytest.raises(TriggerInactivityTimeout) as exc_info:
@@ -99,7 +102,7 @@ async def test_trigger_node_wait_timeout():
 @pytest.mark.asyncio
 async def test_trigger_node_send_and_receive_event():
     """Test sending and receiving trigger events."""
-    node = TestIntervalTrigger(id="test8")
+    node = TestIntervalTrigger(id="test8")  # type: ignore[call-arg]
 
     # Send event to node
     event_data = {"type": "interval", "value": 123}
@@ -113,7 +116,7 @@ async def test_trigger_node_send_and_receive_event():
 @pytest.mark.asyncio
 async def test_trigger_node_suspension_on_timeout():
     """Test that node suspends when timing out."""
-    node = TestIntervalTrigger(id="test9", interval_seconds=30)
+    node = TestIntervalTrigger(id="test9", interval_seconds=30)  # type: ignore[call-arg]
     node.set_inactivity_timeout(1)
     ctx = ProcessingContext(message_queue=None)
 
@@ -131,7 +134,7 @@ async def test_trigger_node_suspension_on_timeout():
 @pytest.mark.asyncio
 async def test_trigger_node_resumption():
     """Test that trigger node can resume from suspension."""
-    node = TestIntervalTrigger(id="test10")
+    node = TestIntervalTrigger(id="test10")  # type: ignore[call-arg]
     ctx = ProcessingContext(message_queue=None)
 
     # Set resuming state
@@ -154,7 +157,7 @@ async def test_trigger_node_resumption():
 @pytest.mark.asyncio
 async def test_trigger_node_should_suspend_for_inactivity():
     """Test inactivity detection logic."""
-    node = TestIntervalTrigger(id="test11")
+    node = TestIntervalTrigger(id="test11")  # type: ignore[call-arg]
     node.set_inactivity_timeout(2)  # 2 seconds
 
     # Initially no activity
@@ -172,7 +175,7 @@ async def test_trigger_node_should_suspend_for_inactivity():
 @pytest.mark.asyncio
 async def test_trigger_node_process_trigger_resumption():
     """Test trigger resumption helper."""
-    node = TestIntervalTrigger(id="test12")
+    node = TestIntervalTrigger(id="test12")  # type: ignore[call-arg]
     ctx = ProcessingContext(message_queue=None)
 
     saved_state = {
@@ -193,7 +196,7 @@ async def test_trigger_node_process_trigger_resumption():
 @pytest.mark.asyncio
 async def test_trigger_node_suspend_for_inactivity():
     """Test convenience method for inactivity suspension."""
-    node = TestIntervalTrigger(id="test13")
+    node = TestIntervalTrigger(id="test13")  # type: ignore[call-arg]
 
     node._update_activity_time()
 

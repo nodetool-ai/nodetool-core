@@ -331,6 +331,18 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="MESHY_API_KEY",
+    group="Meshy",
+    description="Meshy AI API key for 3D model generation (text-to-3D, image-to-3D)",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="RODIN_API_KEY",
+    group="Rodin",
+    description="Rodin AI API key for 3D model generation",
+)
+register_secret(
+    package_name="nodetool",
     env_var="GITHUB_CLIENT_ID",
     group="GitHub",
     description="GitHub OAuth App Client ID for OAuth PKCE authentication flow",
@@ -343,10 +355,10 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
-    env_var="WORKER_AUTH_TOKEN",
+    env_var="SERVER_AUTH_TOKEN",
     group="Deployment",
     description=(
-        "Authentication token for securing NodeTool worker endpoints when deployed. "
+        "Authentication token for securing NodeTool server endpoints when deployed. "
         "When set, all API endpoints (except /health and /ping) require this token "
         "in the Authorization header as 'Bearer TOKEN'. Essential for Docker and "
         "production deployments. Generate with: openssl rand -base64 32"
@@ -356,12 +368,25 @@ register_secret(
 
 register_setting(
     package_name="nodetool",
-    env_var="WORKER_ID",
+    env_var="USERS_FILE",
+    group="Folders",
+    description=(
+        "Path to users.yaml file for multi-user bearer token authentication. "
+        "In Docker deployments, this should be a mounted volume path "
+        "(e.g., /data/workspace/users.yaml). "
+        "Defaults to ~/.config/nodetool/users.yaml for local deployments."
+    ),
+)
+
+register_setting(
+    package_name="nodetool",
+    env_var="SERVER_AUTH_TOKEN",
     group="Deployment",
     description=(
-        "Unique identifier for this worker instance. "
-        "Used for job ownership and recovery. "
-        "If not set, it will be automatically generated."
+        "Authentication token for securing NodeTool server endpoints when deployed. "
+        "When set, all API endpoints (except /health and /ping) require this token "
+        "in in Authorization header as 'Bearer TOKEN'. Essential for Docker and "
+        "production deployments. Generate with: openssl rand -base64 32"
     ),
 )
 

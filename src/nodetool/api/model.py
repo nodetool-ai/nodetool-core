@@ -6,36 +6,11 @@ from fnmatch import fnmatch
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from huggingface_hub import HfApi, try_to_load_from_cache
-from huggingface_hub.hf_api import RepoFile
 from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
-from nodetool.chat.ollama_service import (
-    delete_ollama_model as _delete_ollama_model,
-)
-from nodetool.chat.ollama_service import (
-    get_ollama_model_info,
-    get_ollama_models,
-    get_ollama_models_unified,
-    stream_ollama_model_pull,
-)
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.integrations.huggingface.hf_auth import get_hf_token
-from nodetool.integrations.huggingface.hf_cache import filter_repo_paths, has_cached_files
-from nodetool.integrations.huggingface.huggingface_file import (
-    HFFileInfo,
-    HFFileRequest,
-    get_huggingface_file_infos_async,
-)
-from nodetool.integrations.huggingface.huggingface_models import (
-    HF_FAST_CACHE,
-    delete_cached_hf_model,
-    get_models_by_hf_type,
-    read_cached_hf_models,
-    search_cached_hf_models,
-)
 from nodetool.metadata.types import (
     ASRModel,
     EmbeddingModel,
@@ -46,24 +21,7 @@ from nodetool.metadata.types import (
     TTSModel,
     VideoModel,
 )
-from nodetool.ml.models.language_models import get_all_language_models
-from nodetool.ml.models.tts_models import get_all_tts_models
-from nodetool.providers import get_provider, import_providers
-from nodetool.providers.base import _PROVIDER_REGISTRY, get_registered_provider
 from nodetool.types.model import CachedRepo, RepoPath, UnifiedModel
-from nodetool.workflows.recommended_models import (
-    get_recommended_asr_models,
-    get_recommended_image_models,
-    get_recommended_image_to_image_models,
-    get_recommended_image_to_video_models,
-    get_recommended_language_embedding_models,
-    get_recommended_language_models,
-    get_recommended_language_text_generation_models,
-    get_recommended_models,
-    get_recommended_text_to_image_models,
-    get_recommended_text_to_video_models,
-    get_recommended_tts_models,
-)
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -86,9 +44,11 @@ def dedupe_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
 # Exported functions for direct use (e.g., by MCP server)
 async def get_all_models(_user: str) -> list[UnifiedModel]:
     """Get all available models of all types."""
+    from nodetool.chat.ollama_service import get_ollama_models_unified
+    from nodetool.integrations.huggingface.huggingface_models import read_cached_hf_models
+    from nodetool.workflows.recommended_models import get_recommended_models
+
     reco_models = [model for model_list in get_recommended_models().values() for model in model_list]
-    # gguf_models = await load_gguf_models_from_file()
-    # mlx_models = await load_mlx_models_from_file()
 
     # Run in parallel, catching exceptions to handle them specifically
     results = await asyncio.gather(read_cached_hf_models(), get_ollama_models_unified(), return_exceptions=True)
@@ -132,6 +92,8 @@ async def get_all_models(_user: str) -> list[UnifiedModel]:
 
 async def recommended_models(_user: str) -> list[UnifiedModel]:
     """Get recommended models."""
+    from nodetool.workflows.recommended_models import get_recommended_models
+
     models = [model for model_list in get_recommended_models().values() for model in model_list]
     models = [model for model in models if model is not None]
     return models
@@ -139,6 +101,8 @@ async def recommended_models(_user: str) -> list[UnifiedModel]:
 
 async def get_language_models(user: str = "1") -> list[LanguageModel]:
     """Get all available language models."""
+    from nodetool.ml.models.language_models import get_all_language_models
+
     return await get_all_language_models(user)
 
 
@@ -156,6 +120,9 @@ async def get_providers_info(user: str) -> list[ProviderInfo]:
     This function iterates through the provider registry and creates ProviderInfo
     objects for each provider that can be initialized (has required secrets).
     """
+    from nodetool.providers import import_providers
+    from nodetool.providers.base import _PROVIDER_REGISTRY, get_registered_provider
+
     import_providers()
 
     # Get providers from the registry
@@ -233,6 +200,8 @@ async def recommended_models_endpoint(
 async def recommended_image_models_endpoint(
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
+    from nodetool.workflows.recommended_models import get_recommended_image_models
+
     # Determine platform on the server; do not accept client override
     models = get_recommended_image_models()
     return models
@@ -242,6 +211,8 @@ async def recommended_image_models_endpoint(
 async def recommended_text_to_image_models_endpoint(
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
+    from nodetool.workflows.recommended_models import get_recommended_text_to_image_models
+
     models = get_recommended_text_to_image_models()
     return models
 
@@ -250,6 +221,8 @@ async def recommended_text_to_image_models_endpoint(
 async def recommended_image_to_image_models_endpoint(
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
+    from nodetool.workflows.recommended_models import get_recommended_image_to_image_models
+
     models = get_recommended_image_to_image_models()
     return models
 
@@ -258,6 +231,8 @@ async def recommended_image_to_image_models_endpoint(
 async def recommended_language_models_endpoint(
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
+    from nodetool.workflows.recommended_models import get_recommended_language_models
+
     models = get_recommended_language_models()
     return models
 
@@ -266,6 +241,8 @@ async def recommended_language_models_endpoint(
 async def recommended_language_text_generation_models_endpoint(
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
+    from nodetool.workflows.recommended_models import get_recommended_language_text_generation_models
+
     models = get_recommended_language_text_generation_models()
     return models
 
@@ -274,6 +251,8 @@ async def recommended_language_text_generation_models_endpoint(
 async def recommended_language_embedding_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
+    from nodetool.workflows.recommended_models import get_recommended_language_embedding_models
+
     models = get_recommended_language_embedding_models()
     return models
 
@@ -282,6 +261,8 @@ async def recommended_language_embedding_models_endpoint(
 async def recommended_asr_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
+    from nodetool.workflows.recommended_models import get_recommended_asr_models
+
     models = get_recommended_asr_models()
     return models
 
@@ -290,6 +271,8 @@ async def recommended_asr_models_endpoint(
 async def recommended_tts_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
+    from nodetool.workflows.recommended_models import get_recommended_tts_models
+
     models = get_recommended_tts_models()
     return models
 
@@ -298,6 +281,8 @@ async def recommended_tts_models_endpoint(
 async def recommended_text_to_video_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
+    from nodetool.workflows.recommended_models import get_recommended_text_to_video_models
+
     models = get_recommended_text_to_video_models()
     return models
 
@@ -306,6 +291,8 @@ async def recommended_text_to_video_models_endpoint(
 async def recommended_image_to_video_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
+    from nodetool.workflows.recommended_models import get_recommended_image_to_video_models
+
     models = get_recommended_image_to_video_models()
     return models
 
@@ -321,6 +308,8 @@ async def get_all_models_endpoint(
 async def get_huggingface_models(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
+    from nodetool.integrations.huggingface.huggingface_models import read_cached_hf_models
+
     return await read_cached_hf_models()
 
 
@@ -337,6 +326,8 @@ async def search_huggingface_models_endpoint(
         log.warning("Cannot search Hugging Face models in production")
         return []
 
+    from nodetool.integrations.huggingface.huggingface_models import search_cached_hf_models
+
     return await search_cached_hf_models(
         repo_patterns=repo_pattern,
         filename_patterns=filename_pattern,
@@ -351,6 +342,8 @@ async def get_huggingface_models_by_type_endpoint(
     """
     Return cached Hugging Face models matching an hf.* type using server-side heuristics.
     """
+    from nodetool.integrations.huggingface.huggingface_models import get_models_by_hf_type
+
     return await get_models_by_hf_type(model_type)
 
 
@@ -359,6 +352,9 @@ async def delete_huggingface_model(repo_id: str) -> bool:
     if Environment.is_production():
         log.warning("Cannot delete models in production")
         return False
+
+    from nodetool.integrations.huggingface.huggingface_models import delete_cached_hf_model
+
     return await delete_cached_hf_model(repo_id)
 
 
@@ -366,6 +362,8 @@ async def delete_huggingface_model(repo_id: str) -> bool:
 async def get_ollama_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[LlamaModel]:
+    from nodetool.chat.ollama_service import get_ollama_models
+
     try:
         return await get_ollama_models()
     except Exception as e:
@@ -382,11 +380,16 @@ async def delete_ollama_model_endpoint(model_name: str) -> bool:
     if Environment.is_production():
         log.warning("Cannot delete ollama models in production")
         return False
+
+    from nodetool.chat.ollama_service import delete_ollama_model as _delete_ollama_model
+
     return await _delete_ollama_model(model_name)
 
 
 async def get_language_models_by_provider(provider: Provider, user: str) -> list[LanguageModel]:
     """Get language models for a specific provider."""
+    from nodetool.providers import get_provider
+
     try:
         provider_instance = await get_provider(provider, user)
         models = await provider_instance.get_available_language_models()
@@ -408,6 +411,8 @@ async def get_language_models_by_provider(provider: Provider, user: str) -> list
 
 async def get_image_models_by_provider(provider: Provider, user: str) -> list[ImageModel]:
     """Get image models for a specific provider."""
+    from nodetool.providers import get_provider
+
     try:
         provider_instance = await get_provider(provider, user)
         models = await provider_instance.get_available_image_models()
@@ -465,6 +470,8 @@ async def get_image_models_by_provider(provider: Provider, user: str) -> list[Im
 
 async def get_tts_models_by_provider(provider: Provider, user: str) -> list[TTSModel]:
     """Get TTS models for a specific provider."""
+    from nodetool.providers import get_provider
+
     try:
         provider_instance = await get_provider(provider, user)
         return await provider_instance.get_available_tts_models()
@@ -478,6 +485,8 @@ async def get_tts_models_by_provider(provider: Provider, user: str) -> list[TTSM
 
 async def get_asr_models_by_provider(provider: Provider, user: str) -> list[ASRModel]:
     """Get ASR models for a specific provider."""
+    from nodetool.providers import get_provider
+
     try:
         provider_instance = await get_provider(provider, user)
         return await provider_instance.get_available_asr_models()
@@ -491,6 +500,8 @@ async def get_asr_models_by_provider(provider: Provider, user: str) -> list[ASRM
 
 async def get_video_models_by_provider(provider: Provider, user: str) -> list[VideoModel]:
     """Get video models for a specific provider."""
+    from nodetool.providers import get_provider
+
     try:
         provider_instance = await get_provider(provider, user)
         return await provider_instance.get_available_video_models()
@@ -504,6 +515,8 @@ async def get_video_models_by_provider(provider: Provider, user: str) -> list[Vi
 
 async def get_embedding_models_by_provider(provider: Provider, user: str) -> list[EmbeddingModel]:
     """Get embedding models for a specific provider."""
+    from nodetool.providers import get_provider
+
     try:
         provider_instance = await get_provider(provider, user)
         return await provider_instance.get_available_embedding_models()
@@ -544,6 +557,8 @@ async def get_all_tts_models_endpoint(
     """
     Get all available text-to-speech models from all providers.
     """
+    from nodetool.ml.models.tts_models import get_all_tts_models
+
     return await get_all_tts_models(user)
 
 
@@ -593,6 +608,8 @@ async def get_embedding_models_endpoint(
 
 @router.get("/ollama_model_info")
 async def get_ollama_model_info_endpoint(model_name: str, user: str = Depends(current_user)) -> dict | None:
+    from nodetool.chat.ollama_service import get_ollama_model_info
+
     return await get_ollama_model_info(model_name)
 
 
@@ -601,6 +618,8 @@ async def try_cache_files(
     paths: list[RepoPath],
     user: str = Depends(current_user),
 ) -> list[RepoPath]:
+    from huggingface_hub import try_to_load_from_cache
+
     def check_path(path: RepoPath) -> bool:
         return try_to_load_from_cache(path.repo_id, path.path) is not None
 
@@ -617,6 +636,8 @@ async def try_cache_repos(
     repos: list[str],
     user: str = Depends(current_user),
 ) -> list[CachedRepo]:
+    from nodetool.integrations.huggingface.hf_cache import has_cached_files
+
     def check_repo(repo_id: str) -> bool:
         return has_cached_files(repo_id)
 
@@ -699,6 +720,11 @@ async def check_huggingface_cache(body: HFCacheCheckRequest, user: str = Depends
 
     Returns a concise status including whether all are present and which are missing.
     """
+    from huggingface_hub import HfApi, try_to_load_from_cache
+    from huggingface_hub.hf_api import RepoFile
+
+    from nodetool.integrations.huggingface.hf_auth import get_hf_token
+    from nodetool.integrations.huggingface.hf_cache import filter_repo_paths
 
     # Use HF token if available (for gated models)
     token = await get_hf_token(user)
@@ -732,6 +758,8 @@ async def check_huggingface_cache(body: HFCacheCheckRequest, user: str = Depends
 async def check_huggingface_cache_status(
     body: list[HFFastCacheStatusRequest], _user: str = Depends(current_user)
 ) -> list[HFFastCacheStatusResponse]:
+    from nodetool.integrations.huggingface.huggingface_models import HF_FAST_CACHE
+
     async def resolve_item(item: HFFastCacheStatusRequest) -> HFFastCacheStatusResponse:
         allow_patterns = _normalize_patterns(item.allow_patterns)
         ignore_patterns = _normalize_patterns(item.ignore_patterns)
@@ -751,9 +779,18 @@ async def check_huggingface_cache_status(
 
 
 if not Environment.is_production():
+    from nodetool.integrations.huggingface.huggingface_file import (
+        HFFileInfo,
+        HFFileRequest,
+    )
 
     @router.post("/pull_ollama_model")
     async def pull_ollama_model(model_name: str, user: str = Depends(current_user)):
+        from nodetool.chat.ollama_service import (
+            get_ollama_models,
+            stream_ollama_model_pull,
+        )
+
         # Preflight: attempt a lightweight call to detect if Ollama is reachable
         try:
             await get_ollama_models()
@@ -779,6 +816,10 @@ if not Environment.is_production():
         requests: list[HFFileRequest],
         user: str = Depends(current_user),
     ) -> list[HFFileInfo]:
+        from nodetool.integrations.huggingface.huggingface_file import (
+            get_huggingface_file_infos_async,
+        )
+
         # Use async wrapper to avoid blocking the loop
         return await get_huggingface_file_infos_async(requests)
 

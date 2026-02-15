@@ -6,9 +6,9 @@ import pytest
 
 from nodetool.config.deployment import (
     ContainerConfig,
+    DockerDeployment,
     ImageConfig,
-    SelfHostedDeployment,
-    SelfHostedPaths,
+    ServerPaths,
     SSHConfig,
 )
 from nodetool.deploy.docker_run import (
@@ -28,7 +28,7 @@ class TestDockerRunGenerator:
     @pytest.fixture
     def basic_deployment(self):
         """Create a basic deployment configuration."""
-        return SelfHostedDeployment(
+        return DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -38,7 +38,7 @@ class TestDockerRunGenerator:
     @pytest.fixture
     def gpu_deployment(self):
         """Create a deployment with GPU configuration."""
-        return SelfHostedDeployment(
+        return DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -48,7 +48,7 @@ class TestDockerRunGenerator:
     @pytest.fixture
     def multi_gpu_deployment(self):
         """Create a deployment with multiple GPUs."""
-        return SelfHostedDeployment(
+        return DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -58,7 +58,7 @@ class TestDockerRunGenerator:
     @pytest.fixture
     def workflow_deployment(self):
         """Create a deployment with workflow IDs."""
-        return SelfHostedDeployment(
+        return DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -72,7 +72,7 @@ class TestDockerRunGenerator:
     @pytest.fixture
     def custom_env_deployment(self):
         """Create a deployment with custom environment variables."""
-        return SelfHostedDeployment(
+        return DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -108,9 +108,9 @@ class TestDockerRunGenerator:
         generator = DockerRunGenerator(basic_deployment)
         command = generator.generate_command()
 
-        # Check volume mounts
-        assert "-v /data/workspace:/workspace" in command
-        assert "-v /data/hf-cache:/hf-cache:ro" in command
+        # Check volume mounts (uses default paths from ServerPaths)
+        assert "-v ~/nodetool_data/workspace:/workspace" in command
+        assert "-v ~/nodetool_data/hf-cache:/hf-cache:ro" in command
 
     def test_generate_command_environment(self, basic_deployment):
         """Test environment variable generation."""
@@ -173,7 +173,7 @@ class TestDockerRunGenerator:
 
     def test_generate_command_custom_port(self):
         """Test custom port mapping."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -189,12 +189,12 @@ class TestDockerRunGenerator:
 
     def test_generate_command_custom_paths(self):
         """Test custom volume paths."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="default", port=7777),
-            paths=SelfHostedPaths(
+            paths=ServerPaths(
                 workspace="/custom/workspace",
                 hf_cache="/custom/cache",
             ),
@@ -207,21 +207,21 @@ class TestDockerRunGenerator:
         assert "-v /custom/workspace:/workspace" in command
         assert "-v /custom/cache:/hf-cache:ro" in command
 
-    def test_generate_command_worker_auth_token(self):
+    def test_generate_command_server_auth_token(self):
         """Test worker authentication token."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="default", port=7777),
-            worker_auth_token="secret-token-123",
+            server_auth_token="secret-token-123",
         )
 
         generator = DockerRunGenerator(deployment)
         command = generator.generate_command()
 
         # Check auth token
-        assert "-e WORKER_AUTH_TOKEN=secret-token-123" in command
+        assert "-e SERVER_AUTH_TOKEN=secret-token-123" in command
 
     def test_generate_command_format(self, basic_deployment):
         """Test command format with line continuations."""
@@ -258,14 +258,14 @@ class TestDockerRunGenerator:
 
     def test_generate_hash_different_configs(self):
         """Test hash changes with different configurations."""
-        deployment1 = SelfHostedDeployment(
+        deployment1 = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="default", port=7777),
         )
 
-        deployment2 = SelfHostedDeployment(
+        deployment2 = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="v2.0"),  # Different tag
@@ -280,14 +280,14 @@ class TestDockerRunGenerator:
 
     def test_generate_hash_port_change(self):
         """Test hash changes when port changes."""
-        deployment1 = SelfHostedDeployment(
+        deployment1 = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="default", port=7777),
         )
 
-        deployment2 = SelfHostedDeployment(
+        deployment2 = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -301,14 +301,14 @@ class TestDockerRunGenerator:
 
     def test_generate_hash_gpu_change(self):
         """Test hash changes when GPU config changes."""
-        deployment1 = SelfHostedDeployment(
+        deployment1 = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="default", port=7777),
         )
 
-        deployment2 = SelfHostedDeployment(
+        deployment2 = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -322,14 +322,14 @@ class TestDockerRunGenerator:
 
     def test_generate_hash_environment_change(self):
         """Test hash changes when environment changes."""
-        deployment1 = SelfHostedDeployment(
+        deployment1 = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="default", port=7777),
         )
 
-        deployment2 = SelfHostedDeployment(
+        deployment2 = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -354,7 +354,7 @@ class TestDockerRunGenerator:
 
     def test_get_container_name_custom(self):
         """Test container name with custom name."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -372,17 +372,18 @@ class TestDockerRunGenerator:
         volumes = generator._build_volumes()
 
         assert len(volumes) == 2
-        assert "/data/workspace:/workspace" in volumes
-        assert "/data/hf-cache:/hf-cache:ro" in volumes
+        # Uses default paths from ServerPaths
+        assert "~/nodetool_data/workspace:/workspace" in volumes
+        assert "~/nodetool_data/hf-cache:/hf-cache:ro" in volumes
 
     def test_build_volumes_custom_paths(self):
         """Test volume building with custom paths."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="default", port=7777),
-            paths=SelfHostedPaths(
+            paths=ServerPaths(
                 workspace="/mnt/workspace",
                 hf_cache="/mnt/cache",
             ),
@@ -435,18 +436,18 @@ class TestDockerRunGenerator:
 
     def test_build_environment_with_auth_token(self):
         """Test environment building with auth token."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
             container=ContainerConfig(name="default", port=7777),
-            worker_auth_token="token123",
+            server_auth_token="token123",
         )
 
         generator = DockerRunGenerator(deployment)
         env = generator._build_environment()
 
-        assert "WORKER_AUTH_TOKEN=token123" in env
+        assert "SERVER_AUTH_TOKEN=token123" in env
 
     def test_build_gpu_args_none(self, basic_deployment):
         """Test GPU args when no GPU configured."""
@@ -475,7 +476,7 @@ class TestDockerRunGenerator:
 
     def test_build_gpu_args_with_spaces(self):
         """Test GPU args with spaces in specification."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -494,7 +495,7 @@ class TestDockerRunHelperFunctions:
 
     def test_generate_docker_run_command(self):
         """Test generate_docker_run_command helper."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -508,7 +509,7 @@ class TestDockerRunHelperFunctions:
 
     def test_get_docker_run_hash(self):
         """Test get_docker_run_hash helper."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -522,7 +523,7 @@ class TestDockerRunHelperFunctions:
 
     def test_get_container_name_helper(self):
         """Test get_container_name helper."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -539,7 +540,7 @@ class TestDockerRunEdgeCases:
 
     def test_empty_environment(self):
         """Test with empty environment dict."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -554,7 +555,7 @@ class TestDockerRunEdgeCases:
 
     def test_empty_workflows(self):
         """Test with empty workflows list."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -569,7 +570,7 @@ class TestDockerRunEdgeCases:
 
     def test_single_workflow(self):
         """Test with single workflow."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -583,7 +584,7 @@ class TestDockerRunEdgeCases:
 
     def test_special_characters_in_container_name(self):
         """Test container name with special characters."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -598,7 +599,7 @@ class TestDockerRunEdgeCases:
 
     def test_registry_in_image_name(self):
         """Test image name with registry."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(
@@ -615,7 +616,7 @@ class TestDockerRunEdgeCases:
 
     def test_image_tag_with_sha(self):
         """Test image tag with SHA."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(
@@ -632,7 +633,7 @@ class TestDockerRunEdgeCases:
 
     def test_hash_determinism(self):
         """Test that hash is deterministic across multiple calls."""
-        deployment = SelfHostedDeployment(
+        deployment = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -653,7 +654,7 @@ class TestDockerRunEdgeCases:
 
     def test_environment_order_independence(self):
         """Test that environment variable order doesn't affect hash."""
-        deployment1 = SelfHostedDeployment(
+        deployment1 = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
@@ -664,7 +665,7 @@ class TestDockerRunEdgeCases:
             ),
         )
 
-        deployment2 = SelfHostedDeployment(
+        deployment2 = DockerDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),

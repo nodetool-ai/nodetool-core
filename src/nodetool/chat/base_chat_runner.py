@@ -15,26 +15,17 @@ Subclasses should implement transport-specific methods for:
 - Protocol-specific formatting
 """
 
+from __future__ import annotations
+
 import asyncio
 import traceback
 from abc import ABC, abstractmethod
 from contextlib import suppress
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from supabase import AsyncClient, create_async_client
-
-from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.config.settings import get_system_data_path
-from nodetool.messaging.agent_message_processor import AgentMessageProcessor
-from nodetool.messaging.chat_workflow_message_processor import (
-    ChatWorkflowMessageProcessor,
-)
-from nodetool.messaging.help_message_processor import HelpMessageProcessor
-from nodetool.messaging.message_processor import MessageProcessor
-from nodetool.messaging.regular_chat_processor import RegularChatProcessor
-from nodetool.messaging.workflow_message_processor import WorkflowMessageProcessor
 from nodetool.metadata.types import Message as ApiMessage
 from nodetool.metadata.types import Provider
 from nodetool.models.message import Message as DBMessage
@@ -42,6 +33,11 @@ from nodetool.models.thread import Thread
 from nodetool.providers import get_provider
 from nodetool.types.api_graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
+
+if TYPE_CHECKING:
+    from supabase import AsyncClient
+
+    from nodetool.messaging.message_processor import MessageProcessor
 
 log = get_logger(__name__)
 
@@ -52,6 +48,8 @@ async def cached_ollama_models() -> list[str]:
     global ollama_models
     if ollama_models:
         return ollama_models
+
+    from nodetool.chat.ollama_service import get_ollama_models
 
     models = await get_ollama_models()
     ollama_models = [model.name for model in models]
@@ -299,6 +297,8 @@ class BaseChatRunner(ABC):
         supabase_url = Environment.get_supabase_url()
         supabase_key = Environment.get_supabase_key()
         if supabase_url and supabase_key:
+            from supabase import create_async_client
+
             self.supabase = await create_async_client(supabase_url, supabase_key)
         else:
             if Environment.is_production():
@@ -445,6 +445,8 @@ class BaseChatRunner(ABC):
             assert last_message.model, "Model is required"
             assert last_message.provider, "Provider is required"
 
+            from nodetool.messaging.help_message_processor import HelpMessageProcessor
+
             processor = HelpMessageProcessor(provider)
 
             await self._run_processor(
@@ -456,6 +458,8 @@ class BaseChatRunner(ABC):
         # Regular chat processing
         else:
             log.debug(f"Chat history length: {len(chat_history)} messages")
+
+            from nodetool.messaging.regular_chat_processor import RegularChatProcessor
 
             # Create the regular chat processor
             processor = RegularChatProcessor(provider)
@@ -481,6 +485,8 @@ class BaseChatRunner(ABC):
         assert last_message.provider, "Provider is required for agent mode"
 
         provider = await get_provider(last_message.provider)
+
+        from nodetool.messaging.agent_message_processor import AgentMessageProcessor
 
         processor = AgentMessageProcessor(provider)
 
@@ -543,13 +549,21 @@ class BaseChatRunner(ABC):
 
             provider = await get_provider(last_message.provider)
 
+            from nodetool.messaging.help_message_processor import HelpMessageProcessor
+
             processor = HelpMessageProcessor(provider)
         # Regular workflow processing
         elif workflow.run_mode == "chat":
             log.debug(f"Using ChatWorkflowMessageProcessor for workflow {last_message.workflow_id}")
+
+            from nodetool.messaging.chat_workflow_message_processor import ChatWorkflowMessageProcessor
+
             processor = ChatWorkflowMessageProcessor(self.user_id)
         else:
             log.debug(f"Using WorkflowMessageProcessor for workflow {last_message.workflow_id}")
+
+            from nodetool.messaging.workflow_message_processor import WorkflowMessageProcessor
+
             processor = WorkflowMessageProcessor(self.user_id)
 
         # Add UI tool support if available

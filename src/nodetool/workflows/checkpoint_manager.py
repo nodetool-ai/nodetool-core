@@ -279,7 +279,7 @@ class CheckpointManager:
 
                 snapshot = NodeStateSnapshot(
                     node_id=state.node_id,
-                    status=state.status,
+                    status=state.status,  # type: ignore
                     attempt=state.attempt,
                     outputs=state.outputs_json,
                     error=state.last_error,
@@ -300,7 +300,7 @@ class CheckpointManager:
             if states_data:
                 # Use the most recent update time as checkpoint time
                 latest_update = max(
-                    (state.get("updated_at") for state in states_data if state.get("updated_at")),
+                    (state.get("updated_at") for state in states_data if state.get("updated_at")),  # type: ignore
                     default=None
                 )
                 if latest_update:

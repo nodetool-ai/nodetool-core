@@ -1,54 +1,69 @@
 from rich.table import Table
 
 from nodetool.metadata.types import Step, Task, ToolCall
-from nodetool.ui.console import AgentConsole
+from nodetool.ui.console import TEXTUAL_AVAILABLE, AgentConsole, _LiveContent
 
 
-class FakeLive:
-    def __init__(self, content, console=None, refresh_per_second=4, vertical_overflow="visible"):
-        self.content = content
-        self.started = False
-
-    def start(self):
-        self.started = True
-
-    def stop(self):
-        self.started = False
-
-    def update(self, content):
-        self.content = content
-
-    @property
-    def is_started(self):
-        return self.started
-
-
-def test_start_and_stop_live(monkeypatch):
+def test_start_and_stop_live():
+    """Test starting and stopping live display."""
     console = AgentConsole(verbose=True)
-    monkeypatch.setattr("nodetool.ui.console.Live", FakeLive)
-    table = Table()
-    console.start_live(table)
-    assert isinstance(console.live, FakeLive)
-    assert console.live.is_started
-    assert console.current_table is table
+    content = _LiveContent(kind="test", title="Test", body="Test content")
+
+    # Start live (will not actually start the live app if textual is not available)
+    # but the content should still be set
+    console.start_live(content)
+
+    # If textual is available, live should be active
+    # If textual is not available, live_active will be False but content is still set
+    assert console.current_live_content == content
+
+    # Stop live
     console.stop_live()
-    assert console.live is None
-    assert console.current_table is None
+    assert not console.is_live_active()
+    assert console.current_live_content is None
 
 
-def test_update_planning_display(monkeypatch):
+def test_update_planning_display():
+    """Test updating planning display."""
     console = AgentConsole(verbose=True)
-    monkeypatch.setattr("nodetool.ui.console.Live", FakeLive)
     tree = console.create_planning_tree("Plan")
     console.start_live(tree)
+
     console.update_planning_display("phase1", "Running", "work")
-    node = console.phase_nodes["phase1"]
-    assert "phase1" in node.label
+    # Check that the planning node was recorded
+    assert "phase1" in console._planning_nodes
+    status, _label, content, _is_error = console._planning_nodes["phase1"]
+    assert status == "Running"
+    assert content == "work"
+
     console.update_planning_display("phase1", "Success", "done")
-    assert "Success" in node.label
+    status, _label, content, _is_error = console._planning_nodes["phase1"]
+    assert status == "Success"
+    assert content == "done"
 
 
-def test_create_execution_table(monkeypatch):
+def test_update_planning_display_without_phase():
+    """Test updating planning display without showing phase name."""
+    console = AgentConsole(verbose=True)
+    tree = console.create_planning_tree("Plan")
+    console.start_live(tree)
+
+    console.update_planning_display("phase1", "Running", "work", show_phase=False)
+    # Check that the planning node was recorded without phase label
+    assert "__planner_status__" in console._planning_nodes
+    status, label, content, _is_error = console._planning_nodes["__planner_status__"]
+    assert status == "Running"
+    assert content == "work"
+    assert label == ""  # No phase label
+
+    console.update_planning_display("phase2", "Success", "done", show_phase=False)
+    status, _label, content, _is_error = console._planning_nodes["__planner_status__"]
+    assert status == "Success"
+    assert content == "done"
+
+
+def test_create_execution_tree():
+    """Test creating execution tree."""
     console = AgentConsole(verbose=True)
     sub1 = Step(
         id="sub1",
@@ -62,15 +77,34 @@ def test_create_execution_table(monkeypatch):
     task = Task(title="t", steps=[sub1, sub2])
     call = ToolCall(step_id=sub1.id, name="tool", message="m" * 80)
     tree = console.create_execution_tree("Exec", task, [call])
-    node1 = console.step_nodes[sub1.id]
-    assert "task1" in node1.label
-    # Check that tool calls are displayed with truncated message
-    assert len(node1.children) > 0  # Should have tool calls
-    tool_section = node1.children[0]  # Should be the "Tools" section
-    assert len(tool_section.children) > 0  # Should have at least one tool call
-    tool_call_label = str(tool_section.children[0].label)
-    assert "..." in tool_call_label  # message truncated
-    assert len(tree.children) == 2
+
+    # Check that the tree was created
+    assert isinstance(tree, _LiveContent)
+    assert tree.kind == "execution"
+    assert tree.title == "Exec"
+    assert console.task == task
+    assert console.tool_calls == [call]
+
+
+def test_running_step_uses_spinner():
+    """Test that running steps are rendered correctly."""
+    console = AgentConsole(verbose=True)
+    done = Step(id="s1", instructions="done step", start_time=1, completed=True)
+    running = Step(id="s2", instructions="running step", start_time=1, completed=False)
+    pending = Step(id="s3", instructions="pending step", completed=False)
+    task = Task(title="t", steps=[done, running, pending])
+    tree = console.create_execution_tree("Test", task, [])
+
+    # Check that the tree was created and task is stored
+    assert isinstance(tree, _LiveContent)
+    assert console.task == task
+
+    # Render the execution body and check the status indicators
+    body = console._render_execution_body()
+    assert "✓" in body  # Completed step
+    assert "○" in body  # Pending step
+    # Running step should have a spinner character
+    assert any(spinner in body for spinner in ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
 
 
 def test_phase_logging():

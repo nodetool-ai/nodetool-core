@@ -89,7 +89,8 @@ class WebSocketProtocolTester:
 @pytest.fixture
 def client():
     """Create a test client in development mode (no auth required)."""
-    return _create_test_client("development")
+    with _create_test_client("development") as c:
+        yield c
 
 
 @pytest.fixture

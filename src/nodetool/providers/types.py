@@ -1,14 +1,15 @@
 """
-Image and video generation types for the Provider system.
+Image, video, and 3D generation types for the Provider system.
 
 This module defines canonical request and response types for text-to-image, image-to-image,
-and text-to-video generation.
+text-to-video, image-to-video, text-to-3D, and image-to-3D generation.
 """
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from nodetool.metadata.types import (
     ImageModel,
+    Model3DModel,
     VideoModel,
 )
 
@@ -96,4 +97,33 @@ class ImageToVideoParams(BaseModel):
         description="Classifier-free guidance scale (higher values = closer to prompt)",
     )
     num_inference_steps: int | None = Field(default=None, description="Number of denoising steps")
+    seed: int | None = Field(default=None, description="Random seed for reproducibility (None for random)")
+
+
+Model3DBytes = bytes
+
+
+class TextTo3DParams(BaseModel):
+    """Parameters for text-to-3D model generation."""
+
+    model_config = ConfigDict(extra="allow")
+
+    model: Model3DModel = Field(description="Provider and model ID for the text-to-3D model")
+    prompt: str = Field(description="Text prompt describing the desired 3D model")
+    negative_prompt: str | None = Field(
+        default=None, description="Text prompt describing what to avoid in the 3D model"
+    )
+    art_style: str | None = Field(default=None, description="Art style for the 3D model (e.g., 'realistic', 'cartoon')")
+    output_format: str = Field(default="glb", description="Output format (glb, obj, fbx, stl, etc.)")
+    seed: int | None = Field(default=None, description="Random seed for reproducibility (None for random)")
+
+
+class ImageTo3DParams(BaseModel):
+    """Parameters for image-to-3D model generation."""
+
+    model_config = ConfigDict(extra="allow")
+
+    model: Model3DModel = Field(description="Provider and model ID for the image-to-3D model")
+    prompt: str | None = Field(default=None, description="Optional text prompt to guide 3D generation")
+    output_format: str = Field(default="glb", description="Output format (glb, obj, fbx, stl, etc.)")
     seed: int | None = Field(default=None, description="Random seed for reproducibility (None for random)")

@@ -29,12 +29,42 @@ Notes:
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections import deque
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timezone
 from typing import Any, AsyncIterator
 
 from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
+
+
+@dataclass
+class MessageEnvelope:
+    """Envelope wrapping messages in the inbox with metadata.
+
+    All messages in NodeInbox are wrapped in this envelope to provide:
+    - Consistent metadata propagation through the node graph
+    - Timestamp for when the message was created
+    - Unique event_id for tracing and debugging
+
+    For blocking/non-streaming nodes, the metadata is propagated automatically
+    and they never need to read or write it. For streaming nodes that consume
+    from NodeInbox directly, the envelope provides access to metadata.
+    """
+
+    data: Any
+    """The actual message payload."""
+
+    metadata: dict[str, Any] = field(default_factory=dict)
+    """User-defined metadata attached to the message."""
+
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
+    """Timestamp when the envelope was created."""
+
+    event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    """Unique identifier for this message event."""
 
 
 class NodeInbox:
@@ -110,15 +140,24 @@ class NodeInbox:
             self._buffer_limit,
         )
 
-    async def put(self, handle: str, item: Any) -> None:
+    async def put(
+        self, handle: str, item: Any, metadata: dict[str, Any] | None = None
+    ) -> None:
         """Enqueue an item for a handle and notify any waiters.
 
         If buffer_limit is set and the handle's buffer is full, this method
         will block until space becomes available.
 
+        The item is wrapped in a MessageEnvelope with the provided metadata,
+        an auto-generated timestamp, and a unique event_id. Consumers using
+        the standard iter_input/iter_any methods will receive just the unwrapped
+        data for backward compatibility. Consumers needing metadata access can
+        use iter_input_with_envelope/iter_any_with_envelope.
+
         Args:
             handle: Input handle name.
             item: The item to append to the handle's buffer.
+            metadata: Optional metadata to attach to the message envelope.
         """
         if self._closed:
             return
@@ -153,7 +192,9 @@ class NodeInbox:
         if self._closed:
             return
 
-        self._buffers.setdefault(handle, deque()).append(item)
+        # Wrap item in MessageEnvelope with metadata
+        envelope = MessageEnvelope(data=item, metadata=metadata or {})
+        self._buffers.setdefault(handle, deque()).append(envelope)
         # Record arrival for multiplexed consumption preserving cross-handle order
         self._arrival.append(handle)
         log.debug(
@@ -200,13 +241,31 @@ class NodeInbox:
     # Removed per-handle streaming metadata; all inputs are treated uniformly.
 
     async def iter_input(self, handle: str) -> AsyncIterator[Any]:
-        """Yield items for a specific handle until its EOS is reached.
+        """Yield items (unwrapped data) for a specific handle until its EOS is reached.
 
         Args:
             handle: Input handle name to read from.
 
         Yields:
-            Items from the per-handle buffer in FIFO order.
+            Unwrapped data items from the per-handle buffer in FIFO order.
+            For backward compatibility, this yields just the data, not the envelope.
+
+        Terminates when the buffer is empty and the open-count for the handle
+        reaches zero, or if the inbox is closed.
+        """
+        async for envelope in self.iter_input_with_envelope(handle):
+            yield envelope.data
+
+    async def iter_input_with_envelope(self, handle: str) -> AsyncIterator[MessageEnvelope]:
+        """Yield MessageEnvelopes for a specific handle until its EOS is reached.
+
+        Use this when your node needs access to message metadata, timestamp, or event_id.
+
+        Args:
+            handle: Input handle name to read from.
+
+        Yields:
+            MessageEnvelope objects from the per-handle buffer in FIFO order.
 
         Terminates when the buffer is empty and the open-count for the handle
         reaches zero, or if the inbox is closed.
@@ -218,11 +277,11 @@ class NodeInbox:
         while True:
             # Drain any available items without waiting
             while self._buffers[handle]:
-                item = self._buffers[handle].popleft()
+                envelope = self._buffers[handle].popleft()
                 # Notify producers that space is available (backpressure release)
                 async with self._cond:
                     self._cond.notify_all()
-                yield item
+                yield envelope
             # If no producers remain and buffer is empty -> EOS
             if self._closed or self._open_counts.get(handle, 0) == 0:
                 log.debug(
@@ -241,7 +300,22 @@ class NodeInbox:
         """Yield ``(handle, item)`` across all handles in arrival order.
 
         Yields:
-            Tuples of ``(handle, item)`` in cross-handle arrival order.
+            Tuples of ``(handle, unwrapped_data)`` in cross-handle arrival order.
+            For backward compatibility, this yields just the data, not the envelope.
+
+        Terminates when all handles with declared upstreams have reached EOS
+        and all buffers are drained, or if the inbox is closed.
+        """
+        async for handle, envelope in self.iter_any_with_envelope():
+            yield handle, envelope.data
+
+    async def iter_any_with_envelope(self) -> AsyncIterator[tuple[str, MessageEnvelope]]:
+        """Yield ``(handle, envelope)`` across all handles in arrival order.
+
+        Use this when your node needs access to message metadata, timestamp, or event_id.
+
+        Yields:
+            Tuples of ``(handle, MessageEnvelope)`` in cross-handle arrival order.
 
         Terminates when all handles with declared upstreams have reached EOS
         and all buffers are drained, or if the inbox is closed.
@@ -253,11 +327,11 @@ class NodeInbox:
                 handle = self._arrival.popleft()
                 buf = self._buffers.get(handle)
                 if buf:
-                    item = buf.popleft()
+                    envelope = buf.popleft()
                     # Notify producers that space is available (backpressure release)
                     async with self._cond:
                         self._cond.notify_all()
-                    yield handle, item
+                    yield handle, envelope
                 continue
 
             # Check termination: no arrivals, no buffered items, all sources done
@@ -397,14 +471,29 @@ class NodeInbox:
         """Pop one buffered arrival in cross-handle order without blocking.
 
         Returns:
-            A tuple of ``(handle, item)`` if available, otherwise ``None``.
+            A tuple of ``(handle, unwrapped_data)`` if available, otherwise ``None``.
+            For backward compatibility, this returns just the data, not the envelope.
+        """
+        result = self.try_pop_any_with_envelope()
+        if result is None:
+            return None
+        handle, envelope = result
+        return handle, envelope.data
+
+    def try_pop_any_with_envelope(self) -> tuple[str, MessageEnvelope] | None:
+        """Pop one buffered arrival in cross-handle order without blocking.
+
+        Use this when your node needs access to message metadata, timestamp, or event_id.
+
+        Returns:
+            A tuple of ``(handle, MessageEnvelope)`` if available, otherwise ``None``.
         """
         if not self._arrival:
             return None
         handle = self._arrival.popleft()
         buf = self._buffers.get(handle)
         if buf and len(buf) > 0:
-            item = buf.popleft()
+            envelope = buf.popleft()
             log.debug(
                 "Inbox[%s] try_pop_any: handle=%s size=%s open=%s arrival=%s",
                 id(self),
@@ -420,5 +509,5 @@ class NodeInbox:
                     self._notify_waiters_threadsafe()
                 except Exception:
                     pass
-            return handle, item
+            return handle, envelope
         return None

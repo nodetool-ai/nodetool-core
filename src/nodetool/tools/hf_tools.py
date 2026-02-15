@@ -5,13 +5,11 @@ These tools provide functionality for working with HuggingFace models and hub.
 
 from __future__ import annotations
 
-from typing import Any, Optional
-
 from dataclasses import asdict
 from fnmatch import fnmatch
+from typing import Any, Optional
 
-
-
+from nodetool.integrations.huggingface.hf_auth import get_hf_token
 from nodetool.integrations.huggingface.huggingface_models import read_cached_hf_models
 
 
@@ -96,16 +94,10 @@ class HfTools:
         Returns:
             List of files in repository with metadata
         """
-        from nodetool.api.mcp_server import get_hf_token
-
         try:
             from huggingface_hub import HfApi
             token = await get_hf_token()
-            if token:
-                api = HfApi(token=token)
-
-            else:
-                api = HfApi()
+            api = HfApi(token=token) if token else HfApi()
             file_infos = api.list_repo_files(repo_id=repo_id, repo_type=repo_type, revision=revision)
 
             if patterns:
@@ -161,16 +153,10 @@ class HfTools:
         if limit > 50:
             limit = 50
 
-        from nodetool.api.mcp_server import get_hf_token
-
         try:
             from huggingface_hub import HfApi
             token = await get_hf_token()
-            if token:
-                api = HfApi(token=token)
-
-            else:
-                api = HfApi()
+            api = HfApi(token=token) if token else HfApi()
 
             filter_dict = {}
             if model_filter and ":" in model_filter:
@@ -206,16 +192,10 @@ class HfTools:
         Returns:
             Detailed model information including README, tags, metrics
         """
-        from nodetool.api.mcp_server import get_hf_token
-
         try:
             from huggingface_hub import HfApi
             token = await get_hf_token()
-            if token:
-                api = HfApi(token=token)
-
-            else:
-                api = HfApi()
+            api = HfApi(token=token) if token else HfApi()
 
             return asdict(api.model_info(repo_id))
         except Exception as e:

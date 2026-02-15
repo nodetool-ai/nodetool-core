@@ -63,12 +63,47 @@ async def find_thumbnail(workflow: WorkflowModel) -> str | None:
         return None
 
 
+async def find_thumbnails_batch(workflows: list[WorkflowModel]) -> dict[str, str | None]:
+    """Batch fetch thumbnail URLs for multiple workflows to avoid N+1 queries."""
+    # Build list of unique thumbnail IDs
+    thumbnail_to_workflows: dict[str, list[str]] = {}
+    for wf in workflows:
+        if wf.thumbnail:
+            if wf.thumbnail not in thumbnail_to_workflows:
+                thumbnail_to_workflows[wf.thumbnail] = []
+            thumbnail_to_workflows[wf.thumbnail].append(wf.id)
+
+    if not thumbnail_to_workflows:
+        return {wf.id: None for wf in workflows}
+
+    # Batch fetch all thumbnail URLs
+    storage = require_scope().get_asset_storage()
+    thumbnail_urls: dict[str, str | None] = {}
+
+    # Fetch all unique thumbnails in parallel
+    tasks = [storage.get_url(thumb_id) for thumb_id in thumbnail_to_workflows]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for thumb_id, result in zip(thumbnail_to_workflows, results, strict=False):
+        # Handle both successful results and exceptions
+        url = None if isinstance(result, Exception) else result
+        thumbnail_urls[thumb_id] = url
+
+    # Map workflow IDs to their thumbnail URLs
+    workflow_to_thumbnail: dict[str, str | None] = {}
+    for wf in workflows:
+        workflow_to_thumbnail[wf.id] = thumbnail_urls.get(wf.thumbnail) if wf.thumbnail else None
+
+    return workflow_to_thumbnail
+
+
 async def from_model(
     workflow: WorkflowModel,
     *,
     api_graph: Graph | None = None,
     input_schema: dict[str, Any] | None = None,
     output_schema: dict[str, Any] | None = None,
+    thumbnail_url: str | None = None,
 ):
     if api_graph is None:
         api_graph = workflow.get_api_graph()
@@ -78,6 +113,9 @@ async def from_model(
 
     if output_schema is None:
         output_schema = get_output_schema(api_graph)
+
+    if thumbnail_url is None:
+        thumbnail_url = await find_thumbnail(workflow)
 
     return Workflow(
         id=workflow.id,
@@ -90,7 +128,7 @@ async def from_model(
         tags=workflow.tags,
         description=workflow.description or "",
         thumbnail=workflow.thumbnail or "",
-        thumbnail_url=await find_thumbnail(workflow),
+        thumbnail_url=thumbnail_url,
         graph=api_graph,
         input_schema=input_schema,
         output_schema=output_schema,
@@ -98,10 +136,11 @@ async def from_model(
         run_mode=workflow.run_mode,
         workspace_id=workflow.workspace_id,
         html_app=workflow.html_app,
+        etag=workflow.get_etag(),
     )
 
 
-def _graph_has_input_and_output(graph: Graph):
+def _graph_has_input_and_output(graph: Graph) -> bool:
     has_input = False
     has_output = False
 
@@ -218,7 +257,12 @@ async def index(
         columns=column_list,
         run_mode=run_mode,
     )
-    workflow_responses = await asyncio.gather(*[from_model(workflow) for workflow in workflows])
+    # Batch fetch all thumbnails to avoid N+1 queries
+    thumbnail_urls = await find_thumbnails_batch(workflows)
+    workflow_responses = await asyncio.gather(*[
+        from_model(workflow, thumbnail_url=thumbnail_urls[workflow.id])
+        for workflow in workflows
+    ])
     return WorkflowList(workflows=workflow_responses, next=cursor)
 
 
@@ -231,7 +275,12 @@ async def public(
     column_list = columns.split(",") if columns else None
 
     workflows, cursor = await WorkflowModel.paginate(limit=limit, start_key=cursor, columns=column_list)
-    workflow_responses = await asyncio.gather(*[from_model(workflow) for workflow in workflows])
+    # Batch fetch all thumbnails to avoid N+1 queries
+    thumbnail_urls = await find_thumbnails_batch(workflows)
+    workflow_responses = await asyncio.gather(*[
+        from_model(workflow, thumbnail_url=thumbnail_urls[workflow.id])
+        for workflow in workflows
+    ])
     return WorkflowList(workflows=workflow_responses, next=cursor)
 
 

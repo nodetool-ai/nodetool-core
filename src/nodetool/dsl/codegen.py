@@ -581,7 +581,7 @@ def create_dsl_modules(source_path: str, target_path: str):
         >>> create_dsl_modules("nodetool/nodes/package", "/path/to/output")
         # This will generate DSL modules in the specified output directory
     """
-    source_module = source_path.replace("src/", "").replace("/", ".")
+    source_module = source_path.replace("src\\", "").replace("src/", "").replace("\\", ".").replace("/", ".")
     source_root_module = importlib.import_module(source_module)
 
     # Get the absolute path of the source directory

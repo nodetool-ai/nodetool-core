@@ -4,6 +4,7 @@ Lightweight collection index route for the FastAPI server.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 import tempfile
@@ -27,7 +28,8 @@ def create_collection_router() -> APIRouter:
         file: UploadFile = File(...),
         authorization: Optional[str] = Header(None),
     ):
-        token = "local_token"
+        # Extract token from authorization header, defaulting to local_token for development
+        token = authorization or "local_token"
 
         tmp_dir = tempfile.mkdtemp()
         tmp_path = os.path.join(tmp_dir, file.filename or "uploaded_file")
@@ -47,7 +49,8 @@ def create_collection_router() -> APIRouter:
             log.error(f"Error indexing file {file.filename}: {e}")
             raise HTTPException(status_code=500, detail=str(e)) from e
         finally:
-            shutil.rmtree(tmp_dir)
+            # Use asyncio.to_thread to avoid blocking the event loop during directory removal
+            await asyncio.to_thread(shutil.rmtree, tmp_dir)
             await file.close()
 
     return router

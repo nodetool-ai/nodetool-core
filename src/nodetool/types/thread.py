@@ -26,6 +26,7 @@ class Thread(BaseModel):
     title: str | None
     created_at: datetime
     updated_at: datetime
+    etag: str | None = None
 
     @classmethod
     def from_model(cls, model):
@@ -36,6 +37,7 @@ class Thread(BaseModel):
             title=model.title,
             created_at=model.created_at,
             updated_at=model.updated_at,
+            etag=model.get_etag(),
         )
 
 

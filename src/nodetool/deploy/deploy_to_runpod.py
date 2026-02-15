@@ -204,6 +204,21 @@ def deploy_to_runpod(
         if not skip_template:
             env["PORT"] = "8000"
             env["PORT_HEALTH"] = "8000"
+            env.setdefault("NODETOOL_SERVER_MODE", "private")
+
+            # Configure paths from persistent_paths if available
+            persistent_paths = deployment.persistent_paths
+            if persistent_paths:
+                env.setdefault("USERS_FILE", persistent_paths.users_file)
+                env.setdefault("DB_PATH", persistent_paths.db_path)
+                env.setdefault("CHROMA_PATH", persistent_paths.chroma_path)
+                env.setdefault("HF_HOME", persistent_paths.hf_cache)
+                env.setdefault("ASSET_BUCKET", persistent_paths.asset_bucket)
+                # Enable multi_user auth when persistent_paths is configured
+                env.setdefault("AUTH_PROVIDER", "multi_user")
+            else:
+                env.setdefault("AUTH_PROVIDER", "static")
+
             template_id = create_or_update_runpod_template(template_name, full_image_name, image_tag, env=env)
 
         # Create RunPod endpoint

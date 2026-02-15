@@ -1,15 +1,16 @@
 """
 Provides functionality for managing WebSocket connections and broadcasting updates,
-primarily system statistics, to connected clients.
+including system statistics and database model resource changes, to connected clients.
 """
 
 import asyncio
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import WebSocket
 from pydantic import BaseModel
 
 from nodetool.config.logging_config import get_logger
+from nodetool.models.base_model import DBModel, ModelChangeEvent, ModelObserver
 from nodetool.system.system_stats import SystemStats, get_system_stats
 
 
@@ -18,7 +19,20 @@ class SystemStatsUpdate(BaseModel):
     stats: SystemStats
 
 
-WebSocketUpdate = SystemStatsUpdate
+class ResourceChangeUpdate(BaseModel):
+    """WebSocket message sent when a database resource changes.
+
+    Uses the API Pydantic model for the resource payload so the frontend
+    receives the same schema as REST responses.
+    """
+
+    type: Literal["resource_change"] = "resource_change"
+    event: str  # "created" | "updated" | "deleted"
+    resource_type: str  # e.g. "workflow", "asset", "thread", "job"
+    resource: dict[str, Any]  # Serialised API model (or minimal dict for deletes)
+
+
+WebSocketUpdate = SystemStatsUpdate | ResourceChangeUpdate
 
 
 class WebSocketUpdates:
@@ -27,8 +41,8 @@ class WebSocketUpdates:
 
     This class handles accepting new connections, managing disconnections,
     and broadcasting system statistics updates periodically to all active clients.
-    It ensures that the stats broadcasting task runs only when there are active
-    connections.
+    It also observes database model changes and broadcasts resource change
+    notifications to all connected clients.
     """
 
     def __init__(self):
@@ -39,6 +53,61 @@ class WebSocketUpdates:
         self.log.info("WebSocketUpdates: instance initialized")
         self._stats_task = None
         self._shutdown = False
+        self._observer_registered = False
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    # ------------------------------------------------------------------
+    # Model observer integration
+    # ------------------------------------------------------------------
+
+    def _register_observer(self) -> None:
+        """Register a model observer to forward changes to WebSocket clients."""
+        if self._observer_registered:
+            return
+        ModelObserver.subscribe(self._on_model_change)
+        self._observer_registered = True
+        self.log.info("WebSocketUpdates: Model observer registered")
+
+    def _unregister_observer(self) -> None:
+        """Remove the model observer."""
+        if not self._observer_registered:
+            return
+        ModelObserver.unsubscribe(self._on_model_change)
+        self._observer_registered = False
+        self.log.info("WebSocketUpdates: Model observer unregistered")
+
+    def _on_model_change(self, instance: DBModel, event: ModelChangeEvent) -> None:
+        """Callback invoked synchronously by ModelObserver.notify().
+
+        Schedules async broadcast on the event loop captured during connect().
+        """
+        if not self.active_connections or self._loop is None:
+            return
+
+        resource_type = type(instance).__name__.lower()
+        resource_data = {
+            "id": instance.partition_value(),
+            "etag": instance.get_etag(),
+        }
+
+        update = ResourceChangeUpdate(
+            event=event.value,
+            resource_type=resource_type,
+            resource=resource_data,
+        )
+
+        try:
+            self._loop.call_soon_threadsafe(
+                asyncio.ensure_future,
+                self.broadcast_update(update),
+            )
+        except RuntimeError:
+            # Event loop closed - nothing to do
+            pass
+
+    # ------------------------------------------------------------------
+    # Connection management
+    # ------------------------------------------------------------------
 
     async def connect(self, websocket: WebSocket):
         """
@@ -53,9 +122,13 @@ class WebSocketUpdates:
         async with self._lock:
             self.active_connections.add(websocket)
             self.log.info(f"WebSocketUpdates: New connection accepted. Total: {len(self.active_connections)}")
+            # Capture event loop for model observer callbacks
+            if self._loop is None:
+                self._loop = asyncio.get_running_loop()
             # Start stats broadcasting if this is the first connection
             if len(self.active_connections) == 1:
                 await self._start_stats_broadcast()
+                self._register_observer()
 
     async def disconnect(self, websocket: WebSocket):
         """
@@ -67,11 +140,14 @@ class WebSocketUpdates:
             websocket: The WebSocket connection object.
         """
         async with self._lock:
-            self.active_connections.remove(websocket)
+            if websocket not in self.active_connections:
+                self.log.debug("WebSocketUpdates: disconnect called for unknown websocket")
+            self.active_connections.discard(websocket)
             self.log.info(f"WebSocketUpdates: disconnected. Remaining: {len(self.active_connections)}")
             # Stop stats broadcasting if no connections remain
             if len(self.active_connections) == 0:
                 await self._stop_stats_broadcast()
+                self._unregister_observer()
 
     async def _start_stats_broadcast(self):
         """Starts the background task that periodically broadcasts system stats."""
@@ -106,19 +182,21 @@ class WebSocketUpdates:
                 await asyncio.sleep(1)  # Wait before retrying
 
     async def broadcast_update(self, update: WebSocketUpdate):
-        """Broadcast any update to all connected clients"""
         """
         Broadcasts a given update message to all connected WebSocket clients.
 
         Args:
-            update: The update object (e.g., SystemStatsUpdate) to broadcast.
+            update: The update object (e.g., SystemStatsUpdate, ResourceChangeUpdate) to broadcast.
         """
         json_message = update.model_dump_json()
 
         async with self._lock:
             for websocket in self.active_connections:
-                await websocket.send_text(json_message)
-                self.log.debug("WebSocketUpdates: Successfully sent message to client")
+                try:
+                    await websocket.send_text(json_message)
+                    self.log.debug("WebSocketUpdates: Successfully sent message to client")
+                except Exception as e:
+                    self.log.debug(f"WebSocketUpdates: Error sending to client: {e}")
 
     async def handle_client(self, websocket: WebSocket):
         """
@@ -150,6 +228,9 @@ class WebSocketUpdates:
         """
         self.log.info("WebSocketUpdates: Starting graceful shutdown")
         self._shutdown = True
+
+        # Unregister the model observer
+        self._unregister_observer()
 
         # Stop the stats broadcasting task
         await self._stop_stats_broadcast()

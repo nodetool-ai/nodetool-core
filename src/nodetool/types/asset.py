@@ -21,6 +21,7 @@ class Asset(BaseModel):
     duration: float | None = None
     node_id: str | None = None
     job_id: str | None = None
+    etag: str | None = None
 
     @property
     def file_extension(self) -> str:

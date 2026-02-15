@@ -22,7 +22,7 @@ class DockerRunGenerator:
     into a docker run command suitable for single container deployment.
     """
 
-    def __init__(self, deployment: SelfHostedDeployment):
+    def __init__(self, deployment: SelfHostedDeployment, runtime_command: str = "docker"):
         """
         Initialize the docker run generator.
 
@@ -31,6 +31,7 @@ class DockerRunGenerator:
         """
         self.deployment = deployment
         self.container = deployment.container
+        self.runtime_command = runtime_command
 
     def generate_command(self) -> str:
         """
@@ -39,7 +40,7 @@ class DockerRunGenerator:
         Returns:
             Docker run command string
         """
-        parts = ["docker run"]
+        parts = [f"{self.runtime_command} run"]
 
         # Detached mode
         parts.append("-d")
@@ -126,8 +127,15 @@ class DockerRunGenerator:
         workspace_path = self.deployment.paths.workspace
         volumes.append(f"{workspace_path}:/workspace")
 
-        # HuggingFace cache volume (read-only)
-        volumes.append(f"{self.deployment.paths.hf_cache}:/hf-cache:ro")
+        # HuggingFace cache volume
+        # If persistent_paths is configured, mount as read-write for model downloads
+        persistent_paths = self.deployment.persistent_paths
+        if persistent_paths:
+            # For persistent deployments, hf_cache must be writable to allow model downloads
+            volumes.append(f"{self.deployment.paths.hf_cache}:/hf-cache")
+        else:
+            # Default: read-only for safety when not using persistent storage
+            volumes.append(f"{self.deployment.paths.hf_cache}:/hf-cache:ro")
 
         return volumes
 
@@ -144,20 +152,32 @@ class DockerRunGenerator:
         # Add container-specific settings
         env["PORT"] = str(APP_ENV_PORT)
         env["NODETOOL_API_URL"] = f"http://localhost:{self.container.port}"
+        env["NODETOOL_SERVER_MODE"] = "private"
 
-        # Set database path to workspace (mounted volume)
-        env["DB_PATH"] = "/workspace/nodetool.db"
-
-        # Set HuggingFace cache to mounted volume
-        env["HF_HOME"] = "/hf-cache"
+        # Configure paths from persistent_paths if available
+        persistent_paths = self.deployment.persistent_paths
+        if persistent_paths:
+            # Use persistent_paths for all storage configuration
+            env["USERS_FILE"] = persistent_paths.users_file
+            env["DB_PATH"] = persistent_paths.db_path
+            env["CHROMA_PATH"] = persistent_paths.chroma_path
+            env["HF_HOME"] = persistent_paths.hf_cache
+            env["ASSET_BUCKET"] = persistent_paths.asset_bucket
+            # Enable multi_user auth when persistent_paths is configured
+            env["AUTH_PROVIDER"] = "multi_user"
+        else:
+            # Fallback to default paths
+            env["DB_PATH"] = "/workspace/nodetool.db"
+            env["HF_HOME"] = "/hf-cache"
+            env.setdefault("AUTH_PROVIDER", "static")
 
         # Add workflow IDs if specified
         if self.container.workflows:
             env["NODETOOL_WORKFLOWS"] = ",".join(self.container.workflows)
 
-        # Add worker authentication token (for self-hosted deployments)
-        if self.deployment.worker_auth_token:
-            env["WORKER_AUTH_TOKEN"] = self.deployment.worker_auth_token
+        # Add authentication token for self-hosted deployments.
+        if self.deployment.server_auth_token:
+            env["SERVER_AUTH_TOKEN"] = self.deployment.server_auth_token
 
         # Convert to KEY=value format
         return [f"{key}={value}" for key, value in env.items()]

@@ -314,12 +314,14 @@ class JobExecutionManager:
             self._cleanup_task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._cleanup_task
+            self._cleanup_task = None
 
         # Cancel heartbeat task
         if self._heartbeat_task:
             self._heartbeat_task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._heartbeat_task
+            self._heartbeat_task = None
 
         # Cancel and cleanup all jobs
         for job in list(self._jobs.values()):
@@ -336,6 +338,13 @@ class JobExecutionManager:
             await job.cleanup_resources()
 
         self._jobs.clear()
+
+        # Force-release GPU lock as a final safety measure.
+        # If any GPU node's inference thread was stuck and didn't release the lock
+        # during job cancellation, ensure it's freed for the next server start.
+        from nodetool.workflows.workflow_runner import force_release_gpu_lock
+        force_release_gpu_lock()
+
         log.info("JobExecutionManager shutdown complete")
 
     async def _heartbeat_loop(self):

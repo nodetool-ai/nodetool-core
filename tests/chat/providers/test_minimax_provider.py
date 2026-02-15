@@ -683,3 +683,312 @@ class TestMiniMaxTTS:
         assert len(MINIMAX_TTS_VOICES) > 0
         assert "English_Graceful_Lady" in MINIMAX_TTS_VOICES
         assert "English_Lucky_Robot" in MINIMAX_TTS_VOICES
+
+
+class TestMiniMaxVideoGeneration:
+    """Test suite for MiniMax video generation functionality."""
+
+    @pytest.fixture
+    def provider(self):
+        """Create a MiniMax provider instance for testing."""
+        return MiniMaxProvider(secrets={"MINIMAX_API_KEY": "test-api-key"})
+
+    @pytest.mark.asyncio
+    async def test_get_available_video_models(self, provider):
+        """Test get_available_video_models returns known models."""
+        from nodetool.providers.minimax_provider import MINIMAX_VIDEO_MODELS
+
+        models = await provider.get_available_video_models()
+        assert len(models) == len(MINIMAX_VIDEO_MODELS)
+        model_ids = [m.id for m in models]
+        assert "MiniMax-Hailuo-2.3" in model_ids
+        assert "MiniMax-Hailuo-2.3-Fast" in model_ids
+        assert "MiniMax-Hailuo-02" in model_ids
+        assert all(m.provider.value == "minimax" for m in models)
+
+    @pytest.mark.asyncio
+    async def test_get_available_video_models_no_api_key(self):
+        """Test get_available_video_models returns empty list without API key."""
+        provider = MiniMaxProvider(secrets={"MINIMAX_API_KEY": ""})
+        provider.api_key = ""
+        models = await provider.get_available_video_models()
+        assert models == []
+
+    @pytest.mark.asyncio
+    async def test_text_to_video_empty_prompt(self, provider):
+        """Test text_to_video raises ValueError for empty prompt."""
+        from nodetool.metadata.types import Provider, VideoModel
+        from nodetool.providers.types import TextToVideoParams
+
+        params = TextToVideoParams(
+            model=VideoModel(id="MiniMax-Hailuo-2.3", name="Hailuo 2.3", provider=Provider.MiniMax),
+            prompt="",
+        )
+
+        with pytest.raises(ValueError, match="prompt cannot be empty"):
+            await provider.text_to_video(params)
+
+    @pytest.mark.asyncio
+    async def test_text_to_video_no_api_key(self):
+        """Test text_to_video raises ValueError without API key."""
+        from nodetool.metadata.types import Provider, VideoModel
+        from nodetool.providers.types import TextToVideoParams
+
+        provider = MiniMaxProvider(secrets={"MINIMAX_API_KEY": ""})
+        provider.api_key = ""
+
+        params = TextToVideoParams(
+            model=VideoModel(id="MiniMax-Hailuo-2.3", name="Hailuo 2.3", provider=Provider.MiniMax),
+            prompt="A sunset over the ocean",
+        )
+
+        with pytest.raises(ValueError, match="MINIMAX_API_KEY is required"):
+            await provider.text_to_video(params)
+
+    @pytest.mark.asyncio
+    async def test_text_to_video_success(self, provider):
+        """Test successful text_to_video generation with mocked API."""
+        from nodetool.metadata.types import Provider, VideoModel
+        from nodetool.providers.types import TextToVideoParams
+
+        test_video_bytes = b"\x00\x00\x00\x1cftypisom" + b"\x00" * 100
+
+        params = TextToVideoParams(
+            model=VideoModel(id="MiniMax-Hailuo-2.3", name="Hailuo 2.3", provider=Provider.MiniMax),
+            prompt="A cat walking in a garden",
+        )
+
+        submit_response = {"task_id": "task_abc123", "status": "Processing"}
+        poll_response = {
+            "task_id": "task_abc123",
+            "status": "Success",
+            "file_id": "file_xyz",
+            "video_url": "https://cdn.minimax.chat/video.mp4",
+        }
+
+        call_log = []
+
+        class MockResponse:
+            def __init__(self, url, method="post", **kwargs):
+                self.url = url
+                self.method = method
+                self.status = 200
+
+            async def json(self):
+                if "video_generation" in str(self.url) and self.method == "post":
+                    return submit_response
+                return poll_response
+
+            async def read(self):
+                return test_video_bytes
+
+            async def text(self):
+                return ""
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        class MockSession:
+            def post(self, url, json=None, headers=None, **kwargs):
+                call_log.append(("post", url))
+                return MockResponse(url, "post")
+
+            def get(self, url, headers=None, params=None, **kwargs):
+                call_log.append(("get", url))
+                return MockResponse(url, "get")
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        with patch("aiohttp.ClientSession", return_value=MockSession()):
+            result = await provider.text_to_video(params, timeout_s=60)
+            assert result == test_video_bytes
+
+    @pytest.mark.asyncio
+    async def test_text_to_video_submit_error(self, provider):
+        """Test text_to_video handles submission error."""
+        from nodetool.metadata.types import Provider, VideoModel
+        from nodetool.providers.types import TextToVideoParams
+
+        params = TextToVideoParams(
+            model=VideoModel(id="MiniMax-Hailuo-2.3", name="Hailuo 2.3", provider=Provider.MiniMax),
+            prompt="A sunset",
+        )
+
+        class MockResponse:
+            status = 400
+
+            async def text(self):
+                return "Bad Request"
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        class MockSession:
+            def post(self, url, json=None, headers=None):
+                return MockResponse()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        with (
+            patch("aiohttp.ClientSession", return_value=MockSession()),
+            pytest.raises(RuntimeError, match="failed with status 400"),
+        ):
+            await provider.text_to_video(params)
+
+    @pytest.mark.asyncio
+    async def test_image_to_video_empty_image(self, provider):
+        """Test image_to_video raises ValueError for empty image."""
+        from nodetool.metadata.types import Provider, VideoModel
+        from nodetool.providers.types import ImageToVideoParams
+
+        params = ImageToVideoParams(
+            model=VideoModel(id="MiniMax-Hailuo-2.3-Fast", name="Hailuo 2.3 Fast", provider=Provider.MiniMax),
+            prompt="Animate this",
+        )
+
+        with pytest.raises(ValueError, match="Input image cannot be empty"):
+            await provider.image_to_video(b"", params)
+
+    @pytest.mark.asyncio
+    async def test_image_to_video_no_api_key(self):
+        """Test image_to_video raises ValueError without API key."""
+        from nodetool.metadata.types import Provider, VideoModel
+        from nodetool.providers.types import ImageToVideoParams
+
+        provider = MiniMaxProvider(secrets={"MINIMAX_API_KEY": ""})
+        provider.api_key = ""
+
+        params = ImageToVideoParams(
+            model=VideoModel(id="MiniMax-Hailuo-2.3-Fast", name="Hailuo 2.3 Fast", provider=Provider.MiniMax),
+            prompt="Animate this",
+        )
+
+        with pytest.raises(ValueError, match="MINIMAX_API_KEY is required"):
+            await provider.image_to_video(b"\x89PNG\r\n\x1a\n", params)
+
+    @pytest.mark.asyncio
+    async def test_image_to_video_success(self, provider):
+        """Test successful image_to_video generation with mocked API."""
+        from nodetool.metadata.types import Provider, VideoModel
+        from nodetool.providers.types import ImageToVideoParams
+
+        test_image = b"\x89PNG\r\n\x1a\n" + b"\x00" * 50
+        test_video_bytes = b"\x00\x00\x00\x1cftypisom" + b"\x00" * 100
+
+        params = ImageToVideoParams(
+            model=VideoModel(id="MiniMax-Hailuo-2.3-Fast", name="Hailuo 2.3 Fast", provider=Provider.MiniMax),
+            prompt="Make this image come to life",
+        )
+
+        submit_response = {"task_id": "task_i2v_456", "status": "Processing"}
+        poll_response = {
+            "task_id": "task_i2v_456",
+            "status": "Success",
+            "video_url": "https://cdn.minimax.chat/video_i2v.mp4",
+        }
+
+        class MockResponse:
+            def __init__(self, url, method="post"):
+                self.url = url
+                self.method = method
+                self.status = 200
+
+            async def json(self):
+                if "video_generation" in str(self.url) and self.method == "post":
+                    return submit_response
+                return poll_response
+
+            async def read(self):
+                return test_video_bytes
+
+            async def text(self):
+                return ""
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        class MockSession:
+            def post(self, url, json=None, headers=None, data=None, **kwargs):
+                return MockResponse(url, "post")
+
+            def get(self, url, headers=None, params=None, **kwargs):
+                return MockResponse(url, "get")
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        with patch("aiohttp.ClientSession", return_value=MockSession()):
+            result = await provider.image_to_video(test_image, params, timeout_s=60)
+            assert result == test_video_bytes
+
+    def test_video_api_url_constant(self):
+        """Test MINIMAX_VIDEO_API_URL constant."""
+        from nodetool.providers.minimax_provider import MINIMAX_VIDEO_API_URL
+
+        assert MINIMAX_VIDEO_API_URL == "https://api.minimax.io/v1/video_generation"
+
+    def test_video_models_constant(self):
+        """Test MINIMAX_VIDEO_MODELS constant."""
+        from nodetool.providers.minimax_provider import MINIMAX_VIDEO_MODELS
+
+        assert len(MINIMAX_VIDEO_MODELS) == 3
+        model_ids = [m.id for m in MINIMAX_VIDEO_MODELS]
+        assert "MiniMax-Hailuo-2.3" in model_ids
+        assert "MiniMax-Hailuo-2.3-Fast" in model_ids
+        assert "MiniMax-Hailuo-02" in model_ids
+
+
+class TestMiniMaxLanguageModels:
+    """Test suite for MiniMax language model listing."""
+
+    @pytest.fixture
+    def provider(self):
+        return MiniMaxProvider(secrets={"MINIMAX_API_KEY": "test-api-key"})
+
+    @pytest.mark.asyncio
+    async def test_available_language_models_includes_text01(self, provider):
+        """Test that MiniMax-Text-01 is in the available language models."""
+        models = await provider.get_available_language_models()
+        model_ids = [m.id for m in models]
+        assert "MiniMax-Text-01" in model_ids
+        assert "MiniMax-M2.1" in model_ids
+        assert "MiniMax-M2.1-lightning" in model_ids
+        assert "MiniMax-M2" in model_ids
+        assert len(models) == 4
+
+
+class TestMiniMaxImageModelsExtended:
+    """Test suite for extended MiniMax image model listing."""
+
+    @pytest.fixture
+    def provider(self):
+        return MiniMaxProvider(secrets={"MINIMAX_API_KEY": "test-api-key"})
+
+    @pytest.mark.asyncio
+    async def test_available_image_models_includes_live(self, provider):
+        """Test that image-01-live is in the available image models."""
+        models = await provider.get_available_image_models()
+        model_ids = [m.id for m in models]
+        assert "image-01" in model_ids
+        assert "image-01-live" in model_ids
+        assert len(models) == 2

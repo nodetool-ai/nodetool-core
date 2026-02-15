@@ -1,0 +1,106 @@
+name: Hourly Assistant Test
+
+on:
+  schedule:
+    - cron: "0 */6 * * *" # Every 6 hours
+  workflow_dispatch:
+
+jobs:
+  assistant:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for all branches
+
+      - name: Create feature branch
+        run: |
+          git fetch origin main
+          git checkout -b assistant/test-$(date +%Y%m%d-%H%M%S) origin/main
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libgl1 libglib2.0-0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+        
+      - name: Run Assistant
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: https://api.z.ai/api/anthropic
+          ANTHROPIC_MODEL: glm-5
+          ANTHROPIC_DEFAULT_OPUS_MODEL: GLM-5
+          ANTHROPIC_DEFAULT_SONNET_MODEL: GLM-5
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: GLM-5
+        with:
+          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          additional_permissions: |
+            actions: read
+          claude_args: |
+            --allowedTools "Bash,WebFetch,Edit,Read,Replace"
+          prompt: |
+            # NodeTool Core Quality Assurance (Scheduled)
+            
+            You are an autonomous agent ensuring code quality in **nodetool-core**, a Python 3.11+ async workflow engine.
+            
+            ## Step 0: Avoid Duplicate Work
+            1. Run `git branch -a` to check existing branches
+            2. Continue related branches instead of duplicating work
+            
+            ## Step 1: Read Memory (Required)
+            - `.github/opencode-memory/README.md`
+            - `.github/opencode-memory/repository-context.md`
+            - `.github/opencode-memory/features.md`
+            - List `issues/` and `insights/` to find descriptive files
+            
+            ## Step 2: Run Validation Commands
+            ```bash
+            make typecheck
+            make lint
+            make test
+            ```
+            
+            ## Step 3: Fix Failures (If Any)
+            - Make minimal, targeted changes only
+            - Follow Black formatting and Ruff rules
+            - Keep async code non-blocking
+            - Maintain test structure in `tests/`
+            - Do not refactor unrelated code
+            
+            ## Step 4: Verify
+            Re-run all three commands and ensure they pass.
+            
+            ## Step 5: Update Memory
+            - Add issue files under `issues/<topic>/`
+            - Add insight files under `insights/<topic>/`
+            
+            ## Success Criteria
+            - `make typecheck`, `make lint`, and `make test` all pass
+            - Changes are minimal and focused on the failures
+            - PR description explains what failed and how it was fixed
+            
+            ## Environment Notes
+            - Dependencies installed via `uv sync --all-extras --dev`
+            - System dependencies (ffmpeg, libgl1, libglib2.0-0) are pre-installed
+            - GitHub CI uses Python 3.11 (not conda)
+
+            ## Pull Request Rule
+            - NEVER commit or push directly to the main branch.
+            - Always work on the current feature branch (not main).
+            - Do NOT run `git checkout main` or `git switch main`.
+            - If `git status --porcelain` shows changed files, commit, push the current branch, and create or update a PR targeting main.
+            - If there are no file changes, do not commit, do not push, and do not create or update a PR.

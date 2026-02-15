@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from nodetool.agents.tools.base import Tool
 from nodetool.config.logging_config import get_logger
-from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
+from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_async
 from nodetool.media.image.image_utils import image_data_to_base64_jpeg
 from nodetool.metadata.types import (
     ImageModel,
@@ -589,7 +589,7 @@ class HuggingFaceProvider(BaseProvider):
             log.error(f"Error fetching HuggingFace models for provider {self.inference_provider}: {e}")
             return []
 
-    def convert_message(self, message: Message) -> dict:
+    async def convert_message(self, message: Message) -> dict:
         """Convert an internal message to HuggingFace's OpenAI-compatible format."""
         log.debug(f"Converting message with role: {message.role}")
 
@@ -647,7 +647,7 @@ class HuggingFaceProvider(BaseProvider):
                             # Fetch image and convert to data URI
                             uri = part.image.uri
                             log.debug(f"Fetching image and converting to base64: {uri[:50]}...")
-                            mime, data = fetch_uri_bytes_and_mime_sync(uri)
+                            mime, data = await fetch_uri_bytes_and_mime_async(uri)
                             b64 = base64.b64encode(data).decode("utf-8")
                             content.append(
                                 {
@@ -743,11 +743,8 @@ class HuggingFaceProvider(BaseProvider):
 
         # Convert messages to HuggingFace format
         log.debug("Converting messages to HuggingFace format")
-        hf_messages = []
-        for message in messages:
-            converted = self.convert_message(message)
-            if converted:  # Skip None messages
-                hf_messages.append(converted)
+        converted = await asyncio.gather(*[self.convert_message(message) for message in messages])
+        hf_messages = [msg for msg in converted if msg]  # Skip None messages
         log.debug(f"Converted to {len(hf_messages)} HuggingFace messages")
 
         # Prepare request parameters - using HuggingFace's chat_completion method
@@ -928,11 +925,8 @@ class HuggingFaceProvider(BaseProvider):
 
         # Convert messages to HuggingFace format
         log.debug("Converting messages to HuggingFace format")
-        hf_messages = []
-        for message in messages:
-            converted = self.convert_message(message)
-            if converted:  # Skip None messages
-                hf_messages.append(converted)
+        converted = await asyncio.gather(*[self.convert_message(message) for message in messages])
+        hf_messages = [msg for msg in converted if msg]  # Skip None messages
         log.debug(f"Converted to {len(hf_messages)} HuggingFace messages")
 
         # Prepare request parameters for streaming
@@ -1270,24 +1264,23 @@ class HuggingFaceProvider(BaseProvider):
 
             from PIL import Image
 
-            input_image = Image.open(io.BytesIO(image))
-
-            # Use the image_to_image method from AsyncInferenceClient
-            client = self.get_client()
-            result_image = await client.image_to_image(
-                image=input_image,
-                prompt=params.prompt,
-                model=params.model.id,
-                negative_prompt=params.negative_prompt or None,
-                num_inference_steps=params.num_inference_steps,
-                guidance_scale=params.guidance_scale,
-                target_size={  # type: ignore[arg-type]
-                    "width": params.target_width,
-                    "height": params.target_height,
-                }
-                if params.target_width and params.target_height
-                else None,
-            )
+            with Image.open(io.BytesIO(image)) as input_image:
+                # Use the image_to_image method from AsyncInferenceClient
+                client = self.get_client()
+                result_image = await client.image_to_image(
+                    image=input_image,
+                    prompt=params.prompt,
+                    model=params.model.id,
+                    negative_prompt=params.negative_prompt or None,
+                    num_inference_steps=params.num_inference_steps,
+                    guidance_scale=params.guidance_scale,
+                    target_size={  # type: ignore[arg-type]
+                        "width": params.target_width,
+                        "height": params.target_height,
+                    }
+                    if params.target_width and params.target_height
+                    else None,
+                )
 
             log.debug("HuggingFace image-to-image API call successful")
 

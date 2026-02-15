@@ -829,18 +829,17 @@ class GeminiProvider(BaseProvider):
             # Convert image bytes to PIL Image
             from PIL import Image
 
-            pil_image = Image.open(BytesIO(image))
+            with Image.open(BytesIO(image)) as pil_image:
+                # Build contents with both prompt and image
+                contents = [params.prompt, pil_image]
 
-            # Build contents with both prompt and image
-            contents = [params.prompt, pil_image]
-
-            response = await self.get_client().models.generate_content(
-                model=model_id,
-                contents=contents,
-                config=GenerateContentConfig(
-                    response_modalities=["IMAGE", "TEXT"],
-                ),
-            )
+                response = await self.get_client().models.generate_content(
+                    model=model_id,
+                    contents=contents,
+                    config=GenerateContentConfig(
+                        response_modalities=["IMAGE", "TEXT"],
+                    ),
+                )
 
             log.debug(f"Gemini API response: {response}")
 
@@ -1462,11 +1461,11 @@ class GeminiProvider(BaseProvider):
 
             log.info(f"Using Gemini Veo model for image-to-video: {model_id}")
 
-            # Convert image bytes to PIL Image for Gemini API
+            # Convert image bytes to PIL Image for Gemini API (for logging only)
             from PIL import Image
 
-            pil_image: PIL.Image.Image = Image.open(BytesIO(image))
-            log.debug(f"Loaded input image: {pil_image.size}, format: {pil_image.format}")
+            with Image.open(BytesIO(image)) as pil_image:
+                log.debug(f"Loaded input image: {pil_image.size}, format: {pil_image.format}")
 
             # Build the generation config using GenerateVideosConfig
             config_kwargs = {}

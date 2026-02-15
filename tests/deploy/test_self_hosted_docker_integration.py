@@ -17,14 +17,12 @@ import docker
 from nodetool.config.deployment import (
     ContainerConfig,
     DeploymentStatus,
+    DockerDeployment,
     ImageConfig,
-    ProxySpec,
-    SelfHostedDeployment,
-    SelfHostedPaths,
-    ServiceSpec,
+    ServerPaths,
     SSHConfig,
 )
-from nodetool.deploy.self_hosted import LocalExecutor, SelfHostedDeployer
+from nodetool.deploy.self_hosted import DockerDeployer, LocalExecutor
 from nodetool.deploy.state import StateManager
 
 
@@ -81,18 +79,6 @@ def temp_workspace():
         (workspace / "proxy").mkdir()
         (workspace / "acme").mkdir()
 
-        # Create minimal proxy config
-        proxy_config = workspace / "proxy" / "proxy.yaml"
-        proxy_config.write_text("""
-version: "1.0"
-proxy:
-  listen_http: 8080
-  listen_https: 8443
-  domain: localhost
-  docker_network: bridge
-  connect_mode: websocket
-containers: []
-""")
 
         yield workspace
 
@@ -108,31 +94,14 @@ def docker_client():
 @pytest.fixture
 def test_deployment(temp_workspace):
     """Create a test deployment configuration using nginx as proxy stand-in."""
-    return SelfHostedDeployment(
+    return DockerDeployment(
         host="localhost",
         ssh=SSHConfig(user="test", key_path="~/.ssh/id_rsa"),
         image=ImageConfig(name="nginx", tag="alpine"),
         container=ContainerConfig(name="test", port=8080),
-        paths=SelfHostedPaths(
+        paths=ServerPaths(
             workspace=str(temp_workspace),
             hf_cache=str(temp_workspace / "hf-cache"),
-        ),
-        proxy=ProxySpec(
-            image="nginx:alpine",  # Use nginx as a stand-in for the proxy
-            listen_http=8080,
-            listen_https=8443,
-            domain="localhost",
-            email="test@example.com",
-            docker_network="bridge",
-            connect_mode="host_port",  # Changed from websocket to host_port
-            acme_webroot="/var/www/acme",
-            services=[
-                ServiceSpec(
-                    name="test",
-                    path="/",
-                    image="nginx:alpine",
-                )
-            ],
         ),
     )
 
@@ -182,12 +151,12 @@ class TestLocalExecutor:
         assert test_dir.is_dir()
 
 
-class TestSelfHostedDeployerIntegration:
+class TestDockerDeployerIntegration:
     """Integration tests using real Docker."""
 
     def test_localhost_detection(self, test_deployment):
         """Test that localhost is properly detected."""
-        deployer = SelfHostedDeployer(
+        deployer = DockerDeployer(
             deployment_name="test",
             deployment=test_deployment,
         )
@@ -196,7 +165,7 @@ class TestSelfHostedDeployerIntegration:
 
     def test_get_local_executor(self, test_deployment):
         """Test that LocalExecutor is used for localhost."""
-        deployer = SelfHostedDeployer(
+        deployer = DockerDeployer(
             deployment_name="test",
             deployment=test_deployment,
         )
@@ -206,7 +175,7 @@ class TestSelfHostedDeployerIntegration:
 
     def test_create_directories_real(self, test_deployment, mock_state_manager):
         """Test creating real directories on the filesystem."""
-        SelfHostedDeployer(
+        DockerDeployer(
             deployment_name="test",
             deployment=test_deployment,
             state_manager=mock_state_manager,
@@ -327,7 +296,7 @@ class TestDeploymentPlanWithDocker:
 
     def test_plan_shows_container_name(self, test_deployment, mock_state_manager):
         """Test that plan shows the correct container name."""
-        deployer = SelfHostedDeployer(
+        deployer = DockerDeployer(
             deployment_name="test",
             deployment=test_deployment,
             state_manager=mock_state_manager,
@@ -337,11 +306,12 @@ class TestDeploymentPlanWithDocker:
 
         assert plan["deployment_name"] == "test"
         assert plan["host"] == "localhost"
-        assert "nodetool-proxy-test" in str(plan["will_create"])
+        container_name = deployer._container_name()
+        assert container_name in str(plan["will_create"])
 
     def test_plan_with_docker_running(self, test_deployment, mock_state_manager):
         """Test planning when Docker is running."""
-        deployer = SelfHostedDeployer(
+        deployer = DockerDeployer(
             deployment_name="test",
             deployment=test_deployment,
             state_manager=mock_state_manager,

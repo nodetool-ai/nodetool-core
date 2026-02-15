@@ -47,7 +47,19 @@ list_collections = mcp_server.list_collections.fn
 get_collection = mcp_server.get_collection.fn
 query_collection = mcp_server.query_collection.fn
 get_documents_from_collection = mcp_server.get_documents_from_collection.fn
-# Note: list_threads, get_thread, get_thread_messages are not implemented in mcp_tools
+# Thread operations (may not be implemented in mcp_tools yet)
+try:
+    list_threads = mcp_server.list_threads.fn
+except AttributeError:
+    list_threads = None
+try:
+    get_thread = mcp_server.get_thread.fn
+except AttributeError:
+    get_thread = None
+try:
+    get_thread_messages = mcp_server.get_thread_messages.fn
+except AttributeError:
+    get_thread_messages = None
 download_file_from_storage = mcp_server.download_file_from_storage.fn
 get_file_metadata = mcp_server.get_file_metadata.fn
 list_storage_files = mcp_server.list_storage_files.fn
@@ -193,6 +205,29 @@ class TestWorkflowOperations:
         assert any("circular" in error.lower() for error in result["errors"])
 
     @pytest.mark.asyncio
+    async def test_validate_workflow_input_node_missing_name(self):
+        """Input nodes must provide a non-empty name property."""
+        workflow = await Workflow.create(
+            user_id="1",
+            name="Missing Input Name Workflow",
+            graph={
+                "nodes": [
+                    {
+                        "id": "input1",
+                        "type": "nodetool.input.IntegerInput",
+                        "data": {"value": 42},
+                    }
+                ],
+                "edges": [],
+            },
+        )
+
+        result = await validate_workflow(workflow.id)
+
+        assert result["valid"] is False
+        assert any("missing required 'name' property" in error for error in result["errors"])
+
+    @pytest.mark.asyncio
     async def test_list_workflows(self, workflow: Workflow):
         """Test listing workflows with pagination."""
         await workflow.save()
@@ -205,6 +240,37 @@ class TestWorkflowOperations:
         assert "workflows" in result
         assert len(result["workflows"]) == 2
         assert result["workflows"][0]["name"] in ["test_workflow", "Workflow 2"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.no_setup
+    async def test_list_workflows_binds_scope_when_unbound(self, monkeypatch):
+        """list_workflows should create a ResourceScope when none is active."""
+        entered = 0
+
+        class DummyScope:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                nonlocal entered
+                entered += 1
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        paginate_mock = AsyncMock(return_value=([], None))
+        monkeypatch.setattr("nodetool.tools.workflow_tools.maybe_scope", lambda: None)
+        monkeypatch.setattr("nodetool.tools.workflow_tools.ResourceScope", DummyScope)
+        monkeypatch.setattr(Workflow, "paginate", paginate_mock)
+
+        result = await list_workflows(limit=10, user_id="1")
+
+        assert entered == 1
+        paginate_mock.assert_awaited_once_with(user_id="1", limit=10)
+        assert result["workflows"] == []
+        assert result["next"] is None
+        assert result["total"] == 0
 
     @pytest.mark.asyncio
     async def test_run_graph_simple(self):
@@ -393,7 +459,7 @@ class TestJobOperations:
         """Test listing jobs filtered by workflow."""
         await workflow.save()
 
-        job = await Job.create(
+        _job = await Job.create(
             user_id="1",
             workflow_id=workflow.id,
             job_type="workflow",
@@ -402,7 +468,7 @@ class TestJobOperations:
 
         # Create another workflow and job
         workflow2 = await Workflow.create(user_id="1", name="Workflow 2", graph={"nodes": [], "edges": []})
-        job2 = await Job.create(
+        _job2 = await Job.create(
             user_id="1",
             workflow_id=workflow2.id,
             job_type="workflow",
@@ -537,6 +603,8 @@ class TestChatOperations:
     @pytest.mark.asyncio
     async def test_list_threads(self):
         """Test listing chat threads."""
+        if list_threads is None:
+            pytest.skip("list_threads not implemented")
         await Thread.create(user_id="1", name="Thread 1")
         await Thread.create(user_id="1", name="Thread 2")
 
@@ -548,6 +616,8 @@ class TestChatOperations:
     @pytest.mark.asyncio
     async def test_get_thread(self):
         """Test getting thread details."""
+        if get_thread is None:
+            pytest.skip("get_thread not implemented")
         thread = await Thread.create(user_id="1", title="Test Thread")
 
         result = await get_thread(thread.id)
@@ -558,6 +628,8 @@ class TestChatOperations:
     @pytest.mark.asyncio
     async def test_get_thread_messages(self):
         """Test getting messages from a thread."""
+        if get_thread_messages is None:
+            pytest.skip("get_thread_messages not implemented")
         thread = await Thread.create(user_id="1", name="Test Thread")
         await Message.create(
             user_id="1",

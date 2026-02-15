@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from enum import EnumMeta as EnumType
 from types import UnionType
-from typing import Any, Optional, Union, get_args, get_origin, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional, Union, get_args, get_origin
 
 import aiosqlite
 from pydantic.fields import FieldInfo
@@ -207,14 +207,15 @@ def convert_from_sqlite_attributes(attributes: dict[str, Any], fields: dict[str,
     """
     Convert a dictionary of attributes from SQLite to a dictionary of Python types based on the provided fields.
     """
-    return {
-        key: (
-            convert_from_sqlite_format(attributes[key], fields[key].annotation)  # type: ignore
-            if key in fields
-            else attributes[key]
-        )
-        for key in attributes
-    }
+    result = {}
+    for key in attributes:
+        if key in fields:
+            result[key] = convert_from_sqlite_format(attributes[key], fields[key].annotation)  # type: ignore
+        else:
+            log.warning(f"Field '{key}' not in adapter fields, passing through raw (type={type(attributes[key]).__name__}, value_preview={str(attributes[key])[:80]})")
+            result[key] = attributes[key]
+    return result
+
 
 
 def convert_to_sqlite_attributes(attributes: dict[str, Any], fields: dict[str, FieldInfo]) -> dict[str, Any]:

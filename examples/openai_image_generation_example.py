@@ -36,7 +36,7 @@ async def test_openai_image_generation_agent(
     """
     context = ProcessingContext()
     print(f"Workspace for this run: {context.workspace_dir}")
-    if not os.path.exists(context.workspace_dir):
+    if context.workspace_dir is not None and not os.path.exists(context.workspace_dir):
         os.makedirs(context.workspace_dir)
         print(f"Created workspace directory: {context.workspace_dir}")
 

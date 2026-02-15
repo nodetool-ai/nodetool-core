@@ -216,6 +216,7 @@ def deploy_to_gcp(
             console.print(f"[bold green]✅ Image pushed to registry: {gcp_image_url}[/]")
 
         # Set default cache envs (respect provided values)
+        env.setdefault("NODETOOL_SERVER_MODE", "private")
         env.setdefault(
             "HF_HOME",
             f"{gcs_mount_path}/.cache/huggingface" if gcs_bucket else "/workspace/.cache/huggingface",
@@ -232,6 +233,18 @@ def deploy_to_gcp(
             "OLLAMA_MODELS",
             f"{gcs_mount_path}/.ollama/models" if gcs_bucket else "/workspace/.ollama/models",
         )
+
+        # Configure paths from persistent_paths if available
+        persistent_paths = deployment.persistent_paths
+        if persistent_paths:
+            env.setdefault("USERS_FILE", persistent_paths.users_file)
+            env.setdefault("DB_PATH", persistent_paths.db_path)
+            env.setdefault("CHROMA_PATH", persistent_paths.chroma_path)
+            env.setdefault("ASSET_BUCKET", persistent_paths.asset_bucket)
+            # Enable multi_user auth when persistent_paths is configured
+            env.setdefault("AUTH_PROVIDER", "multi_user")
+        else:
+            env.setdefault("AUTH_PROVIDER", "static")
 
         # Deploy to Cloud Run
         if not skip_deploy and gcp_image_url:

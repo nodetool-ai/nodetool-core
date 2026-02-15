@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from types import NoneType
-from typing import Any, Literal, Optional, TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Any, Literal, Optional, Union
 
 if TYPE_CHECKING:
     import numpy as np
@@ -103,6 +103,23 @@ class BaseType(BaseModel):
         if type_name not in NameToType:
             raise ValueError(f"Unknown type name: {type_name}. Types must derive from BaseType. Data: {data}")
         return NameToType[type_name](**data)
+
+class ImageSize(BaseType):
+    """
+    Represents image dimensions with optional preset.
+    Canonical JSON: {"type": "image_size", "width": 1024, "height": 1024, "preset": "square"}
+    """
+
+    type: Literal["image_size"] = "image_size"
+    width: int = Field(default=1024, description="Image width")
+    height: int = Field(default=1024, description="Image height")
+    preset: Optional[str] = Field(None, description="Aspect ratio preset name (e.g. 'square_hd')")
+
+    def __str__(self):
+        if self.preset:
+            return f"{self.preset} ({self.width}x{self.height})"
+        return f"{self.width}x{self.height}"
+
 
 
 class Collection(BaseType):
@@ -358,10 +375,17 @@ class Model3DRef(AssetRef):
     """
     A reference to a 3D model asset.
     Supports common 3D formats like GLB, GLTF, OBJ, FBX, STL, PLY, USDZ.
+
+    For formats that require multiple files (e.g., OBJ with MTL and textures):
+    - format: The primary 3D model format (e.g., "obj")
+    - material_file: Reference to material file (e.g., MTL file for OBJ models)
+    - texture_files: List of texture image references used by the model
     """
 
     type: Literal["model_3d"] = "model_3d"
-    format: Optional[str] = None  # The 3D format (glb, gltf, obj, fbx, stl, ply, usdz)
+    format: Optional[str] = None  # The 3D format (glb, gltf, obj, mtl, fbx, stl, ply, usdz)
+    material_file: Optional["AssetRef"] = None  # Material file (e.g., MTL for OBJ)
+    texture_files: list["ImageRef"] = Field(default_factory=list)  # Associated texture images
 
 
 class RSSEntry(BaseType):
@@ -463,6 +487,9 @@ class Provider(str, enum.Enum):
     HuggingFaceScaleway = "huggingface_scaleway"
     HuggingFaceTogether = "huggingface_together"
     HuggingFaceZAI = "huggingface_zai"
+    # 3D generation providers
+    Meshy = "meshy"
+    Rodin = "rodin"
 
 
 class InferenceProvider(str, Enum):
@@ -614,6 +641,18 @@ class VideoModel(BaseType):
     name: str = ""
     path: str | None = None
     supported_tasks: list[str] = Field(default_factory=list)
+
+
+class Model3DModel(BaseType):
+    """A model for 3D generation (text-to-3D, image-to-3D)."""
+
+    type: Literal["model_3d_model"] = "model_3d_model"
+    provider: Provider = Provider.Empty
+    id: str = ""
+    name: str = ""
+    path: str | None = None
+    supported_tasks: list[str] = Field(default_factory=list)
+    output_formats: list[str] = Field(default_factory=lambda: ["glb"])
 
 
 class EmbeddingModel(BaseType):
@@ -1451,8 +1490,8 @@ class TorchTensor(BaseType):
         """
         Reconstruct as a CPU tensor and then (optionally) move to `self.device`.
         """
-        import torch
         import numpy as np
+        import torch  # type: ignore
 
         assert self.value is not None, "No bytes stored"
         self._validate_nbytes()
@@ -1476,7 +1515,7 @@ class TorchTensor(BaseType):
         """
         Stores raw bytes + NumPy dtype string + shape (+ device).
         """
-        import torch
+        import torch  # type: ignore
 
         if not isinstance(tensor, torch.Tensor):
             tensor = torch.as_tensor(tensor)
@@ -1494,7 +1533,7 @@ class TorchTensor(BaseType):
 
     @staticmethod
     def from_numpy(arr: "np.ndarray", **kwargs) -> "TorchTensor":
-        import torch
+        import torch  # type: ignore
 
         t = torch.from_numpy(arr)
         return TorchTensor.from_tensor(t, **kwargs)
@@ -2327,14 +2366,49 @@ class DateSearchCondition(BaseType):
 
 
 class EmailSearchCriteria(BaseType):
+    """
+    Criteria for searching emails via IMAP.
+
+    Attributes:
+        from_address: Filter by sender email address
+        to_address: Filter by recipient email address
+        subject: Filter by subject line
+        body: Filter by email body content
+        cc: Filter by CC recipients
+        label: Filter by email label/folder
+        date_query: Date search condition (preferred name)
+        date_condition: Date search condition (alias for date_query, used in imap.py)
+        flags: IMAP flags to filter by (SEEN, UNSEEN, etc.)
+        keywords: Custom IMAP keywords to filter by
+        folder: IMAP folder to search in (defaults to INBOX)
+        text: Full-text search across all email fields
+    """
     type: Literal["email_search_criteria"] = "email_search_criteria"
     from_address: Optional[str] = None
     to_address: Optional[str] = None
     subject: Optional[str] = None
     body: Optional[str] = None
     cc: Optional[str] = None
-    bcc: Optional[str] = None
-    date_condition: Optional[DateSearchCondition] = None
+    label: Optional[str] = None
+    date_query: Optional[DateSearchCondition] = None
+    date_condition: Optional[DateSearchCondition] = None  # Alias for date_query for backwards compatibility
+    flags: list[EmailFlag] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+    folder: Optional[str] = None
+    text: Optional[str] = None
+
+
+class Email(BaseType):
+    type: Literal["email"] = "email"
+    id: str = ""
+    subject: str = ""
+    sender: str = ""
+    date: Datetime = Datetime()
+    body: str = ""
+    snippet: str = ""
+    thread_id: str = ""
+    labels: list[str] = Field(default_factory=list)
+
     flags: list[EmailFlag] = []
     keywords: list[str] = []
     folder: Optional[str] = None

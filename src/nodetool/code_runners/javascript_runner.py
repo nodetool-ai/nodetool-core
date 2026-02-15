@@ -8,6 +8,7 @@ lines. No wrapper or serialization.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from nodetool.code_runners.runtime_base import StreamRunnerBase
@@ -40,7 +41,7 @@ class JavaScriptDockerRunner(StreamRunnerBase):
     ) -> list[str]:
         user_code_with_args = ""
         for key, value in env_locals.items():
-            user_code_with_args += f"const {key} = {value};\n"
+            user_code_with_args += f"const {key} = {json.dumps(value)};\n"
         user_code_with_args += user_code
         return ["node", "-e", user_code_with_args]
 

@@ -12,22 +12,37 @@ These tools provide functionality for managing NodeTool workflows including:
 from __future__ import annotations
 
 import asyncio
+import tempfile
+from contextlib import asynccontextmanager
 from typing import Any, Optional
 
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.packages.registry import Registry
+from nodetool.runtime.resources import ResourceScope, maybe_scope
 from nodetool.types.api_graph import (
     Graph,
     get_input_schema,
     get_output_schema,
     remove_connected_slots,
 )
+from nodetool.workflows.base_node import InputNode, get_node_class
 from nodetool.workflows.processing_context import (
     AssetOutputMode,
     ProcessingContext,
 )
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
+
+
+@asynccontextmanager
+async def _ensure_resource_scope():
+    """Bind a ResourceScope only when one is not already active."""
+    if maybe_scope() is not None:
+        yield
+        return
+
+    async with ResourceScope():
+        yield
 
 
 class WorkflowTools:
@@ -45,7 +60,8 @@ class WorkflowTools:
         Returns:
             Workflow details including graph structure, input/output schemas
         """
-        workflow = await WorkflowModel.find(user_id, workflow_id)
+        async with _ensure_resource_scope():
+            workflow = await WorkflowModel.find(user_id, workflow_id)
         if not workflow:
             raise ValueError(f"Workflow {workflow_id} not found")
 
@@ -95,9 +111,7 @@ class WorkflowTools:
         api_graph = Graph.model_validate(graph)
         sanitized_graph = remove_connected_slots(api_graph)
 
-        from nodetool.runtime.resources import ResourceScope
-
-        async with ResourceScope():
+        async with _ensure_resource_scope():
             workflow = await WorkflowModel.create(
                 user_id=user_id,
                 name=name,
@@ -142,7 +156,8 @@ class WorkflowTools:
         Returns:
             Workflow execution results
         """
-        workflow = await WorkflowModel.find(user_id, workflow_id)
+        async with _ensure_resource_scope():
+            workflow = await WorkflowModel.find(user_id, workflow_id)
         if not workflow:
             raise ValueError(f"Workflow {workflow_id} not found")
 
@@ -158,10 +173,14 @@ class WorkflowTools:
         result = {}
         preview = {}
         save = {}
-        context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
+        workspace_dir = tempfile.mkdtemp(prefix="nodetool_workspace_")
+        context = ProcessingContext(
+            asset_output_mode=AssetOutputMode.TEMP_URL,
+            workspace_dir=workspace_dir,
+        )
 
         async for msg in run_workflow(request, context=context):
-            from nodetool.workflows.types import PreviewUpdate, SaveUpdate, OutputUpdate, LogUpdate
+            from nodetool.workflows.types import LogUpdate, OutputUpdate, PreviewUpdate, SaveUpdate
 
             if isinstance(msg, PreviewUpdate):
                 value = msg.value
@@ -219,7 +238,11 @@ class WorkflowTools:
         )
 
         result = {}
-        context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
+        workspace_dir = tempfile.mkdtemp(prefix="nodetool_workspace_")
+        context = ProcessingContext(
+            asset_output_mode=AssetOutputMode.TEMP_URL,
+            workspace_dir=workspace_dir,
+        )
 
         async for msg in run_workflow(request, context=context):
             from nodetool.workflows.types import OutputUpdate
@@ -338,7 +361,8 @@ class WorkflowTools:
             return enriched
 
         if workflow_type in ("user", "all"):
-            workflows, next_key = await WorkflowModel.paginate(user_id=user_id, limit=limit)
+            async with _ensure_resource_scope():
+                workflows, next_key = await WorkflowModel.paginate(user_id=user_id, limit=limit)
             for workflow in workflows:
                 wf_dict = {
                     "id": workflow.id,
@@ -453,7 +477,8 @@ class WorkflowTools:
         Returns:
             Validation report with errors, warnings, and suggestions
         """
-        workflow = await WorkflowModel.find(user_id, workflow_id)
+        async with _ensure_resource_scope():
+            workflow = await WorkflowModel.find(user_id, workflow_id)
         if not workflow:
             raise ValueError(f"Workflow {workflow_id} not found")
 
@@ -477,6 +502,17 @@ class WorkflowTools:
                 errors.append(f"Node type not found: {node.type} (node: {node.id})")
             else:
                 node_types_found[node.id] = node_metadata
+
+            node_class = get_node_class(node.type)
+            is_input_node = bool(node_class and issubclass(node_class, InputNode))
+            if not is_input_node and node.type.startswith(("nodetool.input.", "nodetool.workflows.test_helper.")):
+                is_input_node = True
+
+            if is_input_node:
+                node_data = node.data if isinstance(node.data, dict) else {}
+                name_value = node_data.get("name")
+                if not isinstance(name_value, str) or not name_value.strip():
+                    errors.append(f"Input node '{node.id}' ({node.type}) is missing required 'name' property")
 
         adjacency = {node.id: [] for node in graph.nodes}
         edges_by_target = {}
@@ -666,7 +702,8 @@ class WorkflowTools:
         """
         import re
 
-        workflow_model = await WorkflowModel.find(user_id, workflow_id)
+        async with _ensure_resource_scope():
+            workflow_model = await WorkflowModel.find(user_id, workflow_id)
 
         if workflow_model:
             graph = workflow_model.get_api_graph()

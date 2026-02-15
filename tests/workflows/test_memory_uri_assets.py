@@ -4,7 +4,7 @@ import io
 import PIL.Image
 import pytest
 
-from nodetool.media.image.image_utils import image_ref_to_base64_jpeg
+from nodetool.media.image.image_utils import image_ref_to_base64_jpeg_async
 from nodetool.workflows.processing_context import ProcessingContext
 
 
@@ -29,9 +29,9 @@ async def test_image_memory_uri_roundtrip_png_and_jpeg(user_id: str):
         assert out_img.size == (10, 6)
         assert out_img.format == "PNG"
 
-    # Convert via image_utils (JPEG path) and ensure it loads
-    # This works because image_ref_to_base64_jpeg uses require_scope().get_memory_uri_cache()
-    b64_jpeg = image_ref_to_base64_jpeg(image_ref, max_size=(64, 64))
+    # Convert via image_utils async (JPEG path) and ensure it loads
+    # This works because image_ref_to_base64_jpeg_async uses require_scope().get_memory_uri_cache()
+    b64_jpeg = await image_ref_to_base64_jpeg_async(image_ref, max_size=(64, 64))
     jpeg_bytes = base64.b64decode(b64_jpeg)
     with PIL.Image.open(io.BytesIO(jpeg_bytes)) as out_jpeg:
         assert out_jpeg.size[0] > 0 and out_jpeg.size[1] > 0

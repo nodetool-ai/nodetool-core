@@ -27,6 +27,7 @@ class Workflow(BaseModel):
     required_providers: list[str] | None = None
     required_models: list[str] | None = None
     html_app: str | None = None
+    etag: str | None = None
 
 
 class WorkflowRequest(BaseModel):

@@ -117,9 +117,13 @@ def default_ingestion_workflow(collection: chromadb.Collection, file_path: str, 
     if mime_type == "application/pdf":
         with open(file_path, "rb") as f:
             pdf_data = f.read()
-            doc = _get_pymupdf().open(stream=pdf_data, filetype="pdf")
+        doc = _get_pymupdf().open(stream=pdf_data, filetype="pdf")
+        try:
             md_text = _get_pymupdf4llm().to_markdown(doc)
             documents = [Document(text=md_text, doc_id=file_path)]
+        finally:
+            with suppress(Exception):
+                doc.close()
     else:
         md = MarkItDown()
         documents = [Document(text=md.convert(file_path).text_content, doc_id=file_path)]

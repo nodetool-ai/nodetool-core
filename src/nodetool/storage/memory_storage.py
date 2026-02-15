@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import IO, AsyncIterator, Iterator
 
 from nodetool.concurrency.async_iterators import AsyncByteStream
-from nodetool.storage.abstract_storage import AbstractStorage
+from nodetool.storage.abstract_storage import AbstractStorage, FileMetadata
 
 
 class MemoryStorage(AbstractStorage):
@@ -22,7 +22,7 @@ class MemoryStorage(AbstractStorage):
     async def file_exists(self, key: str) -> bool:
         return key in self.storage
 
-    async def get_mtime(self, key: str):
+    async def get_mtime(self, key: str) -> datetime:
         return self.mtimes.get(key, datetime.now())
 
     async def get_size(self, key: str) -> int:
@@ -59,6 +59,16 @@ class MemoryStorage(AbstractStorage):
         self.storage[key] = content.read()
         return f"{self.base_url}/{key}"
 
-    async def delete(self, file_name: str):
+    async def delete(self, file_name: str) -> None:
         if file_name in self.storage:
             del self.storage[file_name]
+
+    async def get_file_metadata(self, key: str) -> FileMetadata:
+        """Optimized metadata retrieval for in-memory storage."""
+        if key in self.storage:
+            return FileMetadata(
+                exists=True,
+                size=len(self.storage[key]),
+                mtime=self.mtimes.get(key, datetime.now()),
+            )
+        return FileMetadata(exists=False)

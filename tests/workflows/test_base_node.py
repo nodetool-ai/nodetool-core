@@ -733,6 +733,16 @@ def test_node_assign_property_single_value_to_list_imageref():
     assert node.image_list[0].uri == "test.jpg"
 
 
+def test_node_assign_property_single_dict_to_list_imageref():
+    """Test that a single image dict value is auto-wrapped to list[ImageRef]."""
+    node = ListInputNode()
+    image_dict = {"type": "image", "uri": "test.jpg"}
+    error = node.assign_property("image_list", image_dict)
+    assert error is None
+    assert len(node.image_list) == 1
+    assert node.image_list[0].uri == "test.jpg"
+
+
 def test_node_assign_property_list_value_remains_list():
     """Test that a list value is not double-wrapped."""
     node = ListInputNode()
@@ -769,4 +779,3 @@ def test_node_is_assignable_single_value_to_list():
     assert node.is_assignable("int_list", "not an int") is False
     assert node.is_assignable("str_list", "hello") is True
     assert node.is_assignable("str_list", ["a", "b"]) is True
-

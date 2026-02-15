@@ -264,9 +264,10 @@ class MistralProvider(OpenAIProvider):
             log.info("Mistral streaming cancelled by user")
             raise
         finally:
+            # AsyncStream.close() is async and must be awaited
             if hasattr(completion, "close"):
                 try:
-                    completion.close()
+                    await completion.close()
                 except Exception:
                     pass
             elif hasattr(completion, "response") and hasattr(completion.response, "close"):
