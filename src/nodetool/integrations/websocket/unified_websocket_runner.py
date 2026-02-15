@@ -307,9 +307,11 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         super().__init__(auth_token, default_model, default_provider)
         self.websocket: WebSocket | None = None
         self.mode = WebSocketMode.BINARY
-        # Prevent concurrent send_bytes/send_text calls from interleaving frames when multiple
-        # jobs stream updates concurrently on the same WebSocket connection.
-        self._send_lock = asyncio.Lock()
+        # Lock and loop are initialized on first send in the active connection loop.
+        # This avoids binding asyncio primitives to a stale loop across reconnects/tests.
+        self._send_lock: asyncio.Lock | None = None
+        self._send_lock_loop: asyncio.AbstractEventLoop | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
         # Workflow job management
         self.active_jobs: dict[str, JobStreamContext] = {}
@@ -386,6 +388,9 @@ class UnifiedWebSocketRunner(BaseChatRunner):
 
         await websocket.accept()
         self.websocket = websocket
+        self._loop = asyncio.get_running_loop()
+        self._send_lock = None
+        self._send_lock_loop = None
         log.info("Unified WebSocket connection established")
 
         # Start heartbeat to keep idle connections alive (skip in tests to avoid leaked tasks)
@@ -441,8 +446,19 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 log.debug(f"UnifiedWebSocketRunner: WebSocket close ignored: {e}")
 
         self.websocket = None
+        self._loop = None
+        self._send_lock = None
+        self._send_lock_loop = None
         self.current_task = None
         log.info("UnifiedWebSocketRunner: Disconnected (jobs continue in background)")
+
+    def _get_send_lock(self) -> asyncio.Lock:
+        """Get a send lock bound to the current running loop."""
+        loop = asyncio.get_running_loop()
+        if self._send_lock is None or self._send_lock_loop is not loop:
+            self._send_lock = asyncio.Lock()
+            self._send_lock_loop = loop
+        return self._send_lock
 
     async def send_message(self, message: dict):
         """
@@ -467,7 +483,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             return
 
         try:
-            async with self._send_lock:
+            async with self._get_send_lock():
                 if self.mode == WebSocketMode.BINARY:
                     packed_message = msgpack.packb(message, use_bin_type=True)
                     await self.websocket.send_bytes(packed_message)  # type: ignore
@@ -1408,18 +1424,15 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         )
 
         try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
+            if self._loop is None or self._loop.is_closed():
+                return
 
-        try:
-            loop.call_soon_threadsafe(
-                asyncio.ensure_future,
+            self._loop.call_soon_threadsafe(
+                asyncio.create_task,
                 self.send_message(update.model_dump()),
             )
         except RuntimeError:
-            # Event loop closed - nothing to do
-            log.debug("UnifiedWebSocketRunner: Resource change update skipped (event loop closed)")
+            return
 
     async def _heartbeat(self):
         """Periodically send a lightweight heartbeat message to keep the WebSocket alive."""
