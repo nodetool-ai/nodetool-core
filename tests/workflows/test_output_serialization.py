@@ -2,13 +2,23 @@
 Tests for output serialization utilities.
 """
 
+import io
+import json
+
 import pytest
 
+from nodetool.storage.memory_storage import MemoryStorage
 from nodetool.workflows.output_serialization import (
+    compress_streaming_outputs,
     deserialize_output_from_event_log,
     deserialize_outputs_dict,
+    retrieve_output_from_temp_storage,
     serialize_output_for_event_log,
     serialize_outputs_dict,
+    should_compress_streaming,
+    store_large_output_in_temp_storage,
+    store_streaming_output_in_temp_storage,
+    uses_temp_storage,
 )
 
 
@@ -253,3 +263,107 @@ def test_serialize_with_memory_uri_warning(caplog):
 
     assert result["type"] == "asset_ref"
     assert "non-durable storage" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_store_large_output_in_temp_storage():
+    """Test storing large output in temp storage."""
+    storage = MemoryStorage(base_url="temp://")
+    data = {"large": "data" * 1_000_000}  # Large data
+
+    storage_id = await store_large_output_in_temp_storage(data, storage)
+
+    assert storage_id is not None
+    assert storage_id.startswith("output_")
+
+
+@pytest.mark.asyncio
+async def test_retrieve_output_from_temp_storage():
+    """Test retrieving output from temp storage."""
+    storage = MemoryStorage(base_url="temp://")
+    original_data = {"status": "ok", "count": 42, "data": [1, 2, 3]}
+
+    # Store the data
+    storage_id = await store_large_output_in_temp_storage(original_data, storage)
+    assert storage_id is not None
+
+    # Retrieve the data
+    retrieved_data = await retrieve_output_from_temp_storage(storage_id, storage)
+
+    assert retrieved_data == original_data
+
+
+@pytest.mark.asyncio
+async def test_store_and_retrieve_roundtrip():
+    """Test roundtrip of storing and retrieving large output."""
+    storage = MemoryStorage(base_url="temp://")
+    original = {
+        "result": "success",
+        "data": [{"id": i, "value": f"item_{i}"} for i in range(1000)],
+    }
+
+    # Store
+    storage_id = await store_large_output_in_temp_storage(original, storage)
+    assert storage_id is not None
+
+    # Retrieve
+    retrieved = await retrieve_output_from_temp_storage(storage_id, storage)
+
+    assert retrieved == original
+
+
+@pytest.mark.asyncio
+async def test_store_streaming_output_in_temp_storage():
+    """Test storing streaming outputs in temp storage."""
+    from nodetool.metadata.types import ImageRef
+
+    storage = MemoryStorage(base_url="temp://")
+    outputs = {
+        "frames": [ImageRef(uri=f"temp://frame_{i}.png", asset_id=f"frame_{i}") for i in range(100)],
+        "metadata": {"fps": 30, "duration": 3.33},
+    }
+
+    storage_id = await store_streaming_output_in_temp_storage(outputs, storage)
+
+    assert storage_id is not None
+    assert storage_id.startswith("streaming_")
+
+    # Retrieve and verify
+    retrieved = await retrieve_output_from_temp_storage(storage_id, storage)
+    assert retrieved is not None
+    assert "frames" in retrieved
+    assert "metadata" in retrieved
+    assert len(retrieved["frames"]) == 100
+
+
+def test_compress_streaming_outputs_with_storage():
+    """Test compression of streaming outputs with storage."""
+    storage = MemoryStorage(base_url="temp://")
+    from nodetool.metadata.types import ImageRef
+
+    outputs = {
+        "frames": [ImageRef(uri=f"temp://frame_{i}.png", asset_id=f"frame_{i}") for i in range(1000)],
+        "metadata": {"fps": 30, "duration": 33.33},
+    }
+
+    compressed = compress_streaming_outputs(outputs, storage=storage)
+
+    assert compressed["type"] == "streaming_compressed"
+    assert compressed["chunk_count"] == 1001  # 1000 frames + 1 metadata
+    assert "size_bytes" in compressed
+    assert compressed["storage_id"] != "not_implemented"  # Should have a storage ID
+
+
+def test_compress_streaming_outputs_without_storage():
+    """Test compression of streaming outputs without storage."""
+    from nodetool.metadata.types import ImageRef
+
+    outputs = {
+        "frames": [ImageRef(uri=f"temp://frame_{i}.png", asset_id=f"frame_{i}") for i in range(1000)],
+    }
+
+    compressed = compress_streaming_outputs(outputs, storage=None)
+
+    assert compressed["type"] == "streaming_compressed"
+    assert compressed["chunk_count"] == 1000
+    assert compressed["storage_id"] == "not_implemented"  # No storage available

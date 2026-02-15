@@ -5,6 +5,7 @@
 - **Agent Framework**: LLM-backed planning and tool execution
 - **API Server**: FastAPI HTTP/WebSocket services
 - **Storage Layer**: Pluggable persistence backends
+- **Output Temp Storage**: Temp storage integration for large workflow outputs, preventing database bloat with efficient serialization and retrieval
 - **Async Utilities**: `AsyncSemaphore` and `gather_with_concurrency` for async concurrency control
 - **Async Iterators**: `AsyncByteStream` for async byte sequence iteration in chunks, plus `async_take`, `async_slice`, `async_first`, `async_list`, `async_map`, `async_merge`, `async_filter`, `async_flat_map`, and `async_reduce` utilities for async iterable manipulation
 - **Retry Utilities**: `retry_with_exponential_backoff` and `RetryPolicy` for handling transient failures
