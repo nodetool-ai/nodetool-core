@@ -21,9 +21,6 @@ jobs:
     permissions:
       contents: read
 
-    env:
-      MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
