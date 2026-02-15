@@ -139,15 +139,13 @@ async def test_serp_provider_auto_select_serpapi(mock_context, monkeypatch):
 
     # Mock the secret retrieval to return all keys
     async def get_secret_mock(key):
-        if key == "SERPAPI_API_KEY":
-            return "test_serpapi_key"
-        elif key == "APIFY_API_KEY":
-            return "test_apify_key"
-        elif key == "DATA_FOR_SEO_LOGIN":
-            return "test_login"
-        elif key == "DATA_FOR_SEO_PASSWORD":
-            return "test_password"
-        return None
+        secret_map = {
+            "SERPAPI_API_KEY": "test_serpapi_key",
+            "APIFY_API_KEY": "test_apify_key",
+            "DATA_FOR_SEO_LOGIN": "test_login",
+            "DATA_FOR_SEO_PASSWORD": "test_password",
+        }
+        return secret_map.get(key)
 
     mock_context.get_secret = get_secret_mock
 
@@ -168,13 +166,12 @@ async def test_serp_provider_auto_select_apify(mock_context, monkeypatch):
 
     # Mock the secret retrieval to return only apify and dataforseo keys
     async def get_secret_mock(key):
-        if key == "APIFY_API_KEY":
-            return "test_apify_key"
-        elif key == "DATA_FOR_SEO_LOGIN":
-            return "test_login"
-        elif key == "DATA_FOR_SEO_PASSWORD":
-            return "test_password"
-        return None
+        secret_map = {
+            "APIFY_API_KEY": "test_apify_key",
+            "DATA_FOR_SEO_LOGIN": "test_login",
+            "DATA_FOR_SEO_PASSWORD": "test_password",
+        }
+        return secret_map.get(key)
 
     mock_context.get_secret = get_secret_mock
 

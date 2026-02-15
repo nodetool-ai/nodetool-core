@@ -7,7 +7,6 @@ resumable workflows with zero overhead when disabled.
 """
 
 import asyncio
-from typing import Any
 
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.checkpoint_manager import CheckpointManager
