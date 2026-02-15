@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 from typing import IO, Any, AsyncIterator
 
 from botocore.exceptions import ClientError
@@ -22,7 +23,7 @@ class S3Storage(AbstractStorage):
         self.domain = domain
         self.s3 = client
 
-    async def get_url(self, key: str):
+    async def get_url(self, key: str) -> str:
         """
         Get the URL for the given S3 object.
         """
@@ -41,7 +42,7 @@ class S3Storage(AbstractStorage):
         except ClientError:
             return False
 
-    async def get_mtime(self, key: str):
+    async def get_mtime(self, key: str) -> datetime:
         """
         Get the last modified time of the file.
         """
@@ -61,12 +62,12 @@ class S3Storage(AbstractStorage):
         for chunk in body.iter_chunks(chunk_size=8192):
             stream.write(chunk)
 
-    def upload_sync(self, key: str, content: IO):
+    def upload_sync(self, key: str, content: IO) -> str:
         """
         Uploads a blob to the bucket.
         """
         self.s3.upload_fileobj(content, self.bucket_name, key)
-        return self.get_url(key)
+        return self.get_url(key)  # type: ignore[misc]
 
     async def upload(self, key: str, content: IO):
         """
@@ -84,7 +85,7 @@ class S3Storage(AbstractStorage):
         for chunk in body.iter_chunks(chunk_size=8192):
             yield chunk
 
-    async def delete(self, file_name: str):
+    async def delete(self, file_name: str) -> None:
         """
         Deletes a blob from the bucket.
         """
