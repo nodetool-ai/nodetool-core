@@ -44,6 +44,8 @@ jobs:
 
       - name: Run Assistant
         uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: https://api.z.ai/api/anthropic
         with:
           anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
           additional_permissions: |
