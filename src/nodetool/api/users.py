@@ -14,10 +14,6 @@ from nodetool.api.utils import current_user
 from nodetool.security.admin_auth import is_admin_user, require_admin
 from nodetool.security.user_manager import CreateUserResult, UserManager
 
-if TYPE_CHECKING:
-    pass
-
-
 router = APIRouter(prefix="/api/users", tags=["users"])
 
 
@@ -152,9 +148,7 @@ async def add_user(req: AddUserRequest, request: Request) -> dict:
             "created_at": result.created_at,
         }
     except ValueError as e:
-        from fastapi import HTTPException
-
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
 
 
 @router.post("/reset-token")
@@ -192,7 +186,7 @@ async def reset_token(req: ResetTokenRequest, request: Request) -> dict:
             "created_at": result.created_at,
         }
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None
 
 
 @router.delete("/{username}")
@@ -223,4 +217,4 @@ async def delete_user(username: str, request: Request) -> dict:
         manager.remove_user(username)
         return {"message": f"User '{username}' removed successfully"}
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None
