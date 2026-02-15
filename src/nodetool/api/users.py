@@ -12,7 +12,6 @@ from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
 from nodetool.security.admin_auth import is_admin_user, require_admin
-from nodetool.security.user_manager import CreateUserResult, UserManager
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -55,6 +54,8 @@ async def list_users(request: Request) -> dict:
             detail="Admin access required",
         )
 
+    from nodetool.security.user_manager import UserManager
+
     manager = UserManager()
     users = manager.list_users()
 
@@ -94,6 +95,8 @@ async def get_user(username: str, request: Request) -> dict:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
         )
+
+    from nodetool.security.user_manager import UserManager
 
     manager = UserManager()
     user = manager.get_user(username)
@@ -136,6 +139,8 @@ async def add_user(req: AddUserRequest, request: Request) -> dict:
             detail="Admin access required",
         )
 
+    from nodetool.security.user_manager import UserManager
+
     manager = UserManager()
 
     try:
@@ -174,6 +179,8 @@ async def reset_token(req: ResetTokenRequest, request: Request) -> dict:
             detail="Admin access required",
         )
 
+    from nodetool.security.user_manager import UserManager
+
     manager = UserManager()
 
     try:
@@ -210,6 +217,8 @@ async def delete_user(username: str, request: Request) -> dict:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
         )
+
+    from nodetool.security.user_manager import UserManager
 
     manager = UserManager()
 

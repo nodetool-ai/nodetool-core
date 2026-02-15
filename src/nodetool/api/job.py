@@ -8,7 +8,6 @@ from pydantic import BaseModel, ConfigDict
 from nodetool.api.utils import current_user
 from nodetool.config.logging_config import get_logger
 from nodetool.models.job import Job
-from nodetool.workflows.job_execution_manager import JobExecutionManager
 
 log = get_logger(__name__)
 
@@ -163,6 +162,8 @@ async def list_running_jobs(user_id: str = Depends(current_user)):
     Returns:
         List of running background jobs
     """
+    from nodetool.workflows.job_execution_manager import JobExecutionManager
+
     job_manager = JobExecutionManager.get_instance()
     bg_jobs = job_manager.list_jobs(user_id=user_id)
 
@@ -197,6 +198,8 @@ async def cancel_job(job_id: str, user_id: str = Depends(current_user)) -> Backg
         raise HTTPException(status_code=404, detail="Job not found")
 
     # Cancel the background job if it's running
+    from nodetool.workflows.job_execution_manager import JobExecutionManager
+
     job_manager = JobExecutionManager.get_instance()
     cancelled = await job_manager.cancel_job(job_id)
 
