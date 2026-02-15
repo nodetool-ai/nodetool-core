@@ -542,15 +542,24 @@ async def create(
             if "video" in req.content_type:
                 from nodetool.media.common.media_utils import create_video_thumbnail
 
-                thumbnail = await create_video_thumbnail(file_io, 512, 512)
+                try:
+                    thumbnail = await create_video_thumbnail(file_io, 512, 512)
+                except Exception:
+                    log.warning("Failed to create video thumbnail for %s", req.name)
             elif "audio" in req.content_type:
                 from nodetool.media.common.media_utils import get_audio_duration
 
-                duration = get_audio_duration(file_io)
+                try:
+                    duration = get_audio_duration(file_io)
+                except Exception:
+                    log.warning("Failed to get audio duration for %s", req.name)
             elif "image" in req.content_type:
                 from nodetool.media.common.media_utils import create_image_thumbnail
 
-                thumbnail = await create_image_thumbnail(file_io, 512, 512)
+                try:
+                    thumbnail = await create_image_thumbnail(file_io, 512, 512)
+                except Exception:
+                    log.warning("Failed to create image thumbnail for %s", req.name)
 
         asset = await AssetModel.create(
             workflow_id=req.workflow_id,

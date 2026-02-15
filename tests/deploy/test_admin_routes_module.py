@@ -23,7 +23,7 @@ def client(app):
 
 class TestAdminRoutes:
     def test_hf_download_stream(self, client):
-        with patch("nodetool.deploy.admin_routes.download_hf_model") as mock_dl:
+        with patch("nodetool.deploy.admin_operations.download_hf_model") as mock_dl:
 
             async def gen():
                 yield {"status": "ok"}
@@ -40,7 +40,7 @@ class TestAdminRoutes:
         assert resp.status_code == 400
 
     def test_ollama_download_stream(self, client):
-        with patch("nodetool.deploy.admin_routes.download_ollama_model") as mock_dl:
+        with patch("nodetool.deploy.admin_operations.download_ollama_model") as mock_dl:
 
             async def gen():
                 yield {"status": "ok"}
@@ -53,7 +53,7 @@ class TestAdminRoutes:
                 assert "data: " in text
 
     def test_cache_scan(self, client):
-        with patch("nodetool.deploy.admin_routes.scan_hf_cache") as mock_scan:
+        with patch("nodetool.deploy.admin_operations.scan_hf_cache") as mock_scan:
 
             async def gen():
                 yield {"status": "completed"}
@@ -65,7 +65,7 @@ class TestAdminRoutes:
             assert resp.json()["status"] == "completed"
 
     def test_cache_size(self, client):
-        with patch("nodetool.deploy.admin_routes.calculate_cache_size") as mock_calc:
+        with patch("nodetool.deploy.admin_operations.calculate_cache_size") as mock_calc:
 
             async def gen():
                 yield {"success": True, "size_gb": 1}
@@ -77,7 +77,7 @@ class TestAdminRoutes:
             assert resp.json()["success"] is True
 
     def test_delete_hf_model(self, client):
-        with patch("nodetool.deploy.admin_routes.delete_hf_model") as mock_del:
+        with patch("nodetool.deploy.admin_operations.delete_hf_model") as mock_del:
 
             async def gen():
                 yield {"status": "completed", "repo_id": "r"}

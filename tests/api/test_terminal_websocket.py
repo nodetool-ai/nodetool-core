@@ -12,7 +12,8 @@ from starlette.websockets import WebSocketDisconnect
 from nodetool.api.server import create_app
 
 # Ensure all tests in this module run in the same xdist worker to prevent environment conflicts
-pytestmark = pytest.mark.xdist_group(name="database")
+# Use a dedicated group to avoid PTY operations crashing the worker when co-located with other tests
+pytestmark = pytest.mark.xdist_group(name="terminal_ws")
 
 
 @contextmanager
@@ -54,6 +55,10 @@ def test_terminal_ws_rejects_in_production(monkeypatch):
 
 
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="PTY echo test assumes POSIX shell")
+@pytest.mark.skipif(
+    os.environ.get("PYTEST_XDIST_WORKER") is not None,
+    reason="PTY-based terminal test crashes xdist workers; run without -n",
+)
 @pytest.mark.timeout(15)
 def test_terminal_ws_echoes_input(monkeypatch):
     with _make_client(monkeypatch, enable_flag="1") as client, client.websocket_connect("/terminal") as ws:

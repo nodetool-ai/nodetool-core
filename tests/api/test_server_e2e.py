@@ -236,6 +236,11 @@ class TestAdminAuthMiddleware:
                 {
                     "ADMIN_TOKEN": "test-admin-token-123",
                     "SECRETS_MASTER_KEY": "test-master-key-123",
+                    "S3_ACCESS_KEY_ID": "test-s3-key",
+                    "S3_SECRET_ACCESS_KEY": "test-s3-secret",
+                    "S3_ENDPOINT_URL": "http://localhost:9000",
+                    "ASSET_TEMP_BUCKET": "test-temp-bucket",
+                    "ASSET_TEMP_DOMAIN": "http://localhost:9000",
                 },
             ),
             patch("nodetool.security.admin_auth.Environment.is_production", return_value=True),
