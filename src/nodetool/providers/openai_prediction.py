@@ -216,8 +216,9 @@ MODEL_TO_TIER_MAP = {
 
 
 async def get_openai_models():
-    env = Environment.get_environment()
-    api_key = env.get("OPENAI_API_KEY")
+    from nodetool.security.secret_helper import get_secret
+
+    api_key = await get_secret("OPENAI_API_KEY", user_id="1")
     assert api_key, "OPENAI_API_KEY is not set"
 
     client = openai.AsyncClient(api_key=api_key)
@@ -459,10 +460,14 @@ async def create_image(prediction: Prediction, client: openai.AsyncClient):
 
 
 async def run_openai(prediction: Prediction, env: dict[str, str]) -> AsyncGenerator[PredictionResult, None]:
+    from nodetool.security.secret_helper import get_secret
+
     model_id = prediction.model  # Rename for clarity
     assert model_id is not None, "Model is not set"
 
-    api_key = env.get("OPENAI_API_KEY")
+    api_key = await get_secret("OPENAI_API_KEY", user_id=prediction.user_id)
+    if not api_key:
+        api_key = env.get("OPENAI_API_KEY")
     if not api_key:
         raise ApiKeyMissingError("OPENAI_API_KEY is not configured in the nodetool settings")
 
