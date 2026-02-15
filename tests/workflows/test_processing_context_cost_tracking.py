@@ -355,8 +355,11 @@ class TestGetTotalCost:
         ctx.add_to_total_cost(5.0)
         cost = ctx.get_total_cost()
 
-        # Modifying the returned value shouldn't affect the context
-        cost = 10.0
+        # Verify returned value is as expected
+        assert cost == pytest.approx(5.0, rel=1e-6)
+
+        # Modifying the local variable shouldn't affect the context
+        # (not that it would with a float, but this tests the concept)
         assert ctx.get_total_cost() == pytest.approx(5.0, rel=1e-6)
 
 
@@ -489,3 +492,243 @@ class TestCostTrackingEdgeCases:
         assert usage_data["duration_seconds"] == 1.5
         assert usage_data["image_count"] == 2
         assert usage_data["video_seconds"] == 5.0
+
+
+class TestCostTrackingIntegrationWithPredictions:
+    """Tests for cost tracking integration with prediction methods."""
+
+    @pytest.mark.asyncio
+    async def test_run_provider_prediction_tracks_cost(self):
+        """Test that run_provider_prediction tracks cost in context."""
+        from unittest.mock import AsyncMock, patch
+
+        from nodetool.metadata.types import Message, Provider
+        from nodetool.providers.base import BaseProvider, ProviderCapability
+
+        class MockProvider(BaseProvider):
+            provider_name = "openai"
+
+            @classmethod
+            def required_secrets(cls):
+                return []
+
+            def get_capabilities(self):
+                return {ProviderCapability.GENERATE_MESSAGE}
+
+            async def generate_message(
+                self, messages, model, tools=None, max_tokens=8192, **kwargs
+            ):
+                # Simulate tracking usage
+                self.track_usage(model=model, input_tokens=100, output_tokens=50)
+                return Message(role="assistant", content="test response")
+
+        ctx = ProcessingContext(user_id="test")
+
+        mock_provider = MockProvider()
+
+        with patch.object(ctx, "get_provider", return_value=mock_provider), patch(
+            "nodetool.models.prediction.Prediction.create", new_callable=AsyncMock
+        ):
+            # Initial cost should be zero
+            assert ctx.get_total_cost() == 0.0
+
+            # Run prediction
+            result = await ctx.run_provider_prediction(
+                node_id="test_node",
+                provider=Provider.OpenAI,
+                model="gpt-4o-mini",
+                capability=ProviderCapability.GENERATE_MESSAGE,
+                params={"messages": [{"role": "user", "content": "Hello"}]},
+            )
+
+            # Cost should be tracked
+            assert ctx.get_total_cost() > 0.0
+            assert result.content == "test response"
+
+            # Operation should be recorded
+            operations = ctx.get_operation_costs()
+            assert len(operations) == 1
+            assert operations[0]["node_id"] == "test_node"
+            assert operations[0]["model"] == "gpt-4o-mini"
+            assert operations[0]["provider"] == "openai"
+
+    @pytest.mark.asyncio
+    async def test_multiple_predictions_accumulate_cost(self):
+        """Test that multiple predictions accumulate cost correctly."""
+        from unittest.mock import AsyncMock, patch
+
+        from nodetool.metadata.types import Message, Provider
+        from nodetool.providers.base import BaseProvider, ProviderCapability
+
+        class MockProvider(BaseProvider):
+            provider_name = "openai"
+
+            @classmethod
+            def required_secrets(cls):
+                return []
+
+            def get_capabilities(self):
+                return {ProviderCapability.GENERATE_MESSAGE}
+
+            async def generate_message(
+                self, messages, model, tools=None, max_tokens=8192, **kwargs
+            ):
+                self.track_usage(model=model, input_tokens=100, output_tokens=50)
+                return Message(role="assistant", content="response")
+
+        ctx = ProcessingContext(user_id="test")
+        mock_provider = MockProvider()
+
+        with patch.object(ctx, "get_provider", return_value=mock_provider), patch(
+            "nodetool.models.prediction.Prediction.create", new_callable=AsyncMock
+        ):
+            # First prediction
+            await ctx.run_provider_prediction(
+                node_id="node_1",
+                provider=Provider.OpenAI,
+                model="gpt-4o-mini",
+                capability=ProviderCapability.GENERATE_MESSAGE,
+                params={"messages": []},
+            )
+            cost_after_first = ctx.get_total_cost()
+
+            # Second prediction
+            await ctx.run_provider_prediction(
+                node_id="node_2",
+                provider=Provider.OpenAI,
+                model="gpt-4o-mini",
+                capability=ProviderCapability.GENERATE_MESSAGE,
+                params={"messages": []},
+            )
+            cost_after_second = ctx.get_total_cost()
+
+            # Cost should accumulate
+            assert cost_after_second > cost_after_first
+            assert cost_after_second == pytest.approx(cost_after_first * 2, rel=1e-6)
+
+            # Should have two operations recorded
+            operations = ctx.get_operation_costs()
+            assert len(operations) == 2
+
+    @pytest.mark.asyncio
+    async def test_failed_prediction_does_not_track_cost(self):
+        """Test that failed predictions don't track cost in context."""
+        from unittest.mock import AsyncMock, patch
+
+        from nodetool.metadata.types import Provider
+        from nodetool.providers.base import BaseProvider, ProviderCapability
+
+        class MockProvider(BaseProvider):
+            provider_name = "openai"
+
+            @classmethod
+            def required_secrets(cls):
+                return []
+
+            def get_capabilities(self):
+                return {ProviderCapability.GENERATE_MESSAGE}
+
+            async def generate_message(
+                self, messages, model, tools=None, max_tokens=8192, **kwargs
+            ):
+                raise RuntimeError("API error")
+
+        ctx = ProcessingContext(user_id="test")
+        mock_provider = MockProvider()
+
+        with patch.object(ctx, "get_provider", return_value=mock_provider), patch(
+            "nodetool.models.prediction.Prediction.create", new_callable=AsyncMock
+        ):
+            with pytest.raises(RuntimeError, match="API error"):
+                await ctx.run_provider_prediction(
+                    node_id="test_node",
+                    provider=Provider.OpenAI,
+                    model="gpt-4o-mini",
+                    capability=ProviderCapability.GENERATE_MESSAGE,
+                    params={"messages": []},
+                )
+
+            # Cost should remain zero for failed operations
+            assert ctx.get_total_cost() == 0.0
+            assert len(ctx.get_operation_costs()) == 0
+
+    @pytest.mark.asyncio
+    async def test_cost_tracking_with_different_providers(self):
+        """Test cost tracking with different providers."""
+        from unittest.mock import AsyncMock, patch
+
+        from nodetool.metadata.types import Message, Provider
+        from nodetool.providers.base import BaseProvider, ProviderCapability
+
+        class OpenAIProvider(BaseProvider):
+            provider_name = "openai"
+
+            @classmethod
+            def required_secrets(cls):
+                return []
+
+            def get_capabilities(self):
+                return {ProviderCapability.GENERATE_MESSAGE}
+
+            async def generate_message(
+                self, messages, model, tools=None, max_tokens=8192, **kwargs
+            ):
+                self.track_usage(model=model, input_tokens=1000, output_tokens=500)
+                return Message(role="assistant", content="OpenAI response")
+
+        class AnthropicProvider(BaseProvider):
+            provider_name = "anthropic"
+
+            @classmethod
+            def required_secrets(cls):
+                return []
+
+            def get_capabilities(self):
+                return {ProviderCapability.GENERATE_MESSAGE}
+
+            async def generate_message(
+                self, messages, model, tools=None, max_tokens=8192, **kwargs
+            ):
+                self.track_usage(model=model, input_tokens=1000, output_tokens=500)
+                return Message(role="assistant", content="Anthropic response")
+
+        ctx = ProcessingContext(user_id="test")
+
+        async def mock_get_provider(provider_enum):
+            if provider_enum == Provider.OpenAI:
+                return OpenAIProvider()
+            elif provider_enum == Provider.Anthropic:
+                return AnthropicProvider()
+            raise ValueError("Unknown provider")
+
+        with patch.object(ctx, "get_provider", side_effect=mock_get_provider), patch(
+            "nodetool.models.prediction.Prediction.create", new_callable=AsyncMock
+        ):
+            # OpenAI prediction
+            await ctx.run_provider_prediction(
+                node_id="node_1",
+                provider=Provider.OpenAI,
+                model="gpt-4o-mini",
+                capability=ProviderCapability.GENERATE_MESSAGE,
+                params={"messages": []},
+            )
+
+            # Anthropic prediction
+            await ctx.run_provider_prediction(
+                node_id="node_2",
+                provider=Provider.Anthropic,
+                model="claude-3-5-sonnet-latest",
+                capability=ProviderCapability.GENERATE_MESSAGE,
+                params={"messages": []},
+            )
+
+            # Both operations should be tracked
+            operations = ctx.get_operation_costs()
+            assert len(operations) == 2
+            assert operations[0]["provider"] == "openai"
+            assert operations[1]["provider"] == "anthropic"
+
+            # Total cost should be sum of both
+            total_cost = ctx.get_total_cost()
+            assert total_cost > 0.0
+

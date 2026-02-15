@@ -999,6 +999,19 @@ class ProcessingContext:
             # Calculate cost from provider's accumulated cost
             cost = provider_instance.cost - cost_before
 
+            # Track cost in context if provider has usage info
+            if hasattr(provider_instance, "_usage_info") and provider_instance._usage_info:
+                self.track_operation_cost(
+                    model=model,
+                    provider=str(provider_enum.value),
+                    usage_info=provider_instance._usage_info,
+                    node_id=node_id,
+                    operation_type=str(capability.value),
+                )
+            else:
+                # Fallback to adding cost directly if no usage info available
+                self.add_to_total_cost(cost)
+
             # Log the prediction
             await PredictionModel.create(
                 user_id=self.user_id,
@@ -1178,6 +1191,20 @@ class ProcessingContext:
 
             # Log completed streaming prediction
             cost = provider_instance.cost - cost_before
+
+            # Track cost in context if provider has usage info
+            if hasattr(provider_instance, "_usage_info") and provider_instance._usage_info:
+                self.track_operation_cost(
+                    model=model,
+                    provider=str(provider_enum.value),
+                    usage_info=provider_instance._usage_info,
+                    node_id=node_id,
+                    operation_type="streaming_chat",
+                )
+            else:
+                # Fallback to adding cost directly if no usage info available
+                self.add_to_total_cost(cost)
+
             await PredictionModel.create(
                 user_id=self.user_id,
                 node_id=node_id,
