@@ -444,6 +444,7 @@ class ServerSubprocessRunner:
         slot: str,
         line: str,
     ) -> None:
+        """Emit a log line to the workflow context, with graceful error handling."""
         if not line.endswith("\n"):
             line = line + "\n"
         asyncio.run_coroutine_threadsafe(queue.put({"type": "yield", "slot": slot, "value": line}), loop)
@@ -457,8 +458,10 @@ class ServerSubprocessRunner:
                     severity=sev,  # type: ignore[arg-type]
                 )
             )
-        except Exception:
-            pass
+        except (OSError, RuntimeError) as e:
+            # Log posting failures (e.g., context closed, connection issues)
+            # shouldn't break the workflow. Log at debug level for troubleshooting.
+            self._logger.debug("Failed to post log message for node %s: %s", node.id, e)
 
 
 def _find_free_port() -> int:
