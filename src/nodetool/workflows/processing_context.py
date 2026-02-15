@@ -324,6 +324,9 @@ class ProcessingContext:
         self.edge_statuses: dict[str, ProcessingMessage] = {}
         # Streaming channels for named, many-to-many communication
         self.channels = ChannelManager()
+        # Cost tracking for all operations in this context
+        self._total_cost: float = 0.0
+        self._operation_costs: list[dict[str, Any]] = []
 
     def _numpy_to_pil_image(self, arr: np.ndarray) -> PIL.Image.Image:
         """Delegate to shared numpy_to_pil_image utility for consistent behavior."""
@@ -730,6 +733,103 @@ class ProcessingContext:
         """
         return await Workflow.find(self.user_id, workflow_id)
 
+    def track_operation_cost(
+        self,
+        model: str,
+        provider: str,
+        usage_info: Any,  # UsageInfo from cost_calculator
+        node_id: str = "",
+        operation_type: str = "prediction",
+    ) -> float:
+        """
+        Track the cost of a single node operation.
+
+        Args:
+            model: The machine learning model used (e.g., "gpt-4o-mini")
+            provider: The provider for the operation (e.g., "openai", "anthropic")
+            usage_info: An instance of UsageInfo detailing the operation's usage
+            node_id: Optional node ID for tracking
+            operation_type: Type of operation (e.g., "prediction", "embedding")
+
+        Returns:
+            float: The calculated cost in credits for this operation
+        """
+        from nodetool.providers.cost_calculator import CostCalculator
+
+        # Calculate cost using CostCalculator
+        cost = CostCalculator.calculate(model, usage_info, provider)
+
+        # Store detailed operation info
+        operation_record = {
+            "timestamp": datetime.now().isoformat(),
+            "node_id": node_id,
+            "model": model,
+            "provider": provider,
+            "operation_type": operation_type,
+            "cost": cost,
+            "usage": {
+                "input_tokens": usage_info.input_tokens,
+                "output_tokens": usage_info.output_tokens,
+                "cached_tokens": usage_info.cached_tokens,
+                "reasoning_tokens": usage_info.reasoning_tokens,
+                "input_characters": usage_info.input_characters,
+                "duration_seconds": usage_info.duration_seconds,
+                "image_count": usage_info.image_count,
+                "video_seconds": usage_info.video_seconds,
+            },
+        }
+        self._operation_costs.append(operation_record)
+
+        # Add to total cost
+        self._total_cost += cost
+
+        # Log the operation
+        log.info(
+            f"Operation cost tracked: node={node_id}, model={model}, "
+            f"provider={provider}, cost={cost:.6f} credits"
+        )
+        log.debug(f"Operation details: {operation_record}")
+
+        return cost
+
+    def add_to_total_cost(self, cost: float) -> None:
+        """
+        Add a pre-calculated cost to the total context cost.
+
+        Args:
+            cost: The cost value to add to the total (in credits)
+        """
+        self._total_cost += cost
+        log.debug(f"Added {cost:.6f} credits to total cost. New total: {self._total_cost:.6f}")
+
+    def reset_total_cost(self) -> None:
+        """
+        Reset the total cost for the context to zero.
+
+        This also clears the operation cost history.
+        """
+        log.info(f"Resetting total cost from {self._total_cost:.6f} to 0.0")
+        self._total_cost = 0.0
+        self._operation_costs = []
+
+    def get_total_cost(self) -> float:
+        """
+        Retrieve the currently accumulated cost in the context.
+
+        Returns:
+            float: The total cost in credits accumulated across all operations
+        """
+        return self._total_cost
+
+    def get_operation_costs(self) -> list[dict[str, Any]]:
+        """
+        Retrieve the detailed list of all tracked operations and their costs.
+
+        Returns:
+            list: A list of operation cost records with detailed usage information
+        """
+        return self._operation_costs.copy()
+
     async def _prepare_prediction(
         self,
         node_id: str,
@@ -898,6 +998,19 @@ class ProcessingContext:
 
             # Calculate cost from provider's accumulated cost
             cost = provider_instance.cost - cost_before
+
+            # Track cost in context if provider has usage info
+            if hasattr(provider_instance, "_usage_info") and provider_instance._usage_info:
+                self.track_operation_cost(
+                    model=model,
+                    provider=str(provider_enum.value),
+                    usage_info=provider_instance._usage_info,
+                    node_id=node_id,
+                    operation_type=str(capability.value),
+                )
+            else:
+                # Fallback to adding cost directly if no usage info available
+                self.add_to_total_cost(cost)
 
             # Log the prediction
             await PredictionModel.create(
@@ -1078,6 +1191,20 @@ class ProcessingContext:
 
             # Log completed streaming prediction
             cost = provider_instance.cost - cost_before
+
+            # Track cost in context if provider has usage info
+            if hasattr(provider_instance, "_usage_info") and provider_instance._usage_info:
+                self.track_operation_cost(
+                    model=model,
+                    provider=str(provider_enum.value),
+                    usage_info=provider_instance._usage_info,
+                    node_id=node_id,
+                    operation_type="streaming_chat",
+                )
+            else:
+                # Fallback to adding cost directly if no usage info available
+                self.add_to_total_cost(cost)
+
             await PredictionModel.create(
                 user_id=self.user_id,
                 node_id=node_id,
