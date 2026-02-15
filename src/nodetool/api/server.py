@@ -281,19 +281,21 @@ def _load_deploy_routers(
     - Storage management via /admin/storage/* and /storage/*
     - Workflow execution via /api/workflows/*
     """
-    from nodetool.deploy.admin_routes import create_admin_router
-    from nodetool.deploy.collection_routes import create_collection_router
-    from nodetool.deploy.storage_routes import (
-        create_admin_storage_router,
-        create_public_storage_router,
-    )
-
     routers: list[APIRouter] = []
     if include_admin_router:
+        from nodetool.deploy.admin_routes import create_admin_router
+
         routers.append(create_admin_router())
     if include_collection_router:
+        from nodetool.deploy.collection_routes import create_collection_router
+
         routers.append(create_collection_router())
     if include_storage_router:
+        from nodetool.deploy.storage_routes import (
+            create_admin_storage_router,
+            create_public_storage_router,
+        )
+
         routers.append(create_admin_storage_router())
         routers.append(create_public_storage_router())
     return routers
@@ -517,24 +519,27 @@ def create_app(
         }
     _log_kv("Asset Storage", storage_summary)
 
-    # Check if Ollama is available and set OLLAMA_API_URL if not already set
-    setup_ollama_url()
-
-    # Log comprehensive environment diagnostics (secure masking of secrets)
-    # This is particularly useful for Electron, Docker, and production deployments
-    from nodetool.config.env_diagnostics import log_env_diagnostics
-
-    log_env_diagnostics(logger=log, check_permissions=True)
-
-    # Run startup security checks to warn about insecure configurations
-    # Import is local to avoid circular imports (security module imports config which may import api)
-    from nodetool.security.startup_checks import run_startup_security_checks
-
-    run_startup_security_checks(raise_on_critical=False)
+    # Ollama check, env diagnostics, and security checks are deferred to
+    # the async lifespan to avoid blocking app creation.
 
     # Use FastAPI lifespan API instead of deprecated on_event hooks
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # Check if Ollama is available and set OLLAMA_API_URL if not already set
+        await asyncio.to_thread(setup_ollama_url)
+
+        # Log comprehensive environment diagnostics (secure masking of secrets)
+        # This is particularly useful for Electron, Docker, and production deployments
+        from nodetool.config.env_diagnostics import log_env_diagnostics
+
+        log_env_diagnostics(logger=log, check_permissions=True)
+
+        # Run startup security checks to warn about insecure configurations
+        # Import is local to avoid circular imports (security module imports config which may import api)
+        from nodetool.security.startup_checks import run_startup_security_checks
+
+        run_startup_security_checks(raise_on_critical=False)
+
         # Validate production requirements
         if Environment.is_production():
             if not os.environ.get("SECRETS_MASTER_KEY"):

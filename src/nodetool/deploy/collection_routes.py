@@ -14,7 +14,6 @@ import aiofiles
 from fastapi import APIRouter, File, Header, HTTPException, UploadFile
 
 from nodetool.config.logging_config import get_logger
-from nodetool.indexing.service import index_file_to_collection
 
 log = get_logger(__name__)
 
@@ -39,6 +38,8 @@ def create_collection_router() -> APIRouter:
 
             file_path = tmp_path
             mime_type = file.content_type or "application/octet-stream"
+
+            from nodetool.indexing.service import index_file_to_collection
 
             error = await index_file_to_collection(name, file_path, mime_type, token)
             if error:

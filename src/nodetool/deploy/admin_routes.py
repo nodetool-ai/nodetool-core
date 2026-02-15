@@ -26,26 +26,14 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
-from nodetool.deploy.admin_operations import (
-    calculate_cache_size,
-    delete_hf_model,
-    download_hf_model,
-    download_ollama_model,
-    scan_hf_cache,
-)
-from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
-    get_async_chroma_client,
-)
-from nodetool.models.asset import Asset as AssetModel
-from nodetool.models.workflow import Workflow
-from nodetool.runtime.resources import require_scope
 from nodetool.security.admin_auth import require_admin
-from nodetool.types.asset import Asset, AssetList
 
 logger = logging.getLogger("nodetool.admin")
 
 if TYPE_CHECKING:
+    from nodetool.models.asset import Asset as AssetModel
     from nodetool.models.database_adapter import DatabaseAdapter
+    from nodetool.types.asset import Asset
 
 
 # Collection-related Pydantic models
@@ -83,8 +71,11 @@ class IndexResponse(BaseModel):
     error: Optional[str] = None
 
 
-async def asset_from_model(asset: AssetModel) -> Asset:
+async def asset_from_model(asset: AssetModel) -> Asset:  # type: ignore[name-defined]
     """Convert AssetModel to Asset API response."""
+    from nodetool.runtime.resources import require_scope
+    from nodetool.types.asset import Asset
+
     storage = require_scope().get_asset_storage()
     if asset.content_type != "folder":
         get_url = await storage.get_url(asset.file_name)
@@ -112,7 +103,10 @@ async def asset_from_model(asset: AssetModel) -> Asset:
     )
 
 
-async def get_model_adapter(table: str) -> DatabaseAdapter:
+async def get_model_adapter(table: str) -> DatabaseAdapter:  # type: ignore[name-defined]
+    from nodetool.models.asset import Asset as AssetModel
+    from nodetool.models.workflow import Workflow
+
     if table == "workflows":
         return await Workflow.adapter()
     elif table == "assets":
@@ -122,11 +116,15 @@ async def get_model_adapter(table: str) -> DatabaseAdapter:
 
 
 def create_admin_router() -> APIRouter:
+    from nodetool.types.asset import Asset, AssetList
+
     router = APIRouter()
 
     @router.post("/admin/models/huggingface/download")
     async def download_huggingface_model_endpoint(request: Request):
         """Download HuggingFace model with optional streaming progress."""
+        from nodetool.deploy.admin_operations import download_hf_model
+
         try:
             data = await request.json()
             repo_id = data.get("repo_id")
@@ -170,6 +168,8 @@ def create_admin_router() -> APIRouter:
     @router.post("/admin/models/ollama/download")
     async def download_ollama_model_endpoint(request: Request):
         """Download Ollama model with optional streaming progress."""
+        from nodetool.deploy.admin_operations import download_ollama_model
+
         try:
             data = await request.json()
             model_name = data.get("model_name")
@@ -206,6 +206,8 @@ def create_admin_router() -> APIRouter:
     @router.get("/admin/cache/scan")
     async def scan_cache():
         """Scan HuggingFace cache directory."""
+        from nodetool.deploy.admin_operations import scan_hf_cache
+
         try:
             results = []
             async for chunk in scan_hf_cache():
@@ -218,6 +220,8 @@ def create_admin_router() -> APIRouter:
     @router.get("/admin/cache/size")
     async def get_cache_size(cache_dir: str = "/app/.cache/huggingface/hub"):
         """Calculate total cache size."""
+        from nodetool.deploy.admin_operations import calculate_cache_size
+
         try:
             results = []
             async for chunk in calculate_cache_size(cache_dir=cache_dir):
@@ -230,6 +234,8 @@ def create_admin_router() -> APIRouter:
     @router.delete("/admin/models/huggingface/{repo_id:path}")
     async def delete_huggingface_model_endpoint(repo_id: str):
         """Delete HuggingFace model from cache."""
+        from nodetool.deploy.admin_operations import delete_hf_model
+
         try:
             results = []
             async for chunk in delete_hf_model(repo_id=repo_id):
@@ -278,6 +284,8 @@ def create_admin_router() -> APIRouter:
     @router.post("/admin/collections", response_model=CollectionResponse)
     async def create_collection(req: CollectionCreate, _: None = Depends(require_admin)) -> CollectionResponse:
         """Create a new collection."""
+        from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_chroma_client
+
         try:
             client = await get_async_chroma_client()
             metadata = {
@@ -299,6 +307,9 @@ def create_admin_router() -> APIRouter:
         _: None = Depends(require_admin),
     ) -> CollectionList:
         """List all collections."""
+        from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_chroma_client
+        from nodetool.models.workflow import Workflow
+
         try:
             client = await get_async_chroma_client()
             collections = await client.list_collections()
@@ -331,6 +342,8 @@ def create_admin_router() -> APIRouter:
     @router.get("/admin/collections/{name}", response_model=CollectionResponse)
     async def get_collection(name: str, _: None = Depends(require_admin)) -> CollectionResponse:
         """Get a specific collection by name."""
+        from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_chroma_client
+
         try:
             client = await get_async_chroma_client()
             collection = await client.get_collection(name=name)
@@ -346,6 +359,8 @@ def create_admin_router() -> APIRouter:
     @router.put("/admin/collections/{name}")
     async def update_collection(name: str, req: CollectionModify, _: None = Depends(require_admin)):
         """Update a collection."""
+        from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_chroma_client
+
         try:
             client = await get_async_chroma_client()
             collection = await client.get_collection(name=name)
@@ -366,6 +381,8 @@ def create_admin_router() -> APIRouter:
     @router.delete("/admin/collections/{name}")
     async def delete_collection(name: str, _: None = Depends(require_admin)):
         """Delete a collection."""
+        from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_chroma_client
+
         try:
             client = await get_async_chroma_client()
             await client.delete_collection(name=name)
@@ -376,6 +393,8 @@ def create_admin_router() -> APIRouter:
     @router.post("/admin/collections/{name}/add")
     async def add_to_collection(name: str, req: AddToCollection, _: None = Depends(require_admin)):
         """Add a file to a collection."""
+        from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_chroma_client
+
         try:
             client = await get_async_chroma_client()
             collection = await client.get_collection(name=name)
@@ -398,6 +417,8 @@ def create_admin_router() -> APIRouter:
         _: None = Depends(require_admin),
     ) -> AssetList:
         """List assets (admin endpoint - no user restrictions)."""
+        from nodetool.models.asset import Asset as AssetModel
+
         try:
             effective_user = user_id or user
             if page_size is None or page_size > 10000:
@@ -427,6 +448,8 @@ def create_admin_router() -> APIRouter:
         _: None = Depends(require_admin),
     ) -> Asset:
         """Create a new asset (admin endpoint - no user restrictions)."""
+        from nodetool.models.asset import Asset as AssetModel
+
         try:
             # Extract id separately to pass via kwargs
             asset_id = data.get("id")
@@ -455,6 +478,8 @@ def create_admin_router() -> APIRouter:
         _: None = Depends(require_admin),
     ) -> Asset:
         """Get a single asset by ID (admin endpoint - no user restrictions)."""
+        from nodetool.models.asset import Asset as AssetModel
+
         try:
             uid = user_id or user
 
@@ -485,6 +510,9 @@ def create_admin_router() -> APIRouter:
     @router.delete("/admin/assets/{asset_id}")
     async def delete_asset(asset_id: str, user: str = Depends(current_user), _: None = Depends(require_admin)):
         """Delete an asset (recursive for folders) (admin endpoint - no user restrictions)."""
+        from nodetool.models.asset import Asset as AssetModel
+        from nodetool.runtime.resources import require_scope
+
         try:
             asset = await AssetModel.get(asset_id)
             if asset is None:
