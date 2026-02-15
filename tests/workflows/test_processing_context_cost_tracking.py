@@ -59,6 +59,7 @@ class TestTrackOperationCost:
             node_id="node_1",
         )
 
+        # Note: gpt-5.2 is a real model in the CostCalculator with the following pricing:
         # gpt-5.2: input=0.002625, output=0.021, cached=0.0002625
         # non_cached_input = 1000 - 200 = 800
         # input_cost = (800/1000 * 0.002625) = 0.0021
