@@ -2,6 +2,7 @@ import json
 import time
 from typing import Any, ClassVar, TypeVar
 
+from nodetool.agents.serp_providers.apify_provider import ApifyProvider
 from nodetool.agents.serp_providers.data_for_seo_provider import DataForSEOProvider
 from nodetool.agents.serp_providers.serp_api_provider import SerpApiProvider
 from nodetool.agents.serp_providers.serp_providers import ErrorResponse, SerpProvider
@@ -519,23 +520,26 @@ async def _get_configured_serp_provider(
 ) -> tuple[SerpProvider | None, ErrorResponse | None]:
     """
     Selects and returns a configured SERP provider based on environment variables.
-    Prioritizes SerpApi, then DataForSEO.
+    Prioritizes SerpApi, then Apify, then DataForSEO.
 
     Returns:
         A tuple containing an instance of a SerpProvider and None if successful,
         or (None, ErrorResponse) if no provider is configured or if a provider
         had an issue during its own basic configuration check (e.g. SerpApiProvider API key check).
     """
+    serpapi_key = await context.get_secret("SERPAPI_API_KEY")
+    apify_key = await context.get_secret("APIFY_API_KEY")
     d4seo_login = await context.get_secret("DATA_FOR_SEO_LOGIN")
     d4seo_password = await context.get_secret("DATA_FOR_SEO_PASSWORD")
-    serpapi_key = await context.get_secret("SERPAPI_API_KEY")
 
     if serpapi_key:
         return SerpApiProvider(api_key=serpapi_key), None
+    elif apify_key:
+        return ApifyProvider(api_key=apify_key), None
     elif d4seo_login and d4seo_password:
         return DataForSEOProvider(api_login=d4seo_login, api_password=d4seo_password), None
     else:
-        return None, {"error": "NoERP provider is configured. Please set credentials for SerpApi or DataForSEO."}
+        return None, {"error": "No SERP provider is configured. Please set credentials for SerpApi, Apify, or DataForSEO."}
 
 
 if __name__ == "__main__":

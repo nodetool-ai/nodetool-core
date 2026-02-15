@@ -292,6 +292,12 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
+    env_var="APIFY_API_KEY",
+    group="Apify",
+    description="API key for accessing Apify's web scraping and automation platform",
+)
+register_secret(
+    package_name="nodetool",
     env_var="BROWSER_URL",
     group="Browser",
     description="Browser URL for accessing a browser instance",
