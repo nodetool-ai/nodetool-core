@@ -38,7 +38,6 @@ class WorkflowNode(BaseNode):
     def is_streaming_output(cls):
         return True
 
-    
     async def get_workflow_json(self, context: ProcessingContext) -> Any:
         workflow = await context.get_workflow(self.workflow_id)
         if workflow is None:
