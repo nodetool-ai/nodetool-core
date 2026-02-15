@@ -7,6 +7,7 @@ from nodetool.agents.serp_providers.data_for_seo_provider import DataForSEOProvi
 from nodetool.agents.serp_providers.serp_api_provider import SerpApiProvider
 from nodetool.agents.serp_providers.serp_providers import ErrorResponse, SerpProvider
 from nodetool.agents.tools.base import Tool
+from nodetool.config.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
 
 T = TypeVar("T")
@@ -520,18 +521,44 @@ async def _get_configured_serp_provider(
 ) -> tuple[SerpProvider | None, ErrorResponse | None]:
     """
     Selects and returns a configured SERP provider based on environment variables.
-    Prioritizes SerpApi, then Apify, then DataForSEO.
+    If SERP_PROVIDER setting is defined, uses that specific provider.
+    Otherwise, auto-selects based on available API keys (SerpApi > Apify > DataForSEO).
 
     Returns:
         A tuple containing an instance of a SerpProvider and None if successful,
         or (None, ErrorResponse) if no provider is configured or if a provider
         had an issue during its own basic configuration check (e.g. SerpApiProvider API key check).
     """
+    # Check if a specific provider is requested via SERP_PROVIDER setting
+    serp_provider = Environment.get("SERP_PROVIDER")
+
     serpapi_key = await context.get_secret("SERPAPI_API_KEY")
     apify_key = await context.get_secret("APIFY_API_KEY")
     d4seo_login = await context.get_secret("DATA_FOR_SEO_LOGIN")
     d4seo_password = await context.get_secret("DATA_FOR_SEO_PASSWORD")
 
+    # If SERP_PROVIDER setting is defined, use the specified provider
+    if serp_provider:
+        serp_provider = serp_provider.lower()
+        if serp_provider == "serpapi":
+            if serpapi_key:
+                return SerpApiProvider(api_key=serpapi_key), None
+            else:
+                return None, {"error": "SERP_PROVIDER is set to 'serpapi' but SERPAPI_API_KEY is not configured."}
+        elif serp_provider == "apify":
+            if apify_key:
+                return ApifyProvider(api_key=apify_key), None
+            else:
+                return None, {"error": "SERP_PROVIDER is set to 'apify' but APIFY_API_KEY is not configured."}
+        elif serp_provider == "dataforseo":
+            if d4seo_login and d4seo_password:
+                return DataForSEOProvider(api_login=d4seo_login, api_password=d4seo_password), None
+            else:
+                return None, {"error": "SERP_PROVIDER is set to 'dataforseo' but DATA_FOR_SEO_LOGIN and/or DATA_FOR_SEO_PASSWORD are not configured."}
+        else:
+            return None, {"error": f"Invalid SERP_PROVIDER value '{serp_provider}'. Valid options are: 'serpapi', 'apify', 'dataforseo'."}
+
+    # Auto-select based on available API keys (SerpApi > Apify > DataForSEO)
     if serpapi_key:
         return SerpApiProvider(api_key=serpapi_key), None
     elif apify_key:

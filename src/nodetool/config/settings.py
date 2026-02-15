@@ -332,6 +332,13 @@ register_secret(
     group="DataForSEO",
     description="DataForSEO password for accessing DataForSEO's API",
 )
+register_setting(
+    package_name="nodetool",
+    env_var="SERP_PROVIDER",
+    group="SERP",
+    description="Select which SERP (Search Engine Results Page) provider to use for search operations. Options: 'serpapi', 'apify', 'dataforseo'. If not set, the system will auto-select based on available API keys (SerpApi > Apify > DataForSEO).",
+    enum=["serpapi", "apify", "dataforseo"],
+)
 register_secret(
     package_name="nodetool", env_var="KIE_API_KEY", group="KIE", description="KIE API key for accessing kie.ai"
 )
