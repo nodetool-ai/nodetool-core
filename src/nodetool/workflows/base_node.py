@@ -2007,7 +2007,7 @@ class Preview(BaseNode):
             result = await context.normalize_output_value(value)
             context.post_message(PreviewUpdate(node_id=self.id, value=result))
             yield {"output": result}
-        
+
 
     @classmethod
     def is_streaming_input(cls) -> bool:  # type: ignore[override]
