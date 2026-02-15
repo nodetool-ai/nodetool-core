@@ -35,7 +35,7 @@ class AbstractStorage(ABC):
         pass
 
     @abstractmethod
-    async def download(self, key: str, stream: IO):
+    async def download(self, key: str, stream: IO) -> None:
         pass
 
     @abstractmethod
@@ -47,7 +47,7 @@ class AbstractStorage(ABC):
         pass
 
     @abstractmethod
-    async def delete(self, file_name: str):
+    async def delete(self, file_name: str) -> None:
         pass
 
     async def get_file_metadata(self, key: str) -> FileMetadata:
