@@ -71,7 +71,7 @@ class IndexResponse(BaseModel):
     error: Optional[str] = None
 
 
-async def asset_from_model(asset: AssetModel) -> Asset:  # type: ignore[name-defined]
+async def asset_from_model(asset: AssetModel) -> Asset:
     """Convert AssetModel to Asset API response."""
     from nodetool.runtime.resources import require_scope
     from nodetool.types.asset import Asset
@@ -103,7 +103,7 @@ async def asset_from_model(asset: AssetModel) -> Asset:  # type: ignore[name-def
     )
 
 
-async def get_model_adapter(table: str) -> DatabaseAdapter:  # type: ignore[name-defined]
+async def get_model_adapter(table: str) -> DatabaseAdapter:
     from nodetool.models.asset import Asset as AssetModel
     from nodetool.models.workflow import Workflow
 

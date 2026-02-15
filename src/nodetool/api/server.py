@@ -525,7 +525,8 @@ def create_app(
     # Use FastAPI lifespan API instead of deprecated on_event hooks
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # Check if Ollama is available and set OLLAMA_API_URL if not already set
+        # Check if Ollama is available and set OLLAMA_API_URL if not already set.
+        # Run in a thread because it makes synchronous HTTP requests with timeouts.
         await asyncio.to_thread(setup_ollama_url)
 
         # Log comprehensive environment diagnostics (secure masking of secrets)
