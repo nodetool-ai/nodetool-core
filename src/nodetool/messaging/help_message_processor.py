@@ -786,7 +786,8 @@ class HelpMessageProcessor(MessageProcessor):
                         ):
                             # Handle UI tool call using provider tool_call id to satisfy OpenAI API
                             tool_call_id = chunk.id
-                            assert tool_call_id is not None, "Tool call id is required"
+                            if tool_call_id is None:
+                                raise ValueError("Tool call id is required")
                             tool_call_message = {
                                 "type": "tool_call",
                                 "tool_call_id": tool_call_id,
