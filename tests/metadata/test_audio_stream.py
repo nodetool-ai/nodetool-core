@@ -1,8 +1,9 @@
 """
 Tests for AudioStream type.
 """
-import pytest
 import numpy as np
+import pytest
+
 from nodetool.metadata.types import AudioStream
 
 
@@ -19,7 +20,7 @@ class TestAudioStream:
             sample_width=2,
             format="pcm_s16le",
         )
-        
+
         assert stream.type == "audio_stream"
         assert stream.data == audio_data
         assert stream.sample_rate == 44100
@@ -36,7 +37,7 @@ class TestAudioStream:
             sample_width=2,
             timestamp=(0.5, 1.5),
         )
-        
+
         assert stream.timestamp == (0.5, 1.5)
 
     def test_audio_stream_with_metadata(self):
@@ -49,7 +50,7 @@ class TestAudioStream:
             sample_width=2,
             metadata=metadata,
         )
-        
+
         assert stream.metadata == metadata
         assert stream.metadata["source"] == "microphone"
 
@@ -60,14 +61,14 @@ class TestAudioStream:
         sample_width = 2
         channels = 1
         audio_data = b"\x00\x01" * num_samples
-        
+
         stream = AudioStream(
             data=audio_data,
             sample_rate=44100,
             channels=channels,
             sample_width=sample_width,
         )
-        
+
         duration = stream.duration_seconds()
         assert abs(duration - 1.0) < 0.001  # Should be approximately 1 second
 
@@ -79,28 +80,28 @@ class TestAudioStream:
         channels = 2
         # For stereo, we need data for both channels
         audio_data = b"\x00\x01" * (num_samples * channels)
-        
+
         stream = AudioStream(
             data=audio_data,
             sample_rate=44100,
             channels=channels,
             sample_width=sample_width,
         )
-        
+
         duration = stream.duration_seconds()
         assert abs(duration - 0.5) < 0.001  # Should be approximately 0.5 seconds
 
     def test_audio_stream_empty_data(self):
         """Test AudioStream with empty data."""
         stream = AudioStream()
-        
+
         assert stream.data == b""
         assert stream.duration_seconds() == 0.0
 
     def test_audio_stream_default_values(self):
         """Test AudioStream default values."""
         stream = AudioStream()
-        
+
         assert stream.type == "audio_stream"
         assert stream.data == b""
         assert stream.sample_rate == 44100
@@ -121,7 +122,7 @@ class TestAudioStream:
             timestamp=(1.0, 2.0),
             metadata={"test": "value"},
         )
-        
+
         data = stream.model_dump()
         assert data["type"] == "audio_stream"
         assert data["sample_rate"] == 48000
@@ -143,7 +144,7 @@ class TestAudioStream:
             "timestamp": (1.0, 2.0),
             "metadata": {"test": "value"},
         }
-        
+
         stream = AudioStream(**data)
         assert stream.type == "audio_stream"
         assert stream.sample_rate == 48000

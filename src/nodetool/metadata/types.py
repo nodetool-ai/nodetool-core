@@ -359,13 +359,13 @@ class AudioRef(AssetRef):
 class AudioStream(BaseType):
     """
     Represents a stream of audio data for realtime audio processing.
-    
+
     Designed for use with nodes that process audio in realtime, similar to Reaktor.
     Accepts high latency and uses pydub/numpy for processing rather than low-level audio.
-    
+
     Audio data is stored as raw PCM samples (int16 or float32) to enable efficient
     streaming and processing with numpy and pydub.
-    
+
     Attributes:
         type: Type identifier for the audio stream
         data: Raw audio samples as bytes (PCM format)
@@ -375,7 +375,7 @@ class AudioStream(BaseType):
         format: Audio format identifier (e.g., 'pcm_s16le', 'pcm_f32le')
         timestamp: Optional timestamp for the audio chunk (start_time, end_time) in seconds
         metadata: Optional additional metadata
-    
+
     Example:
         # Create from numpy array
         import numpy as np

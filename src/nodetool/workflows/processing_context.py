@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from pydub import AudioSegment
     from sklearn.base import BaseEstimator  # type: ignore
 
+    from nodetool.metadata.types import AudioStream
     from nodetool.providers.base import BaseProvider, ProviderCapability
     from nodetool.types.message_types import MessageCreateRequest
     from nodetool.workflows.base_node import BaseNode
