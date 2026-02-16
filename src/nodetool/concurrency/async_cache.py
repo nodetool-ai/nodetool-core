@@ -179,7 +179,7 @@ class AsyncCache(Generic[K, V]):
             computed_value = factory()
 
         # Cast to V to satisfy type checker - we trust the factory returns the right type
-        typed_value: V = cast(V, computed_value)
+        typed_value: V = cast("V", computed_value)
 
         # Store in cache
         await self.put(key, typed_value, ttl=ttl)
