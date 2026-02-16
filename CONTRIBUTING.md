@@ -20,12 +20,30 @@ contributing to the project.
 1. Install development dependencies:
 
    ```bash
-   make dev-install
+   # Using conda + uv (recommended)
+   conda create -n nodetool python=3.11 pandoc ffmpeg -c conda-forge
+   conda activate nodetool
+   uv sync --all-extras --dev
+
+   # Or using pip only
+   pip install .
+   pip install -r requirements-dev.txt
    ```
 
    This will install the package in development mode and install all development dependencies.
 
-1. Install pre-commit hooks:
+1. Set up environment configuration:
+
+   ```bash
+   cp .env.example .env.development.local
+   # Edit .env.development.local with your API keys
+   ```
+
+   **Important:** Never commit `.env.*.local` files - they contain actual secrets and are gitignored.
+
+   For a complete list of environment variables, see `.env.example` or the main README.md.
+
+1. Install pre-commit hooks (optional):
 
    ```bash
    pre-commit install
@@ -35,9 +53,8 @@ contributing to the project.
 
 This project uses:
 
-- Black for code formatting
-- Flake8 for linting
-- MyPy for type checking
+- **Ruff** for linting and formatting (replaces Black + Flake8)
+- **basedpyright** (via `ty` CLI) for type checking
 
 You can run all style checks with:
 
@@ -45,10 +62,10 @@ You can run all style checks with:
 make lint
 ```
 
-And format your code with:
+Format your code with:
 
 ```bash
-make format
+uv run ruff format .
 ```
 
 ## Testing
@@ -59,27 +76,63 @@ Write tests for all new features and bug fixes. Run the tests with:
 make test
 ```
 
+For verbose output:
+
+```bash
+make test-verbose
+```
+
 For test coverage report:
 
 ```bash
-make test-cov
+uv run pytest --cov=src
+```
+
+Run specific tests:
+
+```bash
+pytest tests/path/to/test_file.py
+```
+
+## Type Checking
+
+Check for type errors with:
+
+```bash
+make typecheck
 ```
 
 ## Documentation
 
-Update documentation for any changes to the public API. Build the documentation with:
-
-```bash
-make docs
-```
+Update documentation for any changes to the public API. Comprehensive documentation is available at [docs.nodetool.ai](https://docs.nodetool.ai).
 
 ## Pull Request Process
 
-1. Ensure your code passes all tests and style checks
-1. Update documentation if needed
-1. Update the CHANGELOG.md file with your changes
+1. Ensure your code passes all validation checks:
+   ```bash
+   make lint        # Check code style
+   make test        # Run tests
+   make typecheck   # Check types
+   ```
+1. Update documentation if needed (see [docs.nodetool.ai](https://docs.nodetool.ai))
+1. Create a descriptive pull request with:
+   - Clear description of changes
+   - Links to related issues
+   - Screenshots/logs for UI/CLI behavior changes
 1. The PR should be reviewed by at least one maintainer
 1. Once approved, a maintainer will merge your PR
+
+## Commit Conventions
+
+Follow **Conventional Commits** for your commit messages:
+- `feat:` - New features
+- `fix:` - Bug fixes
+- `refactor:` - Code refactoring
+- `docs:` - Documentation changes
+- `test:` - Test additions/changes
+- `chore:` - Maintenance tasks
+
+Keep messages imperative and scoped.
 
 ## Code of Conduct
 
