@@ -467,8 +467,6 @@ async def run_openai(prediction: Prediction, env: dict[str, str]) -> AsyncGenera
 
     api_key = await get_secret("OPENAI_API_KEY", user_id=prediction.user_id)
     if not api_key:
-        api_key = env.get("OPENAI_API_KEY")
-    if not api_key:
         raise ApiKeyMissingError("OPENAI_API_KEY is not configured in the nodetool settings")
 
     client = openai.AsyncClient(api_key=api_key)
