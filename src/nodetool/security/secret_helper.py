@@ -342,5 +342,9 @@ async def has_secret(key: str, user_id: str) -> bool:
             _SECRET_CACHE[(user_id, key)] = value
             return True
         return False
-    except Exception:
+    except (ValueError, UnicodeDecodeError, RuntimeError, OSError):
+        # ValueError: Decryption failed (wrong key)
+        # UnicodeDecodeError: Decrypted bytes are not valid UTF-8
+        # RuntimeError: Database connection or query error
+        # OSError: Filesystem or I/O error
         return False

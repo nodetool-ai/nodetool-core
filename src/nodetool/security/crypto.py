@@ -112,5 +112,8 @@ class SecretCrypto:
         try:
             SecretCrypto.decrypt(test_encrypted_value, master_key, user_id)
             return True
-        except Exception:
+        except (InvalidToken, ValueError, UnicodeDecodeError):
+            # InvalidToken: Wrong key or corrupted data
+            # ValueError: Decryption failed (raised by decrypt())
+            # UnicodeDecodeError: Decrypted bytes are not valid UTF-8
             return False
