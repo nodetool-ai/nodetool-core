@@ -88,8 +88,8 @@ stream = await context.audio_stream_from_numpy(
 ```
 
 **Supported dtypes:**
-- `np.int16`: Used directly as PCM samples
-- `np.float32`, `np.float64`, `np.float16`: Converted to int16 (scaled from [-1.0, 1.0] to [-32768, 32767])
+- `np.int16`: Used directly as PCM samples in range [-32768, 32767]
+- `np.float32`, `np.float64`: Converted to int16 (scaled from [-1.0, 1.0] to [-32768, 32767])
 
 #### audio_stream_from_segment()
 
