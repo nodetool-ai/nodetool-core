@@ -176,9 +176,12 @@ class NodeActor:
 
         for edge in control_edges:
             control_data = None
+            # Use iter_input to wait for the next control message; NodeInbox
+            # does not expose a direct single-item await API, so we take the
+            # first yielded item and break.
             async for item in self.inbox.iter_input("__control__"):
                 control_data = item
-                break  # Take first message on __control__ handle
+                break
 
             if control_data and isinstance(control_data, dict):
                 merged_params.update(control_data)
@@ -208,7 +211,7 @@ class NodeActor:
 
         property_map = {prop.name: prop for prop in self.node.properties()}
 
-        for param_name, param_value in params.items():
+        for param_name, _param_value in params.items():
             if param_name not in property_map:
                 errors.append(
                     f"Control param '{param_name}' does not exist on node "
@@ -404,7 +407,7 @@ class NodeActor:
                         )
                         raise ValueError(f"Control parameter validation failed: {error_msg}")
 
-                    # Merge control params with data inputs (control takes precedence)
+                    # Merge: control params override any overlapping data input keys
                     inputs = {**inputs, **control_params}
                     self.logger.info(
                         f"Applied control params to {self.node._id}: {list(control_params.keys())}"
@@ -565,7 +568,7 @@ class NodeActor:
                     )
                     raise ValueError(f"Control parameter validation failed: {error_msg}")
 
-                # Merge control params with data inputs (control wins)
+                # Merge: control params override any overlapping data input keys
                 inputs = {**inputs, **control_params}
                 self.logger.info(
                     f"Applied control params to streaming node {self.node._id}: "

@@ -484,13 +484,14 @@ class WorkflowRunner:
             - node_id: str
             - node_type: str
             - properties: dict[str, dict] (name -> {value, type, description})
-            - upstream_data: dict[str, Any] (handle -> value, for data edges with values)
+            - upstream_data: dict[str, Any] (placeholder for future use;
+              populated by NodeActor when data arrives)
         """
         context: dict[str, Any] = {
             "node_id": node._id,
             "node_type": node.get_node_type(),
             "properties": {},
-            "upstream_data": {}
+            "upstream_data": {},
         }
 
         # Gather property metadata from node class
@@ -499,7 +500,7 @@ class WorkflowRunner:
                 "value": getattr(node, prop.name, None),
                 "type": str(prop.type),
                 "description": prop.description or "",
-                "default": prop.default
+                "default": prop.default,
             }
 
         return context

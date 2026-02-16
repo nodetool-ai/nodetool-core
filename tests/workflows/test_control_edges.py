@@ -4,15 +4,12 @@ Tests for control edge support in the workflow system.
 Control edges allow Agent nodes to dynamically set parameters of other nodes.
 """
 
-import asyncio
-
 import pytest
 
 from nodetool.types.api_graph import Edge
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.inbox import NodeInbox
-
 
 # ---------- Test Node Classes ----------
 
@@ -44,7 +41,7 @@ class TestProcessingNode(BaseNode):
         return {"output": f"{self.mode}:{self.threshold}"}
 
 
-class TestNonAgentNode(BaseNode):
+class TestPlainNode(BaseNode):
     """Non-agent node (should not be a valid control source)."""
 
     value: str = ""
@@ -241,7 +238,7 @@ class TestGraphControlEdges:
 
     def test_validate_control_edge_from_non_agent(self):
         """Control edge must originate from Agent node."""
-        node1 = TestNonAgentNode(id="node1")
+        node1 = TestPlainNode(id="node1")
         node2 = TestProcessingNode(id="node2")
         edge = Edge(
             id="e1",
@@ -360,7 +357,7 @@ class TestGraphControlEdges:
 
     def test_validate_edge_types_includes_control_validation(self):
         """validate_edge_types should include control edge validation."""
-        node1 = TestNonAgentNode(id="node1")
+        node1 = TestPlainNode(id="node1")
         node2 = TestProcessingNode(id="node2")
         edge = Edge(
             id="e1",

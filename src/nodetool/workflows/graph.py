@@ -342,6 +342,8 @@ class Graph(BaseModel):
                 continue
 
             # Rule 1: Source must be an Agent node
+            # Convention: Agent node types contain "agent" in their type path
+            # (e.g., "nodetool.agents.Agent", "nodetool.agents.Classifier")
             source_node = self.find_node(edge.source)
             if not source_node:
                 errors.append(f"Control edge {edge.id} has invalid source {edge.source}")
@@ -396,7 +398,7 @@ class Graph(BaseModel):
                 if neighbor not in visited:
                     found, path = has_cycle(neighbor, visited, rec_stack)
                     if found:
-                        return True, [node] + path
+                        return True, [node, *path]
                 elif neighbor in rec_stack:
                     return True, [node, neighbor]
 
@@ -404,7 +406,7 @@ class Graph(BaseModel):
             return False, []
 
         visited: set[str] = set()
-        for node_id in control_graph.keys():
+        for node_id in control_graph:
             if node_id not in visited:
                 found, path = has_cycle(node_id, visited, set())
                 if found:
