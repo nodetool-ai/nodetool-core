@@ -2070,6 +2070,152 @@ class ProcessingContext:
         ref.metadata = metadata
         return ref
 
+    async def audio_stream_from_numpy(
+        self,
+        data: np.ndarray,
+        sample_rate: int = 44100,
+        channels: int = 1,
+        timestamp: tuple[float, float] = (0.0, 0.0),
+        metadata: dict[str, Any] | None = None,
+    ) -> AudioStream:
+        """
+        Create an AudioStream from a numpy array.
+
+        Args:
+            data (np.ndarray): Audio samples as numpy array (float32, float64, or int16)
+            sample_rate (int): Sample rate in Hz (default: 44100)
+            channels (int): Number of audio channels (default: 1)
+            timestamp (tuple[float, float]): Start and end time in seconds (default: (0.0, 0.0))
+            metadata (dict[str, Any] | None): Optional metadata
+
+        Returns:
+            AudioStream: The audio stream object
+        """
+        from nodetool.metadata.types import AudioStream
+
+        np = _ensure_numpy()
+
+        # Convert to int16 PCM format
+        if data.dtype == np.int16:
+            data_bytes = data.tobytes()
+            sample_width = 2
+            format_str = "pcm_s16le"
+        elif data.dtype in (np.float32, np.float64, np.float16):
+            # Convert float to int16 range
+            data_int16 = (data * 32767.0).astype(np.int16)
+            data_bytes = data_int16.tobytes()
+            sample_width = 2
+            format_str = "pcm_s16le"
+        else:
+            raise ValueError(f"Unsupported dtype {data.dtype}. Use int16, float32, or float64.")
+
+        return AudioStream(
+            data=data_bytes,
+            sample_rate=sample_rate,
+            channels=channels,
+            sample_width=sample_width,
+            format=format_str,
+            timestamp=timestamp,
+            metadata=metadata,
+        )
+
+    async def audio_stream_from_segment(
+        self,
+        audio_segment: AudioSegment,
+        timestamp: tuple[float, float] = (0.0, 0.0),
+        metadata: dict[str, Any] | None = None,
+    ) -> AudioStream:
+        """
+        Create an AudioStream from a pydub AudioSegment.
+
+        Args:
+            audio_segment (AudioSegment): The pydub AudioSegment to convert
+            timestamp (tuple[float, float]): Start and end time in seconds (default: (0.0, 0.0))
+            metadata (dict[str, Any] | None): Optional metadata
+
+        Returns:
+            AudioStream: The audio stream object
+        """
+        from nodetool.metadata.types import AudioStream
+
+        # Extract raw audio data from AudioSegment
+        raw_data = audio_segment.raw_data
+
+        return AudioStream(
+            data=raw_data,
+            sample_rate=audio_segment.frame_rate,
+            channels=audio_segment.channels,
+            sample_width=audio_segment.sample_width,
+            format=f"pcm_s{audio_segment.sample_width * 8}le",
+            timestamp=timestamp,
+            metadata=metadata,
+        )
+
+    async def audio_stream_to_numpy(
+        self,
+        audio_stream: AudioStream,
+        dtype: str = "float32",
+    ) -> np.ndarray:
+        """
+        Convert an AudioStream to a numpy array.
+
+        Args:
+            audio_stream (AudioStream): The audio stream to convert
+            dtype (str): Target numpy dtype ('float32', 'float64', or 'int16')
+
+        Returns:
+            np.ndarray: Audio samples as numpy array
+        """
+        from nodetool.metadata.types import AudioStream
+
+        np = _ensure_numpy()
+
+        # Decode bytes to numpy array based on sample width
+        if audio_stream.sample_width == 2:
+            # int16 PCM
+            samples = np.frombuffer(audio_stream.data, dtype=np.int16)
+        elif audio_stream.sample_width == 4:
+            # float32 PCM
+            samples = np.frombuffer(audio_stream.data, dtype=np.float32)
+        else:
+            raise ValueError(f"Unsupported sample_width {audio_stream.sample_width}")
+
+        # Convert to target dtype if needed
+        if dtype == "float32" and samples.dtype == np.int16:
+            samples = samples.astype(np.float32) / 32768.0
+        elif dtype == "float64" and samples.dtype == np.int16:
+            samples = samples.astype(np.float64) / 32768.0
+        elif dtype == "int16" and samples.dtype in (np.float32, np.float64):
+            samples = (samples * 32767.0).astype(np.int16)
+        elif dtype != str(samples.dtype):
+            samples = samples.astype(dtype)
+
+        return samples
+
+    async def audio_stream_to_segment(
+        self,
+        audio_stream: AudioStream,
+    ) -> AudioSegment:
+        """
+        Convert an AudioStream to a pydub AudioSegment.
+
+        Args:
+            audio_stream (AudioStream): The audio stream to convert
+
+        Returns:
+            AudioSegment: The pydub AudioSegment
+        """
+        from nodetool.metadata.types import AudioStream
+
+        AudioSegment = _ensure_audio_segment()
+
+        return AudioSegment(
+            data=audio_stream.data,
+            sample_width=audio_stream.sample_width,
+            frame_rate=audio_stream.sample_rate,
+            channels=audio_stream.channels,
+        )
+
     async def dataframe_to_pandas(self, df: DataframeRef) -> pd.DataFrame:
         """
         Converts a DataframeRef object to a pandas DataFrame.
