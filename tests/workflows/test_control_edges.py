@@ -1179,3 +1179,217 @@ class TestControlEdgeIntegration:
         edge_types = {e["id"]: e["edge_type"] for e in serialized["edges"]}
         assert edge_types["data1"] == "data"
         assert edge_types["control1"] == "control"
+
+
+class TestAgentControlContext:
+    """Tests for agent receiving control context about controlled nodes."""
+
+    @pytest.mark.asyncio
+    async def test_agent_is_controller_detection(self):
+        """Test detecting if a node is a controller."""
+        from nodetool.workflows.actor import NodeActor
+        from unittest.mock import MagicMock
+
+        agent = TestAgentNode(id="agent1")
+        target = TestProcessingNode(id="target")
+        edges = [
+            Edge(
+                id="e1",
+                source="agent1",
+                sourceHandle="output",
+                target="target",
+                targetHandle="__control__",
+                edge_type="control",
+            )
+        ]
+        graph = Graph(nodes=[agent, target], edges=edges)
+
+        runner = MagicMock()
+        runner._control_edges = {}
+        context = MagicMock()
+        context.graph = graph
+
+        inbox = NodeInbox()
+        actor = NodeActor(runner, agent, context, inbox)
+
+        # Agent should be detected as a controller
+        assert actor._is_controller() is True
+
+        # Target should not be a controller
+        actor2 = NodeActor(runner, target, context, inbox)
+        assert actor2._is_controller() is False
+
+    @pytest.mark.asyncio
+    async def test_agent_get_controlled_nodes(self):
+        """Test getting list of controlled nodes."""
+        from nodetool.workflows.actor import NodeActor
+        from unittest.mock import MagicMock
+
+        agent = TestAgentNode(id="agent1")
+        target1 = TestProcessingNode(id="target1")
+        target2 = TestProcessingNode(id="target2")
+        edges = [
+            Edge(
+                id="e1",
+                source="agent1",
+                sourceHandle="output",
+                target="target1",
+                targetHandle="__control__",
+                edge_type="control",
+            ),
+            Edge(
+                id="e2",
+                source="agent1",
+                sourceHandle="output",
+                target="target2",
+                targetHandle="__control__",
+                edge_type="control",
+            ),
+        ]
+        graph = Graph(nodes=[agent, target1, target2], edges=edges)
+
+        runner = MagicMock()
+        runner._control_edges = {}
+        context = MagicMock()
+        context.graph = graph
+
+        inbox = NodeInbox()
+        actor = NodeActor(runner, agent, context, inbox)
+        controlled = actor._get_controlled_nodes()
+
+        assert len(controlled) == 2
+        assert "target1" in controlled
+        assert "target2" in controlled
+
+    @pytest.mark.asyncio
+    async def test_build_control_context_structure(self):
+        """Test that control context has the correct structure."""
+        from nodetool.workflows.actor import NodeActor
+        from unittest.mock import MagicMock
+
+        agent = TestAgentNode(id="agent1")
+        target = TestProcessingNode(id="target")
+        edges = [
+            Edge(
+                id="e1",
+                source="agent1",
+                sourceHandle="output",
+                target="target",
+                targetHandle="__control__",
+                edge_type="control",
+            )
+        ]
+        graph = Graph(nodes=[agent, target], edges=edges)
+
+        runner = MagicMock()
+        runner._control_edges = {}
+        context = MagicMock()
+        context.graph = graph
+
+        inbox = NodeInbox()
+        actor = NodeActor(runner, agent, context, inbox)
+        control_context = actor._build_control_context()
+
+        # Should have entry for target node
+        assert "target" in control_context
+
+        # Check structure of target node context
+        target_ctx = control_context["target"]
+        assert target_ctx["node_id"] == "target"
+        assert target_ctx["node_type"] == "tests.workflows.test_control_edges.TestProcessingNode"
+        assert "properties" in target_ctx
+
+        # Check properties are included
+        props = target_ctx["properties"]
+        assert "threshold" in props
+        assert "mode" in props
+
+        # Check property metadata
+        assert props["threshold"]["value"] == 0.5
+        assert props["threshold"]["type"] is not None
+        assert "default" in props["threshold"]
+
+    @pytest.mark.asyncio
+    async def test_build_control_context_empty_when_no_control_edges(self):
+        """Test that control context is empty when agent has no outgoing control edges."""
+        from nodetool.workflows.actor import NodeActor
+        from unittest.mock import MagicMock
+
+        agent = TestAgentNode(id="agent1")
+        other = TestPlainNode(id="other")
+        # No control edges - just a data edge
+        edges = [
+            Edge(
+                id="e1",
+                source="other",
+                sourceHandle="output",
+                target="agent1",
+                targetHandle="prompt",
+                edge_type="data",
+            )
+        ]
+        graph = Graph(nodes=[agent, other], edges=edges)
+
+        runner = MagicMock()
+        runner._control_edges = {}
+        context = MagicMock()
+        context.graph = graph
+
+        inbox = NodeInbox()
+        actor = NodeActor(runner, agent, context, inbox)
+        control_context = actor._build_control_context()
+
+        assert control_context == {}
+
+    @pytest.mark.asyncio
+    async def test_agent_receives_control_context_in_inputs(self):
+        """Test that control context is injected into agent's inputs."""
+        from nodetool.workflows.actor import NodeActor
+        from nodetool.workflows.workflow_runner import WorkflowRunner
+        from unittest.mock import MagicMock, patch
+
+        agent = TestAgentNode(id="agent1")
+        target = TestProcessingNode(id="target")
+        edges = [
+            Edge(
+                id="e1",
+                source="agent1",
+                sourceHandle="output",
+                target="target",
+                targetHandle="__control__",
+                edge_type="control",
+            )
+        ]
+        graph = Graph(nodes=[agent, target], edges=edges)
+
+        runner = MagicMock(spec=WorkflowRunner)
+        runner.multi_edge_list_inputs = {}
+        runner._control_edges = {}  # Agent is not receiving control, it's sending
+        runner.disable_caching = True
+        runner.device = "cpu"
+        runner.job_id = "test-job"
+
+        context = MagicMock()
+        context.graph = graph
+        context.workflow_id = "test-workflow"
+
+        inbox = NodeInbox()
+
+        actor = NodeActor(runner, agent, context, inbox)
+
+        # Mock the implementation to capture inputs
+        captured_inputs = None
+
+        async def mock_impl(inputs, span):
+            nonlocal captured_inputs
+            captured_inputs = inputs
+
+        with patch.object(actor, "_process_node_with_inputs_impl", mock_impl):
+            # Process with empty inputs
+            await actor.process_node_with_inputs({})
+
+        # Verify control context was injected
+        assert "_control_context" in captured_inputs
+        control_ctx = captured_inputs["_control_context"]
+        assert "target" in control_ctx
+        assert control_ctx["target"]["node_type"] == "tests.workflows.test_control_edges.TestProcessingNode"

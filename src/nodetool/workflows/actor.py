@@ -54,9 +54,7 @@ from nodetool.workflows.torch_support import is_cuda_available
 from nodetool.workflows.types import EdgeUpdate, NodeUpdate
 
 
-def _serialize_output_for_telemetry(
-    output: Any, max_string_length: int = 500, max_list_items: int = 10
-) -> Any:
+def _serialize_output_for_telemetry(output: Any, max_string_length: int = 500, max_list_items: int = 10) -> Any:
     """Serialize node output for telemetry recording.
 
     Converts complex objects to JSON-serializable format with size limits
@@ -94,7 +92,9 @@ def _serialize_output_for_telemetry(
 
     # Handle lists/tuples
     if isinstance(output, (list, tuple)):
-        items = [_serialize_output_for_telemetry(item, max_string_length, max_list_items) for item in output[:max_list_items]]
+        items = [
+            _serialize_output_for_telemetry(item, max_string_length, max_list_items) for item in output[:max_list_items]
+        ]
         if len(output) > max_list_items:
             items.append(f"... and {len(output) - max_list_items} more items")
         return items
@@ -111,6 +111,7 @@ def _serialize_output_for_telemetry(
 
     # Fallback: return type info
     return {"type": type(output).__name__}
+
 
 if TYPE_CHECKING:
     from nodetool.workflows.base_node import BaseNode
@@ -158,6 +159,51 @@ class NodeActor:
         """Return control edges targeting this node."""
         return self.runner._control_edges.get(self.node._id, [])
 
+    def _is_controller(self) -> bool:
+        """Return True if this node controls other nodes via outgoing control edges."""
+        return any(edge.edge_type == "control" and edge.source == self.node._id for edge in self.context.graph.edges)
+
+    def _get_controlled_nodes(self) -> list[str]:
+        """Return IDs of nodes controlled by this node."""
+        return self.context.graph.get_controlled_nodes(self.node._id)
+
+    def _build_control_context(self) -> dict[str, Any]:
+        """
+        Build control context for all nodes controlled by this agent.
+
+        Returns:
+            Dictionary mapping controlled node IDs to their control context,
+            containing node metadata and property information.
+        """
+        controlled_ids = self._get_controlled_nodes()
+        if not controlled_ids:
+            return {}
+
+        context: dict[str, Any] = {}
+        for node_id in controlled_ids:
+            node = self.context.graph.find_node(node_id)
+            if not node:
+                continue
+
+            node_context: dict[str, Any] = {
+                "node_id": node._id,
+                "node_type": node.get_node_type(),
+                "properties": {},
+            }
+
+            # Gather property metadata from node class
+            for prop in node.properties():
+                node_context["properties"][prop.name] = {
+                    "value": getattr(node, prop.name, None),
+                    "type": str(prop.type),
+                    "description": prop.description or "",
+                    "default": prop.default,
+                }
+
+            context[node_id] = node_context
+
+        return context
+
     async def _wait_for_control_params(self) -> dict[str, Any]:
         """
         Wait for control parameters from all controllers.
@@ -186,8 +232,7 @@ class NodeActor:
             if control_data and isinstance(control_data, dict):
                 merged_params.update(control_data)
                 self.logger.debug(
-                    f"Node {self.node._id} received control params from {edge.source}: "
-                    f"{list(control_data.keys())}"
+                    f"Node {self.node._id} received control params from {edge.source}: {list(control_data.keys())}"
                 )
             else:
                 self.logger.warning(
@@ -213,10 +258,7 @@ class NodeActor:
 
         for param_name, _param_value in params.items():
             if param_name not in property_map:
-                errors.append(
-                    f"Control param '{param_name}' does not exist on node "
-                    f"{self.node.get_node_type()}"
-                )
+                errors.append(f"Control param '{param_name}' does not exist on node {self.node.get_node_type()}")
 
         return errors
 
@@ -233,7 +275,9 @@ class NodeActor:
 
     def _inbound_handles(self) -> set[str]:
         """Return the set of inbound input handles for this node (excluding control handles)."""
-        return {e.targetHandle for e in self.context.graph.edges if e.target == self.node._id and e.edge_type != "control"}
+        return {
+            e.targetHandle for e in self.context.graph.edges if e.target == self.node._id and e.edge_type != "control"
+        }
 
     def _outbound_edges(self):
         """Return edges originating from this node (outbound)."""
@@ -392,6 +436,16 @@ class NodeActor:
             span.set_attribute("nodetool.node.input_count", len(inputs))
             span.set_attribute("nodetool.node.requires_gpu", self.node.requires_gpu())
 
+            # Provide control context to agents that control other nodes
+            if self._is_controller():
+                control_context = self._build_control_context()
+                if control_context:
+                    inputs = {**inputs, "_control_context": control_context}
+                    span.set_attribute("nodetool.node.control_context_provided", True)
+                    self.logger.debug(
+                        f"Provided control context to agent {self.node._id} for nodes: {list(control_context.keys())}"
+                    )
+
             # Handle control edges
             if self._has_control_edges():
                 span.set_attribute("nodetool.node.has_control_edges", True)
@@ -402,16 +456,12 @@ class NodeActor:
                     validation_errors = self._validate_control_params(control_params)
                     if validation_errors:
                         error_msg = "; ".join(validation_errors)
-                        self.logger.error(
-                            f"Control param validation failed for {self.node._id}: {error_msg}"
-                        )
+                        self.logger.error(f"Control param validation failed for {self.node._id}: {error_msg}")
                         raise ValueError(f"Control parameter validation failed: {error_msg}")
 
                     # Merge: control params override any overlapping data input keys
                     inputs = {**inputs, **control_params}
-                    self.logger.info(
-                        f"Applied control params to {self.node._id}: {list(control_params.keys())}"
-                    )
+                    self.logger.info(f"Applied control params to {self.node._id}: {list(control_params.keys())}")
 
             await self._process_node_with_inputs_impl(inputs, span)
 
@@ -555,6 +605,15 @@ class NodeActor:
             list(inputs.keys()),
         )
 
+        # Provide control context to agents that control other nodes
+        if self._is_controller():
+            control_context = self._build_control_context()
+            if control_context:
+                inputs = {**inputs, "_control_context": control_context}
+                self.logger.debug(
+                    f"Provided control context to streaming agent {self.node._id} for nodes: {list(control_context.keys())}"
+                )
+
         # Handle control edges (before assigning any inputs)
         if self._has_control_edges():
             control_params = await self._wait_for_control_params()
@@ -563,16 +622,13 @@ class NodeActor:
                 validation_errors = self._validate_control_params(control_params)
                 if validation_errors:
                     error_msg = "; ".join(validation_errors)
-                    self.logger.error(
-                        f"Control param validation failed for {self.node._id}: {error_msg}"
-                    )
+                    self.logger.error(f"Control param validation failed for {self.node._id}: {error_msg}")
                     raise ValueError(f"Control parameter validation failed: {error_msg}")
 
                 # Merge: control params override any overlapping data input keys
                 inputs = {**inputs, **control_params}
                 self.logger.info(
-                    f"Applied control params to streaming node {self.node._id}: "
-                    f"{list(control_params.keys())}"
+                    f"Applied control params to streaming node {self.node._id}: {list(control_params.keys())}"
                 )
 
         for name, value in inputs.items():
@@ -827,10 +883,14 @@ class NodeActor:
                 # Aggregate into list buffer - flatten if item is a list
                 if isinstance(item, list):
                     list_buffers[handle].extend(item)
-                    self.logger.debug(f"List aggregation: {handle} extended with {len(item)} items, buffer size={len(list_buffers[handle])}")
+                    self.logger.debug(
+                        f"List aggregation: {handle} extended with {len(item)} items, buffer size={len(list_buffers[handle])}"
+                    )
                 else:
                     list_buffers[handle].append(item)
-                    self.logger.debug(f"List aggregation: {handle} received item, buffer size={len(list_buffers[handle])}")
+                    self.logger.debug(
+                        f"List aggregation: {handle} received item, buffer size={len(list_buffers[handle])}"
+                    )
             else:
                 # Non-list handle: take first value (like standard on_any)
                 if handle not in non_list_values:
@@ -1056,22 +1116,17 @@ class NodeActor:
                 validation_errors = self._validate_control_params(control_params)
                 if validation_errors:
                     error_msg = "; ".join(validation_errors)
-                    self.logger.error(
-                        f"Control param validation failed for {self.node._id}: {error_msg}"
-                    )
+                    self.logger.error(f"Control param validation failed for {self.node._id}: {error_msg}")
                     raise ValueError(f"Control parameter validation failed: {error_msg}")
 
                 # Apply control params directly to node properties
                 for param_name, param_value in control_params.items():
                     error = node.assign_property(param_name, param_value)
                     if error:
-                        self.logger.error(
-                            f"Error assigning control param {param_name}: {error}"
-                        )
+                        self.logger.error(f"Error assigning control param {param_name}: {error}")
                     else:
                         self.logger.info(
-                            f"Applied control param to streaming input node {self.node._id}: "
-                            f"{param_name}={param_value}"
+                            f"Applied control param to streaming input node {self.node._id}: {param_name}={param_value}"
                         )
 
         # Assign initial properties as needed before starting the generator (not pre-gathered)
