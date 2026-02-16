@@ -371,8 +371,9 @@ class WorkflowRunner:
                 if node.is_streaming_output():
                     queue.append(node_id)
                     visited.add(node_id)
-            except Exception:
+            except Exception as e:
                 # Best-effort streaming detection; ignore misbehaving nodes
+                log.debug(f"Error detecting streaming for node {node_id}: {e}")
                 continue
 
         while queue:
@@ -391,8 +392,8 @@ class WorkflowRunner:
                 len(streaming_edges),
                 len(self._streaming_edges),
             )
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug(f"Error during streaming analysis: {e}")
 
     def _classify_list_inputs(self, graph: Graph) -> None:
         """Identify properties that require list aggregation.
@@ -1313,9 +1314,9 @@ class WorkflowRunner:
                     continue
                 if (inbox.has_buffered(edge.targetHandle) or inbox.is_open(edge.targetHandle)) and edge.id:
                     context.post_message(EdgeUpdate(workflow_id=context.workflow_id, edge_id=edge.id, status="drained"))
-            except Exception:
+            except Exception as e:
                 # Best effort - ignore errors during draining
-                pass
+                log.debug(f"Error posting edge update during draining: {e}")
 
     async def process_graph(self, context: ProcessingContext, graph: Graph, parent_id: str | None = None) -> None:
         """Actor-based processing: start one actor per node and await completion.

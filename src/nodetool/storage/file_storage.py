@@ -59,7 +59,8 @@ class FileStorage(AbstractStorage):
         await asyncio.to_thread(os.makedirs, os.path.dirname(full_path), exist_ok=True)
         async with aiofiles.open(full_path, "wb") as f:
             while True:
-                chunk = content.read(1024 * 1024)  # Read in 1MB chunks
+                # Use asyncio.to_thread to avoid blocking the event loop during file reads
+                chunk = await asyncio.to_thread(content.read, 1024 * 1024)  # Read in 1MB chunks
                 if not chunk:
                     break
                 await f.write(chunk)
@@ -72,7 +73,8 @@ class FileStorage(AbstractStorage):
             await asyncio.to_thread(os.makedirs, os.path.dirname(full_path), exist_ok=True)
             async with aiofiles.open(full_path, "wb") as f:
                 while True:
-                    chunk = content.read(1024 * 1024)
+                    # Use asyncio.to_thread to avoid blocking the event loop during file reads
+                    chunk = await asyncio.to_thread(content.read, 1024 * 1024)
                     if not chunk:
                         break
                     await f.write(chunk)

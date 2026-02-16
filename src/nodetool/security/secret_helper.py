@@ -18,6 +18,9 @@ log = get_logger(__name__)
 # Cache for decrypted secrets: (user_id, key) -> decrypted_value
 _SECRET_CACHE: dict[tuple[str, str], Optional[str]] = {}
 
+# Lock for thread-safe cache access
+_SECRET_CACHE_LOCK = asyncio.Lock()
+
 # Keys that should ALWAYS prioritize environment variables (System Critical Infrastructure)
 _FORCE_ENV_PRIORITY = {
     "SUPABASE_URL",
@@ -27,7 +30,7 @@ _FORCE_ENV_PRIORITY = {
 }
 
 
-def clear_secret_cache(user_id: str, key: str) -> None:
+async def clear_secret_cache(user_id: str, key: str) -> None:
     """
     Remove a secret from the local cache.
 
@@ -36,9 +39,10 @@ def clear_secret_cache(user_id: str, key: str) -> None:
         key: The secret key.
     """
     cache_key = (user_id, key)
-    if cache_key in _SECRET_CACHE:
-        log.debug(f"Clearing secret cache for {key} (user {user_id})")
-        del _SECRET_CACHE[cache_key]
+    async with _SECRET_CACHE_LOCK:
+        if cache_key in _SECRET_CACHE:
+            log.debug(f"Clearing secret cache for {key} (user {user_id})")
+            del _SECRET_CACHE[cache_key]
 
 
 async def get_secret(key: str, user_id: str, default: Optional[str] = None, check_env: bool = True) -> Optional[str]:
@@ -62,9 +66,10 @@ async def get_secret(key: str, user_id: str, default: Optional[str] = None, chec
         return os.environ.get(key)
 
     # 1. Check cache
-    if (user_id, key) in _SECRET_CACHE:
-        log.debug(f"Secret '{key}' found in cache for user {user_id}")
-        return _SECRET_CACHE[(user_id, key)]
+    async with _SECRET_CACHE_LOCK:
+        if (user_id, key) in _SECRET_CACHE:
+            log.debug(f"Secret '{key}' found in cache for user {user_id}")
+            return _SECRET_CACHE[(user_id, key)]
 
     # Special handling for HF_TOKEN via OAuth (Prioritize OAuth over stored secrets)
     if key == "HF_TOKEN":
@@ -75,7 +80,8 @@ async def get_secret(key: str, user_id: str, default: Optional[str] = None, chec
             if creds:
                 log.debug(f"Secret '{key}' found in OAuth credentials for user {user_id}")
                 value = await creds[0].get_decrypted_access_token()
-                _SECRET_CACHE[(user_id, key)] = value
+                async with _SECRET_CACHE_LOCK:
+                    _SECRET_CACHE[(user_id, key)] = value
                 return value
 
             # Retry with "HuggingFace" (capitalized) just in case
@@ -83,7 +89,8 @@ async def get_secret(key: str, user_id: str, default: Optional[str] = None, chec
             if creds:
                 log.debug(f"Secret '{key}' found in OAuth credentials (capitalized) for user {user_id}")
                 value = await creds[0].get_decrypted_access_token()
-                _SECRET_CACHE[(user_id, key)] = value
+                async with _SECRET_CACHE_LOCK:
+                    _SECRET_CACHE[(user_id, key)] = value
                 return value
 
             log.debug(f"No OAuth credentials found for {key} (user {user_id}, provider='huggingface' or 'HuggingFace')")
@@ -97,7 +104,8 @@ async def get_secret(key: str, user_id: str, default: Optional[str] = None, chec
             log.debug(f"Secret '{key}' found in database for user {user_id}")
             value = await secret.get_decrypted_value()
             if value is not None:
-                _SECRET_CACHE[(user_id, key)] = value
+                async with _SECRET_CACHE_LOCK:
+                    _SECRET_CACHE[(user_id, key)] = value
                 return value
     except Exception as e:
         # If database lookup fails (e.g. no ResourceScope), fall back to environment
@@ -108,7 +116,8 @@ async def get_secret(key: str, user_id: str, default: Optional[str] = None, chec
         log.debug(f"Secret '{key}' found in environment variable")
         value = os.environ.get(key)
         if value is not None:
-            _SECRET_CACHE[(user_id, key)] = value
+            async with _SECRET_CACHE_LOCK:
+                _SECRET_CACHE[(user_id, key)] = value
             return value
 
     # 4. Return default
@@ -232,13 +241,14 @@ async def get_secrets_batch(keys: list[str], user_id: str) -> dict[str, Optional
 
     # 1. Check cache
     keys_not_in_cache = []
-    for key in keys_to_find:
-        if (user_id, key) in _SECRET_CACHE:
-            log.debug(f"Secret '{key}' found in cache for user {user_id}")
-            result[key] = _SECRET_CACHE[(user_id, key)]
-        else:
-            keys_not_in_cache.append(key)
-            result[key] = None  # Initialize
+    async with _SECRET_CACHE_LOCK:
+        for key in keys_to_find:
+            if (user_id, key) in _SECRET_CACHE:
+                log.debug(f"Secret '{key}' found in cache for user {user_id}")
+                result[key] = _SECRET_CACHE[(user_id, key)]
+            else:
+                keys_not_in_cache.append(key)
+                result[key] = None  # Initialize
 
     # Special handling for HF_TOKEN via OAuth (Prioritize OAuth)
     if "HF_TOKEN" in keys_not_in_cache:
@@ -250,7 +260,8 @@ async def get_secrets_batch(keys: list[str], user_id: str) -> dict[str, Optional
                 log.debug(f"Secret 'HF_TOKEN' found in OAuth credentials for user {user_id}")
                 value = await creds[0].get_decrypted_access_token()
                 result["HF_TOKEN"] = value
-                _SECRET_CACHE[(user_id, "HF_TOKEN")] = value
+                async with _SECRET_CACHE_LOCK:
+                    _SECRET_CACHE[(user_id, "HF_TOKEN")] = value
                 # Remove from keys to look up in DB
                 keys_not_in_cache.remove("HF_TOKEN")
             else:
@@ -262,7 +273,8 @@ async def get_secrets_batch(keys: list[str], user_id: str) -> dict[str, Optional
                     log.debug(f"Secret 'HF_TOKEN' found in OAuth credentials (capitalized) for user {user_id}")
                     value = await creds[0].get_decrypted_access_token()
                     result["HF_TOKEN"] = value
-                    _SECRET_CACHE[(user_id, "HF_TOKEN")] = value
+                    async with _SECRET_CACHE_LOCK:
+                        _SECRET_CACHE[(user_id, "HF_TOKEN")] = value
                     keys_not_in_cache.remove("HF_TOKEN")
         except Exception as e:
             log.error(f"Failed to lookup OAuth credential for HF_TOKEN: {e}", exc_info=True)
@@ -292,7 +304,8 @@ async def get_secrets_batch(keys: list[str], user_id: str) -> dict[str, Optional
                 decrypted_value = await secret.get_decrypted_value()
                 result[secret.key] = decrypted_value
                 # Update cache
-                _SECRET_CACHE[(user_id, secret.key)] = decrypted_value
+                async with _SECRET_CACHE_LOCK:
+                    _SECRET_CACHE[(user_id, secret.key)] = decrypted_value
                 found_in_db.add(secret.key)
             except ValueError:
                 log.error(f"Failed to decrypt secret '{secret.key}' for user {user_id}. Skipping.")
@@ -309,7 +322,8 @@ async def get_secrets_batch(keys: list[str], user_id: str) -> dict[str, Optional
                 log.debug(f"Secret '{key}' found in environment variable")
                 result[key] = env_value
                 # Update cache
-                _SECRET_CACHE[(user_id, key)] = env_value
+                async with _SECRET_CACHE_LOCK:
+                    _SECRET_CACHE[(user_id, key)] = env_value
 
     return result
 
@@ -330,8 +344,9 @@ async def has_secret(key: str, user_id: str) -> bool:
         return True
 
     # Check cache
-    if (user_id, key) in _SECRET_CACHE:
-        return True
+    async with _SECRET_CACHE_LOCK:
+        if (user_id, key) in _SECRET_CACHE:
+            return True
 
     # Check database
     try:
@@ -339,7 +354,8 @@ async def has_secret(key: str, user_id: str) -> bool:
         if secret:
             # We found it, might as well cache the value
             value = await secret.get_decrypted_value()
-            _SECRET_CACHE[(user_id, key)] = value
+            async with _SECRET_CACHE_LOCK:
+                _SECRET_CACHE[(user_id, key)] = value
             return True
         return False
     except (ValueError, UnicodeDecodeError, RuntimeError, OSError):
