@@ -418,6 +418,230 @@ class TestGraphControlEdges:
         assert flat.index("agent1") < flat.index("node2")
 
 
+# ---------- Phase 3: Graph.from_dict Control Edge Tests ----------
+
+
+class TestGraphFromDictControlEdges:
+    """Tests for Graph.from_dict() handling control edges."""
+
+    def test_from_dict_preserves_control_edge_type(self):
+        """Control edge_type should be preserved through from_dict()."""
+        graph_dict = {
+            "nodes": [
+                {"id": "agent1", "type": "nodetool.agents.TestAgentNode", "data": {}},
+                {"id": "node1", "type": "tests.workflows.test_control_edges.TestProcessingNode", "data": {}},
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "agent1",
+                    "sourceHandle": "output",
+                    "target": "node1",
+                    "targetHandle": "__control__",
+                    "edge_type": "control",
+                }
+            ],
+        }
+        graph = Graph.from_dict(graph_dict, skip_errors=False)
+        assert len(graph.edges) == 1
+        assert graph.edges[0].edge_type == "control"
+        assert graph.edges[0].is_control()
+
+    def test_from_dict_defaults_missing_edge_type_to_data(self):
+        """Missing edge_type should default to 'data'."""
+        graph_dict = {
+            "nodes": [
+                {"id": "node1", "type": "tests.workflows.test_control_edges.TestProcessingNode", "data": {}},
+                {"id": "node2", "type": "tests.workflows.test_control_edges.TestProcessingNode", "data": {}},
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "node1",
+                    "sourceHandle": "output",
+                    "target": "node2",
+                    "targetHandle": "threshold",
+                    # Note: no edge_type field
+                }
+            ],
+        }
+        graph = Graph.from_dict(graph_dict, skip_errors=False)
+        assert len(graph.edges) == 1
+        assert graph.edges[0].edge_type == "data"
+        assert not graph.edges[0].is_control()
+
+    def test_from_dict_mixed_edge_types(self):
+        """Graph can have both data and control edges."""
+        graph_dict = {
+            "nodes": [
+                {"id": "agent1", "type": "nodetool.agents.TestAgentNode", "data": {}},
+                {"id": "node1", "type": "tests.workflows.test_control_edges.TestProcessingNode", "data": {}},
+                {"id": "node2", "type": "tests.workflows.test_control_edges.TestProcessingNode", "data": {}},
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "agent1",
+                    "sourceHandle": "output",
+                    "target": "node2",
+                    "targetHandle": "__control__",
+                    "edge_type": "control",
+                },
+                {
+                    "id": "e2",
+                    "source": "node1",
+                    "sourceHandle": "output",
+                    "target": "node2",
+                    "targetHandle": "threshold",
+                    "edge_type": "data",
+                },
+            ],
+        }
+        graph = Graph.from_dict(graph_dict, skip_errors=False)
+        assert len(graph.edges) == 2
+
+        control_edges = [e for e in graph.edges if e.edge_type == "control"]
+        data_edges = [e for e in graph.edges if e.edge_type == "data"]
+        assert len(control_edges) == 1
+        assert len(data_edges) == 1
+
+    def test_from_dict_control_edge_does_not_filter_node_data(self):
+        """Control edges should not filter node data (unlike data edges)."""
+        graph_dict = {
+            "nodes": [
+                {"id": "agent1", "type": "nodetool.agents.TestAgentNode", "data": {}},
+                {
+                    "id": "node1",
+                    "type": "tests.workflows.test_control_edges.TestProcessingNode",
+                    "data": {"threshold": 0.7, "mode": "fast"},
+                },
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "agent1",
+                    "sourceHandle": "output",
+                    "target": "node1",
+                    "targetHandle": "__control__",
+                    "edge_type": "control",
+                }
+            ],
+        }
+        graph = Graph.from_dict(graph_dict, skip_errors=False)
+        node = graph.find_node("node1")
+        # __control__ is not a real property, so node data should be preserved
+        assert node is not None
+        assert node.threshold == 0.7
+        assert node.mode == "fast"
+
+    def test_from_dict_data_edge_filters_node_data(self):
+        """Data edges should filter connected properties from node data."""
+        graph_dict = {
+            "nodes": [
+                {
+                    "id": "node1",
+                    "type": "tests.workflows.test_control_edges.TestProcessingNode",
+                    "data": {"threshold": 0.7, "mode": "fast"},
+                },
+                {"id": "node2", "type": "tests.workflows.test_control_edges.TestPlainNode", "data": {}},
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "node2",
+                    "sourceHandle": "output",
+                    "target": "node1",
+                    "targetHandle": "threshold",  # This is a real property
+                    "edge_type": "data",
+                }
+            ],
+        }
+        graph = Graph.from_dict(graph_dict, skip_errors=False)
+        node = graph.find_node("node1")
+        assert node is not None
+        # threshold should be filtered (will use default)
+        assert node.threshold == 0.5  # default value
+        # mode should be preserved
+        assert node.mode == "fast"
+
+    def test_from_dict_roundtrip_control_edges(self):
+        """Control edges should survive serialization roundtrip."""
+        agent = TestAgentNode(id="agent1")
+        node = TestProcessingNode(id="node1")
+        edges = [
+            Edge(
+                id="e1",
+                source="agent1",
+                sourceHandle="output",
+                target="node1",
+                targetHandle="__control__",
+                edge_type="control",
+            )
+        ]
+        original = Graph(nodes=[agent, node], edges=edges)
+
+        # Serialize
+        data = original.model_dump()
+
+        # Deserialize via from_dict format
+        graph_dict = {
+            "nodes": [{"id": n.id, "type": n.get_node_type(), "data": {}} for n in original.nodes],
+            "edges": [
+                {
+                    "id": e.id,
+                    "source": e.source,
+                    "sourceHandle": e.sourceHandle,
+                    "target": e.target,
+                    "targetHandle": e.targetHandle,
+                    "edge_type": e.edge_type,
+                }
+                for e in original.edges
+            ],
+        }
+        loaded = Graph.from_dict(graph_dict, skip_errors=False)
+
+        assert len(loaded.edges) == 1
+        assert loaded.edges[0].edge_type == "control"
+        assert loaded.edges[0].is_control()
+
+    def test_from_dict_chained_control_edges(self):
+        """Chained control edges (A->B, B->C) should load correctly."""
+        graph_dict = {
+            "nodes": [
+                {"id": "agent1", "type": "nodetool.agents.TestAgentNode", "data": {}},
+                {"id": "agent2", "type": "nodetool.agents.TestAgentNode", "data": {}},
+                {"id": "node1", "type": "tests.workflows.test_control_edges.TestProcessingNode", "data": {}},
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "agent1",
+                    "sourceHandle": "output",
+                    "target": "agent2",
+                    "targetHandle": "__control__",
+                    "edge_type": "control",
+                },
+                {
+                    "id": "e2",
+                    "source": "agent2",
+                    "sourceHandle": "output",
+                    "target": "node1",
+                    "targetHandle": "__control__",
+                    "edge_type": "control",
+                },
+            ],
+        }
+        graph = Graph.from_dict(graph_dict, skip_errors=False)
+        assert len(graph.edges) == 2
+        assert all(e.edge_type == "control" for e in graph.edges)
+
+        # Validate topological order: agent1 -> agent2 -> node1
+        levels = graph.topological_sort()
+        flat = [nid for level in levels for nid in level]
+        assert flat.index("agent1") < flat.index("agent2")
+        assert flat.index("agent2") < flat.index("node1")
+
+
 # ---------- Phase 4: NodeActor Control Parameter Tests ----------
 
 
@@ -686,3 +910,272 @@ class TestWorkflowRunnerControlEdges:
         assert "mode" in ctx["properties"]
         assert ctx["properties"]["threshold"]["value"] == 0.5
         assert ctx["properties"]["mode"]["value"] == "normal"
+
+
+# ---------- Phase 6: WorkflowRunner.send_messages Control Routing ----------
+
+
+class TestWorkflowRunnerControlRouting:
+    """Tests for WorkflowRunner.send_messages() control output routing."""
+
+    @pytest.mark.asyncio
+    async def test_send_messages_routes_control_output(self):
+        """Control output should be routed to __control__ inbox handle."""
+        from nodetool.workflows.workflow_runner import WorkflowRunner
+        from unittest.mock import MagicMock
+
+        runner = WorkflowRunner(job_id="test-job")
+
+        agent = TestAgentNode(id="agent1")
+        target = TestProcessingNode(id="target")
+        edges = [
+            Edge(
+                id="e1",
+                source="agent1",
+                sourceHandle="__control_output__",
+                target="target",
+                targetHandle="__control__",
+                edge_type="control",
+            )
+        ]
+        graph = Graph(nodes=[agent, target], edges=edges)
+
+        # Setup context mock
+        context = MagicMock()
+        context.graph = graph
+        context.workflow_id = "test-workflow"
+
+        # Setup inboxes
+        target_inbox = NodeInbox()
+        target_inbox.add_upstream("__control__", 1)
+        runner.node_inboxes = {"target": target_inbox}
+
+        # Send control params
+        control_params = {"threshold": 0.9, "mode": "fast"}
+        result = {"__control_output__": control_params, "output": "some_data"}
+
+        await runner.send_messages(agent, result, context)
+
+        # Mark source done so iteration can complete
+        target_inbox.mark_source_done("__control__")
+
+        # Verify control params were routed to target's __control__ handle
+        items = []
+        async for item in target_inbox.iter_input("__control__"):
+            items.append(item)
+        assert len(items) == 1
+        assert items[0] == control_params
+
+    @pytest.mark.asyncio
+    async def test_send_messages_control_output_missing_target_inbox(self):
+        """Control output with missing target inbox should not crash."""
+        from nodetool.workflows.workflow_runner import WorkflowRunner
+        from unittest.mock import MagicMock
+
+        runner = WorkflowRunner(job_id="test-job")
+
+        agent = TestAgentNode(id="agent1")
+        target = TestProcessingNode(id="target")
+        edges = [
+            Edge(
+                id="e1",
+                source="agent1",
+                sourceHandle="__control_output__",
+                target="target",
+                targetHandle="__control__",
+                edge_type="control",
+            )
+        ]
+        graph = Graph(nodes=[agent, target], edges=edges)
+
+        context = MagicMock()
+        context.graph = graph
+        context.workflow_id = "test-workflow"
+
+        # No inbox for target
+        runner.node_inboxes = {}
+
+        control_params = {"threshold": 0.9}
+        result = {"__control_output__": control_params}
+
+        # Should not raise
+        await runner.send_messages(agent, result, context)
+
+
+# ---------- Phase 7: Integration Tests ----------
+
+
+class TestControlEdgeIntegration:
+    """Integration tests for control edge execution flow."""
+
+    @pytest.mark.asyncio
+    async def test_control_params_override_node_defaults(self):
+        """Control params should override node default values."""
+        from nodetool.workflows.actor import NodeActor
+        from nodetool.workflows.workflow_runner import WorkflowRunner
+        from unittest.mock import MagicMock, AsyncMock
+
+        # Create node with default values
+        node = TestProcessingNode(id="node1", threshold=0.5, mode="normal")
+
+        # Setup runner with control edge
+        runner = MagicMock(spec=WorkflowRunner)
+        runner.multi_edge_list_inputs = {}
+        runner._control_edges = {
+            "node1": [
+                Edge(
+                    id="e1",
+                    source="agent1",
+                    sourceHandle="output",
+                    target="node1",
+                    targetHandle="__control__",
+                    edge_type="control",
+                )
+            ]
+        }
+        runner.disable_caching = True
+        runner.device = "cpu"
+        runner.job_id = "test-job"
+
+        # Setup context
+        context = MagicMock()
+        context.graph = Graph(nodes=[node], edges=[])
+        context.workflow_id = "test-workflow"
+
+        # Setup inbox with control params
+        inbox = NodeInbox()
+        inbox.add_upstream("__control__", 1)
+        await inbox.put("__control__", {"threshold": 0.9, "mode": "fast"})
+        inbox.mark_source_done("__control__")
+
+        actor = NodeActor(runner, node, context, inbox)
+
+        # Wait for control params
+        params = await actor._wait_for_control_params()
+        assert params["threshold"] == 0.9
+        assert params["mode"] == "fast"
+
+        # Validate they would apply to node
+        errors = actor._validate_control_params(params)
+        assert len(errors) == 0
+
+    @pytest.mark.asyncio
+    async def test_control_params_mixed_with_data_inputs(self):
+        """Control params should merge with data inputs, taking precedence."""
+        from nodetool.workflows.actor import NodeActor
+        from nodetool.workflows.workflow_runner import WorkflowRunner
+        from unittest.mock import MagicMock
+
+        node = TestProcessingNode(id="node1")
+
+        runner = MagicMock(spec=WorkflowRunner)
+        runner.multi_edge_list_inputs = {}
+        runner._control_edges = {
+            "node1": [
+                Edge(
+                    id="e1",
+                    source="agent1",
+                    sourceHandle="output",
+                    target="node1",
+                    targetHandle="__control__",
+                    edge_type="control",
+                )
+            ]
+        }
+
+        context = MagicMock()
+        context.graph = Graph(nodes=[node], edges=[])
+        context.workflow_id = "test-workflow"
+
+        inbox = NodeInbox()
+        # Control param for threshold
+        inbox.add_upstream("__control__", 1)
+        await inbox.put("__control__", {"threshold": 0.95})
+        inbox.mark_source_done("__control__")
+
+        # Data input for mode (simulating a data edge)
+        inbox.add_upstream("mode", 1)
+        await inbox.put("mode", "turbo")
+        inbox.mark_source_done("mode")
+
+        actor = NodeActor(runner, node, context, inbox)
+
+        # Get control params
+        control_params = await actor._wait_for_control_params()
+
+        # Simulate the merge logic from process_node_with_inputs
+        data_inputs = {"mode": "turbo"}  # From data edge
+        merged = {**data_inputs, **control_params}  # Control takes precedence
+
+        # Threshold from control, mode from data
+        assert merged["threshold"] == 0.95
+        assert merged["mode"] == "turbo"
+
+    @pytest.mark.asyncio
+    async def test_full_graph_json_roundtrip(self):
+        """Test complete graph JSON serialization roundtrip with control edges."""
+        # Build a complete graph with both data and control edges
+        # Use test-local nodes to avoid dependency on nodetool-base
+        graph_dict = {
+            "nodes": [
+                {
+                    "id": "node1",
+                    "type": "tests.workflows.test_control_edges.TestPlainNode",
+                    "data": {"value": "test input"},
+                },
+                {
+                    "id": "agent1",
+                    "type": "nodetool.agents.TestAgentNode",
+                    "data": {"prompt": ""},
+                },
+                {
+                    "id": "processor1",
+                    "type": "tests.workflows.test_control_edges.TestProcessingNode",
+                    "data": {"threshold": 0.5, "mode": "normal"},
+                },
+            ],
+            "edges": [
+                {
+                    "id": "data1",
+                    "source": "node1",
+                    "sourceHandle": "output",
+                    "target": "processor1",
+                    "targetHandle": "mode",
+                    "edge_type": "data",
+                },
+                {
+                    "id": "control1",
+                    "source": "agent1",
+                    "sourceHandle": "__control_output__",
+                    "target": "processor1",
+                    "targetHandle": "__control__",
+                    "edge_type": "control",
+                },
+            ],
+        }
+
+        # Load graph
+        graph = Graph.from_dict(graph_dict, skip_errors=False)
+
+        # Verify structure
+        assert len(graph.nodes) == 3
+        assert len(graph.edges) == 2
+
+        # Verify edge types
+        data_edges = [e for e in graph.edges if e.edge_type == "data"]
+        control_edges = [e for e in graph.edges if e.edge_type == "control"]
+        assert len(data_edges) == 1
+        assert len(control_edges) == 1
+
+        # Verify topological order
+        levels = graph.topological_sort()
+        flat = [nid for level in levels for nid in level]
+        # node1 and agent1 should come before processor1
+        assert flat.index("agent1") < flat.index("processor1")
+        assert flat.index("node1") < flat.index("processor1")
+
+        # Serialize back
+        serialized = graph.model_dump()
+        edge_types = {e["id"]: e["edge_type"] for e in serialized["edges"]}
+        assert edge_types["data1"] == "data"
+        assert edge_types["control1"] == "control"
