@@ -332,6 +332,9 @@ class WorkflowRunner:
         # Populated during graph analysis to track list-typed properties with multiple incoming edges
         self.multi_edge_list_inputs: dict[str, set[str]] = {}
 
+        # Control edges: {target_id: [control_edges]}
+        self._control_edges: dict[str, list[Edge]] = defaultdict(list)
+
     def _edge_key(self, edge: Edge) -> str:
         return edge.id or (f"{edge.source}:{edge.sourceHandle}->{edge.target}:{edge.targetHandle}")
 
@@ -357,6 +360,8 @@ class WorkflowRunner:
 
         adjacency: dict[str, list[Edge]] = defaultdict(list)
         for edge in graph.edges:
+            if edge.edge_type == "control":
+                continue  # Control edges don't participate in streaming propagation
             adjacency[edge.source].append(edge)
             self._streaming_edges[self._edge_key(edge)] = False
 
@@ -414,6 +419,8 @@ class WorkflowRunner:
         # Group edges by (target_node_id, targetHandle)
         edges_by_target_handle: dict[tuple[str, str], list[Edge]] = defaultdict(list)
         for edge in graph.edges:
+            if edge.edge_type == "control":
+                continue  # Control edges don't participate in list input classification
             key = (edge.target, edge.targetHandle)
             edges_by_target_handle[key].append(edge)
 
@@ -446,6 +453,56 @@ class WorkflowRunner:
             log.debug(f"Multi-edge list inputs detected: {self.multi_edge_list_inputs}")
         else:
             log.debug("Multi-edge list inputs detected: none")
+
+    def _classify_control_edges(self, graph: Graph) -> None:
+        """
+        Build lookup for control edges by target node.
+
+        Populates self._control_edges with {target_id: [Edge, Edge, ...]}.
+        Multiple controllers are allowed; they are processed in topological order.
+        """
+        self._control_edges.clear()
+
+        for edge in graph.edges:
+            if edge.edge_type == "control":
+                self._control_edges[edge.target].append(edge)
+
+        log.debug(
+            f"Classified control edges: {len(self._control_edges)} nodes have controllers"
+        )
+        for target_id, edges in self._control_edges.items():
+            log.debug(
+                f"  Node {target_id} controlled by: {[e.source for e in edges]}"
+            )
+
+    def _build_control_context(self, node: BaseNode, graph: Graph) -> dict[str, Any]:
+        """
+        Build context for control edge execution.
+
+        Returns:
+            Dictionary with:
+            - node_id: str
+            - node_type: str
+            - properties: dict[str, dict] (name -> {value, type, description})
+            - upstream_data: dict[str, Any] (handle -> value, for data edges with values)
+        """
+        context: dict[str, Any] = {
+            "node_id": node._id,
+            "node_type": node.get_node_type(),
+            "properties": {},
+            "upstream_data": {}
+        }
+
+        # Gather property metadata from node class
+        for prop in node.properties():
+            context["properties"][prop.name] = {
+                "value": getattr(node, prop.name, None),
+                "type": str(prop.type),
+                "description": prop.description or "",
+                "default": prop.default
+            }
+
+        return context
 
     # --- Streaming Input support for InputNode(is_streaming=True) ---
     def _enqueue_input_event(self, event: dict[str, Any]) -> None:
@@ -613,6 +670,11 @@ class WorkflowRunner:
                 removed.append(edge.id or "<unknown>")
                 continue
 
+            # Control edges use special handles; skip source/target handle checks
+            if edge.edge_type == "control":
+                valid_edges.append(edge)
+                continue
+
             target_cls = target_node.__class__
 
             # 3 - source handle must be an output on the *source* node (instance-aware)
@@ -739,6 +801,7 @@ class WorkflowRunner:
         context.graph = graph
         self._analyze_streaming(graph)
         self._classify_list_inputs(graph)
+        self._classify_control_edges(graph)
         self._initialize_inboxes(context, graph)
         self.context = context
         context.device = self.device
@@ -1198,7 +1261,33 @@ class WorkflowRunner:
                                      envelope. This metadata will be available to downstream
                                      nodes that consume messages with envelope access.
         """
+        # Handle control output routing
+        controlled_node_ids = [
+            edge.target for edge in context.graph.edges
+            if edge.source == node._id and edge.edge_type == "control"
+        ]
+
+        if controlled_node_ids and "__control_output__" in result:
+            control_params = result["__control_output__"]
+
+            if not isinstance(control_params, dict):
+                log.error(
+                    f"Node {node._id} output invalid control params: "
+                    f"expected dict, got {type(control_params)}"
+                )
+            else:
+                for target_id in controlled_node_ids:
+                    inbox = self.node_inboxes.get(target_id)
+                    if inbox:
+                        await inbox.put("__control__", control_params)
+                        log.debug(
+                            f"Routed control params from {node._id} to {target_id}: "
+                            f"{list(control_params.keys())}"
+                        )
+
         for key, value_to_send in result.items():
+            if key == "__control_output__":
+                continue  # Already handled above
             if not node.should_route_output(key):
                 log.debug(
                     "Routing suppressed by node hook for output '%s' on node %s",

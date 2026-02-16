@@ -298,6 +298,122 @@ class Graph(BaseModel):
 
         return sorted_nodes
 
+    def get_control_edges(self, target_id: str) -> list[Edge]:
+        """Return all control edges targeting the given node."""
+        return [
+            edge for edge in self.edges
+            if edge.target == target_id and edge.edge_type == "control"
+        ]
+
+    def get_controller_nodes(self, target_id: str) -> list[BaseNode]:
+        """Return all nodes that control the given target node."""
+        control_edges = self.get_control_edges(target_id)
+        controllers = []
+        for edge in control_edges:
+            node = self.find_node(edge.source)
+            if node:
+                controllers.append(node)
+        return controllers
+
+    def get_controlled_nodes(self, source_id: str) -> list[str]:
+        """Return IDs of all nodes controlled by the given source."""
+        return [
+            edge.target for edge in self.edges
+            if edge.source == source_id and edge.edge_type == "control"
+        ]
+
+    def validate_control_edges(self) -> list[str]:
+        """
+        Validate control edges in the graph.
+
+        Rules:
+        - Control edges must originate from Agent-type nodes
+        - Control edges must target valid nodes
+        - Control edges must use '__control__' as targetHandle
+        - Circular control chains are forbidden
+
+        Returns:
+            List of validation error messages (empty if valid)
+        """
+        errors = []
+
+        for edge in self.edges:
+            if edge.edge_type != "control":
+                continue
+
+            # Rule 1: Source must be an Agent node
+            source_node = self.find_node(edge.source)
+            if not source_node:
+                errors.append(f"Control edge {edge.id} has invalid source {edge.source}")
+                continue
+
+            if "agent" not in source_node.get_node_type().lower():
+                errors.append(
+                    f"Control edge {edge.id} source {edge.source} must be an Agent node, "
+                    f"got {source_node.get_node_type()}"
+                )
+
+            # Rule 2: Target must exist
+            target_node = self.find_node(edge.target)
+            if not target_node:
+                errors.append(f"Control edge {edge.id} has invalid target {edge.target}")
+                continue
+
+            # Rule 3: Must use __control__ as targetHandle
+            if edge.targetHandle != "__control__":
+                errors.append(
+                    f"Control edge {edge.id} must use '__control__' as targetHandle, "
+                    f"got '{edge.targetHandle}'"
+                )
+
+        # Rule 4: Check for circular control dependencies
+        circular_errors = self._check_circular_control(self.edges)
+        errors.extend(circular_errors)
+
+        return errors
+
+    def _check_circular_control(self, edges: Sequence[Edge]) -> list[str]:
+        """
+        Check for circular dependencies in control edges.
+
+        Returns:
+            List of error messages for circular dependencies
+        """
+        errors = []
+
+        # Build control adjacency list
+        control_graph: dict[str, list[str]] = defaultdict(list)
+        for edge in edges:
+            if edge.edge_type == "control":
+                control_graph[edge.source].append(edge.target)
+
+        # DFS to detect cycles
+        def has_cycle(node: str, visited: set[str], rec_stack: set[str]) -> tuple[bool, list[str]]:
+            visited.add(node)
+            rec_stack.add(node)
+
+            for neighbor in control_graph.get(node, []):
+                if neighbor not in visited:
+                    found, path = has_cycle(neighbor, visited, rec_stack)
+                    if found:
+                        return True, [node] + path
+                elif neighbor in rec_stack:
+                    return True, [node, neighbor]
+
+            rec_stack.remove(node)
+            return False, []
+
+        visited: set[str] = set()
+        for node_id in control_graph.keys():
+            if node_id not in visited:
+                found, path = has_cycle(node_id, visited, set())
+                if found:
+                    errors.append(
+                        f"Circular control dependency detected: {' -> '.join(path)}"
+                    )
+
+        return errors
+
     def validate_edge_types(self):
         """
         Validate that edge connections have compatible types.
@@ -314,9 +430,12 @@ class Graph(BaseModel):
         """
         validation_errors = []
 
-        # Group edges by (target_node_id, targetHandle) to detect multi-edge scenarios
+        # Group data edges by (target_node_id, targetHandle) to detect multi-edge scenarios
+        # Control edges are validated separately via validate_control_edges()
         edges_by_target_handle: dict[tuple[str, str], list[Edge]] = defaultdict(list)
         for edge in self.edges:
+            if edge.edge_type == "control":
+                continue
             key = (edge.target, edge.targetHandle)
             edges_by_target_handle[key].append(edge)
 
@@ -422,6 +541,10 @@ class Graph(BaseModel):
                         f"{edge.source}.{edge.sourceHandle} outputs {source_type.type} "
                         f"but {edge.target}.{edge.targetHandle} expects {target_type.type}"
                     )
+
+        # Add control edge validation
+        control_errors = self.validate_control_edges()
+        validation_errors.extend(control_errors)
 
         return validation_errors
 
