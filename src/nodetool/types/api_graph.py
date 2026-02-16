@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -32,6 +32,11 @@ class Edge(BaseModel):
     target: str
     targetHandle: str
     ui_properties: dict[str, str] | None = None
+    edge_type: Literal["data", "control"] = "data"
+
+    def is_control(self) -> bool:
+        """Return True if this is a control edge."""
+        return self.edge_type == "control"
 
 
 class Graph(BaseModel):
