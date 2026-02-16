@@ -356,6 +356,56 @@ class AudioRef(AssetRef):
     type: Literal["audio"] = "audio"
 
 
+class AudioStream(BaseType):
+    """
+    Represents a stream of audio data for realtime audio processing.
+
+    Designed for use with nodes that process audio in realtime, similar to Reaktor.
+    Accepts high latency and uses pydub/numpy for processing rather than low-level audio.
+
+    Audio data is stored as raw PCM samples (int16 or float32) to enable efficient
+    streaming and processing with numpy and pydub.
+
+    Attributes:
+        type: Type identifier for the audio stream
+        data: Raw audio samples as bytes (PCM format)
+        sample_rate: Sample rate in Hz (e.g., 44100, 48000)
+        channels: Number of audio channels (1 for mono, 2 for stereo)
+        sample_width: Bytes per sample (2 for int16, 4 for float32)
+        format: Audio format identifier (e.g., 'pcm_s16le', 'pcm_f32le')
+        timestamp: Optional timestamp for the audio chunk (start_time, end_time) in seconds
+        metadata: Optional additional metadata
+
+    Example:
+        # Create from numpy array
+        import numpy as np
+        audio_data = np.sin(2 * np.pi * 440 * np.linspace(0, 1, 44100))
+        stream = AudioStream(
+            data=(audio_data * 32767).astype(np.int16).tobytes(),
+            sample_rate=44100,
+            channels=1,
+            sample_width=2,
+            format='pcm_s16le'
+        )
+    """
+
+    type: Literal["audio_stream"] = "audio_stream"
+    data: bytes = b""
+    sample_rate: int = 44100
+    channels: int = 1
+    sample_width: int = 2  # bytes per sample (2 for int16, 4 for float32)
+    format: str = "pcm_s16le"  # PCM signed 16-bit little-endian
+    timestamp: tuple[float, float] = (0.0, 0.0)
+    metadata: dict[str, Any] | None = None
+
+    def duration_seconds(self) -> float:
+        """Calculate duration in seconds based on data length and format."""
+        if not self.data or self.sample_rate == 0 or self.channels == 0 or self.sample_width == 0:
+            return 0.0
+        num_samples = len(self.data) // (self.sample_width * self.channels)
+        return num_samples / self.sample_rate
+
+
 class ImageRef(AssetRef):
     """A reference to an image asset."""
 
