@@ -488,7 +488,7 @@ class DeploymentConfig(BaseModel):
         if not isinstance(deployments, dict):
             return data
 
-        for _name, deployment in deployments.items():
+        for deployment in deployments.values():
             if isinstance(deployment, dict) and deployment.get("type") == "root":
                 deployment["type"] = "ssh"
 
@@ -541,7 +541,7 @@ def load_deployment_config() -> DeploymentConfig:
 
     # Auto-generate server_auth_token for self-hosted deployments that don't have one
     config_updated = False
-    for _name, deployment in config.deployments.items():
+    for deployment in config.deployments.values():
         if isinstance(deployment, SelfHostedDeployment):
             if not deployment.server_auth_token:
                 deployment.server_auth_token = secrets.token_urlsafe(32)
