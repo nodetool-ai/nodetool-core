@@ -192,7 +192,6 @@ class VllmProvider(BaseProvider, OpenAICompat):
         model: str,
         tools: Sequence[Any] | None = None,
         max_tokens: int = 16384,
-        context_window: int | None = None,
         response_format: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
@@ -203,7 +202,6 @@ class VllmProvider(BaseProvider, OpenAICompat):
             model: Model identifier to use for generation.
             tools: Optional tool definitions.
             max_tokens: Maximum new tokens to generate.
-            context_window: Maximum context window size.
             response_format: Optional response schema.
             **kwargs: Additional OpenAI-compatible parameters.
 
@@ -235,23 +233,12 @@ class VllmProvider(BaseProvider, OpenAICompat):
             if param in kwargs and kwargs[param] is not None:
                 request_payload[param] = kwargs[param]
 
-        extra_body: dict[str, Any] = {}
-        if context_window is not None:
-            extra_body["max_prompt_tokens"] = context_window
-
-        log_payload = request_payload.copy()
-        if extra_body:
-            log_payload["extra_body"] = extra_body
-
-        self._log_api_request("chat_stream", messages, **log_payload)
+        self._log_api_request("chat_stream", messages, **request_payload)
 
         openai_messages = [await self.convert_message(m) for m in messages]
-        completion_kwargs = request_payload.copy()
-        if extra_body:
-            completion_kwargs["extra_body"] = extra_body
         completion = await client.chat.completions.create(
             messages=openai_messages,
-            **completion_kwargs,
+            **request_payload,
         )
 
         delta_tool_calls: dict[int, dict[str, Any]] = {}
@@ -318,7 +305,6 @@ class VllmProvider(BaseProvider, OpenAICompat):
         model: str,
         tools: Sequence[Any] | None = None,
         max_tokens: int = 16384,
-        context_window: int = 128000,
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:
@@ -329,7 +315,6 @@ class VllmProvider(BaseProvider, OpenAICompat):
             model: Model identifier to use for generation.
             tools: Optional tool definitions.
             max_tokens: Maximum new tokens to generate.
-            context_window: Maximum context window size.
             response_format: Optional response schema.
             **kwargs: Additional OpenAI-compatible parameters.
 
@@ -358,24 +343,13 @@ class VllmProvider(BaseProvider, OpenAICompat):
             if param in kwargs and kwargs[param] is not None:
                 request_payload[param] = kwargs[param]
 
-        extra_body: dict[str, Any] = {}
-        if context_window is not None:
-            extra_body["max_prompt_tokens"] = context_window
-
-        log_payload = request_payload.copy()
-        if extra_body:
-            log_payload["extra_body"] = extra_body
-
-        self._log_api_request("chat", messages, model=model, **log_payload)
+        self._log_api_request("chat", messages, model=model, **request_payload)
 
         openai_messages = [await self.convert_message(m) for m in messages]
-        completion_kwargs = request_payload.copy()
-        if extra_body:
-            completion_kwargs["extra_body"] = extra_body
         completion = await client.chat.completions.create(
             model=model,
             messages=openai_messages,
-            **completion_kwargs,
+            **request_payload,
         )
 
         if completion.usage:

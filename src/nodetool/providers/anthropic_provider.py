@@ -1,4 +1,4 @@
-﻿"""
+"""
 Anthropic provider implementation for chat completions.
 
 This module implements the ChatProvider interface for Anthropic Claude models,
@@ -94,7 +94,8 @@ class AnthropicProvider(BaseProvider):
         new_schema = schema.copy()
 
         # Add additionalProperties: false to object types
-        if new_schema.get("type") == "object":
+        # Add additionalProperties: false to object types
+        if new_schema.get("type") == "object" and "additionalProperties" not in new_schema:
             new_schema["additionalProperties"] = False
 
         # Recursively process properties
@@ -404,6 +405,46 @@ class AnthropicProvider(BaseProvider):
         log.debug(f"Formatted tools: {[tool['name'] for tool in formatted_tools]}")
         return formatted_tools
 
+    def _setup_structured_output(
+        self,
+        tools: Sequence[Any] | None,
+        response_format: dict | None,
+    ) -> tuple[list[dict] | None, dict | None, bool]:
+        """Prepare tools and tool_choice for structured output."""
+        if not response_format:
+            return self.format_tools(tools or []), None, False
+
+        # Handle json_object
+        if response_format.get("type") == "json_object":
+            schema = {"type": "object", "additionalProperties": True}
+            tool_name = "json_output"
+            description = "Output the response as a JSON object."
+
+        # Handle json_schema
+        elif response_format.get("type") == "json_schema":
+            json_schema_config = response_format.get("json_schema", {})
+            schema = json_schema_config.get("schema")
+            tool_name = json_schema_config.get("name", "json_output")
+            description = json_schema_config.get("description", "Output the response in this format.")
+            if not schema:
+                raise ValueError("json_schema must contain a schema")
+        else:
+            raise ValueError(f"Unsupported response_format type: {response_format.get('type')}")
+
+        # Prepare schema
+        prepared_schema = self._prepare_json_schema(schema)
+
+        tool_definition = {
+            "name": tool_name,
+            "description": description,
+            "input_schema": prepared_schema,
+        }
+
+        # Force the tool use
+        tool_choice = {"type": "tool", "name": tool_name}
+        
+        return [tool_definition], tool_choice, True
+
     async def generate_messages(  # type: ignore[override]
         self,
         messages: Sequence[Message],
@@ -416,10 +457,6 @@ class AnthropicProvider(BaseProvider):
         """Generate streaming completions from Anthropic."""
         log.debug(f"Starting streaming generation for model: {model}")
         log.debug(f"Streaming with {len(messages)} messages, {len(tools or [])} tools")
-
-        # Handle response_format parameter
-        local_tools = list(tools) if tools else []  # Make a mutable copy
-        output_format = None
 
         system_messages = [message for message in messages if message.role == "system"]
         if len(system_messages) > 0:
@@ -445,8 +482,8 @@ class AnthropicProvider(BaseProvider):
         anthropic_messages = [msg for msg in converted if msg is not None]
         log.debug(f"Converted to {len(anthropic_messages)} Anthropic messages")
 
-        # Use the potentially modified local_tools list
-        anthropic_tools = self.format_tools(local_tools)
+        # Setup structured output if requested
+        anthropic_tools, tool_choice, is_structured = self._setup_structured_output(tools, response_format)
 
         log.debug(f"Starting streaming API call to Anthropic with model: {model}")
 
@@ -459,15 +496,13 @@ class AnthropicProvider(BaseProvider):
         }
         if anthropic_tools:
             request_kwargs["tools"] = anthropic_tools
+        if tool_choice:
+            request_kwargs["tool_choice"] = tool_choice
 
         for key in ("temperature", "top_p", "top_k"):
             if kwargs.get(key) is not None:
                 request_kwargs[key] = kwargs[key]
 
-        if output_format:
-            raise ValueError("Output format is not supported for Anthropic")
-
-        log.debug("Streaming response initialized")
         log.debug("Streaming response initialized")
         client = self.get_client()
         try:
@@ -478,19 +513,28 @@ class AnthropicProvider(BaseProvider):
                         delta = getattr(event, "delta", None)
                         # Prefer text; fall back to partial_json/thinking if present
                         text = getattr(delta, "text", None)
-                        getattr(delta, "partial_json", None)
+                        partial_json = getattr(delta, "partial_json", None)
                         thinking = getattr(delta, "thinking", None)
-                        if isinstance(text, str):
-                            yield Chunk(content=text, done=False)
-                        # Note: partial_json contains tool call input fragments and should NOT
-                        # be yielded as message content. The complete tool call is emitted
-                        # at content_block_stop event.
-                        elif isinstance(thinking, str):
+                        
+                        if isinstance(thinking, str):
                             yield Chunk(content=thinking, done=False, thinking=True)
+                        elif is_structured and isinstance(partial_json, str):
+                            # For structured output, yield the partial JSON as content
+                            yield Chunk(content=partial_json, done=False)
+                        elif not is_structured and isinstance(text, str):
+                            yield Chunk(content=text, done=False)
+                            
                     elif etype == "content_block_stop":
                         # Tool use may appear here in real SDK; tests often omit attributes
                         content_block = getattr(event, "content_block", None)
                         if content_block is not None and getattr(content_block, "type", "") == "tool_use":
+                            # If structured output, we are handling this transparently
+                            if is_structured:
+                                # Note: We cannot easily unwrap "output" keys in streaming mode 
+                                # because we are yielding partial JSON strings. Consumers of streaming 
+                                # structured output must handle potential wrapping themselves.
+                                continue
+                                
                             tool_call = ToolCall(
                                 id=str(getattr(content_block, "id", "")),
                                 name=getattr(content_block, "name", ""),
@@ -529,9 +573,6 @@ class AnthropicProvider(BaseProvider):
         log.debug(f"Generating non-streaming message for model: {model}")
         log.debug(f"Non-streaming with {len(messages)} messages, {len(tools or [])} tools")
 
-        if response_format:
-            raise ValueError("Output format is not supported for Anthropic")
-
         system_messages = [message for message in messages if message.role == "system"]
         if len(system_messages) > 0:
             raw = system_messages[0].content
@@ -555,9 +596,8 @@ class AnthropicProvider(BaseProvider):
         anthropic_messages = [msg for msg in converted if msg is not None]
         log.debug(f"Converted to {len(anthropic_messages)} Anthropic messages")
 
-        # Use the tools from parameter, or format the local tools
-        local_tools = list(tools) if tools else []
-        anthropic_tools = self.format_tools(local_tools)
+        # Setup structured output if requested
+        anthropic_tools, tool_choice, is_structured = self._setup_structured_output(tools, response_format)
 
         log.debug(f"Making non-streaming API call to Anthropic with model: {model}")
         create_kwargs: dict[str, Any] = {
@@ -568,6 +608,8 @@ class AnthropicProvider(BaseProvider):
         }
         if anthropic_tools:
             create_kwargs["tools"] = anthropic_tools
+        if tool_choice:
+            create_kwargs["tool_choice"] = tool_choice
 
         # Handle temperature, top_p, top_k from kwargs if provided
         if "temperature" in kwargs:
@@ -598,19 +640,52 @@ class AnthropicProvider(BaseProvider):
         log.debug(f"Processing {len(response.content)} content blocks")
         content = []
         tool_calls = []
-        for block in response.content:
-            log.debug(f"Processing content block type: {block.type}")
-            if block.type == "tool_use":
-                log.debug(f"Found tool call: {block.name}")
-                tool_calls.append(
-                    ToolCall(
-                        id=str(block.id),
-                        name=block.name,
-                        args=block.input,  # type: ignore
+        
+        # If structured output, we expect a tool use block matching our enforced tool
+        if is_structured:
+            tool_name = tool_choice["name"]  # type: ignore
+            found_output = False
+            for block in response.content:
+                if block.type == "tool_use" and block.name == tool_name:
+                    # Found our structured output
+                    log.debug(f"Found structured output in tool call: {block.name}")
+                    input_data = block.input
+                    
+                    # Unwrap if the model wrapped the output in a single key like "output" or "json"
+                    # This happens sometimes when the model tries to match the tool name
+                    if isinstance(input_data, dict) and len(input_data) == 1:
+                        key = next(iter(input_data))
+                        if key.lower() in ("output", "json", "response", "content"):
+                            log.debug(f"Unwrapping structured output from key: {key}")
+                            input_data = input_data[key]
+                            
+                    # Convert input data to JSON string to match response_format expectations
+                    content.append(json.dumps(input_data))
+                    found_output = True
+                    # Do not add to tool_calls
+                    break
+            
+            if not found_output:
+                log.warning("Structured output requested, but no matching tool call found in response")
+                # Fallback: check text content?
+                for block in response.content:
+                    if block.type == "text":
+                         content.append(block.text)
+        else:
+            # Standard processing
+            for block in response.content:
+                log.debug(f"Processing content block type: {block.type}")
+                if block.type == "tool_use":
+                    log.debug(f"Found tool call: {block.name}")
+                    tool_calls.append(
+                        ToolCall(
+                            id=str(block.id),
+                            name=block.name,
+                            args=block.input,  # type: ignore
+                        )
                     )
-                )
-            elif block.type == "text":
-                content.append(block.text)
+                elif block.type == "text":
+                    content.append(block.text)
 
         log.debug(f"Response has {len(content)} text parts and {len(tool_calls)} tool calls")
         message = Message(

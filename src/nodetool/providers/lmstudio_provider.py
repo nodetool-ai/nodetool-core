@@ -1,4 +1,4 @@
-﻿"""LM Studio OpenAI-compatible provider implementation.
+"""LM Studio OpenAI-compatible provider implementation.
 
 This module implements the BaseProvider interface for LM Studio models, handling message
 conversion, streaming, and tool integration. LM Studio provides an OpenAI-compatible API
@@ -117,9 +117,7 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
         log.debug(f"Container environment variables: {list(env_vars.keys())}")
         return env_vars
 
-    def _create_client(
-        self, max_retries: int = 2, timeout: float | None = None
-    ) -> openai.AsyncOpenAI:
+    def _create_client(self, max_retries: int = 2, timeout: float | None = None) -> openai.AsyncOpenAI:
         """Create an OpenAI client instance configured for LM Studio.
 
         Args:
@@ -175,7 +173,6 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
         model: str,
         tools: Sequence[Tool] = [],
         max_tokens: int = 8192,
-        context_window: int | None = None,
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:
@@ -186,7 +183,6 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
             model: The model to use
             tools: Optional tools to make available to the model
             max_tokens: Maximum tokens to generate
-            context_window: Optional context window override
             response_format: Optional response format specification
             **kwargs: Additional parameters to pass to the LM Studio API
 
@@ -263,7 +259,6 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
         model: str,
         tools: Sequence[Tool] = [],
         max_tokens: int = 8192,
-        context_window: int | None = None,
         response_format: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
@@ -274,7 +269,6 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
             model: The model to use
             tools: Optional tools to make available to the model
             max_tokens: Maximum tokens to generate
-            context_window: Optional context window override
             response_format: Optional response format specification
             **kwargs: Additional parameters to pass to the LM Studio API
 

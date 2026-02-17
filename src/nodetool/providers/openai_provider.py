@@ -1039,7 +1039,6 @@ class OpenAIProvider(BaseProvider):
             model: Target OpenAI model.
             tools: Optional tool definitions to provide.
             max_tokens: Maximum tokens to generate.
-            context_window: Maximum tokens considered for context.
             json_schema: Optional response schema.
             response_format: Optional structured output format.
             **kwargs: Additional OpenAI parameters such as temperature.
@@ -1222,12 +1221,12 @@ class OpenAIProvider(BaseProvider):
         finally:
             # Close the stream to terminate the HTTP connection
             # AsyncStream.close() is async and must be awaited
-            if hasattr(completion, 'close'):
+            if hasattr(completion, "close"):
                 try:
                     await completion.close()
                 except Exception:
                     pass
-            elif hasattr(completion, 'response') and hasattr(completion.response, 'close'):
+            elif hasattr(completion, "response") and hasattr(completion.response, "close"):
                 try:
                     await completion.response.close()
                 except Exception:
@@ -1255,7 +1254,6 @@ class OpenAIProvider(BaseProvider):
             model: The model to use
             tools: Optional tools to provide to the model
             max_tokens: The maximum number of tokens to generate
-            context_window: The maximum number of tokens to consider for the context
             response_format: The format of the response
             **kwargs: Additional arguments to pass to the OpenAI API
 
