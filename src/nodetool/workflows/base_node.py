@@ -607,6 +607,125 @@ class BaseNode(BaseModel):
         return bool(getattr(attr, "default", False))
 
     @classmethod
+    def get_control_actions(cls) -> dict[str, dict[str, Any]]:
+        """Declare control actions this node supports.
+
+        Returns a dict mapping action names to action info including description
+        and property schemas. Controllers use this to discover how they can
+        control this node.
+
+        Default implementation provides a single "run" action with property schemas
+        derived from the node's properties. Nodes can override to add custom actions
+        (e.g., "reset", "configure") or modify the default "run" action.
+
+        Returns:
+            Dict mapping action names to dicts with:
+                - description: Human-readable action description
+                - properties: Dict of property name -> JSON Schema type info
+
+        Example:
+            {
+                "run": {
+                    "description": "Execute the MyNode node",
+                    "properties": {
+                        "threshold": {"type": "number", "description": "Threshold value"},
+                        "mode": {"type": "string", "description": "Processing mode"}
+                    }
+                }
+            }
+        """
+        from nodetool.metadata.type_metadata import TypeMetadata
+
+        properties_schema = {}
+        for prop in cls.properties():
+            python_type = prop.type.get_python_type()
+            json_type = cls._python_type_to_json_schema_type(python_type, prop.type)
+            properties_schema[prop.name] = {
+                "type": json_type,
+                "description": prop.description or "",
+            }
+
+        return {
+            "run": {
+                "description": f"Execute the {cls.get_title()} node",
+                "properties": properties_schema,
+            }
+        }
+
+    @staticmethod
+    def _python_type_to_json_schema_type(python_type: type, type_metadata: "TypeMetadata") -> str:
+        """Map Python types to JSON Schema types for LLM tool calling.
+
+        Args:
+            python_type: The Python type to map
+            type_metadata: TypeMetadata for additional type info
+
+        Returns:
+            JSON Schema type string: "integer", "number", "string", "boolean", "array", or "object"
+        """
+        # Handle None/Any
+        if python_type is None or python_type is Any:
+            return "string"
+
+        # Check type metadata first for more precise types
+        type_name = type_metadata.type
+        type_mapping = {
+            "int": "integer",
+            "float": "number",
+            "str": "string",
+            "bool": "boolean",
+            "list": "array",
+            "dict": "object",
+        }
+        if type_name in type_mapping:
+            return type_mapping[type_name]
+
+        # Fallback to checking the Python type directly
+        python_type_mapping = {
+            int: "integer",
+            float: "number",
+            str: "string",
+            bool: "boolean",
+            list: "array",
+            dict: "object",
+        }
+        if python_type in python_type_mapping:
+            return python_type_mapping[python_type]
+
+        # Default to string for unknown types
+        return "string"
+
+    def is_controlled(self) -> bool:
+        """Check if this node is controlled by another node via control edges.
+
+        This flag is set by the WorkflowRunner during initialization when the node
+        has incoming control edges.
+
+        Returns:
+            True if the node has incoming control edges, False otherwise
+        """
+        return getattr(self, "_is_controlled", False)
+
+    def save_original_properties(self) -> None:
+        """Save current property values before applying transient control properties.
+
+        Called by NodeActor before executing with control properties.
+        The saved values are restored after execution via restore_original_properties().
+        """
+        self._original_properties = {prop.name: getattr(self, prop.name) for prop in self.properties()}
+
+    def restore_original_properties(self) -> None:
+        """Restore original property values after control execution.
+
+        Called by NodeActor after executing with control properties.
+        Properties are reverted to their values before the control event was applied.
+        """
+        if hasattr(self, "_original_properties"):
+            for prop_name, value in self._original_properties.items():
+                setattr(self, prop_name, value)
+            del self._original_properties
+
+    @classmethod
     def auto_save_asset(cls) -> bool:
         """Return whether the node should automatically save its output as an asset."""
         attr = getattr(cls, "_auto_save_asset", False)
@@ -809,8 +928,7 @@ class BaseNode(BaseModel):
 
         # Convert models synchronously (without detailed model info from API)
         return [  # type: ignore
-            unified_model(model, model_info=None)
-            for model in recommended_models
+            unified_model(model, model_info=None) for model in recommended_models
         ]
 
     @classmethod
@@ -1088,12 +1206,58 @@ class BaseNode(BaseModel):
         # Removed logging from here; caller will decide what to do with errors.
         return error_messages
 
-    def properties_for_client(self):
+    def properties_for_client(self) -> dict[str, Any]:
         """
         Properties to send to the client for updating the node.
-        Comfy types and tensors are excluded.
+
+        Returns all node properties including static and dynamic properties.
+        Properties are serialized for client consumption.
         """
-        return {}
+        props: dict[str, Any] = {}
+
+        # Include static properties from Pydantic fields
+        for name in self.inherited_fields():
+            try:
+                value = self.read_property(name)
+
+                is_torch_tensor = False
+                if _is_torch_available():
+                    try:
+                        import torch  # type: ignore
+
+                        if isinstance(value, torch.Tensor):
+                            is_torch_tensor = True
+                    except ImportError:
+                        pass
+
+                if is_torch_tensor or isinstance(value, ComfyData):
+                    continue
+                elif isinstance(value, ComfyModel):
+                    value_without_model = value.model_dump()
+                    value_without_model.pop("model", None)
+                    props[name] = value_without_model
+                elif isinstance(value, AssetRef | dict | list | tuple):
+                    props[name] = value
+                elif isinstance(value, BaseModel):
+                    props[name] = value.model_dump()
+                else:
+                    props[name] = value
+            except Exception as e:
+                log.debug(f"Failed to read property {name} for client: {e}")
+                continue
+
+        # Include dynamic properties
+        for name, value in self._dynamic_properties.items():
+            try:
+                if isinstance(value, BaseModel):
+                    props[name] = value.model_dump()
+                else:
+                    props[name] = value
+            except Exception as e:
+                log.debug(f"Failed to serialize dynamic property {name} for client: {e}")
+                continue
+
+        return props
 
     def result_for_client(self, result: dict[str, Any]) -> dict[str, Any]:
         """
@@ -1239,6 +1403,7 @@ class BaseNode(BaseModel):
             if _is_torch_available():
                 try:
                     import torch  # type: ignore
+
                     if isinstance(value, torch.Tensor):
                         is_torch_tensor = True
                 except ImportError:
@@ -1282,6 +1447,7 @@ class BaseNode(BaseModel):
                 if _is_torch_available():
                     try:
                         import torch  # type: ignore
+
                         if isinstance(value, torch.Tensor):
                             is_torch_tensor = True
                     except ImportError:
@@ -1791,6 +1957,7 @@ class BaseNode(BaseModel):
         if _is_torch_available():
             try:
                 import torch  # type: ignore
+
                 with torch.no_grad():  # type: ignore
                     return await self.process(context)
             except ImportError:
@@ -2129,6 +2296,7 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
         The `BaseNode` subclass corresponding to `node_type` if found,
         otherwise `None`.
     """
+
     def _lookup(type_name: str) -> type[BaseNode] | None:
         if type_name in NODE_BY_TYPE:
             return NODE_BY_TYPE[type_name]

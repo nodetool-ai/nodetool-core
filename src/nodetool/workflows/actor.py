@@ -48,10 +48,14 @@ from pydantic import BaseModel
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
 from nodetool.observability.tracing import trace_node
+from nodetool.workflows.inbox import MessageEnvelope
 from nodetool.workflows.io import NodeInputs, NodeOutputs
 from nodetool.workflows.suspendable_node import WorkflowSuspendedException
 from nodetool.workflows.torch_support import is_cuda_available
 from nodetool.workflows.types import EdgeUpdate, NodeUpdate
+
+if TYPE_CHECKING:
+    from nodetool.workflows.control_events import ControlEvent, RunEvent
 
 
 def _serialize_output_for_telemetry(output: Any, max_string_length: int = 500, max_list_items: int = 10) -> Any:
@@ -146,6 +150,8 @@ class NodeActor:
         self._task: asyncio.Task | None = None
         self.logger = get_logger(__name__)
         self.logger.setLevel(logging.DEBUG)
+        self._cached_inputs_for_controlled_node: dict[str, Any] | None = None
+        self._current_control_properties: dict[str, Any] | None = None
 
     def _get_list_handles(self) -> set[str]:
         """Return handles that require multi-edge list aggregation for this node."""
@@ -166,6 +172,54 @@ class NodeActor:
     def _get_controlled_nodes(self) -> list[str]:
         """Return IDs of nodes controlled by this node."""
         return self.context.graph.get_controlled_nodes(self.node._id)
+
+    async def _replay_cached_inputs(self) -> None:
+        """Requeue cached input values for controlled nodes before execution."""
+        if not self.node.is_controlled():
+            return
+        if not self._cached_inputs_for_controlled_node:
+            return
+        if self.inbox is None:
+            return
+        for handle, value in self._cached_inputs_for_controlled_node.items():
+            await self.inbox.put(handle, value)
+
+    def _serialize_property_value(self, value: Any) -> Any:
+        """Serialize a property value to a JSON-serializable format.
+
+        Handles Pydantic models by converting them to dicts, and other
+        complex types appropriately.
+
+        Args:
+            value: The value to serialize
+
+        Returns:
+            JSON-serializable representation of the value
+        """
+        if value is None:
+            return None
+
+        # Handle Pydantic models (including AssetRef and subclasses)
+        if isinstance(value, BaseModel):
+            try:
+                return value.model_dump(mode="json")
+            except Exception:
+                return {"type": type(value).__name__, "error": "serialization_failed"}
+
+        # Handle primitives
+        if isinstance(value, (int, float, bool, str)):
+            return value
+
+        # Handle lists
+        if isinstance(value, list):
+            return [self._serialize_property_value(item) for item in value]
+
+        # Handle dicts
+        if isinstance(value, dict):
+            return {str(k): self._serialize_property_value(v) for k, v in value.items()}
+
+        # Fallback: convert to string
+        return str(value)
 
     def _build_control_context(self) -> dict[str, Any]:
         """
@@ -193,8 +247,15 @@ class NodeActor:
 
             # Gather property metadata from node class
             for prop in node.properties():
+                raw_value = getattr(node, prop.name, None)
+                serialized_value = self._serialize_property_value(raw_value)
+                # Debug: log if we have a complex type
+                if raw_value is not None and not isinstance(raw_value, (int, float, bool, str, list, dict)):
+                    self.logger.debug(
+                        f"Control context: serializing {prop.name} = {type(raw_value).__name__} -> {type(serialized_value).__name__}"
+                    )
                 node_context["properties"][prop.name] = {
-                    "value": getattr(node, prop.name, None),
+                    "value": serialized_value,
                     "type": str(prop.type),
                     "description": prop.description or "",
                     "default": prop.default,
@@ -426,15 +487,24 @@ class NodeActor:
         """
         # Get tracer for this job if available
         job_id = self.runner.job_id if hasattr(self.runner, "job_id") else None
+        node = self.node
 
         async with trace_node(
-            node_id=self.node._id,
-            node_type=self.node.get_node_type(),
+            node_id=node._id,
+            node_type=node.get_node_type(),
             job_id=job_id,
         ) as span:
-            span.set_attribute("nodetool.node.title", self.node.get_title())
+            span.set_attribute("nodetool.node.title", node.get_title())
             span.set_attribute("nodetool.node.input_count", len(inputs))
             span.set_attribute("nodetool.node.requires_gpu", self.node.requires_gpu())
+
+            # Controlled nodes honor the most recent control overrides before assignment
+            if node.is_controlled() and self._current_control_properties:
+                inputs = {**inputs, **self._current_control_properties}
+                span.add_event(
+                    "control_overrides_applied",
+                    {"properties": json.dumps(list(self._current_control_properties.keys()))},
+                )
 
             # Provide control context to agents that control other nodes
             if self._is_controller():
@@ -447,7 +517,7 @@ class NodeActor:
                     )
 
             # Handle control edges
-            if self._has_control_edges():
+            if self._has_control_edges() and not node.is_controlled():
                 span.set_attribute("nodetool.node.has_control_edges", True)
 
                 control_params = await self._wait_for_control_params()
@@ -605,6 +675,15 @@ class NodeActor:
             list(inputs.keys()),
         )
 
+        if node.is_controlled() and self._current_control_properties:
+            inputs = {**inputs, **self._current_control_properties}
+            self.logger.debug(
+                "Applied control overrides to streaming node %s (%s): %s",
+                node.get_title(),
+                node._id,
+                list(self._current_control_properties.keys()),
+            )
+
         # Provide control context to agents that control other nodes
         if self._is_controller():
             control_context = self._build_control_context()
@@ -615,7 +694,7 @@ class NodeActor:
                 )
 
         # Handle control edges (before assigning any inputs)
-        if self._has_control_edges():
+        if self._has_control_edges() and not node.is_controlled():
             control_params = await self._wait_for_control_params()
 
             if control_params:
@@ -844,7 +923,8 @@ class NodeActor:
                 await self._run_standard_batching(handles, processor)
 
         await node.handle_eos()
-        await self._mark_downstream_eos()
+        if not node.is_controlled():
+            await self._mark_downstream_eos()
 
     async def _run_with_list_aggregation(
         self,
@@ -874,11 +954,15 @@ class NodeActor:
         non_list_handles = handles - list_handles
         pending_non_list: set[str] = set(non_list_handles)
 
+        deferred_control: list[MessageEnvelope] = []
         # Drain all inputs until EOS on all handles
-        async for handle, item in self.inbox.iter_any():
+        async for handle, envelope in self.inbox.iter_any_with_envelope():
             if handle not in handles:
+                if handle == "__control__":
+                    deferred_control.append(envelope)
                 continue
 
+            item = envelope.data
             if handle in list_handles:
                 # Aggregate into list buffer - flatten if item is a list
                 if isinstance(item, list):
@@ -900,6 +984,10 @@ class NodeActor:
                     # Update with latest value (combineLatest semantics)
                     non_list_values[handle] = item
 
+        if deferred_control and self.inbox is not None:
+            for envelope in reversed(deferred_control):
+                self.inbox.prepend("__control__", envelope)
+
         # Build final inputs dict: lists for list handles, single values for others
         inputs: dict[str, Any] = {}
 
@@ -915,6 +1003,8 @@ class NodeActor:
         # Call processor once with all aggregated inputs
         self.logger.debug(f"Calling processor with aggregated inputs: {list(inputs.keys())}")
         await processor(inputs)
+        if self.node.is_controlled():
+            self._cached_inputs_for_controlled_node = dict(inputs)
 
     async def _run_standard_batching(
         self,
@@ -959,6 +1049,8 @@ class NodeActor:
             def buffer_summary() -> dict[str, int]:
                 return {h: len(buf) for h, buf in buffers.items() if buf}
 
+            deferred_control: list[MessageEnvelope] = []
+
             def ready_to_zip() -> bool:
                 # Check if we have enough data to create a batch
                 has_any_new_data = False
@@ -1002,10 +1094,13 @@ class NodeActor:
                             return True
                 return False
 
-            async for handle, item in self.inbox.iter_any():
+            async for handle, envelope in self.inbox.iter_any_with_envelope():
                 if handle not in buffers:
+                    if handle == "__control__":
+                        deferred_control.append(envelope)
                     continue
 
+                item = envelope.data
                 buffers[handle].append(item)
                 seen_counts[handle] = seen_counts.get(handle, 0) + 1
 
@@ -1043,18 +1138,28 @@ class NodeActor:
                         buffer_summary(),
                     )
                     await processor(dict(batch))
+                    if self.node.is_controlled():
+                        self._cached_inputs_for_controlled_node = dict(batch)
 
                     for h in handles:
                         if is_sticky.get(h, False) and sticky_values.get(h) is None:
                             sticky_values.pop(h, None)
+
+            if deferred_control and self.inbox is not None:
+                for envelope in reversed(deferred_control):
+                    self.inbox.prepend("__control__", envelope)
         else:
             current: dict[str, Any] = {}
             pending_handles: set[str] = set(handles)
             initial_fired: bool = False
+            deferred_control: list[MessageEnvelope] = []
 
-            async for handle, item in self.inbox.iter_any():
+            async for handle, envelope in self.inbox.iter_any_with_envelope():
                 if handle not in handles:
+                    if handle == "__control__":
+                        deferred_control.append(envelope)
                     continue
+                item = envelope.data
                 current[handle] = item
                 if not initial_fired:
                     pending_handles.discard(handle)
@@ -1067,6 +1172,8 @@ class NodeActor:
                         list(current.keys()),
                     )
                     await processor(dict(current))
+                    if self.node.is_controlled():
+                        self._cached_inputs_for_controlled_node = dict(current)
                     initial_fired = True
                 else:
                     self.logger.debug(
@@ -1077,9 +1184,15 @@ class NodeActor:
                         list(current.keys()),
                     )
                     await processor(dict(current))
+                    if self.node.is_controlled():
+                        self._cached_inputs_for_controlled_node = dict(current)
 
-                # NOTE: With always-on streaming, we do NOT mark non-streaming handles
-                # as done. This keeps the node alive for re-invocations with sticky inputs.
+            if deferred_control and self.inbox is not None:
+                for envelope in reversed(deferred_control):
+                    self.inbox.prepend("__control__", envelope)
+
+            # NOTE: With always-on streaming, we do NOT mark non-streaming handles
+            # as done. This keeps the node alive for re-invocations with sticky inputs.
 
     async def _run_output_node(self) -> None:
         """Run an OutputNode by forwarding each arriving input to runner outputs.
@@ -1109,7 +1222,7 @@ class NodeActor:
         ctx = self.context
 
         # Apply control params before pre_process
-        if self._has_control_edges():
+        if self._has_control_edges() and not node.is_controlled():
             control_params = await self._wait_for_control_params()
 
             if control_params:
@@ -1128,6 +1241,15 @@ class NodeActor:
                         self.logger.info(
                             f"Applied control param to streaming input node {self.node._id}: {param_name}={param_value}"
                         )
+        elif node.is_controlled() and self._current_control_properties:
+            for param_name, param_value in self._current_control_properties.items():
+                error = node.assign_property(param_name, param_value, allow_undefined_properties=False)
+                if error:
+                    self.logger.error(f"Error assigning control override {param_name} on streaming node {self.node._id}: {error}")
+                else:
+                    self.logger.info(
+                        f"Applied control override to controlled streaming node {self.node._id}: {param_name}={param_value}"
+                    )
 
         # Assign initial properties as needed before starting the generator (not pre-gathered)
         await node.pre_process(ctx)
@@ -1185,7 +1307,118 @@ class NodeActor:
             await node.send_update(ctx, "completed", result=self._filter_result(outputs.collected()))
         finally:
             await node.handle_eos()
-        await self._mark_downstream_eos()
+        
+        if not node.is_controlled():
+            await self._mark_downstream_eos()
+
+    async def _run_controlled_node(self) -> None:
+        """Execute node waiting for control events.
+
+        This is the main loop for controlled nodes. They wait for RunEvent
+        messages from their controllers, apply transient properties, execute,
+        and then restore original properties before waiting for the next event.
+        """
+        from nodetool.workflows.control_events import RunEvent
+
+        node = self.node
+
+        # Save original property values for transient property support
+        node.save_original_properties()
+
+        self.logger.info(f"Controlled node {node.get_title()} ({node._id}) entering control event loop")
+
+        try:
+            while True:
+                event = await self._get_next_control_event()
+                if event is None:
+                    # All controllers have signaled EOS
+                    self.logger.info(
+                        f"Controlled node {node.get_title()} ({node._id}) received EOS from all controllers"
+                    )
+                    break
+
+                if isinstance(event, RunEvent):
+                    await self._execute_run_event(event)
+                else:
+                    self.logger.warning(
+                        f"Controlled node {node.get_title()} ({node._id}) received unknown event type: {type(event)}"
+                    )
+        finally:
+            # Always restore original properties on exit
+            node.restore_original_properties()
+            # Mark downstream EOS now that control loop is done
+            await self._mark_downstream_eos()
+
+    async def _get_next_control_event(self) -> ControlEvent | None:
+        """Get next control event from inbox.
+
+        Waits for events on the __control__ handle. Returns None when all
+        controllers have signaled end-of-stream (EOS).
+
+        Returns:
+            ControlEvent subclass instance, or None if all controllers are done
+        """
+        from nodetool.workflows.control_events import ControlEvent
+
+        async for envelope in self.inbox.iter_input_with_envelope("__control__"):
+            message = envelope.data
+            if isinstance(message, ControlEvent):
+                self.logger.debug(f"Received {message.event_type} event from controller")
+                return message
+            else:
+                self.logger.warning(f"Unexpected message in __control__ inbox: {type(message)}")
+
+        # All controllers have finished (EOS)
+        return None
+
+    async def _execute_run_event(self, event: RunEvent) -> None:
+        """Execute node with RunEvent parameters.
+
+        Properties are transient - applied for this execution only.
+        After execution, properties are restored to their original values.
+
+        Args:
+            event: The RunEvent containing optional property overrides
+        """
+        node = self.node
+
+        await self._replay_cached_inputs()
+
+        # Track overrides so downstream batching can honor control values over data inputs
+        control_overrides = dict(event.properties or {})
+        self._current_control_properties = control_overrides if control_overrides else None
+
+        # Apply control properties to node (transient)
+        for prop_name, value in control_overrides.items():
+            error = node.assign_property(prop_name, value, allow_undefined_properties=False)
+            if error:
+                self.logger.error(f"Control property {prop_name} failed for node {node._id}: {error}")
+                raise ValueError(f"Control property {prop_name} failed: {error}")
+
+        if control_overrides:
+            self.logger.info(
+                f"Controlled node {node.get_title()} ({node._id}) executing with properties: {list(control_overrides.keys())}"
+            )
+        else:
+            self.logger.info(f"Controlled node {node.get_title()} ({node._id}) executing with default properties")
+
+        # Determine execution path based on node type
+        streaming_input = node.__class__.is_streaming_input()
+        streaming_output = node.__class__.is_streaming_output()
+
+        try:
+            if streaming_input:
+                await self._run_streaming_input_node()
+            elif streaming_output:
+                await self._run_streaming_output_batched_node()
+            else:
+                await self._run_buffered_node()
+        finally:
+            # Restore original properties after each execution
+            node.restore_original_properties()
+            # Re-save for next iteration
+            node.save_original_properties()
+            self._current_control_properties = None
 
     async def run(self) -> None:
         """Entry point: choose streaming vs non-streaming path and execute."""
@@ -1199,6 +1432,12 @@ class NodeActor:
         )
 
         try:
+            # Check if this node is controlled by control edges
+            if node.is_controlled():
+                self.logger.info(f"Node {node.get_title()} ({node._id}) is controlled, entering control loop")
+                await self._run_controlled_node()
+                return
+
             streaming_input = node.__class__.is_streaming_input()
             streaming_output = node.__class__.is_streaming_output()
 

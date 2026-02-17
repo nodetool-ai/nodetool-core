@@ -35,7 +35,9 @@ import threading
 import time
 from collections import defaultdict, deque
 from contextlib import contextmanager
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+from pydantic import BaseModel
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
@@ -73,6 +75,9 @@ from nodetool.workflows.torch_support import (
     torch,
 )
 from nodetool.workflows.types import EdgeUpdate, NodeUpdate, OutputUpdate
+
+if TYPE_CHECKING:
+    from nodetool.workflows.control_events import ControlEvent
 
 log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
@@ -467,13 +472,46 @@ class WorkflowRunner:
             if edge.edge_type == "control":
                 self._control_edges[edge.target].append(edge)
 
-        log.debug(
-            f"Classified control edges: {len(self._control_edges)} nodes have controllers"
-        )
+        log.debug(f"Classified control edges: {len(self._control_edges)} nodes have controllers")
         for target_id, edges in self._control_edges.items():
-            log.debug(
-                f"  Node {target_id} controlled by: {[e.source for e in edges]}"
-            )
+            log.debug(f"  Node {target_id} controlled by: {[e.source for e in edges]}")
+
+    def _serialize_control_value(self, value: Any) -> Any:
+        """Serialize a value to a JSON-serializable format for control context.
+
+        Handles Pydantic models by converting them to dicts, and other
+        complex types appropriately.
+
+        Args:
+            value: The value to serialize
+
+        Returns:
+            JSON-serializable representation of the value
+        """
+        if value is None:
+            return None
+
+        # Handle Pydantic models (including AssetRef and subclasses)
+        if isinstance(value, BaseModel):
+            try:
+                return value.model_dump(mode="json")
+            except Exception:
+                return {"type": type(value).__name__, "error": "serialization_failed"}
+
+        # Handle primitives
+        if isinstance(value, (int, float, bool, str)):
+            return value
+
+        # Handle lists
+        if isinstance(value, list):
+            return [self._serialize_control_value(item) for item in value]
+
+        # Handle dicts
+        if isinstance(value, dict):
+            return {str(k): self._serialize_control_value(v) for k, v in value.items()}
+
+        # Fallback: convert to string
+        return str(value)
 
     def _build_control_context(self, node: BaseNode, graph: Graph) -> dict[str, Any]:
         """
@@ -496,8 +534,9 @@ class WorkflowRunner:
 
         # Gather property metadata from node class
         for prop in node.properties():
+            raw_value = getattr(node, prop.name, None)
             context["properties"][prop.name] = {
-                "value": getattr(node, prop.name, None),
+                "value": self._serialize_control_value(raw_value),
                 "type": str(prop.type),
                 "description": prop.description or "",
                 "default": prop.default,
@@ -1262,32 +1301,55 @@ class WorkflowRunner:
                                      envelope. This metadata will be available to downstream
                                      nodes that consume messages with envelope access.
         """
-        # Handle control output routing
+        # Handle new control event system (async generator based)
+        if "__control__" in result:
+            from nodetool.workflows.control_events import ControlEvent
+
+            event = result["__control__"]
+            if isinstance(event, ControlEvent):
+                await self._dispatch_control_event(node._id, event, context)
+            else:
+                log.warning(f"Invalid control event type from node {node._id}: {type(event)}")
+
+        # Handle legacy control output routing (for backward compatibility during migration)
         controlled_node_ids = [
-            edge.target for edge in context.graph.edges
-            if edge.source == node._id and edge.edge_type == "control"
+            edge.target for edge in context.graph.edges if edge.source == node._id and edge.edge_type == "control"
         ]
 
         if controlled_node_ids and "__control_output__" in result:
+            from nodetool.workflows.control_events import RunEvent
+
             control_params = result["__control_output__"]
 
+            log.info(f"Node {node._id} output control params: {control_params}")
+
             if not isinstance(control_params, dict):
-                log.error(
-                    f"Node {node._id} output invalid control params: "
-                    f"expected dict, got {type(control_params)}"
-                )
+                log.error(f"Node {node._id} output invalid control params: expected dict, got {type(control_params)}")
             else:
+                # Extract only the actual properties from control output
+                # The LLM may return metadata fields (node_id, node_type, analysis) alongside
+                # the actual properties dict - we only want to apply the properties
+                if "properties" in control_params and isinstance(control_params["properties"], dict):
+                    properties_to_apply = control_params["properties"]
+                    log.debug(
+                        f"Extracted properties from control output, ignoring metadata: {list(control_params.keys())}"
+                    )
+                else:
+                    # Backward compatibility: use entire control_params as properties
+                    properties_to_apply = control_params
+
+                # Wrap legacy control params in a RunEvent for compatibility with new system
+                event = RunEvent(properties=properties_to_apply)
                 for target_id in controlled_node_ids:
                     inbox = self.node_inboxes.get(target_id)
                     if inbox:
-                        await inbox.put("__control__", control_params)
+                        await inbox.put("__control__", event)
                         log.debug(
-                            f"Routed control params from {node._id} to {target_id}: "
-                            f"{list(control_params.keys())}"
+                            f"Routed control params (as RunEvent) from {node._id} to {target_id}: {list(properties_to_apply.keys())}"
                         )
 
         for key, value_to_send in result.items():
-            if key == "__control_output__":
+            if key == "__control_output__" or key == "__control__":
                 continue  # Already handled above
             if not node.should_route_output(key):
                 log.debug(
@@ -1331,12 +1393,56 @@ class WorkflowRunner:
                     )
                 )
 
+    async def _dispatch_control_event(
+        self,
+        controller_id: str,
+        event: "ControlEvent",
+        context: ProcessingContext,
+    ) -> None:
+        """Queue control event to target node.
+
+        Target is inferred from control edge - controller must have an outgoing
+        control edge for this dispatch to succeed.
+
+        Args:
+            controller_id: ID of the node emitting the control event
+            event: The control event to dispatch (e.g., RunEvent)
+            context: Processing context for accessing graph
+        """
+        from nodetool.workflows.control_events import ControlEvent
+
+        # Find control edges originating from this controller
+        control_edges = [
+            edge for edge in context.graph.edges if edge.source == controller_id and edge.edge_type == "control"
+        ]
+
+        if not control_edges:
+            log.warning(f"Controller {controller_id} has no control edges, event not dispatched")
+            return
+
+        # Dispatch to all controlled nodes
+        for edge in control_edges:
+            target_id = edge.target
+
+            # Get target inbox
+            inbox = self.node_inboxes.get(target_id)
+            if not inbox:
+                log.error(f"Target inbox not found for {target_id}")
+                continue
+
+            # Queue event to __control__ handle
+            await inbox.put("__control__", event, {"source": controller_id})
+            log.info(f"Dispatched {event.event_type} event from {controller_id} to {target_id}")
+
     def _initialize_inboxes(self, context: ProcessingContext, graph: Graph) -> None:
         """Build and attach `NodeInbox` instances for each node based on graph topology."""
         self.node_inboxes.clear()
         # Pre-compute upstream counts per (node_id, handle)
+        # Exclude control edges - they're handled separately below
         upstream_counts: dict[tuple[str, str], int] = {}
         for edge in graph.edges:
+            if edge.edge_type == "control":
+                continue  # Control edges are handled separately
             key = (edge.target, edge.targetHandle)
             upstream_counts[key] = upstream_counts.get(key, 0) + 1
 
@@ -1349,6 +1455,21 @@ class WorkflowRunner:
             for (target_id, handle), count in upstream_counts.items():
                 if target_id == node._id:
                     inbox.add_upstream(handle, count)
+
+            # Check for control edges - mark node as controlled and create __control__ handle
+            control_edges = graph.get_control_edges(node._id)
+            if control_edges:
+                # Mark node as controlled for actor detection
+                node._is_controlled = True
+
+                # Count unique controllers for upstream count
+                controller_count = len(graph.get_controller_nodes(node._id))
+                inbox.add_upstream("__control__", controller_count)
+                log.debug(
+                    f"Node {node._id} is controlled by {controller_count} controller(s): "
+                    f"{[e.source for e in control_edges]}"
+                )
+
             self.node_inboxes[node._id] = inbox
             node.attach_inbox(inbox)
             log.debug(

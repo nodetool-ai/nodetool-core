@@ -174,9 +174,7 @@ class NodeOutputs:
         self.capture_only = capture_only
         self._collected: dict[str, Any] = {}
 
-    async def emit(
-        self, slot: str, value: Any, metadata: dict[str, Any] | None = None
-    ) -> None:
+    async def emit(self, slot: str, value: Any, metadata: dict[str, Any] | None = None) -> None:
         """Emit a value to a specific output slot with optional metadata.
 
         Validates the slot name against the node's declared/dynamic outputs and
@@ -208,6 +206,24 @@ class NodeOutputs:
                 slot,
             )
             return
+
+        # Special handling for control events - bypass output validation
+        # Control events are dispatched via WorkflowRunner, not data edges
+        if slot == "__control__":
+            self._collected[slot] = value
+            log.debug(
+                "NodeOutputs.emit control event: node=%s (%s)",
+                self.node.get_title(),
+                self.node._id,
+            )
+            if not self.capture_only:
+                send_messages = self.runner.send_messages
+                if inspect.iscoroutinefunction(send_messages):
+                    await send_messages(self.node, {slot: value}, self.context, metadata)
+                else:
+                    send_messages(self.node, {slot: value}, self.context, metadata)
+            return
+
         if self.node.find_output_instance(slot) is None:
             raise ValueError(f"Node {self.node.get_title()} ({self.node._id}) tried to emit to unknown output '{slot}'")
         # Always collect the last value per slot

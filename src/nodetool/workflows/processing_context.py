@@ -121,7 +121,7 @@ async def _read_buffer(buffer: IO) -> bytes:
     aiofiles file objects have async read() methods that return coroutines.
     Calling them via _in_thread would store the coroutine as data instead of bytes.
     """
-    if inspect.iscoroutinefunction(getattr(buffer, 'read', None)):
+    if inspect.iscoroutinefunction(getattr(buffer, "read", None)):
         # Async file handle (e.g. aiofiles) — await directly
         try:
             seek_result = buffer.seek(0)  # type: ignore[union-attr]
@@ -133,7 +133,6 @@ async def _read_buffer(buffer: IO) -> bytes:
     else:
         # Regular sync IO — offload to thread
         return await _in_thread(_read_all_bytes_from_start, buffer)
-
 
 
 def _ensure_numpy():
@@ -804,10 +803,7 @@ class ProcessingContext:
         self._total_cost += cost
 
         # Log the operation
-        log.info(
-            f"Operation cost tracked: node={node_id}, model={model}, "
-            f"provider={provider}, cost={cost:.6f} credits"
-        )
+        log.info(f"Operation cost tracked: node={node_id}, model={model}, provider={provider}, cost={cost:.6f} credits")
         log.debug(f"Operation details: {operation_record}")
 
         return cost
@@ -1003,18 +999,14 @@ class ProcessingContext:
 
         # Verify capability
         if capability not in provider_instance.get_capabilities():
-            raise ValueError(
-                f"Provider {provider_enum} does not support capability {capability}"
-            )
+            raise ValueError(f"Provider {provider_enum} does not support capability {capability}")
 
         started_at = datetime.now()
         cost_before = provider_instance.cost
 
         try:
             # Dispatch to appropriate method based on capability
-            result = await self._dispatch_capability(
-                provider_instance, capability, model, params, **kwargs
-            )
+            result = await self._dispatch_capability(provider_instance, capability, model, params, **kwargs)
 
             # Calculate cost from provider's accumulated cost
             cost = provider_instance.cost - cost_before
@@ -1188,9 +1180,7 @@ class ProcessingContext:
         provider_instance = await self.get_provider(provider_enum)
 
         if ProviderCapability.GENERATE_MESSAGES not in provider_instance.get_capabilities():
-            raise ValueError(
-                f"Provider {provider_enum} does not support streaming (GENERATE_MESSAGES)"
-            )
+            raise ValueError(f"Provider {provider_enum} does not support streaming (GENERATE_MESSAGES)")
 
         started_at = datetime.now()
         cost_before = provider_instance.cost
@@ -2011,6 +2001,7 @@ class ProcessingContext:
             name (Optional[str], optional): The name of the asset. Defaults to None.
             parent_id (Optional[str], optional): The parent ID of the asset. Defaults to None.
         """
+
         def _segment_from_numpy() -> Any:
             np = _ensure_numpy()
             AudioSegment = _ensure_audio_segment()
@@ -3309,6 +3300,96 @@ class ProcessingContext:
         # Node cache interface does not expose iteration over items.
         # Return an empty summary to avoid leaking implementation details.
         return {"total_objects": 0, "types": {}}
+
+    def get_controlled_nodes_info(self, controller_node_id: str) -> dict[str, dict[str, Any]]:
+        """
+        Pull information about nodes controlled by the given controller.
+
+        Controllers use this method to discover which nodes they can control,
+        what actions are available, current property values, and upstream data sources.
+
+        Args:
+            controller_node_id: The ID of the controller node
+
+        Returns:
+            Dict mapping target_node_id to node info including:
+                - node_id: Unique identifier of the target node
+                - node_type: Type string of the target node
+                - node_title: Human-readable title
+                - control_actions: Dict of action name -> action info (from get_control_actions())
+                - properties: Dict of property name -> {current_value, type, description}
+                - upstream_data: Dict of handle name -> {source_node_id, source_node_type}
+
+        Example:
+            {
+                "target_node_123": {
+                    "node_id": "target_node_123",
+                    "node_type": "nodetool.nodes.processing.Threshold",
+                    "node_title": "Threshold Node",
+                    "control_actions": {
+                        "run": {
+                            "description": "Execute the Threshold node",
+                            "properties": {
+                                "threshold": {"type": "number", "description": "Threshold value"}
+                            }
+                        }
+                    },
+                    "properties": {
+                        "threshold": {
+                            "current_value": 0.5,
+                            "type": "number",
+                            "description": "Threshold value"
+                        }
+                    },
+                    "upstream_data": {
+                        "input": {
+                            "source_node_id": "upstream_node_456",
+                            "source_node_type": "nodetool.nodes.input.LoadImage"
+                        }
+                    }
+                }
+            }
+        """
+        if self.graph is None:
+            return {}
+
+        controlled_edges = self.graph.get_control_edges(controller_node_id)
+
+        result: dict[str, dict[str, Any]] = {}
+        for edge in controlled_edges:
+            target_node = self.graph.find_node(edge.target)
+            if target_node is None:
+                continue
+
+            target_info: dict[str, Any] = {
+                "node_id": target_node.id,
+                "node_type": target_node.get_node_type(),
+                "node_title": target_node.title or target_node.id,
+                "control_actions": target_node.get_control_actions(),
+                "properties": {},
+                "upstream_data": {},
+            }
+
+            # Add property info
+            for prop in target_node.properties():
+                target_info["properties"][prop.name] = {
+                    "current_value": getattr(target_node, prop.name, None),
+                    "type": prop.type.type,
+                    "description": prop.description or "",
+                }
+
+            # Add upstream data edges (edges that feed data into this node)
+            for upstream_edge in self.graph.edges:
+                if upstream_edge.target == target_node.id and upstream_edge.edge_type != "control":
+                    source_node = self.graph.find_node(upstream_edge.source)
+                    target_info["upstream_data"][upstream_edge.targetHandle] = {
+                        "source_node_id": upstream_edge.source,
+                        "source_node_type": source_node.get_node_type() if source_node else None,
+                    }
+
+            result[target_node.id] = target_info
+
+        return result
 
     async def cleanup(self):
         """
