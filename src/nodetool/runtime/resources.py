@@ -370,9 +370,12 @@ class ResourceScope:
         access_key_id = Environment.get_s3_access_key_id()
         secret_access_key = Environment.get_s3_secret_access_key()
 
-        assert access_key_id is not None, "AWS access key ID is required"
-        assert secret_access_key is not None, "AWS secret access key is required"
-        assert endpoint_url is not None, "S3 endpoint URL is required"
+        if access_key_id is None:
+            raise ValueError("AWS access key ID is required")
+        if secret_access_key is None:
+            raise ValueError("AWS secret access key is required")
+        if endpoint_url is None:
+            raise ValueError("S3 endpoint URL is required")
 
         client = boto3.client(
             "s3",
@@ -441,18 +444,24 @@ class ResourceScope:
                         )
                     except Exception as e:
                         log.error(f"Failed to initialize Supabase temp storage, falling back to S3. Error: {e}")
-                        assert Environment.get_s3_access_key_id() is not None or use_s3, "S3 access key ID is required"
-                        assert Environment.get_asset_temp_bucket() is not None, "Asset temp bucket is required"
-                        assert Environment.get_asset_temp_domain() is not None, "Asset temp domain is required"
+                        if Environment.get_s3_access_key_id() is None and not use_s3:
+                            raise ValueError("S3 access key ID is required") from e
+                        if Environment.get_asset_temp_bucket() is None:
+                            raise ValueError("Asset temp bucket is required") from e
+                        if Environment.get_asset_temp_domain() is None:
+                            raise ValueError("Asset temp domain is required") from e
                         log.info("Using S3 storage for temp asset storage")
                         self._temp_storage = self.get_s3_storage(
                             Environment.get_asset_temp_bucket(),
                             Environment.get_asset_temp_domain(),
                         )
                 else:
-                    assert Environment.get_s3_access_key_id() is not None or use_s3, "S3 access key ID is required"
-                    assert Environment.get_asset_temp_bucket() is not None, "Asset temp bucket is required"
-                    assert Environment.get_asset_temp_domain() is not None, "Asset temp domain is required"
+                    if Environment.get_s3_access_key_id() is None and not use_s3:
+                        raise ValueError("S3 access key ID is required")
+                    if Environment.get_asset_temp_bucket() is None:
+                        raise ValueError("Asset temp bucket is required")
+                    if Environment.get_asset_temp_domain() is None:
+                        raise ValueError("Asset temp domain is required")
                     log.info("Using S3 storage for temp asset storage")
                     self._temp_storage = self.get_s3_storage(
                         Environment.get_asset_temp_bucket(),

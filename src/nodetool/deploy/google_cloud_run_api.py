@@ -24,7 +24,7 @@ import subprocess
 import sys
 from contextlib import suppress
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from rich.console import Console
 
@@ -286,8 +286,8 @@ def ensure_project_set(project_id: Optional[str] = None) -> str:
         sys.exit(1)
 
     # project is str after the above check (sys.exit doesn't return)
-    assert project is not None  # Helps type checker understand flow
-    return project
+    # Type narrowing: the check above ensures project is not None here
+    return cast("str", project)
 
 
 def enable_required_apis(project_id: str) -> None:
