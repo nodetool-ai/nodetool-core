@@ -63,7 +63,8 @@ class WorkflowMessageProcessor(MessageProcessor):
 
         job_id = str(uuid.uuid4())
         last_message = chat_history[-1]
-        assert last_message.workflow_id is not None, "Workflow ID is required"
+        if last_message.workflow_id is None:
+            raise ValueError("Workflow ID is required")
 
         workflow_runner = WorkflowRunner(job_id=job_id)
         log.debug(f"Initialized WorkflowRunner for workflow {last_message.workflow_id} with job_id {job_id}")

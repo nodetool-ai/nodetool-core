@@ -738,7 +738,8 @@ class SQLiteScopeResources(DBResources):
             return self._adapters[table_name]
 
         # Create new adapter
-        assert self.pool is not None
+        if self.pool is None:
+            raise RuntimeError("Database pool is not initialized")
         adapter = SQLiteAdapter(
             pool=self.pool,
             fields=model_cls.db_fields(),

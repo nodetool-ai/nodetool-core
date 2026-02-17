@@ -98,7 +98,8 @@ class AgentMessageProcessor(MessageProcessor):
     ):
         """Process messages using the Agent system."""
         last_message = chat_history[-1]
-        assert last_message.model, "Model is required for agent mode"
+        if not last_message.model:
+            raise ValueError("Model is required for agent mode")
 
         # Extract objective from message content
         objective = self._extract_objective(last_message)
