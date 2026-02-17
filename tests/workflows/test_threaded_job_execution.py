@@ -10,6 +10,7 @@ import pytest
 from nodetool.models.job import Job
 from nodetool.models.workflow import Workflow
 from nodetool.types.api_graph import Graph
+from nodetool.types.api_graph import Node as GraphNode
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
@@ -344,13 +345,25 @@ async def test_threaded_job_completion_event(simple_workflow, cleanup_jobs):
 @pytest.mark.asyncio
 async def test_threaded_job_cancellation_event(simple_workflow, cleanup_jobs):
     """Test that threaded job sends cancellation event."""
+    # Use a slow node to ensure the job doesn't complete before cancellation
+    graph = Graph(
+        nodes=[
+            GraphNode(
+                id="slow_node",
+                type="nodetool.workflows.test_helper.SlowNode",
+                data={"duration": 5.0},  # 5 seconds, plenty of time to cancel
+            ),
+        ],
+        edges=[],
+    )
+
     request = RunJobRequest(
         workflow_id=simple_workflow.id,
         user_id="test_user",
         auth_token="test_token",
         job_type="workflow",
         params={},
-        graph=Graph(nodes=[], edges=[]),
+        graph=graph,
     )
 
     context = ProcessingContext(
@@ -362,33 +375,34 @@ async def test_threaded_job_cancellation_event(simple_workflow, cleanup_jobs):
     job = await ThreadedJobExecution.create_and_start(request, context)
     cleanup_jobs.append(job)
 
-    # Cancel the job quickly (before it might naturally complete)
-    await asyncio.sleep(0.05)
-    cancelled = await job.cancel()
+    # Wait for job to start running
+    await asyncio.sleep(0.1)
 
-    # If cancellation succeeded, wait for the message
-    if cancelled:
-        await asyncio.sleep(0.2)
+    # Cancel the job
+    await job.cancel()
 
-        # Check that cancellation event was posted to message queue
-        cancellation_event_found = False
-        checked_messages = []
+    # Wait for cancellation to propagate
+    await asyncio.sleep(0.3)
 
-        while context.has_messages():
-            try:
-                message = context.message_queue.get_nowait()
-                checked_messages.append(message)
+    # Check that cancellation event was posted to message queue
+    cancellation_event_found = False
+    checked_messages = []
 
-                if isinstance(message, JobUpdate):
-                    if message.job_id == job.job_id and message.status == "cancelled":
-                        cancellation_event_found = True
-                        break
-            except Exception:
-                break
+    while context.has_messages():
+        try:
+            message = context.message_queue.get_nowait()
+            checked_messages.append(message)
 
-        # Assert that we found a cancellation event
-        assert cancellation_event_found, (
-            f"No cancellation event found for job {job.job_id}. "
-            f"Job status: {job.status}. "
-            f"Messages checked: {[type(m).__name__ for m in checked_messages]}"
-        )
+            if isinstance(message, JobUpdate):
+                if message.job_id == job.job_id and message.status == "cancelled":
+                    cancellation_event_found = True
+                    break
+        except Exception:
+            break
+
+    # Assert that we found a cancellation event
+    assert cancellation_event_found, (
+        f"No cancellation event found for job {job.job_id}. "
+        f"Job status: {job.status}. "
+        f"Messages checked: {[type(m).__name__ for m in checked_messages]}"
+    )

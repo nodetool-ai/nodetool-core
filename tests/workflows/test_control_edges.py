@@ -237,7 +237,7 @@ class TestGraphControlEdges:
         assert "__control__" in errors[0]
 
     def test_validate_control_edge_from_non_agent(self):
-        """Control edge must originate from Agent node."""
+        """Control edges can now originate from any node type (not just Agents)."""
         node1 = TestPlainNode(id="node1")
         node2 = TestProcessingNode(id="node2")
         edge = Edge(
@@ -250,8 +250,8 @@ class TestGraphControlEdges:
         )
         graph = Graph(nodes=[node1, node2], edges=[edge])
         errors = graph.validate_control_edges()
-        assert len(errors) > 0
-        assert "Agent" in errors[0]
+        # Non-agent controllers are now allowed
+        assert len(errors) == 0
 
     def test_validate_circular_control_dependency(self):
         """Circular control dependencies should be detected."""
@@ -369,8 +369,9 @@ class TestGraphControlEdges:
         )
         graph = Graph(nodes=[node1, node2], edges=[edge])
         errors = graph.validate_edge_types()
-        # Should contain errors from control edge validation
-        assert any("Agent" in e for e in errors)
+        # Control edges from non-agent nodes are now allowed
+        # So there should be no errors for valid control edges
+        assert len(errors) == 0
 
     def test_validate_edge_types_skips_control_edges_for_type_checking(self):
         """Control edges should be excluded from data type compatibility checks."""
@@ -917,9 +918,10 @@ class TestWorkflowRunnerControlRouting:
 
     @pytest.mark.asyncio
     async def test_send_messages_routes_control_output(self):
-        """Control output should be routed to __control__ inbox handle."""
+        """Control output should be routed to __control__ inbox handle as RunEvent."""
         from unittest.mock import MagicMock
 
+        from nodetool.workflows.control_events import RunEvent
         from nodetool.workflows.workflow_runner import WorkflowRunner
 
         runner = WorkflowRunner(job_id="test-job")
@@ -957,12 +959,14 @@ class TestWorkflowRunnerControlRouting:
         # Mark source done so iteration can complete
         target_inbox.mark_source_done("__control__")
 
-        # Verify control params were routed to target's __control__ handle
+        # Verify control params were routed to target's __control__ handle as RunEvent
         items = []
         async for item in target_inbox.iter_input("__control__"):
             items.append(item)
         assert len(items) == 1
-        assert items[0] == control_params
+        # Legacy control output is now wrapped in a RunEvent
+        assert isinstance(items[0], RunEvent)
+        assert items[0].properties == control_params
 
     @pytest.mark.asyncio
     async def test_send_messages_control_output_missing_target_inbox(self):
@@ -1399,3 +1403,294 @@ class TestAgentControlContext:
         control_ctx = captured_inputs["_control_context"]
         assert "target" in control_ctx
         assert control_ctx["target"]["node_type"] == "tests.workflows.test_control_edges.TestProcessingNode"
+
+
+class TestNewControlEdgeSystem:
+    """Tests for the new async generator-based control edge system."""
+
+    @pytest.mark.asyncio
+    async def test_run_event_triggers_execution(self):
+        """RunEvent should trigger controlled node execution."""
+        from nodetool.workflows.actor import NodeActor
+        from nodetool.workflows.workflow_runner import WorkflowRunner
+        from nodetool.workflows.control_events import RunEvent
+        from unittest.mock import MagicMock, AsyncMock, patch
+
+        # Create controlled node
+        node = TestProcessingNode(id="node1", threshold=0.5, mode="normal")
+        node._is_controlled = True
+
+        # Setup runner
+        runner = MagicMock(spec=WorkflowRunner)
+        runner.multi_edge_list_inputs = {}
+        runner._control_edges = {
+            "node1": [
+                Edge(
+                    id="e1",
+                    source="controller1",
+                    sourceHandle="output",
+                    target="node1",
+                    targetHandle="__control__",
+                    edge_type="control",
+                )
+            ]
+        }
+        runner.disable_caching = True
+        runner.device = "cpu"
+        runner.job_id = "test-job"
+
+        # Setup context
+        context = MagicMock()
+        context.graph = Graph(nodes=[node], edges=[])
+        context.workflow_id = "test-workflow"
+
+        # Setup inbox with RunEvent
+        inbox = NodeInbox()
+        inbox.add_upstream("__control__", 1)
+
+        # Put a RunEvent with property overrides
+        event = RunEvent(properties={"threshold": 0.9, "mode": "fast"})
+        await inbox.put("__control__", event)
+        inbox.mark_source_done("__control__")
+
+        # Track execution
+        execution_count = 0
+        captured_threshold = None
+
+        async def mock_buffered():
+            nonlocal execution_count, captured_threshold
+            execution_count += 1
+            captured_threshold = node.threshold
+            # Simulate successful execution
+            node._is_controlled = True  # Re-set since we need it for next iteration
+
+        actor = NodeActor(runner, node, context, inbox)
+
+        # Mock the execution methods
+        with patch.object(actor, "_run_buffered_node", mock_buffered):
+            await actor._run_controlled_node()
+
+        # Verify execution happened with transient properties
+        assert execution_count == 1
+        assert captured_threshold == 0.9  # Was temporarily overridden
+
+        # Verify properties restored after execution
+        assert node.threshold == 0.5  # Back to original
+
+    @pytest.mark.asyncio
+    async def test_multiple_run_events_multiple_executions(self):
+        """Multiple RunEvents should trigger multiple executions."""
+        from nodetool.workflows.actor import NodeActor
+        from nodetool.workflows.workflow_runner import WorkflowRunner
+        from nodetool.workflows.control_events import RunEvent
+        from unittest.mock import MagicMock, patch
+
+        node = TestProcessingNode(id="node1", threshold=0.5, mode="normal")
+        node._is_controlled = True
+
+        runner = MagicMock(spec=WorkflowRunner)
+        runner.multi_edge_list_inputs = {}
+        runner._control_edges = {"node1": []}
+        runner.disable_caching = True
+        runner.device = "cpu"
+        runner.job_id = "test-job"
+
+        context = MagicMock()
+        context.graph = Graph(nodes=[node], edges=[])
+        context.workflow_id = "test-workflow"
+
+        # Setup inbox with multiple RunEvents
+        inbox = NodeInbox()
+        inbox.add_upstream("__control__", 1)
+
+        await inbox.put("__control__", RunEvent(properties={"threshold": 0.7}))
+        await inbox.put("__control__", RunEvent(properties={"threshold": 0.8}))
+        await inbox.put("__control__", RunEvent(properties={"threshold": 0.9}))
+        inbox.mark_source_done("__control__")
+
+        execution_count = 0
+        thresholds = []
+
+        async def mock_buffered():
+            nonlocal execution_count, thresholds
+            execution_count += 1
+            thresholds.append(node.threshold)
+            node._is_controlled = True
+
+        actor = NodeActor(runner, node, context, inbox)
+
+        with patch.object(actor, "_run_buffered_node", mock_buffered):
+            await actor._run_controlled_node()
+
+        # All 3 events should have triggered execution
+        assert execution_count == 3
+        assert thresholds == [0.7, 0.8, 0.9]
+
+        # Original value restored
+        assert node.threshold == 0.5
+
+    @pytest.mark.asyncio
+    async def test_empty_run_event_uses_default_properties(self):
+        """RunEvent with no properties should use node's current values."""
+        from nodetool.workflows.actor import NodeActor
+        from nodetool.workflows.workflow_runner import WorkflowRunner
+        from nodetool.workflows.control_events import RunEvent
+        from unittest.mock import MagicMock, patch
+
+        node = TestProcessingNode(id="node1", threshold=0.5, mode="normal")
+        node._is_controlled = True
+
+        runner = MagicMock(spec=WorkflowRunner)
+        runner.multi_edge_list_inputs = {}
+        runner._control_edges = {"node1": []}
+        runner.disable_caching = True
+        runner.device = "cpu"
+        runner.job_id = "test-job"
+
+        context = MagicMock()
+        context.graph = Graph(nodes=[node], edges=[])
+        context.workflow_id = "test-workflow"
+
+        inbox = NodeInbox()
+        inbox.add_upstream("__control__", 1)
+
+        # RunEvent with empty properties
+        await inbox.put("__control__", RunEvent(properties={}))
+        inbox.mark_source_done("__control__")
+
+        used_threshold = None
+
+        async def mock_buffered():
+            nonlocal used_threshold
+            used_threshold = node.threshold
+            node._is_controlled = True
+
+        actor = NodeActor(runner, node, context, inbox)
+
+        with patch.object(actor, "_run_buffered_node", mock_buffered):
+            await actor._run_controlled_node()
+
+        # Should have used the default value
+        assert used_threshold == 0.5
+
+    @pytest.mark.asyncio
+    async def test_controlled_node_waits_for_events(self):
+        """Controlled node should wait for control events before executing."""
+        from nodetool.workflows.actor import NodeActor
+        from nodetool.workflows.workflow_runner import WorkflowRunner
+        from nodetool.workflows.control_events import RunEvent
+        from unittest.mock import MagicMock, patch
+        import asyncio
+
+        node = TestProcessingNode(id="node1")
+        node._is_controlled = True
+
+        runner = MagicMock(spec=WorkflowRunner)
+        runner.multi_edge_list_inputs = {}
+        runner._control_edges = {"node1": []}
+        runner.disable_caching = True
+        runner.device = "cpu"
+        runner.job_id = "test-job"
+
+        context = MagicMock()
+        context.graph = Graph(nodes=[node], edges=[])
+        context.workflow_id = "test-workflow"
+
+        inbox = NodeInbox()
+        inbox.add_upstream("__control__", 1)
+
+        execution_started = asyncio.Event()
+
+        async def mock_buffered():
+            execution_started.set()
+            node._is_controlled = True
+
+        actor = NodeActor(runner, node, context, inbox)
+
+        async def run_actor():
+            with patch.object(actor, "_run_buffered_node", mock_buffered):
+                await actor._run_controlled_node()
+
+        # Start actor task
+        task = asyncio.create_task(run_actor())
+
+        # Give it a moment - execution should NOT start yet
+        await asyncio.sleep(0.01)
+        assert not execution_started.is_set()
+
+        # Now send the event
+        await inbox.put("__control__", RunEvent(properties={}))
+        inbox.mark_source_done("__control__")
+
+        # Wait for execution to complete
+        await task
+        assert execution_started.is_set()
+
+
+class TestControllerNodeE2E:
+    """E2E tests for controller nodes emitting control events."""
+
+    @pytest.mark.asyncio
+    async def test_controller_yields_run_event(self):
+        """Controller node can yield RunEvent to trigger controlled node."""
+        from nodetool.workflows.control_events import RunEvent
+
+        # Simulate controller yielding control event
+        event = RunEvent(properties={"threshold": 0.9})
+        result = {"output": "some_data", "__control__": event}
+
+        # Verify structure
+        assert "__control__" in result
+        assert isinstance(result["__control__"], RunEvent)
+        assert result["__control__"].properties == {"threshold": 0.9}
+
+    @pytest.mark.asyncio
+    async def test_get_control_actions_returns_run_action(self):
+        """Nodes should declare 'run' control action by default."""
+        node = TestProcessingNode(id="node1")
+        actions = node.get_control_actions()
+
+        assert "run" in actions
+        assert "description" in actions["run"]
+        assert "properties" in actions["run"]
+
+        # Check properties include threshold and mode
+        props = actions["run"]["properties"]
+        assert "threshold" in props
+        assert "mode" in props
+        assert props["threshold"]["type"] == "number"
+        assert props["mode"]["type"] == "string"
+
+    @pytest.mark.asyncio
+    async def test_is_controlled_flag(self):
+        """is_controlled() should return True when _is_controlled is set."""
+        node = TestProcessingNode(id="node1")
+
+        # Initially not controlled
+        assert not node.is_controlled()
+
+        # Set controlled flag
+        node._is_controlled = True
+        assert node.is_controlled()
+
+    @pytest.mark.asyncio
+    async def test_transient_properties(self):
+        """Properties should be transient - restored after execution."""
+        node = TestProcessingNode(id="node1", threshold=0.5, mode="normal")
+
+        # Save original properties
+        node.save_original_properties()
+        assert node._original_properties["threshold"] == 0.5
+
+        # Modify properties
+        node.threshold = 0.9
+        node.mode = "fast"
+        assert node.threshold == 0.9
+
+        # Restore original properties
+        node.restore_original_properties()
+        assert node.threshold == 0.5
+        assert node.mode == "normal"
+
+        # _original_properties should be deleted
+        assert not hasattr(node, "_original_properties")

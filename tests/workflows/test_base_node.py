@@ -550,7 +550,10 @@ def test_configurable_dynamic_node_properties_and_dynamic_values():
     assert node.read_property("missing") == 1
     with pytest.raises(ValueError):
         node.read_property("nonexistent")
-    assert node.properties_for_client() == {}
+    # properties_for_client() returns all node properties including static and dynamic
+    client_props = node.properties_for_client()
+    assert client_props.get("value") == 3
+    assert client_props.get("missing") == 1
 
 
 def test_configurable_dynamic_node_outputs_for_instance():
@@ -714,7 +717,6 @@ def test_dynamic_properties_read_and_assignment():
         _ = DummyClass().read_property("missing")
 
 
-
 def test_node_assign_property_single_value_to_list_int():
     """Test that a single int value is auto-wrapped to list[int]."""
     node = ListInputNode()
@@ -770,10 +772,13 @@ def test_node_assign_property_wrong_type_not_wrapped():
 def test_node_set_properties_with_single_values():
     """Test set_node_properties with single values that should be auto-wrapped."""
     node = ListInputNode()
-    errors = node.set_node_properties({
-        "int_list": 99,
-        "str_list": "world",
-    }, skip_errors=True)
+    errors = node.set_node_properties(
+        {
+            "int_list": 99,
+            "str_list": "world",
+        },
+        skip_errors=True,
+    )
     assert len(errors) == 0
     assert node.int_list == [99]
     assert node.str_list == ["world"]
