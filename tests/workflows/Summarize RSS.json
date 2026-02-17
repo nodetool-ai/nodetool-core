@@ -64,7 +64,6 @@
             "name": "gemma3:1b"
           },
           "max_tokens": 200,
-          "context_window": 4096
         },
         "ui_properties": {
           "position": {
