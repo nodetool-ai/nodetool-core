@@ -23,6 +23,7 @@ from .async_iterators import (
 )
 from .async_lock import AsyncLock
 from .async_priority_queue import AsyncPriorityQueue
+from .async_progress import AsyncProgressTracker, ProgressCallback, ProgressUpdate
 from .async_rwlock import AsyncReaderWriterLock
 from .async_task_group import AsyncTaskGroup, TaskExecutionError, TaskResult, TaskStats
 from .async_utils import AsyncSemaphore, gather_with_concurrency
@@ -51,6 +52,7 @@ __all__ = [
     "AsyncEvent",
     "AsyncLock",
     "AsyncPriorityQueue",
+    "AsyncProgressTracker",
     "AsyncRateLimiter",
     "AsyncReaderWriterLock",
     "AsyncSemaphore",
@@ -64,6 +66,8 @@ __all__ = [
     "CircuitBreakerStats",
     "CircuitState",
     "MultiCircuitBreaker",
+    "ProgressCallback",
+    "ProgressUpdate",
     "RetryPolicy",
     "TaskExecutionError",
     "TaskResult",
