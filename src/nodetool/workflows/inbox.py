@@ -210,6 +210,14 @@ class NodeInbox:
         async with self._cond:
             self._cond.notify_all()
 
+    def prepend(self, handle: str, envelope: MessageEnvelope) -> None:
+        """Requeue an envelope at the front of the buffer for the given handle."""
+        if self._closed:
+            return
+        self._buffers.setdefault(handle, deque()).appendleft(envelope)
+        self._arrival.appendleft(handle)
+        self._notify_waiters_threadsafe()
+
     def mark_source_done(self, handle: str) -> None:
         """Mark one upstream source for a handle as completed and notify waiters.
 

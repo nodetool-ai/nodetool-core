@@ -300,10 +300,7 @@ class Graph(BaseModel):
 
     def get_control_edges(self, target_id: str) -> list[Edge]:
         """Return all control edges targeting the given node."""
-        return [
-            edge for edge in self.edges
-            if edge.target == target_id and edge.edge_type == "control"
-        ]
+        return [edge for edge in self.edges if edge.target == target_id and edge.edge_type == "control"]
 
     def get_controller_nodes(self, target_id: str) -> list[BaseNode]:
         """Return all nodes that control the given target node."""
@@ -317,17 +314,14 @@ class Graph(BaseModel):
 
     def get_controlled_nodes(self, source_id: str) -> list[str]:
         """Return IDs of all nodes controlled by the given source."""
-        return [
-            edge.target for edge in self.edges
-            if edge.source == source_id and edge.edge_type == "control"
-        ]
+        return [edge.target for edge in self.edges if edge.source == source_id and edge.edge_type == "control"]
 
     def validate_control_edges(self) -> list[str]:
         """
         Validate control edges in the graph.
 
         Rules:
-        - Control edges must originate from Agent-type nodes
+        - Control edges must originate from valid source nodes (any node type allowed)
         - Control edges must target valid nodes
         - Control edges must use '__control__' as targetHandle
         - Circular control chains are forbidden
@@ -341,19 +335,11 @@ class Graph(BaseModel):
             if edge.edge_type != "control":
                 continue
 
-            # Rule 1: Source must be an Agent node
-            # Convention: Agent node types contain "agent" in their type path
-            # (e.g., "nodetool.agents.Agent", "nodetool.agents.Classifier")
+            # Rule 1: Source must exist (any node type can be a controller)
             source_node = self.find_node(edge.source)
             if not source_node:
                 errors.append(f"Control edge {edge.id} has invalid source {edge.source}")
                 continue
-
-            if "agent" not in source_node.get_node_type().lower():
-                errors.append(
-                    f"Control edge {edge.id} source {edge.source} must be an Agent node, "
-                    f"got {source_node.get_node_type()}"
-                )
 
             # Rule 2: Target must exist
             target_node = self.find_node(edge.target)
@@ -364,8 +350,7 @@ class Graph(BaseModel):
             # Rule 3: Must use __control__ as targetHandle
             if edge.targetHandle != "__control__":
                 errors.append(
-                    f"Control edge {edge.id} must use '__control__' as targetHandle, "
-                    f"got '{edge.targetHandle}'"
+                    f"Control edge {edge.id} must use '__control__' as targetHandle, got '{edge.targetHandle}'"
                 )
 
         # Rule 4: Check for circular control dependencies
@@ -410,9 +395,7 @@ class Graph(BaseModel):
             if node_id not in visited:
                 found, path = has_cycle(node_id, visited, set())
                 if found:
-                    errors.append(
-                        f"Circular control dependency detected: {' -> '.join(path)}"
-                    )
+                    errors.append(f"Circular control dependency detected: {' -> '.join(path)}")
 
         return errors
 
@@ -504,7 +487,6 @@ class Graph(BaseModel):
                         continue
 
                     source_type = source_output.type
-
 
                     # For multi-edge list inputs, source type must be compatible with element type
                     # If source is also a list, check if its element type is compatible
