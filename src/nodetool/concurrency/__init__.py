@@ -1,4 +1,5 @@
 from .async_barrier import AsyncBarrier
+from .async_cache import AsyncLRUCache, CacheEntry, CacheStats
 from .async_channel import (
     AsyncChannel,
     AsyncChannelIterator,
@@ -49,6 +50,7 @@ __all__ = [
     "AsyncCondition",
     "AsyncDebounce",
     "AsyncEvent",
+    "AsyncLRUCache",
     "AsyncLock",
     "AsyncPriorityQueue",
     "AsyncRateLimiter",
@@ -57,6 +59,8 @@ __all__ = [
     "AsyncTaskGroup",
     "AsyncThrottle",
     "AsyncTokenBucket",
+    "CacheEntry",
+    "CacheStats",
     "ChannelClosedError",
     "CircuitBreaker",
     "CircuitBreakerConfig",
