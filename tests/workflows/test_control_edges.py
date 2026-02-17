@@ -581,7 +581,7 @@ class TestGraphFromDictControlEdges:
         original = Graph(nodes=[agent, node], edges=edges)
 
         # Serialize
-        data = original.model_dump()
+        original.model_dump()
 
         # Deserialize via from_dict format
         graph_dict = {
@@ -921,8 +921,9 @@ class TestWorkflowRunnerControlRouting:
     @pytest.mark.asyncio
     async def test_send_messages_routes_control_output(self):
         """Control output should be routed to __control__ inbox handle."""
-        from nodetool.workflows.workflow_runner import WorkflowRunner
         from unittest.mock import MagicMock
+
+        from nodetool.workflows.workflow_runner import WorkflowRunner
 
         runner = WorkflowRunner(job_id="test-job")
 
@@ -969,8 +970,9 @@ class TestWorkflowRunnerControlRouting:
     @pytest.mark.asyncio
     async def test_send_messages_control_output_missing_target_inbox(self):
         """Control output with missing target inbox should not crash."""
-        from nodetool.workflows.workflow_runner import WorkflowRunner
         from unittest.mock import MagicMock
+
+        from nodetool.workflows.workflow_runner import WorkflowRunner
 
         runner = WorkflowRunner(job_id="test-job")
 
@@ -1011,9 +1013,10 @@ class TestControlEdgeIntegration:
     @pytest.mark.asyncio
     async def test_control_params_override_node_defaults(self):
         """Control params should override node default values."""
+        from unittest.mock import AsyncMock, MagicMock
+
         from nodetool.workflows.actor import NodeActor
         from nodetool.workflows.workflow_runner import WorkflowRunner
-        from unittest.mock import MagicMock, AsyncMock
 
         # Create node with default values
         node = TestProcessingNode(id="node1", threshold=0.5, mode="normal")
@@ -1062,9 +1065,10 @@ class TestControlEdgeIntegration:
     @pytest.mark.asyncio
     async def test_control_params_mixed_with_data_inputs(self):
         """Control params should merge with data inputs, taking precedence."""
+        from unittest.mock import MagicMock
+
         from nodetool.workflows.actor import NodeActor
         from nodetool.workflows.workflow_runner import WorkflowRunner
-        from unittest.mock import MagicMock
 
         node = TestProcessingNode(id="node1")
 
@@ -1187,8 +1191,9 @@ class TestAgentControlContext:
     @pytest.mark.asyncio
     async def test_agent_is_controller_detection(self):
         """Test detecting if a node is a controller."""
-        from nodetool.workflows.actor import NodeActor
         from unittest.mock import MagicMock
+
+        from nodetool.workflows.actor import NodeActor
 
         agent = TestAgentNode(id="agent1")
         target = TestProcessingNode(id="target")
@@ -1222,8 +1227,9 @@ class TestAgentControlContext:
     @pytest.mark.asyncio
     async def test_agent_get_controlled_nodes(self):
         """Test getting list of controlled nodes."""
-        from nodetool.workflows.actor import NodeActor
         from unittest.mock import MagicMock
+
+        from nodetool.workflows.actor import NodeActor
 
         agent = TestAgentNode(id="agent1")
         target1 = TestProcessingNode(id="target1")
@@ -1264,8 +1270,9 @@ class TestAgentControlContext:
     @pytest.mark.asyncio
     async def test_build_control_context_structure(self):
         """Test that control context has the correct structure."""
-        from nodetool.workflows.actor import NodeActor
         from unittest.mock import MagicMock
+
+        from nodetool.workflows.actor import NodeActor
 
         agent = TestAgentNode(id="agent1")
         target = TestProcessingNode(id="target")
@@ -1312,8 +1319,9 @@ class TestAgentControlContext:
     @pytest.mark.asyncio
     async def test_build_control_context_empty_when_no_control_edges(self):
         """Test that control context is empty when agent has no outgoing control edges."""
-        from nodetool.workflows.actor import NodeActor
         from unittest.mock import MagicMock
+
+        from nodetool.workflows.actor import NodeActor
 
         agent = TestAgentNode(id="agent1")
         other = TestPlainNode(id="other")
@@ -1344,9 +1352,10 @@ class TestAgentControlContext:
     @pytest.mark.asyncio
     async def test_agent_receives_control_context_in_inputs(self):
         """Test that control context is injected into agent's inputs."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
         from nodetool.workflows.actor import NodeActor
         from nodetool.workflows.workflow_runner import WorkflowRunner
-        from unittest.mock import MagicMock, patch
 
         agent = TestAgentNode(id="agent1")
         target = TestProcessingNode(id="target")
