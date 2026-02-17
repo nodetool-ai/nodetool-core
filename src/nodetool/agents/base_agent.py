@@ -73,7 +73,6 @@ class BaseAgent(ABC):
         Returns:
             Any: The results of the execution.
         """
-        pass
 
     # Potentially add other common utility methods here if identified
     # e.g., _validate_inputs, _setup_workspace, etc.

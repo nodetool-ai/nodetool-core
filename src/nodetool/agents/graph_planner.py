@@ -1429,7 +1429,8 @@ class GraphPlanner:
 
         # Enrich node specifications with actual metadata
         logger.info("Enriching node specifications with metadata from registry...")
-        assert workflow_result is not None
+        if workflow_result is None:
+            raise ValueError("Workflow result is required for metadata enrichment")
         logger.debug(f"Workflow result has {len(workflow_result.node_specifications)} node specifications")
         enriched_workflow = self._enrich_analysis_with_metadata(workflow_result)
         logger.debug(f"Enriched workflow has {len(enriched_workflow.node_specifications)} node specifications")

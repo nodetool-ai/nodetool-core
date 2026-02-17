@@ -332,7 +332,8 @@ class GoogleLensTool(Tool):
         image_url = params.get("image_url")
         num_results = params.get("num_results", 10)
 
-        assert image_url is not None, "Image URL is required for Google Lens search."
+        if image_url is None:
+            raise ValueError("Image URL is required for Google Lens search.")
 
         provider_instance, error_response = await _get_configured_serp_provider(context)
         if error_response:
