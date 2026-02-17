@@ -89,7 +89,8 @@ async def get_system_fonts() -> FontResponse:
                     stderr=asyncio.subprocess.PIPE,
                 )
                 found: list[str] = []
-                assert proc.stdout is not None
+                if proc.stdout is None:
+                    raise RuntimeError("Failed to create subprocess with stdout pipe")
                 # Read lines incrementally to avoid buffering entire output
                 async for line in proc.stdout:
                     if isinstance(line, bytes):

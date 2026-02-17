@@ -47,7 +47,8 @@ def run_graphql_query(query: str) -> dict[str, Any]:
     api_url_base = os.environ.get("RUNPOD_API_BASE_URL", "https://api.runpod.io")
     url = f"{api_url_base}/graphql"
     api_key = os.getenv("RUNPOD_API_KEY")
-    assert api_key, "RUNPOD_API_KEY environment variable is not set"
+    if not api_key:
+        raise ValueError("RUNPOD_API_KEY environment variable is not set")
 
     headers = {
         "Content-Type": "application/json",
@@ -110,7 +111,8 @@ def make_runpod_api_call(endpoint: str, method: str = "GET", data: dict | None =
     """
     url = f"{RUNPOD_REST_BASE_URL}/{endpoint}"
     api_key = os.getenv("RUNPOD_API_KEY")
-    assert api_key, "RUNPOD_API_KEY environment variable is not set"
+    if not api_key:
+        raise ValueError("RUNPOD_API_KEY environment variable is not set")
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -641,8 +643,8 @@ def create_or_update_runpod_template(
                 print(f"Response data: {json.dumps(result, indent=2)}")
                 sys.exit(1)
 
-            # template_id is str after the above check (sys.exit doesn't return)
-            assert template_id is not None
+            # Type narrowing: sys.exit never returns, so template_id must be str here
+            assert isinstance(template_id, str), f"Expected str, got {type(template_id)}"
             print(f"Template created successfully: {template_id}")
             return template_id
 
@@ -877,7 +879,8 @@ def create_runpod_endpoint_graphql(
         Workers are terminated after idle_timeout seconds of inactivity to minimize costs.
     """
     api_key = os.getenv("RUNPOD_API_KEY")
-    assert api_key, "RUNPOD_API_KEY environment variable is not set"
+    if not api_key:
+        raise ValueError("RUNPOD_API_KEY environment variable is not set")
 
     if data_center_ids is None:
         # Leave empty for RunPod to choose optimal data centers automatically

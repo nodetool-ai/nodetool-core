@@ -304,7 +304,8 @@ class ResourceScope:
                 pool = await SQLiteConnectionPool.get_shared(Environment.get_db_path())
                 return SQLiteScopeResources(pool)
             else:
-                assert isinstance(self.pool, SQLiteConnectionPool), "Pool must be a SQLiteConnectionPool"
+                if not isinstance(self.pool, SQLiteConnectionPool):
+                    raise TypeError("Pool must be a SQLiteConnectionPool")
                 return SQLiteScopeResources(self.pool)
 
     def get_asset_storage(self, use_s3: bool = False) -> AbstractStorage:

@@ -169,8 +169,10 @@ def deploy_to_runpod(
     # No workflows are embedded in the image.
 
     # Format full image name with registry and username
-    assert image_name, "Image name is required"
-    assert docker_username, "Docker username is required"
+    if not image_name:
+        raise ValueError("Image name is required")
+    if not docker_username:
+        raise ValueError("Docker username is required")
     full_image_name = format_image_name(image_name, docker_username, docker_registry)
     console.print(f"Full image name: {full_image_name}")
 

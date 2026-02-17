@@ -67,13 +67,14 @@ class DockerManager:
         if self.network_name:
 
             def _ensure_network():
-                assert self.network_name
+                # Type narrowing: self.network_name is truthy from the outer if
+                network_name = self.network_name
                 try:
-                    return self.docker.networks.get(self.network_name)
+                    return self.docker.networks.get(network_name)
                 except NotFound:
-                    log.info("Creating Docker network %s", self.network_name)
+                    log.info("Creating Docker network %s", network_name)
                     return self.docker.networks.create(
-                        self.network_name,
+                        network_name,
                         driver="bridge",
                     )
 
