@@ -90,6 +90,5 @@ def flatten_models(
     """Flatten a list of models that may contain nested lists."""
     flat_list = []
     for item in models:
-        for model in item:
-            flat_list.append(model)
+        flat_list.extend(item)
     return flat_list

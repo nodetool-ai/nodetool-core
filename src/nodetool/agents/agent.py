@@ -195,8 +195,7 @@ def _create_macos_sandbox_profile(
     ]
 
     # iterate over all python packages and add the site-packages directory
-    for package in sys.path:
-        read_paths.append(package)
+    read_paths.extend(sys.path)
 
     # add allowed read paths
     if allowed_read_paths:
@@ -234,11 +233,13 @@ def _create_macos_sandbox_profile(
         ]
     )
 
-    for path in default_write_paths:
-        profile_lines.append(f'(allow file-write* (subpath "{path}"))')
+    profile_lines.extend(
+        f'(allow file-write* (subpath "{path}"))' for path in default_write_paths
+    )
 
-    for path in read_paths:
-        profile_lines.append(f'(allow file-read* (subpath "{path}"))')
+    profile_lines.extend(
+        f'(allow file-read* (subpath "{path}"))' for path in read_paths
+    )
 
     profile_lines.extend(
         [
@@ -749,9 +750,14 @@ class Agent(BaseAgent):
         if not self.active_skills:
             return None
 
-        sections = ["# Agent Skills", "Use these Skill instructions when relevant to the objective:"]
-        for skill in self.active_skills:
-            sections.append(f"\n## {skill.name}\n{skill.instructions}")
+        sections = [
+            "# Agent Skills",
+            "Use these Skill instructions when relevant to the objective:",
+            *(
+                f"\n## {skill.name}\n{skill.instructions}"
+                for skill in self.active_skills
+            ),
+        ]
         return "\n".join(sections)
 
     def _build_effective_objective(self) -> str:
