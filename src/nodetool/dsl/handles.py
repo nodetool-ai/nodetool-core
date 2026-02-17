@@ -60,7 +60,8 @@ class OutputsProxy(Generic[TOutput]):
         if hasattr(slot.type, "get_python_type"):
             try:
                 py_type = slot.type.get_python_type()
-            except Exception:
+            except (AttributeError, TypeError, NotImplementedError):
+                # Type doesn't support get_python_type or fails during type resolution
                 py_type = None
 
         return OutputHandle[Any](self._node, name, py_type)

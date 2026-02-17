@@ -17,8 +17,9 @@ def create_file_uri(path: str) -> str:
     try:
         resolved_path = Path(path).expanduser().resolve(strict=False)
         return resolved_path.as_uri()
-    except Exception:
-        # Fallback: best-effort POSIX-style URI
+    except (OSError, RuntimeError):
+        # Fallback: best-effort POSIX-style URI for paths that can't be resolved
+        # (e.g., non-existent paths on Windows, permission issues)
         posix_path = Path(path).as_posix()
         prefix = "file:///" if not posix_path.startswith("/") else "file://"
         return f"{prefix}{posix_path}"
