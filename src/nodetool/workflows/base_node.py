@@ -381,6 +381,7 @@ class BaseNode(BaseModel):
         _supports_dynamic_outputs: ClassVar[bool]  (bool): Whether the node can declare outputs dynamically at runtime (only for dynamic nodes).
         _auto_save_asset: ClassVar[bool] (bool): Whether to automatically save the node output as an asset.
         _sync_mode (str): The input synchronization mode for the node.
+        _is_controlled (bool): Whether the node has incoming control edges.
 
     Methods:
         Includes methods for initialization, property management, metadata generation,
@@ -402,6 +403,7 @@ class BaseNode(BaseModel):
     _inbox: NodeInbox | None = PrivateAttr(default=None)
     _sync_mode: str = PrivateAttr(default="on_any")
     _on_input_item: Callable[[str], None] | None = PrivateAttr(default=None)
+    _is_controlled: bool = PrivateAttr(default=False)
 
     def __init__(
         self,
@@ -421,6 +423,7 @@ class BaseNode(BaseModel):
         self._dynamic_outputs = {} if dynamic_outputs is None else dict(dynamic_outputs)
         self._sync_mode = sync_mode
         self._inbox = None
+        self._is_controlled = False
 
     def required_inputs(self) -> list[str]:
         return []

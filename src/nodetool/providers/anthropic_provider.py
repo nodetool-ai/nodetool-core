@@ -409,7 +409,7 @@ class AnthropicProvider(BaseProvider):
         self,
         tools: Sequence[Any] | None,
         response_format: dict | None,
-    ) -> tuple[list[dict] | None, dict | None, bool]:
+    ) -> tuple[list[ToolParam] | None, dict | None, bool]:
         """Prepare tools and tool_choice for structured output."""
         if not response_format:
             return self.format_tools(tools or []), None, False
@@ -434,7 +434,7 @@ class AnthropicProvider(BaseProvider):
         # Prepare schema
         prepared_schema = self._prepare_json_schema(schema)
 
-        tool_definition = {
+        tool_definition: ToolParam = {
             "name": tool_name,
             "description": description,
             "input_schema": prepared_schema,
@@ -442,7 +442,7 @@ class AnthropicProvider(BaseProvider):
 
         # Force the tool use
         tool_choice = {"type": "tool", "name": tool_name}
-        
+
         return [tool_definition], tool_choice, True
 
     async def generate_messages(  # type: ignore[override]
@@ -515,7 +515,7 @@ class AnthropicProvider(BaseProvider):
                         text = getattr(delta, "text", None)
                         partial_json = getattr(delta, "partial_json", None)
                         thinking = getattr(delta, "thinking", None)
-                        
+
                         if isinstance(thinking, str):
                             yield Chunk(content=thinking, done=False, thinking=True)
                         elif is_structured and isinstance(partial_json, str):
@@ -523,18 +523,18 @@ class AnthropicProvider(BaseProvider):
                             yield Chunk(content=partial_json, done=False)
                         elif not is_structured and isinstance(text, str):
                             yield Chunk(content=text, done=False)
-                            
+
                     elif etype == "content_block_stop":
                         # Tool use may appear here in real SDK; tests often omit attributes
                         content_block = getattr(event, "content_block", None)
                         if content_block is not None and getattr(content_block, "type", "") == "tool_use":
                             # If structured output, we are handling this transparently
                             if is_structured:
-                                # Note: We cannot easily unwrap "output" keys in streaming mode 
-                                # because we are yielding partial JSON strings. Consumers of streaming 
+                                # Note: We cannot easily unwrap "output" keys in streaming mode
+                                # because we are yielding partial JSON strings. Consumers of streaming
                                 # structured output must handle potential wrapping themselves.
                                 continue
-                                
+
                             tool_call = ToolCall(
                                 id=str(getattr(content_block, "id", "")),
                                 name=getattr(content_block, "name", ""),
@@ -640,7 +640,7 @@ class AnthropicProvider(BaseProvider):
         log.debug(f"Processing {len(response.content)} content blocks")
         content = []
         tool_calls = []
-        
+
         # If structured output, we expect a tool use block matching our enforced tool
         if is_structured:
             tool_name = tool_choice["name"]  # type: ignore
@@ -650,7 +650,7 @@ class AnthropicProvider(BaseProvider):
                     # Found our structured output
                     log.debug(f"Found structured output in tool call: {block.name}")
                     input_data = block.input
-                    
+
                     # Unwrap if the model wrapped the output in a single key like "output" or "json"
                     # This happens sometimes when the model tries to match the tool name
                     if isinstance(input_data, dict) and len(input_data) == 1:
@@ -658,13 +658,13 @@ class AnthropicProvider(BaseProvider):
                         if key.lower() in ("output", "json", "response", "content"):
                             log.debug(f"Unwrapping structured output from key: {key}")
                             input_data = input_data[key]
-                            
+
                     # Convert input data to JSON string to match response_format expectations
                     content.append(json.dumps(input_data))
                     found_output = True
                     # Do not add to tool_calls
                     break
-            
+
             if not found_output:
                 log.warning("Structured output requested, but no matching tool call found in response")
                 # Fallback: check text content?

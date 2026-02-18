@@ -1411,10 +1411,11 @@ class TestNewControlEdgeSystem:
     @pytest.mark.asyncio
     async def test_run_event_triggers_execution(self):
         """RunEvent should trigger controlled node execution."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
         from nodetool.workflows.actor import NodeActor
-        from nodetool.workflows.workflow_runner import WorkflowRunner
         from nodetool.workflows.control_events import RunEvent
-        from unittest.mock import MagicMock, AsyncMock, patch
+        from nodetool.workflows.workflow_runner import WorkflowRunner
 
         # Create controlled node
         node = TestProcessingNode(id="node1", threshold=0.5, mode="normal")
@@ -1480,10 +1481,11 @@ class TestNewControlEdgeSystem:
     @pytest.mark.asyncio
     async def test_multiple_run_events_multiple_executions(self):
         """Multiple RunEvents should trigger multiple executions."""
-        from nodetool.workflows.actor import NodeActor
-        from nodetool.workflows.workflow_runner import WorkflowRunner
-        from nodetool.workflows.control_events import RunEvent
         from unittest.mock import MagicMock, patch
+
+        from nodetool.workflows.actor import NodeActor
+        from nodetool.workflows.control_events import RunEvent
+        from nodetool.workflows.workflow_runner import WorkflowRunner
 
         node = TestProcessingNode(id="node1", threshold=0.5, mode="normal")
         node._is_controlled = True
@@ -1532,10 +1534,11 @@ class TestNewControlEdgeSystem:
     @pytest.mark.asyncio
     async def test_empty_run_event_uses_default_properties(self):
         """RunEvent with no properties should use node's current values."""
-        from nodetool.workflows.actor import NodeActor
-        from nodetool.workflows.workflow_runner import WorkflowRunner
-        from nodetool.workflows.control_events import RunEvent
         from unittest.mock import MagicMock, patch
+
+        from nodetool.workflows.actor import NodeActor
+        from nodetool.workflows.control_events import RunEvent
+        from nodetool.workflows.workflow_runner import WorkflowRunner
 
         node = TestProcessingNode(id="node1", threshold=0.5, mode="normal")
         node._is_controlled = True
@@ -1576,11 +1579,12 @@ class TestNewControlEdgeSystem:
     @pytest.mark.asyncio
     async def test_controlled_node_waits_for_events(self):
         """Controlled node should wait for control events before executing."""
-        from nodetool.workflows.actor import NodeActor
-        from nodetool.workflows.workflow_runner import WorkflowRunner
-        from nodetool.workflows.control_events import RunEvent
-        from unittest.mock import MagicMock, patch
         import asyncio
+        from unittest.mock import MagicMock, patch
+
+        from nodetool.workflows.actor import NodeActor
+        from nodetool.workflows.control_events import RunEvent
+        from nodetool.workflows.workflow_runner import WorkflowRunner
 
         node = TestProcessingNode(id="node1")
         node._is_controlled = True

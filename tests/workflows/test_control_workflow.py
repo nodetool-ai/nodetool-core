@@ -79,7 +79,8 @@ async def test_control_workflow_with_different_params():
 @pytest.mark.asyncio
 async def test_control_edge_e2e_with_graph():
     """E2E test for control edge system with programmatically created graph."""
-    from nodetool.types.api_graph import Edge, Graph as ApiGraph, Node
+    from nodetool.types.api_graph import Edge, Node
+    from nodetool.types.api_graph import Graph as ApiGraph
     from nodetool.workflows.run_job_request import RunJobRequest
     from nodetool.workflows.run_workflow import run_workflow
 
@@ -148,7 +149,8 @@ async def test_control_edge_e2e_with_graph():
 @pytest.mark.asyncio
 async def test_control_edge_multiple_triggers():
     """Test controller emitting multiple control events."""
-    from nodetool.types.api_graph import Edge, Graph as ApiGraph, Node
+    from nodetool.types.api_graph import Edge, Node
+    from nodetool.types.api_graph import Graph as ApiGraph
     from nodetool.workflows.run_job_request import RunJobRequest
     from nodetool.workflows.run_workflow import run_workflow
 
@@ -185,7 +187,7 @@ async def test_control_edge_multiple_triggers():
     )
     ctx = ProcessingContext(user_id=req.user_id, job_id="job", auth_token=req.auth_token)
 
-    async for msg in run_workflow(req, context=ctx, use_thread=False):
+    async for _msg in run_workflow(req, context=ctx, use_thread=False):
         pass  # Just consume messages
 
     # The test passes if the workflow completes without hanging
