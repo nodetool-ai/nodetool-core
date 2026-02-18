@@ -4523,7 +4523,7 @@ def deploy_workflows_run(deployment_name: str, workflow_id: str, params: tuple):
             # Display results
             import json
 
-            console.print(json.dumps(result.get("results", {}), indent=2))
+            console.print(json.dumps(result, indent=2))
 
         except KeyError:
             console.print(f"[red]Deployment '{deployment_name}' not found[/]")
