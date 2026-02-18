@@ -402,6 +402,7 @@ class BaseNode(BaseModel):
     _inbox: NodeInbox | None = PrivateAttr(default=None)
     _sync_mode: str = PrivateAttr(default="on_any")
     _on_input_item: Callable[[str], None] | None = PrivateAttr(default=None)
+    _is_controlled: bool = PrivateAttr(default=False)
 
     def __init__(
         self,
