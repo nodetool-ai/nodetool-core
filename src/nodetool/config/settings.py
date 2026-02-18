@@ -256,9 +256,15 @@ register_secret(
 )
 register_secret(
     package_name="nodetool",
-    env_var="AIME_API_KEY",
-    group="Aime",
-    description="Aime API key for accessing Aime AI services",
+    env_var="APIFY_API_KEY",
+    group="Apify",
+    description="API key for accessing Apify's web scraping and automation platform",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="BRAVE_API_KEY",
+    group="BraveSearch",
+    description="API key for accessing Brave Search API for web, news, and image search",
 )
 register_secret(
     package_name="nodetool",
@@ -295,6 +301,12 @@ register_secret(
     env_var="APIFY_API_KEY",
     group="Apify",
     description="API key for accessing Apify's web scraping and automation platform",
+)
+register_secret(
+    package_name="nodetool",
+    env_var="BRAVE_API_KEY",
+    group="BraveSearch",
+    description="API key for accessing Brave Search API for web, news, and image search",
 )
 register_secret(
     package_name="nodetool",
@@ -336,8 +348,8 @@ register_setting(
     package_name="nodetool",
     env_var="SERP_PROVIDER",
     group="SERP",
-    description="Select which SERP (Search Engine Results Page) provider to use for search operations. Options: 'serpapi', 'apify', 'dataforseo'. If not set, the system will auto-select based on available API keys (SerpApi > Apify > DataForSEO).",
-    enum=["serpapi", "apify", "dataforseo"],
+    description="Select which SERP (Search Engine Results Page) provider to use for search operations. Options: 'serpapi', 'apify', 'brave', 'dataforseo'. If not set, the system will auto-select based on available API keys (SerpApi > Brave Search > DataForSEO).",
+    enum=["serpapi", "apify", "brave", "dataforseo"],
 )
 register_secret(
     package_name="nodetool", env_var="KIE_API_KEY", group="KIE", description="KIE API key for accessing kie.ai"
