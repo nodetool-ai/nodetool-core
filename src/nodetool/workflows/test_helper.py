@@ -97,10 +97,7 @@ class ThresholdProcessor(BaseNode):
         return "nodetool.workflows.test_helper.ThresholdProcessor"
 
     async def process(self, context: Any) -> str:
-        if self.mode == "strict":
-            exceeds = self.value > self.threshold
-        else:
-            exceeds = self.value >= self.threshold
+        exceeds = self.value > self.threshold if self.mode == "strict" else self.value >= self.threshold
         return f"value={self.value}, threshold={self.threshold}, mode={self.mode}, exceeds={exceeds}"
 
 
