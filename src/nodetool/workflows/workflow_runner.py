@@ -1107,7 +1107,7 @@ class WorkflowRunner:
                     context.post_message(
                         JobUpdate(
                             job_id=self.job_id,
-                            status="error",
+                            status="failed",
                             workflow_id=context.workflow_id,
                             error=error_message_for_job_update[:1000],
                         )
