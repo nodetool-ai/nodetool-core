@@ -8,8 +8,8 @@ import zipfile
 from io import BytesIO
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
 from pydantic import Field as PydanticField
 
@@ -41,11 +41,10 @@ async def from_model(asset: AssetModel):
     else:
         get_url = None
 
+    # Use on-demand thumbnail endpoint for assets that support thumbnails
+    # This ensures thumbnails are generated on-the-fly if they don't exist
     if asset.has_thumbnail:
-        thumb_url = await storage.get_url(asset.thumb_file_name)
-        # Append updated_at timestamp as cache buster
-        separator = "&" if "?" in thumb_url else "?"
-        thumb_url = f"{thumb_url}{separator}t={int(asset.updated_at.timestamp())}"
+        thumb_url = f"/api/assets/{asset.id}/thumbnail?t={int(asset.updated_at.timestamp())}"
     else:
         thumb_url = None
 
@@ -438,6 +437,175 @@ async def generate_thumbnail(id: str, user: str = Depends(current_user)):
 
     # Return updated asset
     return await from_model(asset)
+
+
+async def _generate_and_upload_thumbnail(
+    asset: AssetModel, storage, width: int = 512, height: int = 512
+) -> BytesIO | None:
+    """
+    Generate a thumbnail for an asset and upload it to storage.
+    
+    Args:
+        asset: The asset model
+        storage: The storage instance
+        width: Thumbnail width (default 512)
+        height: Thumbnail height (default 512)
+    
+    Returns:
+        BytesIO containing the thumbnail data, or None if generation failed
+    """
+    from nodetool.media.common.media_utils import create_video_thumbnail, create_image_thumbnail
+
+    thumbnail = None
+    
+    # Download the original file
+    file_content = BytesIO()
+    try:
+        await storage.download(asset.file_name, file_content)
+        file_content.seek(0)
+    except Exception as e:
+        log.error(f"Error downloading asset {asset.id}: {e}")
+        return None
+
+    # Generate thumbnail based on content type
+    try:
+        if asset.content_type.startswith("video/"):
+            thumbnail = await create_video_thumbnail(file_content, width, height)
+        elif asset.content_type.startswith("image/"):
+            thumbnail = await create_image_thumbnail(file_content, width, height)
+        else:
+            log.warning(f"Unsupported content type for thumbnail: {asset.content_type}")
+            return None
+    except Exception as e:
+        log.exception(f"Error generating thumbnail for asset {asset.id}: {e}")
+        return None
+
+    # Upload thumbnail to storage
+    if thumbnail:
+        try:
+            thumbnail.seek(0)
+            await storage.upload(asset.thumb_file_name, thumbnail)
+            thumbnail.seek(0)
+            return thumbnail
+        except Exception as e:
+            log.error(f"Error uploading thumbnail for asset {asset.id}: {e}")
+            return None
+    
+    return None
+
+
+@router.get("/{id}/thumbnail")
+async def get_thumbnail(
+    id: str,
+    request: Request,
+    width: Optional[int] = 512,
+    height: Optional[int] = 512,
+    user: str = Depends(current_user),
+):
+    """
+    Get or generate a thumbnail for an asset on-demand.
+    
+    This endpoint will:
+    1. Check if a thumbnail already exists in storage
+    2. If not, generate one on-the-fly from the original asset
+    3. Cache the generated thumbnail for future requests
+    4. Return the thumbnail image with appropriate cache headers
+    
+    Args:
+        id: The asset ID
+        width: Desired thumbnail width (default 512, max 1024)
+        height: Desired thumbnail height (default 512, max 1024)
+    
+    Returns:
+        The thumbnail image as JPEG with cache headers
+    """
+    # Validate dimensions
+    width = min(max(width or 512, 64), 1024)
+    height = min(max(height or 512, 64), 1024)
+    
+    # Find the asset
+    asset = await AssetModel.find(user, id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    
+    # Check if asset type supports thumbnails
+    if not asset.has_thumbnail:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Asset type '{asset.content_type}' does not support thumbnails"
+        )
+    
+    storage = require_scope().get_asset_storage()
+    thumb_key = asset.thumb_file_name
+    
+    # Check if thumbnail already exists
+    thumbnail_exists = await storage.file_exists(thumb_key)
+    
+    if not thumbnail_exists:
+        # Generate thumbnail on-demand
+        log.info(f"Generating on-demand thumbnail for asset {id}")
+        thumbnail = await _generate_and_upload_thumbnail(asset, storage, width, height)
+        
+        if thumbnail is None:
+            raise HTTPException(
+                status_code=500, 
+                detail="Failed to generate thumbnail"
+            )
+        
+        # Return the freshly generated thumbnail
+        thumbnail.seek(0)
+        thumbnail_data = thumbnail.getvalue()
+        
+        return Response(
+            content=thumbnail_data,
+            media_type="image/jpeg",
+            headers={
+                "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
+                "Content-Length": str(len(thumbnail_data)),
+            },
+        )
+    
+    # Thumbnail exists - check If-Modified-Since for caching
+    try:
+        last_modified = await storage.get_mtime(thumb_key)
+    except Exception:
+        last_modified = None
+    
+    if last_modified and "If-Modified-Since" in request.headers:
+        from email.utils import parsedate_to_datetime
+        from datetime import UTC
+        
+        try:
+            if_modified_since = parsedate_to_datetime(request.headers["If-Modified-Since"])
+            last_modified_utc = last_modified.replace(tzinfo=UTC)
+            if if_modified_since >= last_modified_utc:
+                raise HTTPException(status_code=304)
+        except (ValueError, TypeError):
+            pass
+    
+    # Download existing thumbnail
+    try:
+        thumbnail_content = BytesIO()
+        await storage.download(thumb_key, thumbnail_content)
+        thumbnail_content.seek(0)
+        thumbnail_data = thumbnail_content.getvalue()
+        
+        headers = {
+            "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
+            "Content-Length": str(len(thumbnail_data)),
+        }
+        
+        if last_modified:
+            headers["Last-Modified"] = last_modified.strftime("%a, %d %b %Y %H:%M:%S GMT")
+        
+        return Response(
+            content=thumbnail_data,
+            media_type="image/jpeg",
+            headers=headers,
+        )
+    except Exception as e:
+        log.error(f"Error serving thumbnail for asset {id}: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving thumbnail") from e
 
 
 @router.delete("/{id}")

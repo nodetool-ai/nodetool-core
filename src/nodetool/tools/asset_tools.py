@@ -193,8 +193,10 @@ async def _asset_to_dict(asset: AssetModel) -> dict[str, Any]:
     else:
         get_url = None
 
+    # Use on-demand thumbnail endpoint for assets that support thumbnails
+    # This ensures thumbnails are generated on-the-fly if they don't exist
     if asset.has_thumbnail:
-        thumb_url = await storage.get_url(asset.thumb_file_name)
+        thumb_url = f"/api/assets/{asset.id}/thumbnail?t={int(asset.updated_at.timestamp())}"
     else:
         thumb_url = None
 
