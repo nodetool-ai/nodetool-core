@@ -402,6 +402,7 @@ class BaseNode(BaseModel):
     _inbox: NodeInbox | None = PrivateAttr(default=None)
     _sync_mode: str = PrivateAttr(default="on_any")
     _on_input_item: Callable[[str], None] | None = PrivateAttr(default=None)
+    _is_controlled: bool = PrivateAttr(default=False)
 
     def __init__(
         self,
@@ -421,6 +422,7 @@ class BaseNode(BaseModel):
         self._dynamic_outputs = {} if dynamic_outputs is None else dict(dynamic_outputs)
         self._sync_mode = sync_mode
         self._inbox = None
+        self._is_controlled = False
 
     def required_inputs(self) -> list[str]:
         return []
