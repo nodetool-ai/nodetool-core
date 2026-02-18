@@ -820,16 +820,11 @@ def create_app(
     # The MCP server is unprotected by default; authentication should be
     # configured separately if required for production use.
     if features.enable_mcp:
-        import warnings
-
         from nodetool.api.mcp_server import mcp
 
-        # Use sse_app() for SSE transport (provides /sse and /messages routes)
-        # Note: sse_app() is deprecated in favor of http_app() but provides
-        # the endpoint structure expected by existing MCP clients.
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            app.mount("/mcp", mcp.sse_app())
+        # Use http_app() for HTTP transport (provides /sse and /messages routes)
+        # Works with both FastMCP 2.x and 3.x
+        app.mount("/mcp", mcp.http_app())
 
         log.info("[Startup] MCP server mounted at /mcp (endpoints: /mcp/sse, /mcp/messages)")
 
