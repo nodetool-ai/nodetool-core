@@ -56,11 +56,13 @@ class WriteFileTool(Tool):
             if parent_dir:
                 await asyncio.to_thread(os.makedirs, parent_dir, exist_ok=True)
 
+            # Check if file exists before writing
+            file_existed = await asyncio.to_thread(os.path.exists, full_path)
+
             mode = "a" if append else "w"
             async with aiofiles.open(full_path, mode, encoding="utf-8") as f:
                 await f.write(content)
 
-            file_existed = os.path.exists(full_path)
             return {
                 "success": True,
                 "path": path,
