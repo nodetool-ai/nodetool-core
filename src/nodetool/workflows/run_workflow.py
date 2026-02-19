@@ -51,7 +51,7 @@ async def handle_runner_error(
     """Yield standardized error messages when the runner fails."""
 
     if runner.status == "running":
-        runner.status = "error"
+        runner.status = "failed"
 
     error_message = str(exception)
 
@@ -208,7 +208,7 @@ async def run_workflow(
             raise
         except Exception:
             if runner.status == "running":
-                runner.status = "error"
+                runner.status = "failed"
             raise
 
     if use_thread:

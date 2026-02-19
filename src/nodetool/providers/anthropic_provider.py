@@ -412,7 +412,8 @@ class AnthropicProvider(BaseProvider):
     ) -> tuple[list[ToolParam] | None, dict | None, bool]:
         """Prepare tools and tool_choice for structured output."""
         if not response_format:
-            return self.format_tools(tools or []), None, False
+            # ToolParam is a subclass of dict, so this is type-safe
+            return self.format_tools(tools or []), None, False  # type: ignore[return-value]
 
         # Handle json_object
         if response_format.get("type") == "json_object":
