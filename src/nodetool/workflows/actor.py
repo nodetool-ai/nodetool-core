@@ -48,7 +48,6 @@ from pydantic import BaseModel
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
 from nodetool.observability.tracing import trace_node
-from nodetool.workflows.inbox import MessageEnvelope
 from nodetool.workflows.io import NodeInputs, NodeOutputs
 from nodetool.workflows.suspendable_node import WorkflowSuspendedException
 from nodetool.workflows.torch_support import is_cuda_available
@@ -56,6 +55,7 @@ from nodetool.workflows.types import EdgeUpdate, NodeUpdate
 
 if TYPE_CHECKING:
     from nodetool.workflows.control_events import ControlEvent, RunEvent
+    from nodetool.workflows.inbox import MessageEnvelope
 
 
 def _serialize_output_for_telemetry(output: Any, max_string_length: int = 500, max_list_items: int = 10) -> Any:
@@ -1307,7 +1307,7 @@ class NodeActor:
             await node.send_update(ctx, "completed", result=self._filter_result(outputs.collected()))
         finally:
             await node.handle_eos()
-        
+
         if not node.is_controlled():
             await self._mark_downstream_eos()
 
