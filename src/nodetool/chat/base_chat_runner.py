@@ -582,7 +582,7 @@ class BaseChatRunner(ABC):
             processing_context=processing_context,
         )
 
-    async def handle_message_impl(self, messages: list[ApiMessage]):
+    async def handle_message_impl(self, messages: list[ApiMessage]) -> None:
         """
         Handle a single message by parsing it and dispatching to the appropriate processor.
         This implementation method should be called by subclasses with the full message list.
