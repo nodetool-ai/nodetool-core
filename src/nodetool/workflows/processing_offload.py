@@ -134,6 +134,32 @@ def _numpy_audio_to_mp3_bytes(arr: Any, sample_rate: int = DEFAULT_AUDIO_SAMPLE_
     return _audio_segment_to_mp3_bytes(seg)
 
 
+def _numpy_audio_to_wav_bytes(arr: Any, sample_rate: int = DEFAULT_AUDIO_SAMPLE_RATE) -> bytes:
+    """Convert numpy audio array to WAV bytes (PCM format)."""
+    np = _ensure_numpy()
+    AudioSegment = _ensure_audio_segment()
+
+    channels = 1
+    audio_arr = arr
+    if getattr(audio_arr, "ndim", 0) == 2:
+        channels = int(audio_arr.shape[1])
+
+    if audio_arr.dtype == np.int16:
+        raw = audio_arr.tobytes()
+    elif audio_arr.dtype in (np.float32, np.float64, np.float16):
+        raw = (audio_arr * (2**14)).astype(np.int16).tobytes()
+    else:
+        raise ValueError(f"Unsupported audio ndarray dtype {audio_arr.dtype}")
+
+    seg = AudioSegment(
+        data=raw,
+        frame_rate=sample_rate,
+        sample_width=2,  # 16-bit PCM
+        channels=int(channels),
+    )
+    return _audio_segment_to_wav_bytes(seg)
+
+
 def _numpy_video_to_mp4_bytes(video_arr: Any, fps: int = 30) -> bytes:
     from nodetool.media.video.video_utils import export_to_video_bytes as _exporter
 

@@ -223,9 +223,10 @@ class AssetRef(BaseType):
       * Decoded from: PIL.Image objects, numpy arrays, raw image bytes
       * Frontend expects: Can be converted to data:image/png;base64,{data}
 
-    - **AudioRef**: MP3 bytes (audio/mp3 or audio/mpeg)
+    - **AudioRef**: WAV/PCM bytes (audio/wav)
       * Decoded from: AudioSegment objects, numpy audio arrays, raw audio bytes
-      * Frontend expects: Can be converted to data:audio/mp3;base64,{data}
+      * Frontend expects: Can be converted to data:audio/wav;base64,{data}
+      * Metadata includes: format, sample_rate, channels, sample_width, bitrate, duration_seconds
 
     - **VideoRef**: MP4 bytes (video/mp4)
       * Decoded from: Video file bytes

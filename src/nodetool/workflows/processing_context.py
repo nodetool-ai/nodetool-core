@@ -93,6 +93,7 @@ from nodetool.workflows.processing_offload import (
     _joblib_dump_to_bytes,
     _joblib_load_from_io,
     _numpy_audio_to_mp3_bytes,
+    _numpy_audio_to_wav_bytes,
     _numpy_image_to_png_bytes,
     _numpy_video_to_mp4_bytes,
     _open_image_as_rgb,
@@ -1654,16 +1655,16 @@ class ProcessingContext:
                     # Convert PIL Image to PNG bytes
                     return BytesIO(await _in_thread(_pil_to_png_bytes, obj))
                 elif isinstance(obj, AudioSegment):
-                    # Convert AudioSegment to MP3 bytes
-                    return BytesIO(await _in_thread(_audio_segment_to_mp3_bytes, obj))
+                    # Convert AudioSegment to WAV/PCM bytes
+                    return BytesIO(await _in_thread(_audio_segment_to_wav_bytes, obj))
                 elif isinstance(obj, np.ndarray):
                     # Handle numpy arrays stored in memory depending on the asset type
                     if isinstance(asset_ref, ImageRef):
                         # Encode numpy image array as PNG
                         return BytesIO(await _in_thread(_numpy_image_to_png_bytes, obj))
                     elif isinstance(asset_ref, AudioRef):
-                        # Encode numpy audio array as MP3
-                        return BytesIO(await _in_thread(_numpy_audio_to_mp3_bytes, obj))
+                        # Encode numpy audio array as WAV/PCM bytes
+                        return BytesIO(await _in_thread(_numpy_audio_to_wav_bytes, obj, asset_ref.metadata.get("sample_rate", 44100)))
                     elif isinstance(asset_ref, VideoRef):
                         # Encode numpy video array as MP4 using shared utility (T,H,W,C)
                         try:
@@ -1695,14 +1696,15 @@ class ProcessingContext:
                     return BytesIO(await _in_thread(_numpy_image_to_png_bytes, data))
                 else:
                     raise ValueError(f"Unsupported ImageRef data type {type(data)}")
-            # Audio: always encode to MP3
+            # Audio: always encode to WAV/PCM
             elif isinstance(asset_ref, AudioRef):
                 if isinstance(data, bytes):
                     return BytesIO(data)
                 elif isinstance(data, AudioSegment):
-                    return BytesIO(await _in_thread(_audio_segment_to_mp3_bytes, data))
+                    return BytesIO(await _in_thread(_audio_segment_to_wav_bytes, data))
                 elif isinstance(data, np.ndarray):
-                    return BytesIO(await _in_thread(_numpy_audio_to_mp3_bytes, data))
+                    sample_rate = asset_ref.metadata.get("sample_rate", 44100) if asset_ref.metadata else 44100
+                    return BytesIO(await _in_thread(_numpy_audio_to_wav_bytes, data, sample_rate))
                 else:
                     raise ValueError(f"Unsupported AudioRef data type {type(data)}")
             # Text
@@ -1921,7 +1923,7 @@ class ProcessingContext:
         buffer: IO,
         name: str | None = None,
         parent_id: str | None = None,
-        content_type: str = "audio/mp3",
+        content_type: str = "audio/wav",
     ) -> AudioRef:
         """
         Creates an AudioRef from an IO object.
@@ -1930,7 +1932,7 @@ class ProcessingContext:
             buffer (IO): The IO object.
             name (Optional[str], optional): The name of the asset. Defaults to None
             parent_id (Optional[str], optional): The parent ID of the asset. Defaults to None.
-            content_type (str, optional): The content type of the asset. Defaults to "audio/mp3".
+            content_type (str, optional): The content type of the asset. Defaults to "audio/wav".
 
         Returns:
             AudioRef: The AudioRef object.
@@ -2041,23 +2043,28 @@ class ProcessingContext:
             AudioRef: The converted AudioRef object.
 
         """
+        # Calculate bitrate (bits per second)
+        bitrate = audio_segment.frame_rate * audio_segment.sample_width * audio_segment.channels * 8
+        
         metadata = {
+            "format": "pcm",
             "sample_rate": audio_segment.frame_rate,
             "channels": audio_segment.channels,
-            "format": "wav",
+            "sample_width": audio_segment.sample_width,
+            "bitrate": bitrate,
             "duration_seconds": audio_segment.duration_seconds,
         }
 
-        wav_bytes = await _in_thread(_audio_segment_to_wav_bytes, audio_segment)
+        pcm_bytes = await _in_thread(_audio_segment_to_wav_bytes, audio_segment)
 
         # Prefer memory representation when no name is provided (no persistence needed)
         if name is None:
             memory_uri = f"memory://{uuid.uuid4()}"
             # Store the AudioSegment directly for fast retrieval
             self._memory_set(memory_uri, audio_segment)
-            return AudioRef(uri=memory_uri, data=wav_bytes, metadata=metadata)
+            return AudioRef(uri=memory_uri, data=pcm_bytes, metadata=metadata)
 
-        ref = await self.audio_from_io(BytesIO(wav_bytes), name=name, parent_id=parent_id, content_type="audio/wav")
+        ref = await self.audio_from_io(BytesIO(pcm_bytes), name=name, parent_id=parent_id, content_type="audio/wav")
         ref.metadata = metadata
         return ref
 
@@ -2524,7 +2531,7 @@ class ProcessingContext:
         Returns:
             str: The data URI.
         """
-        return f"data:audio/mpeg;base64,{await self.audio_ref_to_base64(audio_ref)}"
+        return f"data:audio/wav;base64,{await self.audio_ref_to_base64(audio_ref)}"
 
     async def video_ref_to_base64(self, video_ref: VideoRef) -> str:
         """
@@ -2806,7 +2813,7 @@ class ProcessingContext:
                 if isinstance(value, ImageRef):
                     return "data:image/png;base64," + b64
                 elif isinstance(value, AudioRef):
-                    return "data:audio/mp3;base64," + b64
+                    return "data:audio/wav;base64," + b64
                 elif isinstance(value, VideoRef):
                     return "data:video/mp4;base64," + b64
                 else:
@@ -2878,7 +2885,7 @@ class ProcessingContext:
         if isinstance(asset, ImageRef):
             return "image/png", "png"
         if isinstance(asset, AudioRef):
-            return "audio/mp3", "mp3"
+            return "audio/wav", "wav"
         if isinstance(asset, VideoRef):
             return "video/mp4", "mp4"
         if isinstance(asset, TextRef):

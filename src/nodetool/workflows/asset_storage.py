@@ -76,7 +76,7 @@ def get_content_type_for_asset_ref(asset_ref: AssetRef) -> str:
     if isinstance(asset_ref, ImageRef):
         return "image/png"
     elif isinstance(asset_ref, AudioRef):
-        return "audio/mp3"
+        return "audio/wav"
     elif isinstance(asset_ref, VideoRef):
         return "video/mp4"
     elif isinstance(asset_ref, TextRef):
