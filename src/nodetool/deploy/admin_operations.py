@@ -575,18 +575,31 @@ async def delete_hf_model(repo_id: str) -> AsyncGenerator[dict, None]:
         yield {"status": "error", "repo_id": repo_id, "error": str(e)}
 
 
-async def calculate_cache_size(
-    cache_dir: str = "/app/.cache/huggingface/hub",
-) -> AsyncGenerator[dict, None]:
-    """Calculate total cache size."""
+def _calculate_cache_size_sync(cache_dir: str) -> tuple[int, str | None]:
+    """Synchronous helper to calculate cache size."""
+    total_size = 0
+    error = None
     try:
-        total_size = 0
         if os.path.exists(cache_dir):
             for dirpath, _dirnames, filenames in os.walk(cache_dir):
                 for filename in filenames:
                     filepath = os.path.join(dirpath, filename)
                     if os.path.exists(filepath):
                         total_size += os.path.getsize(filepath)
+    except Exception as e:
+        error = str(e)
+    return total_size, error
+
+
+async def calculate_cache_size(
+    cache_dir: str = "/app/.cache/huggingface/hub",
+) -> AsyncGenerator[dict, None]:
+    """Calculate total cache size."""
+    try:
+        total_size, error = await asyncio.to_thread(_calculate_cache_size_sync, cache_dir)
+        if error:
+            yield {"status": "error", "cache_dir": cache_dir, "error": error}
+            return
 
         size_gb = total_size / (1024**3)
         yield {

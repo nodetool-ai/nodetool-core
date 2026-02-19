@@ -37,8 +37,11 @@ async def test_chromadb_research_agent(provider: BaseProvider, model: str):
     for paper in os.listdir(os.path.join(os.path.dirname(__file__), "papers")):
         if paper.endswith(".pdf"):
             doc = pymupdf.open(os.path.join(os.path.dirname(__file__), "papers", paper))
-            md_text = pymupdf4llm.to_markdown(doc)
-            input_files.append(md_text)
+            try:
+                md_text = pymupdf4llm.to_markdown(doc)
+                input_files.append(md_text)
+            finally:
+                doc.close()
     input_data = "\n".join(input_files)
 
     chroma_client = await get_async_chroma_client()

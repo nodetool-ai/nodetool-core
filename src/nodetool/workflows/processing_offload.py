@@ -145,16 +145,16 @@ def _open_image_as_rgb(buffer: IO[bytes]) -> Any:
     PIL_Image, PIL_ImageOps = _ensure_pil()
     with suppress(Exception):
         buffer.seek(0)
-    image = PIL_Image.open(buffer)
-    # Force PIL to load the image data into memory so the buffer can be closed
-    # Without this, PIL keeps the buffer open, causing file descriptor leaks
-    image.load()
-    try:
-        rotated = PIL_ImageOps.exif_transpose(image)
-        image = rotated if rotated is not None else image
-    except (AttributeError, KeyError, TypeError):
-        pass
-    return image.convert("RGB")
+    with PIL_Image.open(buffer) as image:
+        # Force PIL to load the image data into memory so the buffer can be closed
+        # Without this, PIL keeps the buffer open, causing file descriptor leaks
+        image.load()
+        try:
+            rotated = PIL_ImageOps.exif_transpose(image)
+            image = rotated if rotated is not None else image
+        except (AttributeError, KeyError, TypeError):
+            pass
+        return image.convert("RGB")
 
 
 def _audio_segment_from_file(buffer: IO[bytes]) -> Any:
