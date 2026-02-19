@@ -808,7 +808,8 @@ class TaskPlanner:
                 len(tool_messages),
             )
 
-        assert response_message is not None
+        if response_message is None:
+            raise ValueError(f"Response message is required for {phase_name} phase")
         log.debug(
             "%s phase LLM response received, content length: %d chars",
             phase_name.capitalize(),

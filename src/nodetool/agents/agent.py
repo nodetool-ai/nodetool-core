@@ -858,7 +858,8 @@ class Agent(BaseAgent):
 
                 _ = span.add_event("planning_completed", {"step_count": len(self.task.steps) if self.task else 0})
 
-            assert self.task is not None, "Task was not created by planner and was not provided initially."
+            if self.task is None:
+                raise ValueError("Task was not created by planner and was not provided initially.")
             task: Task = self.task
             _ = span.set_attribute("nodetool.agent.task_step_count", len(task.steps))
 
@@ -977,7 +978,8 @@ class Agent(BaseAgent):
             mode: Execution mode ("docker" or "subprocess")
         """
         workspace = context.workspace_dir
-        assert workspace is not None, "Workspace directory is required"
+        if workspace is None:
+            raise ValueError("Workspace directory is required")
         host_workspace = Path(workspace)
 
         # Prepare workspace paths based on mode
@@ -1024,7 +1026,8 @@ class Agent(BaseAgent):
 
         # Create the runner with appropriate settings for the mode
         if mode == "docker":
-            assert self.docker_image is not None, "Docker image is not set"
+            if self.docker_image is None:
+                raise ValueError("Docker image is not set")
             runner = AgentRunner(
                 timeout_seconds=600,
                 image=self.docker_image,

@@ -19,7 +19,6 @@ class SerpProvider(abc.ABC):
             keyword: The search query.
             num_results: The desired number of results. Defaults to 10.
         """
-        pass
 
     @abc.abstractmethod
     async def search_news(self, keyword: str, num_results: int = 10) -> Any:
@@ -31,7 +30,6 @@ class SerpProvider(abc.ABC):
             num_results: The desired number of results. Defaults to 10.
 
         """
-        pass
 
     @abc.abstractmethod
     async def search_images(
@@ -50,21 +48,18 @@ class SerpProvider(abc.ABC):
             num_results: The desired number of image results. Defaults to 10.
 
         """
-        pass
 
     @abc.abstractmethod
     async def search_finance(self, query: str, window: str | None = None) -> Any:
         """
         Retrieves financial data.
         """
-        pass
 
     @abc.abstractmethod
     async def search_jobs(self, query: str, location: str | None = None, num_results: int = 10) -> Any:
         """
         Perform a job search.
         """
-        pass
 
     @abc.abstractmethod
     async def search_lens(
@@ -76,7 +71,6 @@ class SerpProvider(abc.ABC):
         """
         Perform a lens search.
         """
-        pass
 
     @abc.abstractmethod
     async def search_maps(
@@ -90,7 +84,6 @@ class SerpProvider(abc.ABC):
         """
         Perform a maps search.
         """
-        pass
 
     @abc.abstractmethod
     async def search_shopping(
@@ -107,7 +100,6 @@ class SerpProvider(abc.ABC):
         """
         Perform a shopping search.
         """
-        pass
 
     @abc.abstractmethod
     async def close(self) -> None:
@@ -116,7 +108,6 @@ class SerpProvider(abc.ABC):
         To be called when the provider is no longer needed, for example,
         when exiting an `async with` block.
         """
-        pass
 
     async def __aenter__(self):
         """Allows the provider to be used as an asynchronous context manager."""

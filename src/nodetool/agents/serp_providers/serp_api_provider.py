@@ -331,10 +331,8 @@ class SerpApiProvider(SerpProvider):
         # For price and condition, tbs often starts with "mr:1,price:1" or similar
         # However, SerpApi examples for Shopping use more direct tbs components for these.
 
-        if min_price is not None or max_price is not None or condition or sort_by:
-            # Base for many shopping filters, though individual components are often enough
-            # tbs_parts.append("mr:1") # Let's try without mr:1 first, some filters apply directly
-            pass  # placeholder
+        # Note: Base for many shopping filters, though individual components are often enough
+        # tbs_parts.append("mr:1") # Let's try without mr:1 first, some filters apply directly
 
         if min_price is not None:
             tbs_parts.append(f"ppr_min:{min_price}")
