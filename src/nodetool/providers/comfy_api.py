@@ -122,7 +122,8 @@ def validate_input(job_input: dict[str, Any] | str | None) -> tuple[Optional[dic
         except json.JSONDecodeError:
             return None, "Invalid JSON format in input"
 
-    assert isinstance(job_input, dict)
+    if not isinstance(job_input, dict):
+        return None, f"Invalid input type: expected dict, got {type(job_input).__name__}"
     workflow = job_input.get("workflow")
     if workflow is None:
         return None, "Missing 'workflow' parameter"
