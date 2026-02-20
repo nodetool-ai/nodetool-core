@@ -343,7 +343,7 @@ async def export_debug_bundle(payload: DebugBundleRequest) -> DebugBundleRespons
     filename = f"nodetool-debug-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.zip"
     zip_path = save_dir / filename
     await asyncio.to_thread(_create_zip, staging_dir, zip_path)
-    shutil.rmtree(staging_dir, ignore_errors=True)
+    await asyncio.to_thread(shutil.rmtree, staging_dir, ignore_errors=True)
 
     return DebugBundleResponse(
         file_path=str(zip_path),

@@ -1948,7 +1948,7 @@ async def delete_cached_hf_model(model_id: str) -> bool:
     if not await asyncio.to_thread(os.path.exists, repo_root):
         return False
 
-    shutil.rmtree(repo_root)
+    await asyncio.to_thread(shutil.rmtree, repo_root)
 
     await HF_FAST_CACHE.invalidate(model_id, repo_type="model")
     return True
