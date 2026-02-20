@@ -39,7 +39,6 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
-log.setLevel(logging.DEBUG)
 
 # Default context length for Ollama models when not configured
 DEFAULT_OLLAMA_CONTEXT_LENGTH = 4096

@@ -139,7 +139,6 @@ log = get_logger(__name__)
 
 HELP_CONTEXT_WINDOW = 32000
 HELP_MAX_TOKENS = 16384
-log.setLevel(logging.DEBUG)
 
 # Safety limit to prevent runaway tool-call loops
 MAX_TOOL_ITERATIONS = 25

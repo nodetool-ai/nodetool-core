@@ -141,8 +141,6 @@ from nodetool.workflows.types import Chunk, PlanningUpdate
 
 # Set up logger for this module
 logger = get_logger(__name__)
-logger.setLevel(logging.DEBUG)
-
 
 class NodeSpecification(BaseModel):
     """Model for node specification in workflow design."""

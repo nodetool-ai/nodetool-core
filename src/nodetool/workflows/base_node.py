@@ -2165,7 +2165,7 @@ class Preview(BaseNode):
         value (Any): The value to be previewed.
     """
 
-    value: Any = Field(object(), description="The value to preview.")
+    value: Any = Field(None, description="The value to preview.")
     name: str = Field("", description="The name of the preview node.")
     _visible: bool = False
 

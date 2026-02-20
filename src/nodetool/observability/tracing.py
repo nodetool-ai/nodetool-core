@@ -766,8 +766,8 @@ class TracingConfig:
         export_interval_ms: Export interval in milliseconds
     """
 
-    enabled: bool = True
-    exporter: str = "console"
+    enabled: bool = False
+    exporter: str = "none"
     endpoint: Optional[str] = None
     service_name: str = "nodetool"
     service_version: str = "0.6.0"

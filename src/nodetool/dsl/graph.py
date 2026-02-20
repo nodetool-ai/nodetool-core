@@ -28,8 +28,6 @@ from nodetool.workflows.types import (
 )
 
 log = get_logger(__name__)
-log.setLevel(logging.DEBUG)
-
 
 OutputT = TypeVar("OutputT")
 

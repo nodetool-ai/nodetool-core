@@ -36,8 +36,6 @@ if TYPE_CHECKING:
     from nodetool.agents.tools.base import Tool
 
 log = get_logger(__name__)
-log.setLevel(logging.DEBUG)
-
 
 def _get_encoding_for_model(model: Optional[str]):
     try:

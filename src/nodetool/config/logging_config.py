@@ -121,6 +121,9 @@ def configure_logging(
     logging.getLogger("nodetool.models.sqlite_adapter").setLevel(logging.WARNING)
     logging.getLogger("nodetool.chat.chat_websocket_runner").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("opentelemetry").setLevel(logging.WARNING)
+    logging.getLogger("transformers").setLevel(logging.WARNING)
 
     return level
 

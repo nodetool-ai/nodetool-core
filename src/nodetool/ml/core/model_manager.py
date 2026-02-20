@@ -56,7 +56,7 @@ class ModelManager:
 
     Attributes:
         _models (Dict[str, Any]): Storage for model instances keyed by model_id, task, and path
-        _models_by_node (Dict[str, str]): Mapping of node IDs to model keys
+        _models_by_node (Dict[str, set[str]]): Mapping of node IDs to model cache keys
         _locks (Dict[str, asyncio.Lock]): Per-model locks for thread-safe access
         _lock_creation_lock (asyncio.Lock): Lock for safely creating new per-model locks
         _model_last_used (Dict[str, float]): Last-used timestamps per cached model key
@@ -66,7 +66,7 @@ class ModelManager:
     """
 
     _models: ClassVar[dict[str, Any]] = {}
-    _models_by_node: ClassVar[dict[str, str]] = {}
+    _models_by_node: ClassVar[dict[str, set[str]]] = {}
     _locks: ClassVar[dict[str, asyncio.Lock]] = {}
     _lock_creation_lock: ClassVar[asyncio.Lock] = asyncio.Lock()
     _last_memory_cleanup: ClassVar[float] = 0.0
@@ -104,7 +104,7 @@ class ModelManager:
     @classmethod
     def set_model(
         cls,
-        node_id: str,
+        node_id: str | None,
         model_id_or_cache_key: str,
         task_or_model: Any,
         model: Any | None = None,
@@ -112,7 +112,7 @@ class ModelManager:
         """Stores a model instance and associates it with a node.
 
         Args:
-            node_id (str): ID of the node associated with the model
+            node_id (str | None): ID of the node associated with the model
             model_id_or_cache_key (str): Cache key, or model id (back-compat)
             task_or_model (Any): Model instance, or task name (back-compat)
             model (Any | None): Model instance when using the legacy signature
@@ -129,7 +129,8 @@ class ModelManager:
 
         was_existing = cache_key in cls._models
         cls._models[cache_key] = model_instance
-        cls._models_by_node[node_id] = cache_key
+        if node_id is not None:
+            cls._models_by_node.setdefault(node_id, set()).add(cache_key)
         cls._update_model_metadata(cache_key, model_instance, node_id=node_id)
 
         if was_existing:
@@ -138,7 +139,9 @@ class ModelManager:
             logger.info(f"+ Cache STORE: Cached new model for {cache_key} - Node: {node_id}")
 
         logger.debug(
-            f"Model cache status - Total models: {len(cls._models)}, Node associations: {len(cls._models_by_node)}"
+            "Model cache status - Total models: %d, Node associations: %d",
+            len(cls._models),
+            sum(len(keys) for keys in cls._models_by_node.values()),
         )
 
     @classmethod
@@ -219,8 +222,8 @@ class ModelManager:
             cls._node_last_used[node_id] = now
             return
 
-        for mapped_node_id, mapped_key in list(cls._models_by_node.items()):
-            if mapped_key == key:
+        for mapped_node_id, mapped_keys in list(cls._models_by_node.items()):
+            if key in mapped_keys:
                 cls._node_last_used[mapped_node_id] = now
 
     @classmethod
@@ -321,39 +324,49 @@ class ModelManager:
         cleared_locks = 0
 
         for node_id in list(node_ids):
-            key = cls._models_by_node.pop(node_id, None)
-            if key:
-                if key in cls._models:
-                    model = cls._models.pop(key, None)
-                    if model is not None:
-                        cls._move_model_to_cpu(model)
-                    # Extract model info for logging
-                    parts = key.split("_", 2)
-                    model_id = parts[0] if len(parts) > 0 else "unknown"
-                    task = parts[1] if len(parts) > 1 else "unknown"
-                    path = parts[2] if len(parts) > 2 else None
-                    cleared_count += 1
-                    cleared_models.append(f"{model_id} (task: {task}, path: {path})")
-                    logger.debug(f"- Cleared cached model for node {node_id}: {model_id}")
+            keys = cls._models_by_node.pop(node_id, None)
+            if keys:
+                for key in list(keys):
+                    is_still_referenced = any(
+                        key in mapped_keys for mapped_keys in cls._models_by_node.values()
+                    )
+                    if is_still_referenced:
+                        continue
 
-                    # Clean up associated lock
-                    if key in cls._locks:
-                        del cls._locks[key]
-                        cleared_locks += 1
-                        logger.debug(f"🔒 Removed lock for cleared model: {key}")
+                    if key in cls._models:
+                        model = cls._models.pop(key, None)
+                        if model is not None:
+                            cls._move_model_to_cpu(model)
+                        # Extract model info for logging
+                        parts = key.split("_", 2)
+                        model_id = parts[0] if len(parts) > 0 else "unknown"
+                        task = parts[1] if len(parts) > 1 else "unknown"
+                        path = parts[2] if len(parts) > 2 else None
+                        cleared_count += 1
+                        cleared_models.append(f"{model_id} (task: {task}, path: {path})")
+                        logger.debug(f"- Cleared cached model for node {node_id}: {model_id}")
 
-                    cls._model_last_used.pop(key, None)
-                    cls._model_device.pop(key, None)
-                    cls._model_size_bytes.pop(key, None)
+                        # Clean up associated lock
+                        if key in cls._locks:
+                            del cls._locks[key]
+                            cleared_locks += 1
+                            logger.debug(f"🔒 Removed lock for cleared model: {key}")
 
-                cls._node_last_used.pop(node_id, None)
+                        cls._model_last_used.pop(key, None)
+                        cls._model_device.pop(key, None)
+                        cls._model_size_bytes.pop(key, None)
+
+            cls._node_last_used.pop(node_id, None)
 
         if cleared_count > 0:
             logger.info(f"🗑️ Cache CLEANUP: Removed {cleared_count} unused models: {', '.join(cleared_models)}")
             if cleared_locks > 0:
                 logger.debug(f"🔒 Removed {cleared_locks} associated locks")
             logger.debug(
-                f"Model cache status after cleanup - Total models: {len(cls._models)}, Node associations: {len(cls._models_by_node)}, Locks: {len(cls._locks)}"
+                "Model cache status after cleanup - Total models: %d, Node associations: %d, Locks: %d",
+                len(cls._models),
+                sum(len(keys) for keys in cls._models_by_node.values()),
+                len(cls._locks),
             )
         else:
             logger.debug("Cache cleanup: No unused models to remove")
@@ -375,10 +388,12 @@ class ModelManager:
         cls._model_device.pop(key, None)
         cls._model_size_bytes.pop(key, None)
 
-        for node_id, mapped_key in list(cls._models_by_node.items()):
-            if mapped_key == key:
-                cls._models_by_node.pop(node_id, None)
-                cls._node_last_used.pop(node_id, None)
+        for node_id, mapped_keys in list(cls._models_by_node.items()):
+            if key in mapped_keys:
+                mapped_keys.discard(key)
+                if not mapped_keys:
+                    cls._models_by_node.pop(node_id, None)
+                    cls._node_last_used.pop(node_id, None)
 
         gc.collect()
         cls._try_empty_cuda_cache()

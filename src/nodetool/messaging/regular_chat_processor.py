@@ -134,8 +134,6 @@ from nodetool.workflows.types import (
 from .message_processor import MessageProcessor
 
 log = get_logger(__name__)
-log.setLevel(logging.DEBUG)
-
 
 def detect_mime_type(data: bytes) -> str:
     """Detect mime type from bytes magic numbers."""

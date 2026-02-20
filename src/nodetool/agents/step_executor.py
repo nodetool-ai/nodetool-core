@@ -191,8 +191,6 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk, LogUpdate, StepResult, TaskUpdate, TaskUpdateEvent
 
 log = get_logger(__name__)
-log.setLevel(logging.DEBUG)
-
 
 DEFAULT_MAX_TOKEN_LIMIT: int = 4096
 MESSAGE_COMPRESSION_THRESHOLD: int = 4096

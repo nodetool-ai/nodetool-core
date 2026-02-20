@@ -34,7 +34,6 @@ from nodetool.workflows.types import (
 )
 
 log = get_logger(__name__)
-log.setLevel(logging.DEBUG)
 
 try:
     PROJECT_ROOT = Path(__file__).resolve().parents[3]

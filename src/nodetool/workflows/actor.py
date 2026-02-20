@@ -49,6 +49,13 @@ from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
 from nodetool.observability.tracing import trace_node
 from nodetool.workflows.io import NodeInputs, NodeOutputs
+from nodetool.workflows.memory_utils import (
+    GPUTraceSession,
+    GPUIterationTracer,
+    cleanup_gpu_memory,
+    log_gpu_memory_breakdown,
+    reset_gpu_memory_stats,
+)
 from nodetool.workflows.suspendable_node import WorkflowSuspendedException
 from nodetool.workflows.torch_support import is_cuda_available
 from nodetool.workflows.types import EdgeUpdate, NodeUpdate
@@ -149,7 +156,6 @@ class NodeActor:
         self.inbox = inbox
         self._task: asyncio.Task | None = None
         self.logger = get_logger(__name__)
-        self.logger.setLevel(logging.DEBUG)
         self._cached_inputs_for_controlled_node: dict[str, Any] | None = None
         self._current_control_properties: dict[str, Any] | None = None
 
@@ -619,6 +625,16 @@ class NodeActor:
 
                     await node.run(context, node_inputs, outputs_collector)  # type: ignore[arg-type]
                     self.runner.log_vram_usage(f"Node {node.get_title()} ({node._id}) VRAM after run completion")
+                    
+                    # Clean up GPU memory to prevent VRAM leaks from intermediate tensors
+                    self.logger.debug(f"Running GPU cleanup for node {node.get_title()}")
+                    cleanup_stats = cleanup_gpu_memory(force=False)
+                    self.logger.debug(
+                        f"GPU cleanup for {node.get_title()}: "
+                        f"before={cleanup_stats['allocated_before_mb']:.1f}MB, "
+                        f"after={cleanup_stats['allocated_after_mb']:.1f}MB, "
+                        f"freed={cleanup_stats['freed_mb']:.1f}MB"
+                    )
                 finally:
                     release_gpu_lock()
                     span.add_event("gpu_lock_released")
@@ -770,6 +786,16 @@ class NodeActor:
                     )
 
                     self.runner.log_vram_usage(f"Node {node.get_title()} ({node._id}) VRAM after run completion")
+                    
+                    # Clean up GPU memory to prevent VRAM leaks from intermediate tensors
+                    self.logger.debug(f"Running GPU cleanup for streaming node {node.get_title()}")
+                    cleanup_stats = cleanup_gpu_memory(force=False)
+                    self.logger.debug(
+                        f"GPU cleanup for {node.get_title()}: "
+                        f"before={cleanup_stats['allocated_before_mb']:.1f}MB, "
+                        f"after={cleanup_stats['allocated_after_mb']:.1f}MB, "
+                        f"freed={cleanup_stats['freed_mb']:.1f}MB"
+                    )
                 except Exception as e:
                     self.logger.error(f"Error running node {node.get_title()} ({node._id}): {e}")
                     context.post_message(
@@ -1013,6 +1039,16 @@ class NodeActor:
     ) -> None:
         """Standard batching behavior without list aggregation."""
         node = self.node
+        
+        # Initialize GPU tracer for batching iterations if GPU is required
+        gpu_tracer: GPUIterationTracer | None = None
+        if node.requires_gpu():
+            gpu_tracer = GPUIterationTracer(report_interval=10)
+            self.logger.info(f"[GPU TRACE] Starting batching trace for node {node.get_title()} ({node._id})")
+            reset_gpu_memory_stats()
+        
+        iteration_count = 0
+        
         # Track inherent streaming nature of edges for stickiness determination
         inherent_streaming: dict[str, bool] = {}
         for handle in handles:
@@ -1118,6 +1154,12 @@ class NodeActor:
                 )
 
                 while ready_to_zip():
+                    iteration_count += 1
+                    
+                    # Start GPU tracing for this iteration
+                    if gpu_tracer is not None:
+                        gpu_tracer.start_iteration(iteration_count)
+                    
                     batch: dict[str, Any] = {}
                     for h in handles:
                         if is_sticky.get(h, False):
@@ -1137,7 +1179,27 @@ class NodeActor:
                         list(batch.keys()),
                         buffer_summary(),
                     )
+                    
                     await processor(dict(batch))
+                    
+                    # Clean up GPU memory after each batch iteration to prevent VRAM accumulation
+                    if node.requires_gpu():
+                        cleanup_stats = cleanup_gpu_memory(force=False)
+                        if cleanup_stats["freed_mb"] > 0.1:
+                            self.logger.debug(
+                                f"GPU cleanup freed {cleanup_stats['freed_mb']:.1f}MB "
+                                f"after batch {iteration_count} of {node.get_title()}"
+                            )
+                    
+                    # End GPU tracing for this iteration
+                    if gpu_tracer is not None:
+                        gpu_tracer.end_iteration(iteration_count)
+                        if gpu_tracer.should_report(iteration_count):
+                            self.logger.info(gpu_tracer.get_iteration_report(iteration_count))
+                            # Log detailed breakdown every 50 iterations
+                            if iteration_count % 50 == 0:
+                                log_gpu_memory_breakdown(f"Node {node.get_title()} iter {iteration_count}")
+                    
                     if self.node.is_controlled():
                         self._cached_inputs_for_controlled_node = dict(batch)
 
@@ -1161,9 +1223,16 @@ class NodeActor:
                     continue
                 item = envelope.data
                 current[handle] = item
+                
+                iteration_count += 1
+                if gpu_tracer is not None:
+                    gpu_tracer.start_iteration(iteration_count)
+                
                 if not initial_fired:
                     pending_handles.discard(handle)
                     if pending_handles:
+                        if gpu_tracer is not None:
+                            gpu_tracer.end_iteration(iteration_count)
                         continue
                     self.logger.debug(
                         "on_any initial batch ready: node=%s (%s) handles=%s",
@@ -1172,6 +1241,16 @@ class NodeActor:
                         list(current.keys()),
                     )
                     await processor(dict(current))
+                    
+                    # Clean up GPU memory after processing
+                    if node.requires_gpu():
+                        cleanup_stats = cleanup_gpu_memory(force=False)
+                        if cleanup_stats["freed_mb"] > 0.1:
+                            self.logger.debug(
+                                f"GPU cleanup freed {cleanup_stats['freed_mb']:.1f}MB "
+                                f"after batch {iteration_count} of {node.get_title()}"
+                            )
+                    
                     if self.node.is_controlled():
                         self._cached_inputs_for_controlled_node = dict(current)
                     initial_fired = True
@@ -1184,8 +1263,23 @@ class NodeActor:
                         list(current.keys()),
                     )
                     await processor(dict(current))
+                    
+                    # Clean up GPU memory after processing
+                    if node.requires_gpu():
+                        cleanup_stats = cleanup_gpu_memory(force=False)
+                        if cleanup_stats["freed_mb"] > 0.1:
+                            self.logger.debug(
+                                f"GPU cleanup freed {cleanup_stats['freed_mb']:.1f}MB "
+                                f"after batch {iteration_count} of {node.get_title()}"
+                            )
+                    
                     if self.node.is_controlled():
                         self._cached_inputs_for_controlled_node = dict(current)
+                
+                if gpu_tracer is not None:
+                    gpu_tracer.end_iteration(iteration_count)
+                    if gpu_tracer.should_report(iteration_count):
+                        self.logger.info(gpu_tracer.get_iteration_report(iteration_count))
 
             if deferred_control and self.inbox is not None:
                 for envelope in reversed(deferred_control):
@@ -1193,6 +1287,10 @@ class NodeActor:
 
             # NOTE: With always-on streaming, we do NOT mark non-streaming handles
             # as done. This keeps the node alive for re-invocations with sticky inputs.
+        
+        # Log GPU trace summary if tracing was enabled
+        if gpu_tracer is not None and iteration_count > 0:
+            self.logger.info(gpu_tracer.get_summary())
 
     async def _run_output_node(self) -> None:
         """Run an OutputNode by forwarding each arriving input to runner outputs.
@@ -1326,9 +1424,23 @@ class NodeActor:
         node.save_original_properties()
 
         self.logger.info(f"Controlled node {node.get_title()} ({node._id}) entering control event loop")
+        
+        # Initialize GPU tracer for controlled node iterations if GPU is required
+        gpu_tracer: GPUIterationTracer | None = None
+        if node.requires_gpu():
+            gpu_tracer = GPUIterationTracer(report_interval=1)
+            self.logger.info(f"[GPU TRACE] Starting controlled node trace for {node.get_title()} ({node._id})")
+            reset_gpu_memory_stats()
+        
+        run_event_count = 0
 
         try:
             while True:
+                run_event_count += 1
+                
+                if gpu_tracer is not None:
+                    gpu_tracer.start_iteration(run_event_count)
+                
                 event = await self._get_next_control_event()
                 if event is None:
                     # All controllers have signaled EOS
@@ -1343,7 +1455,18 @@ class NodeActor:
                     self.logger.warning(
                         f"Controlled node {node.get_title()} ({node._id}) received unknown event type: {type(event)}"
                     )
+                
+                if gpu_tracer is not None:
+                    gpu_tracer.end_iteration(run_event_count)
+                    self.logger.info(gpu_tracer.get_iteration_report(run_event_count))
+                    # Log detailed breakdown every 5 iterations
+                    if run_event_count % 5 == 0:
+                        log_gpu_memory_breakdown(f"Controlled node {node.get_title()} event {run_event_count}")
         finally:
+            # Log GPU trace summary if tracing was enabled
+            if gpu_tracer is not None and run_event_count > 0:
+                self.logger.info(gpu_tracer.get_summary())
+            
             # Always restore original properties on exit
             node.restore_original_properties()
             # Mark downstream EOS now that control loop is done
