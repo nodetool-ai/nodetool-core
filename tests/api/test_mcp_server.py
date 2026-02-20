@@ -24,50 +24,40 @@ from nodetool.models.message import Message
 from nodetool.models.thread import Thread
 from nodetool.models.workflow import Workflow
 
-# Extract the underlying functions from FastMCP FunctionTool wrappers
-# The @mcp.tool() decorator wraps functions in FunctionTool objects
-# We access the .fn attribute to get the actual callable function
-create_workflow = mcp_server.create_workflow.fn
-get_workflow = mcp_server.get_workflow.fn
-run_workflow_tool = mcp_server.run_workflow_tool.fn
-run_graph = mcp_server.run_graph.fn
-list_nodes = mcp_server.list_nodes.fn
-search_nodes = mcp_server.search_nodes.fn
-get_node_info = mcp_server.get_node_info.fn
-validate_workflow = mcp_server.validate_workflow.fn
-list_workflows = mcp_server.list_workflows.fn
-list_assets = mcp_server.list_assets.fn
-get_asset = mcp_server.get_asset.fn
-list_jobs = mcp_server.list_jobs.fn
-get_job = mcp_server.get_job.fn
-get_job_logs = mcp_server.get_job_logs.fn
-start_background_job = mcp_server.start_background_job.fn
-list_models = mcp_server.list_models.fn
-list_collections = mcp_server.list_collections.fn
-get_collection = mcp_server.get_collection.fn
-query_collection = mcp_server.query_collection.fn
-get_documents_from_collection = mcp_server.get_documents_from_collection.fn
+# Access the tool functions directly from mcp_server
+# The @mcp.tool() decorator returns the original callable function
+create_workflow = mcp_server.create_workflow
+get_workflow = mcp_server.get_workflow
+run_workflow_tool = mcp_server.run_workflow_tool
+run_graph = mcp_server.run_graph
+list_nodes = mcp_server.list_nodes
+search_nodes = mcp_server.search_nodes
+get_node_info = mcp_server.get_node_info
+validate_workflow = mcp_server.validate_workflow
+list_workflows = mcp_server.list_workflows
+list_assets = mcp_server.list_assets
+get_asset = mcp_server.get_asset
+list_jobs = mcp_server.list_jobs
+get_job = mcp_server.get_job
+get_job_logs = mcp_server.get_job_logs
+start_background_job = mcp_server.start_background_job
+list_models = mcp_server.list_models
+list_collections = mcp_server.list_collections
+get_collection = mcp_server.get_collection
+query_collection = mcp_server.query_collection
+get_documents_from_collection = mcp_server.get_documents_from_collection
 # Thread operations (may not be implemented in mcp_tools yet)
-try:
-    list_threads = mcp_server.list_threads.fn
-except AttributeError:
-    list_threads = None
-try:
-    get_thread = mcp_server.get_thread.fn
-except AttributeError:
-    get_thread = None
-try:
-    get_thread_messages = mcp_server.get_thread_messages.fn
-except AttributeError:
-    get_thread_messages = None
-download_file_from_storage = mcp_server.download_file_from_storage.fn
-get_file_metadata = mcp_server.get_file_metadata.fn
-list_storage_files = mcp_server.list_storage_files.fn
-get_hf_cache_info = mcp_server.get_hf_cache_info.fn
-inspect_hf_cached_model = mcp_server.inspect_hf_cached_model.fn
-query_hf_model_files = mcp_server.query_hf_model_files.fn
-search_hf_hub_models = mcp_server.search_hf_hub_models.fn
-get_hf_model_info = mcp_server.get_hf_model_info.fn
+list_threads = getattr(mcp_server, "list_threads", None)
+get_thread = getattr(mcp_server, "get_thread", None)
+get_thread_messages = getattr(mcp_server, "get_thread_messages", None)
+download_file_from_storage = mcp_server.download_file_from_storage
+get_file_metadata = mcp_server.get_file_metadata
+list_storage_files = mcp_server.list_storage_files
+get_hf_cache_info = mcp_server.get_hf_cache_info
+inspect_hf_cached_model = mcp_server.inspect_hf_cached_model
+query_hf_model_files = mcp_server.query_hf_model_files
+search_hf_hub_models = mcp_server.search_hf_hub_models
+get_hf_model_info = mcp_server.get_hf_model_info
 
 
 class TestWorkflowOperations:
