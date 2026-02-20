@@ -122,8 +122,8 @@ class _PooledConnectionProxy:
             return
         try:
             lock.release()
-        except RuntimeError:
-            pass
+        except RuntimeError as e:
+            log.debug(f"Failed to release write lock: {e}")
 
     async def execute(self, sql: str, parameters: Any = None):  # aiosqlite signature is permissive
         if _is_write_sql(sql):
@@ -314,9 +314,9 @@ class SQLiteConnectionPool:
         finally:
             try:
                 lock.release()
-            except RuntimeError:
+            except RuntimeError as e:
                 # Shouldn't happen, but avoid cascading failures.
-                pass
+                log.debug(f"Failed to release write lock in context: {e}")
 
     async def _put_slot(self, slot: Optional[aiosqlite.Connection]) -> None:
         """Return a slot to the pool, shielded from cancellation.
@@ -419,15 +419,15 @@ class SQLiteConnectionPool:
                 log.warning(f"Error applying SQLite pragmas: {e}")
                 try:
                     await connection.close()
-                except Exception:
-                    pass
+                except Exception as close_err:
+                    log.debug(f"Error closing failed connection: {close_err}")
                 raise
 
         # Should not reach here, but if it does, close and raise last error
         try:
             await connection.close()
-        except Exception:
-            pass
+        except Exception as close_err:
+            log.debug(f"Error closing failed connection after retries: {close_err}")
         raise last_error or RuntimeError("Failed to configure connection after retries")
 
     async def _validate_connection(self, conn: aiosqlite.Connection) -> bool:
@@ -624,8 +624,8 @@ class SQLiteConnectionPool:
                                     await asyncio.wait_for(slot.commit(), timeout=self._close_timeout_s)
                                 else:
                                     await slot.commit()
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                log.debug(f"Error checkpointing WAL before close: {e}")
                         await self._close_connection_safely(slot)
                         connections_closed += 1
                         log.debug(f"Closed SQLite connection from pool for {self.db_path}")

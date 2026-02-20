@@ -313,8 +313,6 @@ class BrowserTool(Tool):
         Returns:
             dict: Result containing page content and metadata
         """
-        # from playwright.async_api import async_playwright # Removed unused import
-
         url = params.get("url")
         timeout = 30000  # This is page navigation timeout, distinct from connection timeout
         if not url:
