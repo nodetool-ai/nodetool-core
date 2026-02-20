@@ -13,6 +13,7 @@ from nodetool.concurrency.async_iterators import (
     async_reduce,
     async_slice,
     async_take,
+    async_zip,
 )
 
 
@@ -1183,3 +1184,241 @@ class TestAsyncFlatMap:
 
         result = await async_list(async_flat_map(identity, gen()))
         assert result == [1, 2, 3]
+
+
+class TestAsyncZip:
+    """Tests for async_zip function."""
+
+    @pytest.mark.asyncio
+    async def test_zip_two_iterables_equal_length(self):
+        """Test zipping two iterables of equal length."""
+
+        async def gen1():
+            yield 1
+            yield 2
+
+        async def gen2():
+            yield 'a'
+            yield 'b'
+
+        result = await async_list(async_zip(gen1(), gen2()))
+        assert result == [(1, 'a'), (2, 'b')]
+
+    @pytest.mark.asyncio
+    async def test_zip_two_iterables_unequal_length(self):
+        """Test zipping two iterables where one is longer."""
+
+        async def gen1():
+            yield 1
+            yield 2
+
+        async def gen2():
+            yield 'a'
+            yield 'b'
+            yield 'c'
+
+        result = await async_list(async_zip(gen1(), gen2()))
+        assert result == [(1, 'a'), (2, 'b')]
+
+    @pytest.mark.asyncio
+    async def test_zip_three_iterables(self):
+        """Test zipping three iterables."""
+
+        async def gen1():
+            yield 1
+            yield 2
+
+        async def gen2():
+            yield 'a'
+            yield 'b'
+
+        async def gen3():
+            yield True
+            yield False
+
+        result = await async_list(async_zip(gen1(), gen2(), gen3()))
+        assert result == [(1, 'a', True), (2, 'b', False)]
+
+    @pytest.mark.asyncio
+    async def test_zip_single_iterable(self):
+        """Test zipping a single iterable returns 1-tuples."""
+
+        async def gen1():
+            yield 1
+            yield 2
+
+        result = await async_list(async_zip(gen1()))
+        assert result == [(1,), (2,)]
+
+    @pytest.mark.asyncio
+    async def test_zip_empty_iterables(self):
+        """Test zipping empty iterables."""
+
+        async def gen1():
+            return
+            yield  # pragma: no cover
+
+        async def gen2():
+            return
+            yield  # pragma: no cover
+
+        result = await async_list(async_zip(gen1(), gen2()))
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_zip_one_empty_iterable(self):
+        """Test zipping when one iterable is empty."""
+
+        async def gen1():
+            return
+            yield  # pragma: no cover
+
+        async def gen2():
+            yield 1
+            yield 2
+
+        result = await async_list(async_zip(gen1(), gen2()))
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_zip_first_exhausted(self):
+        """Test zipping when first iterable is shortest."""
+
+        async def gen1():
+            yield 1
+
+        async def gen2():
+            yield 'a'
+            yield 'b'
+            yield 'c'
+
+        async def gen3():
+            yield True
+            yield False
+
+        result = await async_list(async_zip(gen1(), gen2(), gen3()))
+        assert result == [(1, 'a', True)]
+
+    @pytest.mark.asyncio
+    async def test_zip_middle_exhausted(self):
+        """Test zipping when middle iterable is shortest."""
+
+        async def gen1():
+            yield 1
+            yield 2
+            yield 3
+
+        async def gen2():
+            yield 'a'
+
+        async def gen3():
+            yield True
+            yield False
+
+        result = await async_list(async_zip(gen1(), gen2(), gen3()))
+        assert result == [(1, 'a', True)]
+
+    @pytest.mark.asyncio
+    async def test_zip_different_types(self):
+        """Test zipping iterables with different types."""
+
+        async def gen_int():
+            yield 1
+            yield 2
+
+        async def gen_str():
+            yield 'a'
+            yield 'b'
+
+        async def gen_bool():
+            yield True
+            yield False
+
+        async def gen_float():
+            yield 1.5
+            yield 2.5
+
+        result = await async_list(async_zip(gen_int(), gen_str(), gen_bool(), gen_float()))
+        assert result == [(1, 'a', True, 1.5), (2, 'b', False, 2.5)]
+
+    @pytest.mark.asyncio
+    async def test_zip_preserves_order(self):
+        """Test that zipping preserves order within each iterable."""
+
+        async def gen1():
+            for i in [5, 2, 8]:
+                yield i
+
+        async def gen2():
+            for s in ['a', 'b', 'c']:
+                yield s
+
+        result = await async_list(async_zip(gen1(), gen2()))
+        assert result == [(5, 'a'), (2, 'b'), (8, 'c')]
+
+    @pytest.mark.asyncio
+    async def test_zip_no_iterables(self):
+        """Test zipping with no iterables."""
+
+        result = await async_list(async_zip())
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_zip_single_item_iterables(self):
+        """Test zipping iterables with single items."""
+
+        async def gen1():
+            yield 42
+
+        async def gen2():
+            yield 'hello'
+
+        result = await async_list(async_zip(gen1(), gen2()))
+        assert result == [(42, 'hello')]
+
+    @pytest.mark.asyncio
+    async def test_zip_with_none_values(self):
+        """Test zipping iterables containing None values."""
+
+        async def gen1():
+            yield 1
+            yield None
+            yield 3
+
+        async def gen2():
+            yield None
+            yield 2
+            yield None
+
+        result = await async_list(async_zip(gen1(), gen2()))
+        assert result == [(1, None), (None, 2), (3, None)]
+
+    @pytest.mark.asyncio
+    async def test_zip_with_falsey_values(self):
+        """Test zipping iterables containing Falsey values."""
+
+        async def gen1():
+            yield 0
+            yield ''
+
+        async def gen2():
+            yield False
+            yield []
+
+        result = await async_list(async_zip(gen1(), gen2()))
+        assert result == [(0, False), ('', [])]
+
+    @pytest.mark.asyncio
+    async def test_zip_complex_objects(self):
+        """Test zipping iterables with complex objects."""
+
+        async def gen1():
+            yield [1, 2]
+            yield [3, 4]
+
+        async def gen2():
+            yield {'a': 1}
+            yield {'b': 2}
+
+        result = await async_list(async_zip(gen1(), gen2()))
+        assert result == [([1, 2], {'a': 1}), ([3, 4], {'b': 2})]
