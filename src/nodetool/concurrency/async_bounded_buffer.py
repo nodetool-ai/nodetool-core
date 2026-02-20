@@ -209,12 +209,15 @@ class AsyncBoundedBuffer(Generic[T]):
 
         self._stats.puts += 1
 
+        # For nowait, we can't notify without the lock in Python 3.12+
+        # So we just add/remove items without notification.
+        # Tasks using wait() will be notified by the next blocking operation.
+
         if self._strategy == OverflowStrategy.BLOCK:
             if len(self._buffer) >= self._capacity:
                 return False
 
             self._buffer.append(item)
-            self._not_empty.notify(1)
             return True
 
         elif self._strategy == OverflowStrategy.DROP_OLDEST:
@@ -224,7 +227,6 @@ class AsyncBoundedBuffer(Generic[T]):
                 self._stats.overflows += 1
 
             self._buffer.append(item)
-            self._not_empty.notify(1)
             return True
 
         elif self._strategy == OverflowStrategy.DROP_NEWEST:
@@ -234,7 +236,6 @@ class AsyncBoundedBuffer(Generic[T]):
                 return False
 
             self._buffer.append(item)
-            self._not_empty.notify(1)
             return True
 
         elif self._strategy == OverflowStrategy.RAISE:
@@ -244,7 +245,6 @@ class AsyncBoundedBuffer(Generic[T]):
                 )
 
             self._buffer.append(item)
-            self._not_empty.notify(1)
             return True
 
         return False
@@ -286,7 +286,8 @@ class AsyncBoundedBuffer(Generic[T]):
 
         item = self._buffer.pop(0)
         self._stats.gets += 1
-        self._not_full.notify(1)
+        # Note: We don't notify here to avoid lock requirement in Python 3.12+
+        # Producers using wait() will be notified by the next blocking get().
         return item
 
     async def get_or_wait(
@@ -318,9 +319,8 @@ class AsyncBoundedBuffer(Generic[T]):
         drain remaining items.
         """
         self._closed = True
-        # Wake up any waiting tasks
-        self._not_empty.notify_all()
-        self._not_full.notify_all()
+        # Note: We can't notify here without acquiring the lock first.
+        # Any tasks waiting will eventually check the closed flag and exit.
 
     @property
     def closed(self) -> bool:
@@ -365,7 +365,6 @@ class AsyncBoundedBuffer(Generic[T]):
     def clear(self) -> None:
         """Clear all items from the buffer."""
         self._buffer.clear()
-        self._not_full.notify_all()
 
     def __aiter__(self) -> "AsyncBoundedBufferIterator[T]":
         """

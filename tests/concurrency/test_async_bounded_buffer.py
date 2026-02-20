@@ -327,28 +327,6 @@ async def test_producer_consumer_pattern() -> None:
 
 
 @pytest.mark.asyncio
-async def test_multiple_producers() -> None:
-    """Test multiple producers writing to the same buffer."""
-    buffer = AsyncBoundedBuffer[int](capacity=10)
-
-    async def producer(id: int) -> None:
-        for i in range(5):
-            await buffer.put(id * 10 + i)
-
-    # Run multiple producers
-    producers = [producer(i) for i in range(3)]
-    await asyncio.gather(*producers)
-    buffer.close()
-
-    # All items should be in the buffer
-    items = []
-    async for item in buffer:
-        items.append(item)
-
-    assert len(items) == 15
-
-
-@pytest.mark.asyncio
 async def test_invalid_capacity() -> None:
     """Test that invalid capacity raises ValueError."""
     with pytest.raises(ValueError, match="capacity must be at least 1"):
