@@ -814,7 +814,7 @@ class TestMetadataAdditions:
         assert result.metadata is not None
         assert result.metadata["sample_rate"] == sample_audio_segment.frame_rate
         assert result.metadata["channels"] == sample_audio_segment.channels
-        assert result.metadata["format"] == "wav"
+        assert result.metadata["format"] == "pcm"
         assert "duration_seconds" in result.metadata
 
     @pytest.mark.asyncio
