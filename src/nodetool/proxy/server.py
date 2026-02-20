@@ -159,7 +159,8 @@ class AsyncReverseProxy:
                 if chunk:
                     yield chunk
 
-        assert self.httpx_client is not None
+        if self.httpx_client is None:
+            raise RuntimeError("HTTP client is not initialized")
 
         try:
             async with self.httpx_client.stream(

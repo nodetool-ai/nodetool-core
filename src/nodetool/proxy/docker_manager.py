@@ -67,7 +67,6 @@ class DockerManager:
         if self.network_name:
 
             def _ensure_network():
-                assert self.network_name
                 try:
                     return self.docker.networks.get(self.network_name)
                 except NotFound:

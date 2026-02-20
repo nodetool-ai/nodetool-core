@@ -185,7 +185,8 @@ class ThreadedEventLoop:
         loop_running = bool(self._loop and self._loop.is_running())
         if loop_running:
             log.debug("Scheduling _shutdown_loop via call_soon_threadsafe.")
-            assert self._loop is not None
+            if self._loop is None:
+                raise RuntimeError("Event loop is not initialized")
             self._loop.call_soon_threadsafe(self._shutdown_loop)
         else:
             log.warning("Stop called, but internal loop was not reported as running. Cleanup will proceed.")
@@ -277,7 +278,8 @@ class ThreadedEventLoop:
         def run_with_context():
             """Wrapper to run the coroutine with the captured context."""
             loop = self._loop
-            assert loop is not None, "Event loop should be running"
+            if loop is None:
+                raise RuntimeError("Event loop is not initialized")
             task = loop.create_task(coro)
             setattr(result_future, "task", task)  # noqa: B010
 
