@@ -6,7 +6,7 @@
 - **API Server**: FastAPI HTTP/WebSocket services
 - **Storage Layer**: Pluggable persistence backends
 - **Async Utilities**: `AsyncSemaphore` and `gather_with_concurrency` for async concurrency control
-- **Async Iterators**: `AsyncByteStream` for async byte sequence iteration in chunks, plus `async_take`, `async_slice`, `async_first`, `async_list`, `async_map`, `async_merge`, `async_filter`, `async_flat_map`, and `async_reduce` utilities for async iterable manipulation
+- **Async Iterators**: `AsyncByteStream` for async byte sequence iteration in chunks, plus `async_take`, `async_slice`, `async_first`, `async_list`, `async_map`, `async_merge`, `async_filter`, `async_flat_map`, `async_reduce`, `async_partition`, and `async_chunked` utilities for async iterable manipulation
 - **Retry Utilities**: `retry_with_exponential_backoff` and `RetryPolicy` for handling transient failures
 - **Timeout Utilities**: `timeout`, `with_timeout`, `TimeoutPolicy`, and `TimeoutContext` for async timeout control
 - **Batching Utilities**: `batched_async_iterable` and `process_in_batches` for async batch processing
