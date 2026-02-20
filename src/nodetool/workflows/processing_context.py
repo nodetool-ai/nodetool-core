@@ -2045,7 +2045,7 @@ class ProcessingContext:
         """
         # Calculate bitrate (bits per second)
         bitrate = audio_segment.frame_rate * audio_segment.sample_width * audio_segment.channels * 8
-        
+
         metadata = {
             "format": "pcm",
             "sample_rate": audio_segment.frame_rate,
