@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 from pathlib import Path
@@ -9,6 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from .utils import current_user
+
+log = logging.getLogger(__name__)
 
 _INVALID_SKILL_NAME_RE = re.compile(r"[^a-z0-9-]")
 _XML_TAG_RE = re.compile(r"<[^>]+>")
@@ -81,7 +84,8 @@ def _resolve_skill_dirs(skill_dirs: list[str] | None = None) -> list[Path]:
 def _load_skill(skill_file: Path, *, include_instructions: bool) -> SkillResponse | None:
     try:
         content = skill_file.read_text(encoding="utf-8")
-    except Exception:
+    except OSError as e:
+        log.debug(f"Failed to read skill file {skill_file}: {e}")
         return None
 
     if not content.startswith("---"):

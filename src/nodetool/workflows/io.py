@@ -158,15 +158,21 @@ class NodeOutputs:
             node: The current ``BaseNode`` instance producing outputs.
             context: The workflow ``ProcessingContext``.
             capture_only: If True, collect outputs without routing them downstream.
+
+        Raises:
+            TypeError: If any parameter is not of the expected type.
         """
         # Lazy imports to avoid cycles
         from .base_node import BaseNode
         from .processing_context import ProcessingContext
         from .workflow_runner import WorkflowRunner
 
-        assert isinstance(runner, WorkflowRunner)
-        assert isinstance(node, BaseNode)
-        assert isinstance(context, ProcessingContext)
+        if not isinstance(runner, WorkflowRunner):
+            raise TypeError(f"runner must be WorkflowRunner, not {type(runner).__name__}")
+        if not isinstance(node, BaseNode):
+            raise TypeError(f"node must be BaseNode, not {type(node).__name__}")
+        if not isinstance(context, ProcessingContext):
+            raise TypeError(f"context must be ProcessingContext, not {type(context).__name__}")
 
         self.runner = runner
         self.node = node
@@ -189,13 +195,15 @@ class NodeOutputs:
 
         Raises:
             ValueError: If the slot does not exist on the node instance.
+            TypeError: If internal state is corrupted (node is not BaseNode).
         """
         if slot == "" or slot is None:
             slot = "output"
 
         from .base_node import BaseNode, OutputNode
 
-        assert isinstance(self.node, BaseNode)
+        if not isinstance(self.node, BaseNode):
+            raise TypeError(f"Internal state error: self.node is {type(self.node).__name__}, expected BaseNode")
 
         # Allow node to suppress routing for this slot
         if not self.node.should_route_output(slot):
@@ -268,14 +276,21 @@ class NodeOutputs:
 
         Args:
             slot: Output slot name to close.
+
+        Raises:
+            TypeError: If internal state is corrupted (types don't match expected).
         """
         from .base_node import BaseNode
         from .processing_context import ProcessingContext
         from .workflow_runner import WorkflowRunner
 
-        assert isinstance(self.node, BaseNode)
-        assert isinstance(self.context, ProcessingContext)
-        assert isinstance(self.runner, WorkflowRunner)
+        # Verify internal state hasn't been corrupted
+        if not isinstance(self.node, BaseNode):
+            raise TypeError(f"Internal state error: self.node is {type(self.node).__name__}, expected BaseNode")
+        if not isinstance(self.context, ProcessingContext):
+            raise TypeError(f"Internal state error: self.context is {type(self.context).__name__}, expected ProcessingContext")
+        if not isinstance(self.runner, WorkflowRunner):
+            raise TypeError(f"Internal state error: self.runner is {type(self.runner).__name__}, expected WorkflowRunner")
 
         if self.capture_only:
             return
@@ -309,10 +324,14 @@ class NodeOutputs:
         Args:
             value: Value to emit.
             metadata: Optional metadata to attach to the outgoing message.
+
+        Raises:
+            TypeError: If internal state is corrupted (node is not BaseNode).
         """
         from .base_node import BaseNode
 
-        assert isinstance(self.node, BaseNode)
+        if not isinstance(self.node, BaseNode):
+            raise TypeError(f"Internal state error: self.node is {type(self.node).__name__}, expected BaseNode")
 
         outputs = self.node.outputs_for_instance()
         slot = "output"

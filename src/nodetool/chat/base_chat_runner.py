@@ -203,8 +203,9 @@ class BaseChatRunner(ABC):
                 else:
                     normalized_tools = [str(tools_value)]
                 data_copy["tools"] = normalized_tools
-        except Exception:
+        except (TypeError, AttributeError) as e:
             # Best-effort normalization; if it fails, drop tools to avoid validation errors
+            log.debug(f"Failed to normalize tools field: {e}")
             data_copy["tools"] = None
 
         # Use thread_id from message data if available
