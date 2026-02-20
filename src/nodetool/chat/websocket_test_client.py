@@ -83,7 +83,7 @@ class ChatWebSocketClient:
         self.current_tools = None
         self.current_workflow = None
 
-    def print_message(self, timestamp: str, role: str, content: str):
+    def print_message(self, timestamp: str, role: str, content: str) -> None:
         """Print a message to the terminal."""
         role_colors = {
             "user": "\033[34m",  # Blue
@@ -101,7 +101,7 @@ class ChatWebSocketClient:
         if self.prompt_needed:
             print("> ", end="", flush=True)
 
-    async def connect(self):
+    async def connect(self) -> None:
         """Establish WebSocket connection with optional authentication."""
         try:
             self.websocket = await websockets.connect(self.url)
@@ -130,7 +130,7 @@ class ChatWebSocketClient:
             )
             raise
 
-    async def disconnect(self):
+    async def disconnect(self) -> None:
         """Close WebSocket connection gracefully."""
         self.running = False
 
@@ -143,7 +143,7 @@ class ChatWebSocketClient:
             await self.websocket.close()
             self.print_message(datetime.now().strftime("%H:%M:%S"), "system", "Disconnected")
 
-    async def send_message(self, content: str):
+    async def send_message(self, content: str) -> None:
         """Send a message to the WebSocket server."""
         if not self.websocket:
             self.print_message(datetime.now().strftime("%H:%M:%S"), "system", "Not connected")
@@ -183,7 +183,7 @@ class ChatWebSocketClient:
                 f"Error sending message: {e}",
             )
 
-    async def send_command(self, command: str, data: dict[str, Any]):
+    async def send_command(self, command: str, data: dict[str, Any]) -> None:
         """Send a generic command to the WebSocket server."""
         if not self.websocket:
             self.print_message(datetime.now().strftime("%H:%M:%S"), "system", "Not connected")
@@ -207,7 +207,7 @@ class ChatWebSocketClient:
                 f"Error sending command {command}: {e}",
             )
 
-    async def receive_messages(self):
+    async def receive_messages(self) -> None:
         """Continuously receive and display messages from the server."""
         try:
             assert self.websocket, "WebSocket not connected"
@@ -235,7 +235,7 @@ class ChatWebSocketClient:
             )
             self.running = False
 
-    async def process_message(self, data: dict[str, Any]):
+    async def process_message(self, data: dict[str, Any]) -> None:
         """Process received message based on type."""
         msg_type = data.get("type", "unknown")
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -290,7 +290,7 @@ class ChatWebSocketClient:
             # Unknown message type
             self.print_message(timestamp, "system", f"Received {msg_type}: {json.dumps(data)}")
 
-    async def handle_command(self, command: str):
+    async def handle_command(self, command: str) -> None:
         """Handle slash commands."""
         parts = command.split(maxsplit=1)
         cmd = parts[0].lower()
@@ -345,7 +345,7 @@ class ChatWebSocketClient:
         else:
             self.print_message(timestamp, "system", f"Unknown command: {cmd}")
 
-    async def run_interactive_session(self):
+    async def run_interactive_session(self) -> None:
         """Run the interactive chat session."""
         print("\033[2J\033[H")  # Clear screen
         print("=== WebSocket Chat Client ===")
@@ -396,7 +396,7 @@ class ChatWebSocketClient:
             await self.disconnect()
 
 
-async def main():
+async def main() -> None:
     """Main entry point for the WebSocket client."""
     parser = argparse.ArgumentParser(description="WebSocket Chat Client")
     parser.add_argument(

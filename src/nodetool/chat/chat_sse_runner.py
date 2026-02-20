@@ -179,7 +179,7 @@ class ChatSSERunner(BaseChatRunner):
     async def get_chat_history_from_db(self, thread_id: str) -> list[ApiMessage]:
         return []
 
-    async def handle_message(self, messages: list[ApiMessage]):
+    async def handle_message(self, messages: list[ApiMessage]) -> None:
         """
         Handle a message for SSE by preparing the message list and calling handle_message_impl.
         """
