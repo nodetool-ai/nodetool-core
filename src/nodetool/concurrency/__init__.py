@@ -1,4 +1,11 @@
 from .async_barrier import AsyncBarrier
+from .async_bounded_buffer import (
+    AsyncBoundedBuffer,
+    AsyncBoundedBufferIterator,
+    BufferFullError,
+    BufferStatistics,
+    OverflowStrategy,
+)
 from .async_channel import (
     AsyncChannel,
     AsyncChannelIterator,
@@ -43,6 +50,8 @@ from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_
 __all__ = [
     "AdaptiveThrottle",
     "AsyncBarrier",
+    "AsyncBoundedBuffer",
+    "AsyncBoundedBufferIterator",
     "AsyncByteStream",
     "AsyncChannel",
     "AsyncChannelIterator",
@@ -57,6 +66,8 @@ __all__ = [
     "AsyncTaskGroup",
     "AsyncThrottle",
     "AsyncTokenBucket",
+    "BufferFullError",
+    "BufferStatistics",
     "ChannelClosedError",
     "CircuitBreaker",
     "CircuitBreakerConfig",
@@ -64,6 +75,7 @@ __all__ = [
     "CircuitBreakerStats",
     "CircuitState",
     "MultiCircuitBreaker",
+    "OverflowStrategy",
     "RetryPolicy",
     "TaskExecutionError",
     "TaskResult",
