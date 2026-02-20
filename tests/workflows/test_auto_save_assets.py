@@ -288,9 +288,9 @@ async def test_auto_save_audio_ref_binary(
         _auto_save_asset = True
 
         async def process(self, context: ProcessingContext) -> dict:
-            # Create mock MP3 binary data (simplified for testing)
-            # In reality, this would be actual MP3 encoded audio
-            audio_data = b"ID3\x04\x00\x00\x00\x00\x00\x00" + b"\x00" * 100
+            # Create mock WAV binary data (simplified for testing)
+            # In reality, this would be actual WAV encoded audio
+            audio_data = b"RIFF\x00\x00\x00\x00WAVEfmt " + b"\x00" * 100
             return {"audio": AudioRef(data=audio_data)}
 
     node = AudioNode(id="audio_node")
@@ -304,7 +304,7 @@ async def test_auto_save_audio_ref_binary(
     assert result["audio"].asset_id is not None
     asset = await Asset.find(user_id, result["audio"].asset_id)
     assert asset is not None
-    assert asset.content_type == "audio/mp3"
+    assert asset.content_type == "audio/wav"
     assert asset.node_id == "audio_node"
 
 

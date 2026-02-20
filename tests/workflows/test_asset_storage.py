@@ -96,7 +96,7 @@ class TestGetContentTypeForAssetRef:
         "asset_ref,expected_type",
         [
             (ImageRef(uri="test://"), "image/png"),
-            (AudioRef(uri="test://"), "audio/mp3"),
+            (AudioRef(uri="test://"), "audio/wav"),
             (VideoRef(uri="test://"), "video/mp4"),
             (TextRef(uri="test://"), "text/plain"),
             (DataframeRef(uri="test://"), "application/json"),
