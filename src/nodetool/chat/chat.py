@@ -43,12 +43,13 @@ async def get_openai_models():
             id, object type, creation timestamp, and owner information.
 
     Raises:
-        AssertionError: If OPENAI_API_KEY is not set in the environment.
+        ValueError: If OPENAI_API_KEY is not set in the environment.
         openai.OpenAIError: If there's an error connecting to the OpenAI API.
     """
     env = Environment.get_environment()
     api_key = env.get("OPENAI_API_KEY")
-    assert api_key, "OPENAI_API_KEY is not set"
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY is not set")
 
     client = openai.AsyncClient(api_key=api_key)
     res = await client.models.list()
