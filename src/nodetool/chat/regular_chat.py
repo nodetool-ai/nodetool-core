@@ -71,7 +71,7 @@ async def run_tool(
         ToolCall: The original tool call object updated with the execution result
 
     Raises:
-        AssertionError: If the specified tool is not found in the available tools
+        ValueError: If the specified tool is not found in the available tools
     """
 
     def find_tool(name):
@@ -82,7 +82,8 @@ async def run_tool(
 
     tool = find_tool(tool_call.name)
 
-    assert tool is not None, f"Tool {tool_call.name} not found"
+    if tool is None:
+        raise ValueError(f"Tool {tool_call.name} not found")
 
     status.update(tool.user_message(tool_call.args), spinner="dots")
     result = await tool.process(context, tool_call.args)
@@ -161,7 +162,8 @@ async def process_regular_chat(
                 current_chunk = str(chunk.content)
                 console.print(chunk.content, end="", highlight=False)
                 if messages[-1].role == "assistant":
-                    assert isinstance(messages[-1].content, str)
+                    if not isinstance(messages[-1].content, str):
+                        raise TypeError(f"Expected last message content to be str, got {type(messages[-1].content).__name__}")
                     messages[-1].content += current_chunk  # type: ignore[operator]
                 else:
                     messages.append(Message(role="assistant", content=current_chunk))

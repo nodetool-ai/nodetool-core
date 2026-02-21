@@ -81,7 +81,8 @@ async def _get_db_connection(postgres_url: Optional[str] = None):
                 f"password={params['password']} host={params['host']} port={params['port']}"
             )
 
-        assert postgres_url is not None, "postgres_url should be set at this point"
+        if postgres_url is None:
+            raise RuntimeError("postgres_url should be set at this point")
         pool = AsyncConnectionPool(postgres_url, min_size=1, max_size=5)
         await pool.open()
 
