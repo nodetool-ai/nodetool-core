@@ -9,6 +9,8 @@ from nodetool.observability.tracing import (
     SpanStatus,
     TracingConfig,
     WorkflowTracer,
+    _tracing_config,
+    _tracing_initialized,
     configure_tracing,
     get_or_create_tracer,
     get_tracer,
@@ -24,6 +26,18 @@ from nodetool.observability.tracing import (
     trace_websocket_message,
     trace_workflow,
 )
+
+
+@pytest.fixture(autouse=True)
+def reset_tracing_state():
+    """Reset tracing module state between tests."""
+    yield
+
+    # Reset to defaults after each test
+    import nodetool.observability.tracing as tracing_module
+    tracing_module._tracing_config = TracingConfig()
+    tracing_module._tracing_initialized = False
+    tracing_module._global_tracers.clear()
 
 
 class TestWorkflowTracer:
@@ -186,12 +200,20 @@ class TestInitTracing:
     """Tests for the init_tracing function."""
 
     def test_init_tracing(self):
-        """Test initializing tracing."""
+        """Test initializing tracing with explicit configuration."""
+        from nodetool.observability.tracing import configure_tracing
+
+        # Configure tracing to be enabled before initializing
+        configure_tracing(TracingConfig(enabled=True))
         init_tracing(service_name="test-service")
         assert is_tracing_enabled() is True
 
     def test_init_tracing_with_exporter(self):
-        """Test initializing tracing with exporter."""
+        """Test initializing tracing with exporter and explicit configuration."""
+        from nodetool.observability.tracing import configure_tracing
+
+        # Configure tracing to be enabled before initializing
+        configure_tracing(TracingConfig(enabled=True, exporter="console"))
         init_tracing(service_name="test-service", exporter="console")
         assert is_tracing_enabled() is True
 
@@ -321,8 +343,8 @@ class TestTracingConfig:
     def test_default_config(self):
         """Test default TracingConfig values."""
         config = TracingConfig()
-        assert config.enabled is True
-        assert config.exporter == "console"
+        assert config.enabled is False  # Tracing is opt-in, disabled by default
+        assert config.exporter == "none"  # No exporter by default
         assert config.sample_rate == 1.0
 
     def test_custom_config(self):
