@@ -954,7 +954,7 @@ def serve(
     # Handle UI download if requested
     if ui or ui_url:
         if ui and ui_url:
-             console.print("[yellow]Warning: --ui-url overrides --ui[/]")
+            console.print("[yellow]Warning: --ui-url overrides --ui[/]")
 
         url_to_use = ui_url
 
@@ -964,9 +964,11 @@ def serve(
                 version = get_package_version("nodetool-core")
                 # Fix normalized version if needed (e.g., 0.6.3rc12 -> 0.6.3-rc.12)
                 if "rc" in version and "-" not in version:
-                     version = version.replace("rc", "-rc.")
+                    version = version.replace("rc", "-rc.")
 
-                url_to_use = f"https://github.com/nodetool-ai/nodetool/releases/download/v{version}/nodetool-web-{version}.zip"
+                url_to_use = (
+                    f"https://github.com/nodetool-ai/nodetool/releases/download/v{version}/nodetool-web-{version}.zip"
+                )
                 console.print(f"[cyan]Inferring UI URL for version {version}: {url_to_use}[/]")
             except PackageNotFoundError:
                 console.print("[red]Could not determine package version.[/]")
@@ -974,7 +976,7 @@ def serve(
                 pass
 
         if static_folder:
-             console.print("[yellow]Warning: --ui-url/--ui overrides --static-folder[/]")
+            console.print("[yellow]Warning: --ui-url/--ui overrides --static-folder[/]")
 
         try:
             if url_to_use:
@@ -986,6 +988,7 @@ def serve(
                 console.print(f"[yellow]Failed to download UI for current version ({e}). Trying latest release...[/]")
                 try:
                     import httpx
+
                     # Find latest tag
                     resp = httpx.get("https://github.com/nodetool-ai/nodetool/releases/latest", follow_redirects=False)
                     location = resp.headers.get("location", "")
@@ -998,8 +1001,8 @@ def serve(
                     else:
                         raise Exception("Could not resolve latest release tag")
                 except Exception as inner_e:
-                     console.print(f"[red]Failed to download latest UI: {inner_e}[/]")
-                     sys.exit(1)
+                    console.print(f"[red]Failed to download latest UI: {inner_e}[/]")
+                    sys.exit(1)
             else:
                 console.print(f"[red]Failed to download UI: {e}[/]")
                 sys.exit(1)
@@ -1062,7 +1065,7 @@ def _download_and_cache_ui(url: str) -> str:
     with httpx.Client(follow_redirects=True) as client:
         resp = client.get(url)
         if resp.status_code == 404:
-             raise Exception("404 Not Found")
+            raise Exception("404 Not Found")
         resp.raise_for_status()
 
         # Unpack
@@ -1302,6 +1305,7 @@ def run(
 
                 # Create fresh request and context for each iteration
                 from nodetool.workflows.run_job_request import RunJobRequest
+
                 iter_request = RunJobRequest(
                     workflow_id=request.workflow_id,
                     user_id=request.user_id,
@@ -1327,14 +1331,14 @@ def run(
                         validate_graph=True,
                     ):
                         # Filter messages based on flags
-                        msg_type = msg.get('type', '') if isinstance(msg, dict) else getattr(msg, 'type', '')
-                        if msg_type == 'node_update' and not show_node_updates:
+                        msg_type = msg.get("type", "") if isinstance(msg, dict) else getattr(msg, "type", "")
+                        if msg_type == "node_update" and not show_node_updates:
                             continue
-                        if msg_type == 'preview' and not show_previews:
+                        if msg_type == "preview" and not show_previews:
                             continue
-                        if msg_type == 'output' and not show_outputs:
+                        if msg_type == "output" and not show_outputs:
                             continue
-                        
+
                         line = json.dumps(
                             msg if isinstance(msg, dict) else _default(msg),
                             default=_default,
@@ -1368,6 +1372,7 @@ def run(
 
                 # Create fresh request for each iteration
                 from nodetool.workflows.run_job_request import RunJobRequest
+
                 iter_request = RunJobRequest(
                     workflow_id=request.workflow_id,
                     user_id=request.user_id,
@@ -1383,16 +1388,16 @@ def run(
                         if isinstance(message, JobUpdate) and message.status == "error":
                             console.print(Panel.fit(f"Error: {message.error}", style="bold red"))
                             sys.exit(1)
-                        
+
                         # Filter messages based on flags
-                        msg_type_str = getattr(message, 'type', '')
-                        if msg_type_str == 'node_update' and not show_node_updates:
+                        msg_type_str = getattr(message, "type", "")
+                        if msg_type_str == "node_update" and not show_node_updates:
                             continue
-                        if msg_type_str == 'preview' and not show_previews:
+                        if msg_type_str == "preview" and not show_previews:
                             continue
-                        if msg_type_str == 'output' and not show_outputs:
+                        if msg_type_str == "output" and not show_outputs:
                             continue
-                        
+
                         msg_type = Text(message.type, style="bold cyan")
                         try:
                             msg_json = message.model_dump_json()
@@ -1533,8 +1538,6 @@ def vibecoding(
                 console.print(Syntax(html_content, "html", theme="monokai", line_numbers=True))
 
     _run_async(run_vibecoding())
-
-
 
 
 @cli.command("dsl-export")
@@ -2237,6 +2240,7 @@ def scan(verbose):
         import asyncio
 
         from nodetool.packages.registry import scan_for_package_nodes
+
         package = asyncio.run(scan_for_package_nodes(verbose=verbose))
 
         # Save package metadata
@@ -3228,10 +3232,7 @@ def _sync_secrets_to_deployment(name: str, deployment: Any) -> None:
     except Exception as exc:
         error_text = str(exc).lower()
         if "no such table" in error_text and "nodetool_secrets" in error_text:
-            console.print(
-                f"[yellow]Skipping secret sync for '{name}': "
-                "local secrets table not initialized yet.[/]"
-            )
+            console.print(f"[yellow]Skipping secret sync for '{name}': local secrets table not initialized yet.[/]")
             return
         console.print(f"[yellow]Warning: failed to export local secrets for '{name}': {exc}[/]")
         return
@@ -3636,7 +3637,7 @@ def deploy_add(name: str, deployment_type: str):
             use_gpu = click.confirm("  Assign GPU?", default=False)
             gpu = None
             if use_gpu:
-                 gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
+                gpu = click.prompt("  GPU device(s) (e.g., '0' or '0,1')", type=str)
 
             has_workflows = click.confirm("  Assign specific workflows?", default=False)
             workflows = None

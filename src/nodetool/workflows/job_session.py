@@ -10,17 +10,19 @@ VRAM leaks that occur when creating a new thread per job.
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import uuid4
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.job import Job
 from nodetool.runtime.resources import ResourceScope
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
 from nodetool.workflows.threaded_job_execution import ThreadedJobExecution
 from nodetool.workflows.workflow_runner import WorkflowRunner
+
+if TYPE_CHECKING:
+    from nodetool.workflows.processing_context import ProcessingContext
+    from nodetool.workflows.run_job_request import RunJobRequest
 
 log = get_logger(__name__)
 
@@ -28,20 +30,20 @@ log = get_logger(__name__)
 class JobSession:
     """
     Manages a session-scoped execution context for workflow jobs.
-    
+
     A JobSession maintains a shared ThreadedEventLoop that is reused
     across all jobs in the session. This prevents VRAM fragmentation
     that occurs when creating a new thread (with its own CUDA context)
     for each job.
-    
+
     Usage:
         session = JobSession()
         await session.start()
-        
+
         # Run multiple jobs - they all share the same event loop
         job1 = await session.start_job(request1, context1)
         job2 = await session.start_job(request2, context2)
-        
+
         # When done, stop the session
         await session.stop()
     """
@@ -49,7 +51,7 @@ class JobSession:
     def __init__(self, session_id: Optional[str] = None):
         """
         Initialize a new job session.
-        
+
         Args:
             session_id: Optional session identifier (generated if not provided)
         """
@@ -79,20 +81,23 @@ class JobSession:
     ) -> ThreadedJobExecution:
         """
         Start a new job in this session using the shared event loop.
-        
+
         Args:
             request: Job request with workflow details
             context: Processing context for the job
             job_id: Optional existing job ID (generated if not provided)
-            
+
         Returns:
             ThreadedJobExecution instance with execution started
-            
+
         Raises:
             RuntimeError: If the session has not been started
         """
         if not self.is_running:
             raise RuntimeError("JobSession not started. Call start() first.")
+
+        # Type narrowing: _event_loop is not None when is_running is True
+        assert self._event_loop is not None, "Event loop must be initialized when is_running is True"
 
         job_id = job_id or uuid4().hex
         runner = WorkflowRunner(job_id=job_id)
@@ -151,7 +156,7 @@ class JobSession:
     async def stop(self) -> None:
         """
         Stop the session and clean up resources.
-        
+
         Cancels all active jobs and stops the shared event loop.
         """
         log.info(f"JobSession {self.session_id}: Stopping")
