@@ -321,8 +321,9 @@ class TestTracingConfig:
     def test_default_config(self):
         """Test default TracingConfig values."""
         config = TracingConfig()
-        assert config.enabled is True
-        assert config.exporter == "console"
+        # Tracing is disabled by default for security/performance
+        assert config.enabled is False
+        assert config.exporter == "none"
         assert config.sample_rate == 1.0
 
     def test_custom_config(self):
