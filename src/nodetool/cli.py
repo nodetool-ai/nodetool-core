@@ -1117,12 +1117,38 @@ def _download_and_cache_ui(url: str) -> str:
     default="local_token",
     help="Authentication token for workflow execution (default: local_token)",
 )
+@click.option(
+    "--repeat",
+    "-n",
+    default=1,
+    type=int,
+    help="Number of times to run the workflow (default: 1)",
+)
+@click.option(
+    "--show-node-updates",
+    is_flag=True,
+    help="Show node update messages (default: False)",
+)
+@click.option(
+    "--show-previews",
+    is_flag=True,
+    help="Show preview messages (default: False)",
+)
+@click.option(
+    "--show-outputs",
+    is_flag=True,
+    help="Show output messages (default: False)",
+)
 def run(
     workflow: str | None,
     jsonl: bool,
     stdin: bool,
     user_id: str,
     auth_token: str,
+    repeat: int,
+    show_node_updates: bool,
+    show_previews: bool,
+    show_outputs: bool,
 ):
     """Run a workflow by ID, file path, or RunJobRequest JSON.
 
@@ -1153,6 +1179,10 @@ def run(
 
       # Stdin: Read RunJobRequest from file
       cat request.json | nodetool run --stdin --jsonl
+
+      # Run workflow 5 times
+      nodetool run workflow.json --repeat 5
+      nodetool run workflow.json -n 5
     """
     import base64
     import json
@@ -1265,34 +1295,63 @@ def run(
     if jsonl:
         # JSONL output mode (for subprocess/automation)
         async def run_jsonl() -> int:
-            context = ProcessingContext(
-                user_id=request.user_id,
-                auth_token=request.auth_token,
-                workflow_id=request.workflow_id,
-                job_id=None,
-            )
-
-            try:
-                async for msg in run_workflow(
-                    request,
-                    context=context,
-                    use_thread=False,
-                    send_job_updates=True,
-                    initialize_graph=True,
-                    validate_graph=True,
-                ):
-                    line = json.dumps(
-                        msg if isinstance(msg, dict) else _default(msg),
-                        default=_default,
-                    )
-                    sys.stdout.write(line + "\n")
+            for i in range(repeat):
+                if repeat > 1:
+                    sys.stdout.write(json.dumps({"type": "repeat_start", "iteration": i + 1, "total": repeat}) + "\n")
                     sys.stdout.flush()
-                return 0
-            except Exception as e:
-                err = {"type": "error", "error": str(e)}
-                sys.stdout.write(json.dumps(err) + "\n")
-                sys.stdout.flush()
-                return 1
+
+                # Create fresh request and context for each iteration
+                from nodetool.workflows.run_job_request import RunJobRequest
+                iter_request = RunJobRequest(
+                    workflow_id=request.workflow_id,
+                    user_id=request.user_id,
+                    auth_token=request.auth_token,
+                    graph=request.graph,
+                    params=request.params,
+                    execution_strategy=request.execution_strategy,
+                )
+                context = ProcessingContext(
+                    user_id=iter_request.user_id,
+                    auth_token=iter_request.auth_token,
+                    workflow_id=iter_request.workflow_id,
+                    job_id=None,
+                )
+
+                try:
+                    async for msg in run_workflow(
+                        iter_request,
+                        context=context,
+                        use_thread=False,
+                        send_job_updates=True,
+                        initialize_graph=True,
+                        validate_graph=True,
+                    ):
+                        # Filter messages based on flags
+                        msg_type = msg.get('type', '') if isinstance(msg, dict) else getattr(msg, 'type', '')
+                        if msg_type == 'node_update' and not show_node_updates:
+                            continue
+                        if msg_type == 'preview' and not show_previews:
+                            continue
+                        if msg_type == 'output' and not show_outputs:
+                            continue
+                        
+                        line = json.dumps(
+                            msg if isinstance(msg, dict) else _default(msg),
+                            default=_default,
+                        )
+                        sys.stdout.write(line + "\n")
+                        sys.stdout.flush()
+                except Exception as e:
+                    err = {"type": "error", "error": str(e), "iteration": i + 1}
+                    sys.stdout.write(json.dumps(err) + "\n")
+                    sys.stdout.flush()
+                    return 1
+
+                if repeat > 1:
+                    sys.stdout.write(json.dumps({"type": "repeat_end", "iteration": i + 1, "total": repeat}) + "\n")
+                    sys.stdout.flush()
+
+            return 0
 
         exit_code = _run_async(run_jsonl())
         sys.exit(exit_code)
@@ -1300,21 +1359,57 @@ def run(
         # Interactive pretty-printed mode
         async def run_interactive():
             workflow_desc = workflow or "stdin"
-            console.print(Panel.fit(f"Running workflow {workflow_desc}...", style="blue"))
-            try:
-                async for message in run_workflow(request):
-                    # Pretty-print each message coming from the runner
-                    if isinstance(message, JobUpdate) and message.status == "error":
-                        console.print(Panel.fit(f"Error: {message.error}", style="bold red"))
-                        sys.exit(1)
-                    else:
+
+            for i in range(repeat):
+                if repeat > 1:
+                    console.print(Panel.fit(f"Run {i + 1}/{repeat}: {workflow_desc}", style="blue"))
+                else:
+                    console.print(Panel.fit(f"Running workflow {workflow_desc}...", style="blue"))
+
+                # Create fresh request for each iteration
+                from nodetool.workflows.run_job_request import RunJobRequest
+                iter_request = RunJobRequest(
+                    workflow_id=request.workflow_id,
+                    user_id=request.user_id,
+                    auth_token=request.auth_token,
+                    graph=request.graph,
+                    params=request.params,
+                    execution_strategy=request.execution_strategy,
+                )
+
+                try:
+                    async for message in run_workflow(iter_request, use_thread=False):
+                        # Pretty-print each message coming from the runner
+                        if isinstance(message, JobUpdate) and message.status == "error":
+                            console.print(Panel.fit(f"Error: {message.error}", style="bold red"))
+                            sys.exit(1)
+                        
+                        # Filter messages based on flags
+                        msg_type_str = getattr(message, 'type', '')
+                        if msg_type_str == 'node_update' and not show_node_updates:
+                            continue
+                        if msg_type_str == 'preview' and not show_previews:
+                            continue
+                        if msg_type_str == 'output' and not show_outputs:
+                            continue
+                        
                         msg_type = Text(message.type, style="bold cyan")
-                        console.print(f"{msg_type}: {message.model_dump_json()}")
-                console.print(Panel.fit("Workflow finished successfully", style="green"))
-            except Exception as e:
-                console.print(Panel.fit(f"Error running workflow: {e}", style="bold red"))
-                traceback.print_exc()
-                sys.exit(1)
+                        try:
+                            msg_json = message.model_dump_json()
+                        except Exception:
+                            # Handle binary data that can't be serialized to JSON
+                            msg_dict = message.model_dump()
+                            msg_json = json.dumps(msg_dict, default=_default)
+                        console.print(f"{msg_type}: {msg_json}")
+                except Exception as e:
+                    console.print(Panel.fit(f"Error running workflow: {e}", style="bold red"))
+                    traceback.print_exc()
+                    sys.exit(1)
+
+                if repeat > 1 and i < repeat - 1:
+                    console.print()  # Add blank line between runs
+
+            console.print(Panel.fit("Workflow finished successfully", style="green"))
 
         _run_async(run_interactive())
 

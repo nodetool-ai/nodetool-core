@@ -152,8 +152,27 @@ class ThreadedEventLoop:
         # We create a task for _cancel_all_tasks_and_wait, and then ensure_future
         # will schedule it. After it completes, we stop the loop.
         async def shutdown_sequence_coro():
-            await self._cancel_all_tasks_and_wait()
-            log.debug("Task cancellation complete, stopping loop.")
+            try:
+                await self._cancel_all_tasks_and_wait()
+            except Exception as e:
+                log.warning(f"Error during task cancellation: {e}")
+            
+            log.debug("Task cancellation complete, clearing CUDA cache before stopping loop.")
+            
+            # Clear CUDA cache BEFORE stopping the loop to prevent VRAM leaks.
+            # This must run while the event loop is still active and the thread is alive.
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                    vram_before = torch.cuda.memory_allocated() / (1024 * 1024)
+                    torch.cuda.empty_cache()
+                    vram_after = torch.cuda.memory_allocated() / (1024 * 1024)
+                    log.info(f"Cleared CUDA cache during shutdown: {vram_before:.1f}MB -> {vram_after:.1f}MB")
+            except Exception as e:
+                log.warning(f"Failed to clear CUDA cache during shutdown: {e}")
+            
             if self._loop and self._loop.is_running():  # Check again before stopping
                 self._loop.stop()
             else:
@@ -232,7 +251,8 @@ class ThreadedEventLoop:
 
     def _run_event_loop(self) -> None:
         """Set the event loop for this thread and run it."""
-        log.debug(f"Event loop thread {threading.get_ident()} started.")
+        thread_id = threading.get_ident()
+        log.debug(f"Event loop thread {thread_id} started.")
         if self._loop is None:
             # Should not happen; guard to avoid AttributeError in rare cases
             self._loop = asyncio.new_event_loop()
@@ -240,6 +260,7 @@ class ThreadedEventLoop:
         try:
             self._loop.run_forever()
         finally:
+            log.debug(f"Event loop thread {thread_id} entered finally block")
             # Clear per-thread caches now that the loop is stopping, to avoid cross-workflow leaks
             try:
                 from nodetool.config.environment import Environment
@@ -251,13 +272,34 @@ class ThreadedEventLoop:
                     f"Failed to clear thread-local caches: {e}",
                 )
 
+            # Clear CUDA cache BEFORE the thread exits to prevent VRAM leaks.
+            # PyTorch's CUDA memory allocator is per-thread; if we don't clear
+            # the cache while the thread is still alive, the reserved memory
+            # becomes orphaned when the thread exits, causing cumulative VRAM
+            # usage across jobs (WebSocket runs leak VRAM, CLI doesn't).
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    log.debug(f"Clearing CUDA cache in thread {threading.get_ident()}...")
+                    torch.cuda.synchronize()
+                    vram_before = torch.cuda.memory_allocated() / (1024 * 1024)
+                    torch.cuda.empty_cache()
+                    vram_after = torch.cuda.memory_allocated() / (1024 * 1024)
+                    log.info(f"Cleared CUDA cache in thread {threading.get_ident()}: {vram_before:.1f}MB -> {vram_after:.1f}MB")
+                else:
+                    log.debug("CUDA not available, skipping cache clear.")
+            except Exception as e:
+                # Log the error to help diagnose issues
+                log.warning(f"Failed to clear CUDA cache in thread {threading.get_ident()}: {e}")
+
             if self._loop and not self._loop.is_closed():
                 log.debug("Closing event loop.")
                 self._loop.close()
                 log.debug("Event loop closed.")
             else:
                 log.debug("Event loop was already closed before explicit close call in _run_event_loop.")
-            log.debug(f"Event loop thread {threading.get_ident()} finished.")
+            log.debug(f"Event loop thread {thread_id} finished.")
 
     def run_coroutine(self, coro: Coroutine[Any, Any, T]) -> Future[T]:
         """Schedule a coroutine to run in this event loop.

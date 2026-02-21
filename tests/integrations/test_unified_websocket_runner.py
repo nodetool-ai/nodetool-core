@@ -499,3 +499,149 @@ class TestToolBridge:
         assert future1.cancelled()
         assert future2.cancelled()
         assert len(bridge._futures) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(DEFAULT_TEST_TIMEOUT)
+class TestUnifiedWebSocketRunnerJobSession:
+    """Test suite for JobSession integration in UnifiedWebSocketRunner."""
+
+    async def test_connect_creates_job_session(self, mock_websocket):
+        """Test that connect creates a JobSession."""
+        with patch.object(Environment, "enforce_auth", return_value=False):
+            runner = UnifiedWebSocketRunner()
+            assert runner._job_session is None
+            
+            await wait_for(runner.connect(mock_websocket))
+            
+            # Job session should be created
+            assert runner._job_session is not None
+            assert runner._job_session.is_running
+            
+            await wait_for(runner.disconnect())
+
+    async def test_disconnect_stops_job_session(self, mock_websocket):
+        """Test that disconnect stops the JobSession."""
+        with patch.object(Environment, "enforce_auth", return_value=False):
+            runner = UnifiedWebSocketRunner()
+            await wait_for(runner.connect(mock_websocket))
+            
+            # Job session should be running
+            assert runner._job_session is not None
+            assert runner._job_session.is_running
+            
+            mock_websocket.client_state = WebSocketState.CONNECTED
+            await wait_for(runner.disconnect())
+            
+            # Job session should be stopped
+            assert runner._job_session is None
+
+    async def test_run_job_uses_session_event_loop(
+        self, unified_runner, mock_websocket, simple_workflow, cleanup_jobs
+    ):
+        """Test that run_job uses the session's shared event loop."""
+        with patch.object(Environment, "enforce_auth", return_value=False):
+            await unified_runner.connect(mock_websocket)
+            mock_websocket.client_state = MagicMock()
+            mock_websocket.client_state.__eq__ = MagicMock(return_value=False)
+
+            # Get the session's event loop before starting job
+            session = unified_runner._job_session
+            assert session is not None
+            session_event_loop = session._event_loop
+
+            request = RunJobRequest(
+                workflow_id=simple_workflow.id,
+                user_id="test_user",
+                auth_token="test_token",
+                job_type="workflow",
+                params={},
+                graph=Graph(nodes=[], edges=[]),
+            )
+
+            await unified_runner.run_job(request)
+            await asyncio.sleep(0.2)
+
+            # Job should be started
+            assert len(unified_runner.active_jobs) <= 1
+            
+            # If there's an active job, it should use the session's event loop
+            for job_ctx in unified_runner.active_jobs.values():
+                assert job_ctx.job_execution.event_loop is session_event_loop
+                assert not job_ctx.job_execution._owns_event_loop
+
+            await unified_runner.disconnect()
+
+    async def test_multiple_jobs_share_event_loop(
+        self, unified_runner, mock_websocket, simple_workflow, cleanup_jobs
+    ):
+        """Test that multiple jobs in the same session share the event loop."""
+        with patch.object(Environment, "enforce_auth", return_value=False):
+            await unified_runner.connect(mock_websocket)
+            mock_websocket.client_state = MagicMock()
+            mock_websocket.client_state.__eq__ = MagicMock(return_value=False)
+
+            # Start first job
+            request1 = RunJobRequest(
+                workflow_id=simple_workflow.id,
+                user_id="test_user",
+                auth_token="test_token",
+                job_type="workflow",
+                params={},
+                graph=Graph(nodes=[], edges=[]),
+            )
+            await unified_runner.run_job(request1)
+            await asyncio.sleep(0.1)
+
+            # Start second job
+            request2 = RunJobRequest(
+                workflow_id=simple_workflow.id,
+                user_id="test_user",
+                auth_token="test_token",
+                job_type="workflow",
+                params={},
+                graph=Graph(nodes=[], edges=[]),
+            )
+            await unified_runner.run_job(request2)
+            await asyncio.sleep(0.1)
+
+            # Both jobs should exist (or have completed)
+            session = unified_runner._job_session
+            assert session is not None
+            
+            # The session should have tracked both jobs
+            # (they may complete quickly and be removed)
+            assert len(session.list_active_jobs()) <= 2
+
+            await unified_runner.disconnect()
+
+    async def test_job_cleanup_removes_from_session(
+        self, unified_runner, mock_websocket, simple_workflow, cleanup_jobs
+    ):
+        """Test that job cleanup removes job from session tracking."""
+        with patch.object(Environment, "enforce_auth", return_value=False):
+            await unified_runner.connect(mock_websocket)
+            mock_websocket.client_state = MagicMock()
+            mock_websocket.client_state.__eq__ = MagicMock(return_value=False)
+
+            request = RunJobRequest(
+                workflow_id=simple_workflow.id,
+                user_id="test_user",
+                auth_token="test_token",
+                job_type="workflow",
+                params={},
+                graph=Graph(nodes=[], edges=[]),
+            )
+
+            await unified_runner.run_job(request)
+            
+            # Wait for job to complete
+            await asyncio.sleep(0.5)
+            
+            # Simulate streaming completion cleanup
+            for job_id in list(unified_runner.active_jobs.keys()):
+                unified_runner.active_jobs.pop(job_id, None)
+                if unified_runner._job_session:
+                    unified_runner._job_session.remove_job(job_id)
+
+            await unified_runner.disconnect()

@@ -83,6 +83,7 @@ from nodetool.workflows.processing_context import (
     AssetOutputMode,
     ProcessingContext,
 )
+from nodetool.workflows.job_session import JobSession
 from nodetool.workflows.run_job_request import ExecutionStrategy, RunJobRequest
 from nodetool.workflows.types import Chunk, Error
 
@@ -317,6 +318,9 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         self.active_jobs: dict[str, JobStreamContext] = {}
         self._run_job_task: asyncio.Task[None] | None = None
         self._reconnect_task: asyncio.Task[None] | None = None
+        
+        # Session-scoped job execution (prevents VRAM leaks from per-job threads)
+        self._job_session: JobSession | None = None
 
         # Chat-related
         self.heartbeat_task: asyncio.Task | None = None
@@ -391,7 +395,14 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         self._loop = asyncio.get_running_loop()
         self._send_lock = None
         self._send_lock_loop = None
-        log.info("Unified WebSocket connection established")
+        
+        # Initialize job session for this WebSocket connection
+        # This provides a shared event loop for all jobs in the session,
+        # preventing VRAM leaks that occur with per-job threads
+        self._job_session = JobSession()
+        await self._job_session.start()
+        
+        log.info("Unified WebSocket connection established with job session")
 
         # Start heartbeat to keep idle connections alive (skip in tests to avoid leaked tasks)
         if not RUNNING_PYTEST:
@@ -436,6 +447,12 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 job_ctx.streaming_task.cancel()
 
         self.active_jobs.clear()
+        
+        # Stop job session to release thread resources and CUDA memory
+        if self._job_session:
+            await self._job_session.stop()
+            self._job_session = None
+            log.info("Stopped job session")
 
         # Only attempt to close if websocket exists and is not already closed
         if self.websocket and self.websocket.client_state != WebSocketState.DISCONNECTED:
@@ -588,10 +605,18 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 workspace_dir=workspace_dir,
             )
 
-            # Start job in background via JobExecutionManager
-            job_manager = JobExecutionManager.get_instance()
-            job_execution = await job_manager.start_job(req, context)
+            # Start job using session-scoped event loop (prevents VRAM leaks)
+            if self._job_session is None:
+                raise RuntimeError("Job session not initialized")
+            
+            job_execution = await self._job_session.start_job(req, context)
             job_id = job_execution.job_id
+            
+            # Register with JobExecutionManager for discovery/reconnection support
+            # Note: JobSession owns the event loop; JobExecutionManager handles
+            # lifecycle but won't stop the shared event loop (owns_event_loop=False)
+            job_manager = JobExecutionManager.get_instance()
+            job_manager._jobs[job_id] = job_execution
 
             log.info(
                 "UnifiedWebSocketRunner.run_job job info",
@@ -752,6 +777,10 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         finally:
             # Clean up
             self.active_jobs.pop(job_ctx.job_id, None)
+            
+            # Remove job from session (event loop is reused, so don't stop it)
+            if self._job_session:
+                self._job_session.remove_job(job_ctx.job_id)
 
     async def reconnect_job(self, job_id: str, workflow_id: Optional[str] = None):
         """Reconnect to an existing background job and stream remaining messages."""

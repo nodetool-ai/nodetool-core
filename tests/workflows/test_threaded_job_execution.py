@@ -15,6 +15,7 @@ from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.threaded_job_execution import ThreadedJobExecution
+from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
 from tests.conftest import get_job_status
 
 # Check if running with pytest-xdist
@@ -406,3 +407,91 @@ async def test_threaded_job_cancellation_event(simple_workflow, cleanup_jobs):
         f"Job status: {job.status}. "
         f"Messages checked: {[type(m).__name__ for m in checked_messages]}"
     )
+
+
+@pytest.mark.asyncio
+async def test_threaded_job_with_external_event_loop(simple_workflow):
+    """Test using an external (shared) event loop."""
+    from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
+    
+    # Create and start an external event loop
+    external_loop = ThreadedEventLoop()
+    external_loop.start()
+    
+    try:
+        request = RunJobRequest(
+            workflow_id=simple_workflow.id,
+            user_id="test_user",
+            auth_token="test_token",
+            job_type="workflow",
+            params={},
+            graph=Graph(nodes=[], edges=[]),
+        )
+
+        context = ProcessingContext(
+            user_id="test_user",
+            auth_token="test_token",
+            workflow_id=simple_workflow.id,
+        )
+
+        # Create job with external event loop
+        job = await ThreadedJobExecution.create_and_start(
+            request, context, event_loop=external_loop
+        )
+
+        # Job should not own the event loop
+        assert not job._owns_event_loop
+        assert job.event_loop is external_loop
+
+        # Wait for completion
+        max_wait = 2.0
+        waited = 0.0
+        step = 0.1
+        while not job.is_completed() and waited < max_wait:
+            await asyncio.sleep(step)
+            waited += step
+
+        # Cleanup should NOT stop the external event loop
+        await job.cleanup_resources()
+        await asyncio.sleep(0.1)
+        
+        # External event loop should still be running
+        assert external_loop.is_running
+
+    finally:
+        # Stop the external event loop
+        external_loop.stop()
+
+
+@pytest.mark.asyncio
+async def test_threaded_job_owns_event_loop_by_default(simple_workflow, cleanup_jobs):
+    """Test that job owns its event loop by default."""
+    request = RunJobRequest(
+        workflow_id=simple_workflow.id,
+        user_id="test_user",
+        auth_token="test_token",
+        job_type="workflow",
+        params={},
+        graph=Graph(nodes=[], edges=[]),
+    )
+
+    context = ProcessingContext(
+        user_id="test_user",
+        auth_token="test_token",
+        workflow_id=simple_workflow.id,
+    )
+
+    job = await ThreadedJobExecution.create_and_start(request, context)
+    cleanup_jobs.append(job)
+
+    # Job should own its event loop by default
+    assert job._owns_event_loop
+    
+    # Wait for completion
+    await asyncio.sleep(0.3)
+    
+    # Cleanup should stop the event loop when owned
+    await job.cleanup_resources()
+    await asyncio.sleep(0.1)
+    
+    assert not job.event_loop.is_running

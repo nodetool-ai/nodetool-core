@@ -44,11 +44,13 @@ class ThreadedJobExecution(JobExecution):
         job_model: Job,
         event_loop: ThreadedEventLoop,
         execution_id: str | None = None,
+        owns_event_loop: bool = True,
     ):
         super().__init__(job_id, context, request, job_model, runner=runner, execution_id=execution_id)
         self.event_loop = event_loop
         self.future: Future | None = None
         self._db_path: str | None = None
+        self._owns_event_loop = owns_event_loop
 
     def _set_status(self, status: str) -> None:
         """Update both the internal and runner status consistently."""
@@ -97,7 +99,9 @@ class ThreadedJobExecution(JobExecution):
 
     async def cleanup_resources(self) -> None:
         """Clean up resources associated with this job (stop event loop)."""
-        if self.event_loop and self.event_loop.is_running:
+        # Only stop the event loop if we own it (created it).
+        # If using a shared event loop (e.g., session-scoped), don't stop it here.
+        if self._owns_event_loop and self.event_loop and self.event_loop.is_running:
             self.event_loop.stop()
             log.debug(f"Stopped event loop for job {self.job_id}")
 
@@ -264,6 +268,7 @@ class ThreadedJobExecution(JobExecution):
         context: ProcessingContext,
         job_id: str | None = None,
         execution_id: str | None = None,
+        event_loop: ThreadedEventLoop | None = None,
     ) -> "ThreadedJobExecution":
         """
         Create and start a new background job.
@@ -271,7 +276,7 @@ class ThreadedJobExecution(JobExecution):
         This factory method handles all initialization:
         - Creates job ID (if not provided) and database record
         - Sets up workflow runner
-        - Creates dedicated event loop
+        - Creates dedicated event loop (or uses provided shared one)
         - Starts execution in background
 
         Args:
@@ -279,6 +284,8 @@ class ThreadedJobExecution(JobExecution):
             context: Processing context for the job
             job_id: Optional existing job ID (if pre-generated)
             execution_id: Optional execution ID for tracking specific attempts
+            event_loop: Optional shared event loop to use instead of creating a new one.
+                       When provided, the event loop will not be stopped when the job completes.
 
         Returns:
             ThreadedJobExecution instance with execution already started
@@ -286,9 +293,11 @@ class ThreadedJobExecution(JobExecution):
         job_id = job_id or uuid4().hex
         runner = WorkflowRunner(job_id=job_id)
 
-        # Create persistent event loop for this job
-        event_loop = ThreadedEventLoop()
-        event_loop.start()
+        # Use provided event loop or create a new one
+        owns_event_loop = event_loop is None
+        if event_loop is None:
+            event_loop = ThreadedEventLoop()
+            event_loop.start()
 
         log.info(f"Starting background job {job_id} for workflow {request.workflow_id}")
 
@@ -326,6 +335,7 @@ class ThreadedJobExecution(JobExecution):
             job_model=job_model,
             event_loop=event_loop,
             execution_id=execution_id,
+            owns_event_loop=owns_event_loop,
         )
         job_instance._db_path = db_path
 
