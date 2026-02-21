@@ -658,9 +658,10 @@ def init_tracing(
         log.warning("Tracing already initialized")
         return
 
+    # Enable tracing when init_tracing is explicitly called
     if not _tracing_config.enabled:
-        log.info("Tracing disabled by configuration")
-        return
+        _tracing_config.enabled = True
+        log.info("Tracing enabled via init_tracing()")
 
     resolved_exporter = exporter or get_system_env_value("NODETOOL_TRACING_EXPORTER") or _tracing_config.exporter
 
