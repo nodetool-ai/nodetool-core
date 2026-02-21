@@ -477,6 +477,45 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             self._send_lock_loop = loop
         return self._send_lock
 
+    def _convert_to_serializable(self, obj: Any) -> Any:
+        """
+        Recursively convert objects to JSON/msgpack serializable types.
+        
+        Handles:
+        - Enum -> string (using .value)
+        - BaseModel -> dict (using model_dump)
+        - AssetRef -> dict
+        - Other objects with dict() or __dict__ -> dict
+        
+        Args:
+            obj: Any object to convert
+            
+        Returns:
+            Serializable version of the object
+        """
+        if isinstance(obj, Enum):
+            return obj.value
+        elif isinstance(obj, BaseModel):
+            return self._convert_to_serializable(obj.model_dump())
+        elif isinstance(obj, dict):
+            return {k: self._convert_to_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [self._convert_to_serializable(item) for item in obj]
+        elif hasattr(obj, "model_dump"):
+            # Pydantic v2 models that don't inherit from BaseModel directly
+            return self._convert_to_serializable(obj.model_dump())
+        elif hasattr(obj, "dict") and callable(getattr(obj, "dict")):
+            # Pydantic v1 models
+            return self._convert_to_serializable(obj.dict())
+        elif hasattr(obj, "__dict__") and not isinstance(obj, (str, bytes, int, float, bool, type(None))):
+            # Generic objects with __dict__
+            try:
+                return self._convert_to_serializable(obj.__dict__)
+            except (TypeError, AttributeError):
+                return str(obj)
+        else:
+            return obj
+
     async def send_message(self, message: dict):
         """
         Send a message to the connected WebSocket client.
@@ -500,12 +539,15 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             return
 
         try:
+            # Convert message to serializable format
+            serializable_message = self._convert_to_serializable(message)
+            
             async with self._get_send_lock():
                 if self.mode == WebSocketMode.BINARY:
-                    packed_message = msgpack.packb(message, use_bin_type=True)
+                    packed_message = msgpack.packb(serializable_message, use_bin_type=True)
                     await self.websocket.send_bytes(packed_message)  # type: ignore
                 else:
-                    json_text = json.dumps(message)
+                    json_text = json.dumps(serializable_message)
                     await self.websocket.send_text(json_text)
         except Exception as e:
             log.error(f"Error sending message: {e}", exc_info=True)

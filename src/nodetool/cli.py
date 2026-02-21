@@ -20,7 +20,7 @@ from rich.table import Table
 from rich.text import Text
 
 # Create console instance
-console = Console()
+console = Console(stderr=True)
 
 _progress_manager: Optional[ProgressManager] = None
 
@@ -1021,7 +1021,7 @@ def serve(
             enable_mcp=mcp,
         )
         if mcp:
-            console.print("[green]🔗 MCP server enabled at /mcp (endpoints: /mcp/sse, /mcp/messages)[/]")
+            console.print("[green]MCP server enabled at /mcp (endpoints: /mcp/sse, /mcp/messages)[/]")
     else:
         if static_folder:
             raise Exception("static folder and reload are exclusive options")
@@ -1030,7 +1030,7 @@ def serve(
         # Pass MCP flag via environment variable for reload mode
         if mcp:
             os.environ["NODETOOL_ENABLE_MCP"] = "1"
-            console.print("[green]🔗 MCP server enabled at /mcp (endpoints: /mcp/sse, /mcp/messages)[/]")
+            console.print("[green]MCP server enabled at /mcp (endpoints: /mcp/sse, /mcp/messages)[/]")
         app = "nodetool.api.app:app"
 
     run_uvicorn_server(app=app, host=host, port=port, reload=reload)
