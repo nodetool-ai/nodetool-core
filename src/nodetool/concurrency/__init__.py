@@ -1,4 +1,5 @@
 from .async_barrier import AsyncBarrier
+from .async_cache import AsyncCache, CachedValue, cached_async
 from .async_channel import (
     AsyncChannel,
     AsyncChannelIterator,
@@ -44,6 +45,7 @@ __all__ = [
     "AdaptiveThrottle",
     "AsyncBarrier",
     "AsyncByteStream",
+    "AsyncCache",
     "AsyncChannel",
     "AsyncChannelIterator",
     "AsyncCondition",
@@ -57,6 +59,7 @@ __all__ = [
     "AsyncTaskGroup",
     "AsyncThrottle",
     "AsyncTokenBucket",
+    "CachedValue",
     "ChannelClosedError",
     "CircuitBreaker",
     "CircuitBreakerConfig",
@@ -81,6 +84,7 @@ __all__ = [
     "async_slice",
     "async_take",
     "batched_async_iterable",
+    "cached_async",
     "create_channel",
     "fan_in",
     "fan_out",
