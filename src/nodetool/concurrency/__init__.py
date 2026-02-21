@@ -23,6 +23,11 @@ from .async_iterators import (
 )
 from .async_lock import AsyncLock
 from .async_priority_queue import AsyncPriorityQueue
+from .async_resource_pool import (
+    AsyncResourcePool,
+    ResourcePoolClosedError,
+    ResourcePoolError,
+)
 from .async_rwlock import AsyncReaderWriterLock
 from .async_task_group import AsyncTaskGroup, TaskExecutionError, TaskResult, TaskStats
 from .async_utils import AsyncSemaphore, gather_with_concurrency
@@ -53,6 +58,7 @@ __all__ = [
     "AsyncPriorityQueue",
     "AsyncRateLimiter",
     "AsyncReaderWriterLock",
+    "AsyncResourcePool",
     "AsyncSemaphore",
     "AsyncTaskGroup",
     "AsyncThrottle",
@@ -64,6 +70,8 @@ __all__ = [
     "CircuitBreakerStats",
     "CircuitState",
     "MultiCircuitBreaker",
+    "ResourcePoolClosedError",
+    "ResourcePoolError",
     "RetryPolicy",
     "TaskExecutionError",
     "TaskResult",
