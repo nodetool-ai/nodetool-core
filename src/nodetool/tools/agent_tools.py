@@ -15,7 +15,7 @@ from nodetool.agents.tools import BrowserTool, GoogleSearchTool
 from nodetool.agents.tools.email_tools import SearchEmailTool
 from nodetool.metadata.types import Provider
 from nodetool.providers import get_provider
-from nodetool.runtime.resources import ResourceScope, maybe_scope, require_scope
+from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import (
     AssetOutputMode,
     ProcessingContext,
@@ -92,7 +92,6 @@ class AgentTools:
 
                     elif isinstance(event, PlanningUpdate):
                         if ctx:
-                            from fastmcp import Context
 
                             await ctx.info(f"Plan: {event.phase} - {event.content}")
                         events.append(event.model_dump())

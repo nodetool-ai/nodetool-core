@@ -12,7 +12,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel
 from rich.console import Console
 
 from nodetool.config.deployment import DockerDeployment, SSHDeployment

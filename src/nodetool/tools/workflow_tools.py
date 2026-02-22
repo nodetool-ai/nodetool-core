@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import tempfile
 from contextlib import asynccontextmanager
-from typing import Any, Optional
+from typing import Any
 
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.packages.registry import Registry
@@ -180,7 +180,7 @@ class WorkflowTools:
         )
 
         async for msg in run_workflow(request, context=context):
-            from nodetool.workflows.types import LogUpdate, OutputUpdate, PreviewUpdate, SaveUpdate
+            from nodetool.workflows.types import OutputUpdate, PreviewUpdate, SaveUpdate
 
             if isinstance(msg, PreviewUpdate):
                 value = msg.value

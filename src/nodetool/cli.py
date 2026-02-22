@@ -1334,7 +1334,7 @@ def run(
                             continue
                         if msg_type == 'output' and not show_outputs:
                             continue
-                        
+
                         line = json.dumps(
                             msg if isinstance(msg, dict) else _default(msg),
                             default=_default,
@@ -1383,7 +1383,7 @@ def run(
                         if isinstance(message, JobUpdate) and message.status == "error":
                             console.print(Panel.fit(f"Error: {message.error}", style="bold red"))
                             sys.exit(1)
-                        
+
                         # Filter messages based on flags
                         msg_type_str = getattr(message, 'type', '')
                         if msg_type_str == 'node_update' and not show_node_updates:
@@ -1392,7 +1392,7 @@ def run(
                             continue
                         if msg_type_str == 'output' and not show_outputs:
                             continue
-                        
+
                         msg_type = Text(message.type, style="bold cyan")
                         try:
                             msg_json = message.model_dump_json()

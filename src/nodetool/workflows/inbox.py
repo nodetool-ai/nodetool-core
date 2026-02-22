@@ -32,7 +32,7 @@ import asyncio
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, AsyncIterator
 
 from nodetool.config.logging_config import get_logger

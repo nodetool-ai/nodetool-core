@@ -42,7 +42,6 @@ if can_resume:
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -52,7 +51,6 @@ from nodetool.models.run_node_state import NodeStatus, RunNodeState
 
 if TYPE_CHECKING:
     from nodetool.workflows.graph import Graph
-    from nodetool.workflows.processing_context import ProcessingContext
 
 log = get_logger(__name__)
 

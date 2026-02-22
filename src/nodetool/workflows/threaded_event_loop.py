@@ -156,9 +156,9 @@ class ThreadedEventLoop:
                 await self._cancel_all_tasks_and_wait()
             except Exception as e:
                 log.warning(f"Error during task cancellation: {e}")
-            
+
             log.debug("Task cancellation complete, clearing CUDA cache before stopping loop.")
-            
+
             # Clear CUDA cache BEFORE stopping the loop to prevent VRAM leaks.
             # This must run while the event loop is still active and the thread is alive.
             try:
@@ -172,7 +172,7 @@ class ThreadedEventLoop:
                     log.info(f"Cleared CUDA cache during shutdown: {vram_before:.1f}MB -> {vram_after:.1f}MB")
             except Exception as e:
                 log.warning(f"Failed to clear CUDA cache during shutdown: {e}")
-            
+
             if self._loop and self._loop.is_running():  # Check again before stopping
                 self._loop.stop()
             else:
