@@ -17,52 +17,55 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from nodetool.api import mcp_server
 from nodetool.models.asset import Asset
 from nodetool.models.job import Job
 from nodetool.models.message import Message
 from nodetool.models.thread import Thread
 from nodetool.models.workflow import Workflow
+from nodetool.tools import (
+    AssetTools,
+    CollectionTools,
+    HfTools,
+    JobTools,
+    ModelTools,
+    NodeTools,
+    StorageTools,
+    WorkflowTools,
+)
 
-# Helper to extract the underlying function from FastMCP tools if needed
-def _get_fn(tool):
-    return getattr(tool, "fn", tool)
-
-
-# In FastMCP 3.x, @mcp.tool() returns the function directly (no FunctionTool wrapper)
-# However, in some 2.x versions it returns a FunctionTool object
-create_workflow = _get_fn(mcp_server.create_workflow)
-get_workflow = _get_fn(mcp_server.get_workflow)
-run_workflow_tool = _get_fn(mcp_server.run_workflow_tool)
-run_graph = _get_fn(mcp_server.run_graph)
-list_nodes = _get_fn(mcp_server.list_nodes)
-search_nodes = _get_fn(mcp_server.search_nodes)
-get_node_info = _get_fn(mcp_server.get_node_info)
-validate_workflow = _get_fn(mcp_server.validate_workflow)
-list_workflows = _get_fn(mcp_server.list_workflows)
-list_assets = _get_fn(mcp_server.list_assets)
-get_asset = _get_fn(mcp_server.get_asset)
-list_jobs = _get_fn(mcp_server.list_jobs)
-get_job = _get_fn(mcp_server.get_job)
-get_job_logs = _get_fn(mcp_server.get_job_logs)
-start_background_job = _get_fn(mcp_server.start_background_job)
-list_models = _get_fn(mcp_server.list_models)
-list_collections = _get_fn(mcp_server.list_collections)
-get_collection = _get_fn(mcp_server.get_collection)
-query_collection = _get_fn(mcp_server.query_collection)
-get_documents_from_collection = _get_fn(mcp_server.get_documents_from_collection)
-# Thread operations (may not be implemented in mcp_tools yet)
-list_threads = getattr(mcp_server, "list_threads", None)
-get_thread = getattr(mcp_server, "get_thread", None)
-get_thread_messages = getattr(mcp_server, "get_thread_messages", None)
-download_file_from_storage = mcp_server.download_file_from_storage
-get_file_metadata = mcp_server.get_file_metadata
-list_storage_files = mcp_server.list_storage_files
-get_hf_cache_info = mcp_server.get_hf_cache_info
-inspect_hf_cached_model = mcp_server.inspect_hf_cached_model
-query_hf_model_files = mcp_server.query_hf_model_files
-search_hf_hub_models = mcp_server.search_hf_hub_models
-get_hf_model_info = mcp_server.get_hf_model_info
+# Direct tool function imports from tool classes for testing
+create_workflow = WorkflowTools.create_workflow
+get_workflow = WorkflowTools.get_workflow
+run_workflow_tool = WorkflowTools.run_workflow_tool
+run_graph = WorkflowTools.run_graph
+list_nodes = NodeTools.list_nodes
+search_nodes = NodeTools.search_nodes
+get_node_info = NodeTools.get_node_info
+validate_workflow = WorkflowTools.validate_workflow
+list_workflows = WorkflowTools.list_workflows
+list_assets = AssetTools.list_assets
+get_asset = AssetTools.get_asset
+list_jobs = JobTools.list_jobs
+get_job = JobTools.get_job
+get_job_logs = JobTools.get_job_logs
+start_background_job = JobTools.start_background_job
+list_models = ModelTools.list_models
+list_collections = CollectionTools.list_collections
+get_collection = CollectionTools.get_collection
+query_collection = CollectionTools.query_collection
+get_documents_from_collection = CollectionTools.get_documents_from_collection
+# Thread operations (may not be implemented yet)
+list_threads = None
+get_thread = None
+get_thread_messages = None
+download_file_from_storage = StorageTools.download_file_from_storage
+get_file_metadata = StorageTools.get_file_metadata
+list_storage_files = StorageTools.list_storage_files
+get_hf_cache_info = HfTools.get_hf_cache_info
+inspect_hf_cached_model = HfTools.inspect_hf_cached_model
+query_hf_model_files = HfTools.query_hf_model_files
+search_hf_hub_models = HfTools.search_hf_hub_models
+get_hf_model_info = HfTools.get_hf_model_info
 
 
 class TestWorkflowOperations:
