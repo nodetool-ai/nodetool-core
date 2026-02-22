@@ -4,6 +4,7 @@ import pytest
 
 from nodetool.concurrency.async_iterators import (
     AsyncByteStream,
+    async_chunks,
     async_filter,
     async_first,
     async_flat_map,
@@ -1183,3 +1184,171 @@ class TestAsyncFlatMap:
 
         result = await async_list(async_flat_map(identity, gen()))
         assert result == [1, 2, 3]
+
+
+class TestAsyncChunks:
+    """Tests for async_chunks function."""
+
+    @pytest.mark.asyncio
+    async def test_chunks_exact_multiple(self):
+        """Test chunking when iterable length is exact multiple of chunk size."""
+
+        async def gen():
+            for i in range(9):
+                yield i
+
+        result = await async_list(async_chunks(gen(), 3))
+        assert result == [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
+
+    @pytest.mark.asyncio
+    async def test_chunks_with_remainder(self):
+        """Test chunking when last chunk is partial."""
+
+        async def gen():
+            for i in range(10):
+                yield i
+
+        result = await async_list(async_chunks(gen(), 3))
+        assert result == [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9]]
+
+    @pytest.mark.asyncio
+    async def test_chunks_single_item(self):
+        """Test chunking with chunk size of 1."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        result = await async_list(async_chunks(gen(), 1))
+        assert result == [[0], [1], [2], [3], [4]]
+
+    @pytest.mark.asyncio
+    async def test_chunks_single_chunk(self):
+        """Test chunking when all items fit in one chunk."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        result = await async_list(async_chunks(gen(), 10))
+        assert result == [[0, 1, 2, 3, 4]]
+
+    @pytest.mark.asyncio
+    async def test_chunks_empty_iterable(self):
+        """Test chunking an empty iterable."""
+
+        async def gen():
+            return
+            yield  # pragma: no cover - make it a generator
+
+        result = await async_list(async_chunks(gen(), 3))
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_chunks_single_item_iterable(self):
+        """Test chunking an iterable with just one item."""
+
+        async def gen():
+            yield 42
+
+        result = await async_list(async_chunks(gen(), 5))
+        assert result == [[42]]
+
+    @pytest.mark.asyncio
+    async def test_chunks_large_chunk_size(self):
+        """Test chunking with chunk size larger than iterable."""
+
+        async def gen():
+            for i in range(3):
+                yield i
+
+        result = await async_list(async_chunks(gen(), 100))
+        assert result == [[0, 1, 2]]
+
+    @pytest.mark.asyncio
+    async def test_chunks_preserves_all_items(self):
+        """Test that chunking preserves all items without loss."""
+
+        async def gen():
+            for i in range(100):
+                yield i
+
+        chunks = await async_list(async_chunks(gen(), 7))
+
+        # Flatten and verify we got all items
+        flattened = [item for chunk in chunks for item in chunk]
+        assert flattened == list(range(100))
+
+        # Verify chunk sizes
+        assert all(len(chunk) <= 7 for chunk in chunks)
+        assert all(len(chunk) == 7 for chunk in chunks[:-1])
+        assert len(chunks[-1]) == 100 % 7 or 7  # Last chunk may be partial
+
+    @pytest.mark.asyncio
+    async def test_chunks_with_async_iterable(self):
+        """Test chunking with truly async operations."""
+
+        async def gen():
+            for i in range(5):
+                await asyncio.sleep(0)  # Yield control
+                yield i
+
+        result = await async_list(async_chunks(gen(), 2))
+        assert result == [[0, 1], [2, 3], [4]]
+
+    @pytest.mark.asyncio
+    async def test_chunks_invalid_size_zero(self):
+        """Test that chunk size of 0 raises ValueError."""
+
+        async def gen():
+            yield 1
+
+        with pytest.raises(ValueError, match="must be at least 1"):
+            await async_list(async_chunks(gen(), 0))
+
+    @pytest.mark.asyncio
+    async def test_chunks_invalid_size_negative(self):
+        """Test that negative chunk size raises ValueError."""
+
+        async def gen():
+            yield 1
+
+        with pytest.raises(ValueError, match="must be at least 1"):
+            await async_list(async_chunks(gen(), -1))
+
+    @pytest.mark.asyncio
+    async def test_chunks_consumed_as_iterator(self):
+        """Test that chunks can be consumed incrementally."""
+
+        async def gen():
+            for i in range(10):
+                yield i
+
+        chunks_iter = async_chunks(gen(), 3)
+
+        # Consume chunks one at a time
+        chunk1 = await async_first(chunks_iter)
+        assert chunk1 == [0, 1, 2]
+
+        chunk2 = await async_first(chunks_iter)
+        assert chunk2 == [3, 4, 5]
+
+        # Get remaining chunks
+        remaining = []
+        async for chunk in chunks_iter:
+            remaining.append(chunk)
+
+        assert remaining == [[6, 7, 8], [9]]
+
+    @pytest.mark.asyncio
+    async def test_chunks_with_different_types(self):
+        """Test chunking with different item types."""
+
+        async def gen():
+            yield "a"
+            yield "b"
+            yield "c"
+            yield "d"
+
+        result = await async_list(async_chunks(gen(), 2))
+        assert result == [["a", "b"], ["c", "d"]]

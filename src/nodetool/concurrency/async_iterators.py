@@ -351,3 +351,50 @@ async def async_flat_map(
             result = await result  # type: ignore[misc]
         async for inner_item in result:  # type: ignore[misc]
             yield inner_item
+
+
+async def async_chunks(
+    aiterable: AsyncIterable[T], n: int
+) -> AsyncIterator[list[T]]:
+    """
+    Split an async iterable into chunks of size n.
+
+    Yields lists containing up to n items from the source iterable.
+    The last chunk may contain fewer than n items if the iterable
+    doesn't divide evenly.
+
+    This is different from batched_async_iterable in batching.py:
+    - async_chunks is a pure transformation (yields chunks)
+    - batched_async_iterable is for processing (applies function to batches)
+
+    Args:
+        aiterable: The async iterable to split into chunks.
+        n: The chunk size (maximum items per chunk).
+
+    Yields:
+        Lists containing up to n items from the iterable.
+
+    Raises:
+        ValueError: If n is less than 1.
+
+    Example:
+        >>> async def gen():
+        ...     for i in range(10):
+        ...         yield i
+        >>> result = await async_list(async_chunks(gen(), 3))
+        >>> result
+        [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9]]
+    """
+    if n < 1:
+        raise ValueError("Chunk size n must be at least 1")
+
+    chunk: list[T] = []
+    async for item in aiterable:
+        chunk.append(item)
+        if len(chunk) >= n:
+            yield chunk
+            chunk = []
+
+    # Yield any remaining items in the last chunk
+    if chunk:
+        yield chunk
