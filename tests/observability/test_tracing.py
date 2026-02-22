@@ -187,11 +187,13 @@ class TestInitTracing:
 
     def test_init_tracing(self):
         """Test initializing tracing."""
+        configure_tracing(TracingConfig(enabled=True))
         init_tracing(service_name="test-service")
         assert is_tracing_enabled() is True
 
     def test_init_tracing_with_exporter(self):
         """Test initializing tracing with exporter."""
+        configure_tracing(TracingConfig(enabled=True, exporter="console"))
         init_tracing(service_name="test-service", exporter="console")
         assert is_tracing_enabled() is True
 
@@ -321,8 +323,8 @@ class TestTracingConfig:
     def test_default_config(self):
         """Test default TracingConfig values."""
         config = TracingConfig()
-        assert config.enabled is True
-        assert config.exporter == "console"
+        assert config.enabled is False
+        assert config.exporter == "none"
         assert config.sample_rate == 1.0
 
     def test_custom_config(self):
