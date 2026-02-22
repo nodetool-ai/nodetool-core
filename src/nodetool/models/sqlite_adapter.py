@@ -614,7 +614,7 @@ class SQLiteAdapter(DatabaseAdapter):
 
         order_by_clause = f"{order_by_clause} DESC" if reverse else f"{order_by_clause} ASC"
 
-        if columns and columns != ["*"]:
+        if columns:
             validated_cols = [_validate_column_name(col) for col in columns]
             cols = ", ".join([f"{quoted_table}.{quote_identifier(col)}" for col in validated_cols])
         else:
