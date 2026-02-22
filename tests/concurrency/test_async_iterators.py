@@ -4,12 +4,14 @@ import pytest
 
 from nodetool.concurrency.async_iterators import (
     AsyncByteStream,
+    async_chunked,
     async_filter,
     async_first,
     async_flat_map,
     async_list,
     async_map,
     async_merge,
+    async_partition,
     async_reduce,
     async_slice,
     async_take,
@@ -1183,3 +1185,328 @@ class TestAsyncFlatMap:
 
         result = await async_list(async_flat_map(identity, gen()))
         assert result == [1, 2, 3]
+
+
+class TestAsyncPartition:
+    """Tests for async_partition function."""
+
+    @pytest.mark.asyncio
+    async def test_partition_with_sync_predicate(self):
+        """Test partitioning with a sync predicate function."""
+
+        async def gen():
+            for i in range(10):
+                yield i
+
+        matching, not_matching = await async_partition(lambda x: x % 2 == 0, gen())
+        assert matching == [0, 2, 4, 6, 8]
+        assert not_matching == [1, 3, 5, 7, 9]
+
+    @pytest.mark.asyncio
+    async def test_partition_with_async_predicate(self):
+        """Test partitioning with an async predicate function."""
+
+        async def gen():
+            for i in range(10):
+                yield i
+
+        async def is_even(x):
+            return x % 2 == 0
+
+        matching, not_matching = await async_partition(is_even, gen())
+        assert matching == [0, 2, 4, 6, 8]
+        assert not_matching == [1, 3, 5, 7, 9]
+
+    @pytest.mark.asyncio
+    async def test_partition_all_match(self):
+        """Test partitioning when all items match the predicate."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        matching, not_matching = await async_partition(lambda x: True, gen())
+        assert matching == [0, 1, 2, 3, 4]
+        assert not_matching == []
+
+    @pytest.mark.asyncio
+    async def test_partition_none_match(self):
+        """Test partitioning when no items match the predicate."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        matching, not_matching = await async_partition(lambda x: False, gen())
+        assert matching == []
+        assert not_matching == [0, 1, 2, 3, 4]
+
+    @pytest.mark.asyncio
+    async def test_partition_empty_iterable(self):
+        """Test partitioning an empty iterable."""
+
+        async def gen():
+            return
+            yield  # pragma: no cover
+
+        matching, not_matching = await async_partition(lambda x: True, gen())
+        assert matching == []
+        assert not_matching == []
+
+    @pytest.mark.asyncio
+    async def test_partition_strings(self):
+        """Test partitioning string items."""
+
+        async def gen():
+            for s in ["apple", "banana", "cherry", "date", "elderberry"]:
+                yield s
+
+        matching, not_matching = await async_partition(lambda x: len(x) > 5, gen())
+        assert matching == ["banana", "cherry", "elderberry"]
+        assert not_matching == ["apple", "date"]
+
+    @pytest.mark.asyncio
+    async def test_partition_preserves_order(self):
+        """Test that partitioning preserves the original order within groups."""
+
+        async def gen():
+            for i in [5, 2, 8, 1, 9, 3, 7, 4, 6]:
+                yield i
+
+        matching, not_matching = await async_partition(lambda x: x % 2 == 0, gen())
+        assert matching == [2, 8, 4, 6]
+        assert not_matching == [5, 1, 9, 3, 7]
+
+    @pytest.mark.asyncio
+    async def test_partition_with_complex_predicate(self):
+        """Test partitioning with a more complex predicate."""
+
+        async def gen():
+            for i in range(20):
+                yield i
+
+        # Partition numbers that are divisible by 2 or 3
+        matching, not_matching = await async_partition(
+            lambda x: x % 2 == 0 or x % 3 == 0, gen()
+        )
+        assert matching == [0, 2, 3, 4, 6, 8, 9, 10, 12, 14, 15, 16, 18]
+        assert not_matching == [1, 5, 7, 11, 13, 17, 19]
+
+    @pytest.mark.asyncio
+    async def test_partition_with_async_predicate_that_awaits(self):
+        """Test async predicate that performs async operations."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        async def is_greater_than_two(x):
+            # Simulate async operation
+            await asyncio.sleep(0)
+            return x > 2
+
+        matching, not_matching = await async_partition(is_greater_than_two, gen())
+        assert matching == [3, 4]
+        assert not_matching == [0, 1, 2]
+
+    @pytest.mark.asyncio
+    async def test_partition_single_item_matches(self):
+        """Test partitioning when only one item matches."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        matching, not_matching = await async_partition(lambda x: x == 2, gen())
+        assert matching == [2]
+        assert not_matching == [0, 1, 3, 4]
+
+    @pytest.mark.asyncio
+    async def test_partition_first_item_fails(self):
+        """Test partitioning when first item fails predicate."""
+
+        async def gen():
+            for i in range(1, 6):
+                yield i
+
+        matching, not_matching = await async_partition(lambda x: x > 1, gen())
+        assert matching == [2, 3, 4, 5]
+        assert not_matching == [1]
+
+    @pytest.mark.asyncio
+    async def test_partition_last_item_fails(self):
+        """Test partitioning when last item fails predicate."""
+
+        async def gen():
+            for i in range(5):
+                yield i
+
+        matching, not_matching = await async_partition(lambda x: x < 4, gen())
+        assert matching == [0, 1, 2, 3]
+        assert not_matching == [4]
+
+
+class TestAsyncChunked:
+    """Tests for async_chunked function."""
+
+    @pytest.mark.asyncio
+    async def test_chunked_even_chunks(self):
+        """Test chunking when items divide evenly."""
+
+        async def gen():
+            for i in range(9):
+                yield i
+
+        chunks = await async_list(async_chunked(gen(), 3))
+        assert chunks == [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
+
+    @pytest.mark.asyncio
+    async def test_chunked_partial_final_chunk(self):
+        """Test chunking when last chunk is partial."""
+
+        async def gen():
+            for i in range(10):
+                yield i
+
+        chunks = await async_list(async_chunked(gen(), 3))
+        assert chunks == [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9]]
+
+    @pytest.mark.asyncio
+    async def test_chunked_single_item_per_chunk(self):
+        """Test chunking with chunk_size=1."""
+
+        async def gen():
+            for i in range(3):
+                yield i
+
+        chunks = await async_list(async_chunked(gen(), 1))
+        assert chunks == [[0], [1], [2]]
+
+    @pytest.mark.asyncio
+    async def test_chunked_all_in_one_chunk(self):
+        """Test chunking when chunk_size exceeds item count."""
+
+        async def gen():
+            for i in range(3):
+                yield i
+
+        chunks = await async_list(async_chunked(gen(), 10))
+        assert chunks == [[0, 1, 2]]
+
+    @pytest.mark.asyncio
+    async def test_chunked_empty_iterable(self):
+        """Test chunking an empty iterable."""
+
+        async def gen():
+            return
+            yield  # pragma: no cover
+
+        chunks = await async_list(async_chunked(gen(), 3))
+        assert chunks == []
+
+    @pytest.mark.asyncio
+    async def test_chunked_single_item(self):
+        """Test chunking a single item."""
+
+        async def gen():
+            yield 42
+
+        chunks = await async_list(async_chunked(gen(), 3))
+        assert chunks == [[42]]
+
+    @pytest.mark.asyncio
+    async def test_chunked_strings(self):
+        """Test chunking string items."""
+
+        async def gen():
+            for s in ["a", "b", "c", "d", "e"]:
+                yield s
+
+        chunks = await async_list(async_chunked(gen(), 2))
+        assert chunks == [["a", "b"], ["c", "d"], ["e"]]
+
+    @pytest.mark.asyncio
+    async def test_chunked_large_chunks(self):
+        """Test chunking with large chunk size."""
+
+        async def gen():
+            for i in range(100):
+                yield i
+
+        chunks = await async_list(async_chunked(gen(), 25))
+        assert len(chunks) == 4
+        assert all(len(chunk) == 25 for chunk in chunks)
+
+    @pytest.mark.asyncio
+    async def test_chunked_preserves_order(self):
+        """Test that chunking preserves the original order."""
+
+        async def gen():
+            for i in [5, 2, 8, 1, 9, 3, 7]:
+                yield i
+
+        chunks = await async_list(async_chunked(gen(), 3))
+        assert chunks == [[5, 2, 8], [1, 9, 3], [7]]
+
+    @pytest.mark.asyncio
+    async def test_chunked_as_iterator(self):
+        """Test that async_chunked can be used as async iterator."""
+
+        async def gen():
+            for i in range(10):
+                yield i
+
+        chunk_count = 0
+        total_items = 0
+        async for chunk in async_chunked(gen(), 3):
+            chunk_count += 1
+            total_items += len(chunk)
+
+        assert chunk_count == 4
+        assert total_items == 10
+
+    @pytest.mark.asyncio
+    async def test_chunked_invalid_chunk_size_zero(self):
+        """Test that chunk_size=0 raises ValueError."""
+
+        async def gen():
+            for i in range(3):
+                yield i
+
+        with pytest.raises(ValueError, match="chunk_size must be a positive integer"):
+            async for _ in async_chunked(gen(), 0):
+                pass  # pragma: no cover
+
+    @pytest.mark.asyncio
+    async def test_chunked_invalid_chunk_size_negative(self):
+        """Test that negative chunk_size raises ValueError."""
+
+        async def gen():
+            for i in range(3):
+                yield i
+
+        with pytest.raises(ValueError, match="chunk_size must be a positive integer"):
+            async for _ in async_chunked(gen(), -1):
+                pass  # pragma: no cover
+
+    @pytest.mark.asyncio
+    async def test_chunked_two_items_per_chunk(self):
+        """Test chunking into pairs."""
+
+        async def gen():
+            for i in range(8):
+                yield i
+
+        chunks = await async_list(async_chunked(gen(), 2))
+        assert chunks == [[0, 1], [2, 3], [4, 5], [6, 7]]
+
+    @pytest.mark.asyncio
+    async def test_chunked_five_items_per_chunk(self):
+        """Test chunking into groups of 5."""
+
+        async def gen():
+            for i in range(12):
+                yield i
+
+        chunks = await async_list(async_chunked(gen(), 5))
+        assert chunks == [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11]]

@@ -351,3 +351,107 @@ async def async_flat_map(
             result = await result  # type: ignore[misc]
         async for inner_item in result:  # type: ignore[misc]
             yield inner_item
+
+
+async def async_partition(
+    predicate: Callable[[T], bool] | Callable[[T], object],
+    aiterable: AsyncIterable[T],
+) -> tuple[list[T], list[T]]:
+    """
+    Partition an async iterable into two lists based on a predicate.
+
+    Items that satisfy the predicate (return truthy value) go into the first
+    list, items that don't satisfy the predicate go into the second list.
+    The predicate can be a sync function or an async function.
+
+    This is useful when you need to split items into pass/fail groups,
+    valid/invalid groups, or any binary classification.
+
+    Args:
+        predicate: A function that takes an item and returns bool.
+                   Can be sync or async.
+        aiterable: The async iterable to partition.
+
+    Returns:
+        A tuple of two lists: (items_matching, items_not_matching)
+
+    Example:
+        >>> async def gen():
+        ...     for i in range(10):
+        ...         yield i
+        >>> # Partition into even and odd numbers
+        >>> evens, odds = await async_partition(lambda x: x % 2 == 0, gen())
+        >>> evens
+        [0, 2, 4, 6, 8]
+        >>> odds
+        [1, 3, 5, 7, 9]
+        >>> # With async predicate
+        >>> async def is_even(x):
+        ...     return x % 2 == 0
+        >>> evens, odds = await async_partition(is_even, gen())
+        >>> evens
+        [0, 2, 4, 6, 8]
+    """
+    matching: list[T] = []
+    not_matching: list[T] = []
+
+    async for item in aiterable:
+        result = predicate(item)
+        if asyncio.iscoroutine(result):
+            result = await result  # type: ignore[misc]
+        if result:
+            matching.append(item)
+        else:
+            not_matching.append(item)
+
+    return matching, not_matching
+
+
+async def async_chunked(
+    aiterable: AsyncIterable[T], chunk_size: int
+) -> AsyncIterator[list[T]]:
+    """
+    Chunk an async iterable into fixed-size lists.
+
+    Yields lists of up to chunk_size items from the iterable. The last
+    chunk may contain fewer items if the total number of items is not
+    evenly divisible by chunk_size.
+
+    This is useful for batch processing, rate limiting, or when you need
+    to process items in groups rather than individually.
+
+    Args:
+        aiterable: The async iterable to chunk.
+        chunk_size: Maximum number of items per chunk. Must be > 0.
+
+    Yields:
+        Lists of items, each up to chunk_size in length.
+
+    Raises:
+        ValueError: If chunk_size is not a positive integer.
+
+    Example:
+        >>> async def gen():
+        ...     for i in range(10):
+        ...         yield i
+        >>> # Chunk into groups of 3
+        >>> chunks = await async_list(async_chunked(gen(), 3))
+        >>> chunks
+        [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9]]
+        >>> # Chunk into pairs
+        >>> chunks = await async_list(async_chunked(gen(), 2))
+        >>> chunks
+        [[0, 1], [2, 3], [4, 5], [6, 7], [8, 9]]
+    """
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be a positive integer")
+
+    chunk: list[T] = []
+    async for item in aiterable:
+        chunk.append(item)
+        if len(chunk) >= chunk_size:
+            yield chunk
+            chunk = []
+
+    if chunk:
+        yield chunk
