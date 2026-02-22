@@ -214,6 +214,56 @@ def test_translate_condition_to_sql():
     assert translate_condition_to_sql(condition) == expected
 
 
+@pytest.mark.asyncio
+async def test_query_security(db_adapter):
+    # Valid order_by should work
+    await db_adapter.query(order_by="name")
+    await db_adapter.query(order_by="id")
+
+    # Invalid order_by should raise ValueError
+    invalid_inputs = [
+        "name; DROP TABLE test_table",
+        "id --",
+        "name ASC",
+        "(SELECT 1)",
+        "name, id",
+        " ",
+    ]
+    for inp in invalid_inputs:
+        with pytest.raises(ValueError, match="Invalid column name"):
+            await db_adapter.query(order_by=inp)
+
+    # Valid columns should work
+    await db_adapter.query(columns=["name"])
+    await db_adapter.query(columns=["id", "name"])
+
+    # Invalid columns should raise ValueError
+    invalid_columns_lists = [["name; DROP TABLE test_table"], ["id --"], ["*"], ["name, id"], ["(SELECT 1) as col"]]
+    for cols in invalid_columns_lists:
+        with pytest.raises(ValueError, match="Invalid column name"):
+            await db_adapter.query(columns=cols)
+
+
+@pytest.mark.asyncio
+async def test_quoting_works(db_adapter):
+    await db_adapter.save(
+        {
+            "id": "1",
+            "name": "John Doe",
+            "age": 30,
+            "height": 1.75,
+            "is_active": True,
+            "tags": ["tag1"],
+            "metadata": {},
+            "created_at": datetime.now(),
+            "enum_field": TestEnum.VALUE1,
+        }
+    )
+    results, _ = await db_adapter.query(order_by="name")
+    assert len(results) == 1
+    assert results[0]["name"] == "John Doe"
+
+
 # Note: test_table_migration was removed because the migrate_table() method
 # has been deprecated. Schema migrations are now handled by the migration
 # system in nodetool.migrations.
