@@ -21,6 +21,10 @@ class TestServeCliMatrix:
 
         monkeypatch.setattr("nodetool.api.server.create_app", mock_create_app)
         monkeypatch.setattr("nodetool.api.server.run_uvicorn_server", mock_run_uvicorn_server)
+        # Pre-register AUTH_PROVIDER with monkeypatch so it is restored after the test.
+        # The CLI sets os.environ["AUTH_PROVIDER"] directly; by calling setenv first,
+        # monkeypatch records the original state (not set) and will clean it up.
+        monkeypatch.setenv("AUTH_PROVIDER", "supabase")
 
         runner = CliRunner()
         result = runner.invoke(
@@ -57,6 +61,10 @@ class TestServeCliMatrix:
             run_server_calls.append({"kwargs": kwargs, "mode_env": os.environ.get("NODETOOL_SERVER_MODE")})
 
         monkeypatch.setattr("nodetool.api.run_server.run_server", mock_run_server)
+        # Pre-register NODETOOL_SERVER_MODE with monkeypatch so it is restored after the test.
+        # The CLI calls os.environ.setdefault("NODETOOL_SERVER_MODE", "private") directly;
+        # by calling setenv first, monkeypatch records the original state and will clean it up.
+        monkeypatch.setenv("NODETOOL_SERVER_MODE", "private")
 
         runner = CliRunner()
         result = runner.invoke(cli, ["serve", "--production", "--port", "9902"])

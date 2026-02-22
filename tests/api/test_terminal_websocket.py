@@ -74,6 +74,10 @@ def test_terminal_ws_echoes_input(monkeypatch):
             except WebSocketDisconnect:
                 break
 
+            # Break on WebSocket close frames to avoid hanging on a closed connection.
+            if msg.get("type") == "websocket.close":
+                break
+
             if "bytes" in msg and msg["bytes"] is not None:
                 payload = msgpack.unpackb(msg["bytes"])
             elif "text" in msg and msg["text"] is not None:
