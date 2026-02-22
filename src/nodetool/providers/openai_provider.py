@@ -934,7 +934,9 @@ class OpenAIProvider(BaseProvider):
                 log.debug("User message has string content")
             elif message.content is not None:
                 log.debug(f"Converting {len(message.content)} content parts")
-                content = [await self.message_content_to_openai_content_part(c) for c in message.content]  # type: ignore[arg-type]
+                content = await asyncio.gather(
+                    *[self.message_content_to_openai_content_part(c) for c in message.content]
+                )  # type: ignore[arg-type]
             else:
                 log.error(f"Unknown message content type {type(message.content)}")
                 raise ValueError(f"Unknown message content type {type(message.content)}")
@@ -959,7 +961,9 @@ class OpenAIProvider(BaseProvider):
                 log.debug("Assistant message has string content")
             elif message.content is not None:
                 log.debug(f"Converting {len(message.content)} assistant content parts")
-                content = [await self.message_content_to_openai_content_part(c) for c in message.content]  # type: ignore[arg-type]
+                content = await asyncio.gather(
+                    *[self.message_content_to_openai_content_part(c) for c in message.content]
+                )  # type: ignore[arg-type]
             else:
                 content = None
                 log.debug("Assistant message has no content")
@@ -1120,7 +1124,7 @@ class OpenAIProvider(BaseProvider):
         )
 
         log.debug(f"Converting {len(messages)} messages to OpenAI format")
-        openai_messages = [await self.convert_message(m) for m in messages]
+        openai_messages = await asyncio.gather(*[self.convert_message(m) for m in messages])
         log.debug("Making streaming API call to OpenAI")
 
         create_result = self.get_client().chat.completions.create(
@@ -1319,7 +1323,7 @@ class OpenAIProvider(BaseProvider):
             log.debug(f"Added {len(tools)} tools to request")
 
         log.debug(f"Converting {len(messages)} messages to OpenAI format")
-        openai_messages = [await self.convert_message(m) for m in messages]
+        openai_messages = await asyncio.gather(*[self.convert_message(m) for m in messages])
         log.debug("Making non-streaming API call to OpenAI")
 
         # Make non-streaming call to OpenAI
