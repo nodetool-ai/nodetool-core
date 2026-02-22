@@ -14,8 +14,8 @@ from nodetool.types.api_graph import Node as GraphNode
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.threaded_job_execution import ThreadedJobExecution
 from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
+from nodetool.workflows.threaded_job_execution import ThreadedJobExecution
 from tests.conftest import get_job_status
 
 # Check if running with pytest-xdist
@@ -413,11 +413,11 @@ async def test_threaded_job_cancellation_event(simple_workflow, cleanup_jobs):
 async def test_threaded_job_with_external_event_loop(simple_workflow):
     """Test using an external (shared) event loop."""
     from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
-    
+
     # Create and start an external event loop
     external_loop = ThreadedEventLoop()
     external_loop.start()
-    
+
     try:
         request = RunJobRequest(
             workflow_id=simple_workflow.id,
@@ -454,7 +454,7 @@ async def test_threaded_job_with_external_event_loop(simple_workflow):
         # Cleanup should NOT stop the external event loop
         await job.cleanup_resources()
         await asyncio.sleep(0.1)
-        
+
         # External event loop should still be running
         assert external_loop.is_running
 
@@ -486,12 +486,12 @@ async def test_threaded_job_owns_event_loop_by_default(simple_workflow, cleanup_
 
     # Job should own its event loop by default
     assert job._owns_event_loop
-    
+
     # Wait for completion
     await asyncio.sleep(0.3)
-    
+
     # Cleanup should stop the event loop when owned
     await job.cleanup_resources()
     await asyncio.sleep(0.1)
-    
+
     assert not job.event_loop.is_running
