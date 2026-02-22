@@ -776,9 +776,17 @@ class BaseNode(BaseModel):
             log.debug("Failed to resolve type hints for %s: %s", cls.__name__, e)
             resolved_annotations = getattr(cls, "__annotations__", {}) or {}
         for field_type in resolved_annotations.values():
-            if is_enum_type(field_type):
-                name = f"{field_type.__module__}.{field_type.__qualname__}"
-                NameToType[name] = field_type
+            # Handle Union/Optional types by extracting the non-None type
+            actual_type = field_type
+            if is_union_type(field_type) or is_optional_type(field_type):
+                args = get_args(field_type)
+                for arg in args:
+                    if arg is not type(None):
+                        actual_type = arg
+                        break
+            if is_enum_type(actual_type):
+                name = f"{actual_type.__module__}.{actual_type.__qualname__}"
+                NameToType[name] = actual_type
 
     @staticmethod
     def from_dict(
