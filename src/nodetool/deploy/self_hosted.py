@@ -14,7 +14,6 @@ import shlex
 import shutil
 import socket
 import subprocess
-import sys
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -1249,7 +1248,6 @@ WantedBy=default.target
 
     def _setup_nginx(self, ssh: Executor, results: dict[str, Any]) -> None:
         """Setup nginx as a reverse proxy for the deployment."""
-        from nodetool.config.deployment import NginxConfig
 
         if not self.deployment.nginx or not self.deployment.nginx.enabled:
             return

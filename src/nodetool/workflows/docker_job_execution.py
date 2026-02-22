@@ -7,7 +7,6 @@ Each workflow runs in its own container using the 'nodetool' Docker image.
 
 import asyncio
 import json
-import logging
 import os
 import sysconfig
 from contextlib import suppress

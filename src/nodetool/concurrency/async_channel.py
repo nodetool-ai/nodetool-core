@@ -5,7 +5,6 @@ Provides a typed wrapper around asyncio.Queue with additional convenience method
 for send/receive operations and graceful closing.
 """
 import asyncio
-from collections.abc import AsyncIterator
 from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")

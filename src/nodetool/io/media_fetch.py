@@ -5,7 +5,6 @@ from io import BytesIO
 from typing import IO, cast
 
 import aiohttp
-import httpx
 import numpy as np
 import PIL.Image
 

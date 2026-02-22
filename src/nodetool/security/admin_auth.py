@@ -14,7 +14,7 @@ For multi_user auth, admin role is enforced via require_admin() dependency.
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Awaitable, Callable, Optional
+from typing import TYPE_CHECKING, Awaitable, Callable
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse

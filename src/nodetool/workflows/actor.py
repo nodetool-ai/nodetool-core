@@ -39,8 +39,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
-from datetime import datetime
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from pydantic import BaseModel
@@ -51,7 +49,6 @@ from nodetool.observability.tracing import trace_node
 from nodetool.workflows.io import NodeInputs, NodeOutputs
 from nodetool.workflows.memory_utils import (
     GPUIterationTracer,
-    GPUTraceSession,
     cleanup_gpu_memory,
     log_gpu_memory_breakdown,
     reset_gpu_memory_stats,
