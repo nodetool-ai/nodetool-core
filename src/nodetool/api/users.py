@@ -5,13 +5,11 @@ This module provides REST endpoints for managing users via API.
 Works with all deployment types: Docker, Root, GCP, RunPod.
 """
 
-from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
-from nodetool.api.utils import current_user
-from nodetool.security.admin_auth import is_admin_user, require_admin
+from nodetool.security.admin_auth import is_admin_user
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 

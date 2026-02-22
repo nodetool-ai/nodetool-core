@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
 if TYPE_CHECKING:
-    import torch  # type: ignore
 
     from nodetool.integrations.huggingface.safetensors_inspector import (
         DetectionResult as STFDetectionResult,

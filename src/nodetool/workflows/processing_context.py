@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import imaplib
 import inspect
 import json
 import os
 import queue
-import threading
 import urllib.parse
 import uuid
 from contextlib import suppress
@@ -84,7 +81,6 @@ from nodetool.workflows.channel import ChannelManager
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.processing_offload import (
     _audio_segment_from_file,
-    _audio_segment_to_mp3_bytes,
     _audio_segment_to_numpy,
     _audio_segment_to_wav_bytes,
     _b64decode_to_bytes,
@@ -92,7 +88,6 @@ from nodetool.workflows.processing_offload import (
     _in_thread,
     _joblib_dump_to_bytes,
     _joblib_load_from_io,
-    _numpy_audio_to_mp3_bytes,
     _numpy_audio_to_wav_bytes,
     _numpy_image_to_png_bytes,
     _numpy_video_to_mp4_bytes,
@@ -987,7 +982,6 @@ class ProcessingContext:
             ValueError: If the provider doesn't support the requested capability
         """
         from nodetool.models.prediction import Prediction as PredictionModel
-        from nodetool.providers.base import ProviderCapability
 
         if params is None:
             params = {}

@@ -16,9 +16,8 @@ Authentication: Uses MISTRAL_API_KEY
 
 from __future__ import annotations
 
-import asyncio
 import json
-from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Sequence, TypedDict
 
 import aiohttp
 import openai
@@ -123,7 +122,6 @@ class MistralProvider(OpenAIProvider):
         response_format: dict | None = None,
         **kwargs,
     ):
-        from openai._types import NotGiven
 
         if TYPE_CHECKING:
             from openai.types.chat import ChatCompletionChunk

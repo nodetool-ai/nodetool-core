@@ -7,7 +7,6 @@ handling message conversion, streaming, and tool integration.
 
 import asyncio
 import json
-import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, AsyncIterator, Sequence
@@ -25,7 +24,6 @@ from nodetool.media.image.image_utils import (
 )
 from nodetool.metadata.types import (
     EmbeddingModel,
-    ImageRef,
     LanguageModel,
     Message,
     MessageImageContent,

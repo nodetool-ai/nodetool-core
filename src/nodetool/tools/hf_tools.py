@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from fnmatch import fnmatch
-from typing import Any, Optional
+from typing import Any
 
 from nodetool.integrations.huggingface.hf_auth import get_hf_token
 from nodetool.integrations.huggingface.huggingface_models import read_cached_hf_models

@@ -61,7 +61,6 @@ from nodetool.config.logging_config import get_logger
 from nodetool.integrations.websocket.websocket_updates import (
     ResourceChangeUpdate,
     SystemStatsUpdate,
-    WebSocketUpdate,
 )
 from nodetool.ml.core.model_manager import ModelManager
 from nodetool.models.base_model import DBModel, ModelChangeEvent, ModelObserver

@@ -9,7 +9,7 @@ These tools provide functionality for managing NodeTool assets including:
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import Any, Optional
+from typing import Any
 
 from nodetool.models.asset import Asset as AssetModel
 from nodetool.packages.registry import Registry

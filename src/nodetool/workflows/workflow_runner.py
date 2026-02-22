@@ -80,7 +80,6 @@ except ImportError:
     PROFILER_AVAILABLE = False
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.state_manager import StateManager
 from nodetool.workflows.suspendable_node import WorkflowSuspendedException
 from nodetool.workflows.torch_support import (
     TORCH_AVAILABLE,
@@ -1616,7 +1615,6 @@ class WorkflowRunner:
             event: The control event to dispatch (e.g., RunEvent)
             context: Processing context for accessing graph
         """
-        from nodetool.workflows.control_events import ControlEvent
 
         # Find control edges originating from this controller
         control_edges = [

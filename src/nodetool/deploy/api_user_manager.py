@@ -5,7 +5,6 @@ This module provides client-side user management via API.
 Works with all deployment types: Docker, Root, GCP, RunPod.
 """
 
-from typing import Optional
 
 import httpx
 

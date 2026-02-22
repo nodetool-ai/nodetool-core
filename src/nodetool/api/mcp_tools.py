@@ -8,10 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from fastmcp import Context, FastMCP
-
-if TYPE_CHECKING:
-    from fastmcp import Context as FastMCPContext
+from fastmcp import Context
 
 from nodetool.api.mcp_server import mcp
 from nodetool.tools import (

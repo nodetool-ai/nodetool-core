@@ -138,12 +138,12 @@ class StateManager:
         log.info(f"Starting StateManager for run {self.run_id}")
         self.writer_task = asyncio.create_task(self._writer_loop())
 
-    async def stop(self, timeout: float = 5.0):
+    async def stop(self, stop_timeout: float = 5.0):
         """
         Stop the background writer and flush pending updates.
 
         Args:
-            timeout: Max seconds to wait for flush (default: 5.0)
+            stop_timeout: Max seconds to wait for flush (default: 5.0)
         """
         if self.writer_task is None:
             return
@@ -156,9 +156,9 @@ class StateManager:
 
         # Wait for writer to finish
         try:
-            await asyncio.wait_for(self.writer_task, timeout=timeout)
+            await asyncio.wait_for(self.writer_task, timeout=stop_timeout)
         except TimeoutError:
-            log.warning(f"StateManager writer task timed out after {timeout}s")
+            log.warning(f"StateManager writer task timed out after {stop_timeout}s")
             self.writer_task.cancel()
             try:
                 await self.writer_task
