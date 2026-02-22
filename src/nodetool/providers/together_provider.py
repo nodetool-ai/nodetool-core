@@ -11,7 +11,6 @@ Authentication: https://docs.together.ai/reference/authentication
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
 
 import aiohttp

@@ -6,7 +6,6 @@ Each request gets its own database connections from shared pools.
 Note: API call tracing is handled automatically by OpenTelemetry auto-instrumentation.
 """
 
-from collections.abc import Callable
 from typing import Optional
 
 from starlette.types import ASGIApp, Receive, Scope, Send

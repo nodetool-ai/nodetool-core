@@ -9,7 +9,6 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from nodetool.models.job import Job as JobModel
-from nodetool.models.run_event import RunEvent
 from nodetool.runtime.resources import ResourceScope, maybe_scope
 from nodetool.workflows.job_execution_manager import JobExecutionManager
 

@@ -34,11 +34,10 @@ import aiofiles
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from huggingface_hub import HfApi, ModelInfo
+    from huggingface_hub import ModelInfo
 
     from nodetool.integrations.huggingface.artifact_inspector import (
         ArtifactDetection,
-        inspect_paths,
     )
 
 from nodetool.config.logging_config import get_logger

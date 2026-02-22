@@ -1,9 +1,6 @@
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic import BaseModel
-
-if TYPE_CHECKING:
-    from huggingface_hub import ModelInfo
 
 
 class UnifiedModel(BaseModel):

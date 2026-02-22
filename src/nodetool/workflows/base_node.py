@@ -637,7 +637,6 @@ class BaseNode(BaseModel):
                 }
             }
         """
-        from nodetool.metadata.type_metadata import TypeMetadata
 
         properties_schema = {}
         for prop in cls.properties():

@@ -11,7 +11,6 @@ import pydub
 import pydub.silence
 from dotenv import load_dotenv
 
-from nodetool.config.environment import Environment
 from nodetool.metadata.types import OpenAIModel
 from nodetool.types.prediction import Prediction, PredictionResult
 from nodetool.workflows.base_node import ApiKeyMissingError
