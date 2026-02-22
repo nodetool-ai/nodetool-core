@@ -79,11 +79,11 @@ from nodetool.workflows.job_execution_manager import (
     JobExecution,
     JobExecutionManager,
 )
+from nodetool.workflows.job_session import JobSession
 from nodetool.workflows.processing_context import (
     AssetOutputMode,
     ProcessingContext,
 )
-from nodetool.workflows.job_session import JobSession
 from nodetool.workflows.run_job_request import ExecutionStrategy, RunJobRequest
 from nodetool.workflows.types import Chunk, Error
 
@@ -318,7 +318,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         self.active_jobs: dict[str, JobStreamContext] = {}
         self._run_job_task: asyncio.Task[None] | None = None
         self._reconnect_task: asyncio.Task[None] | None = None
-        
+
         # Session-scoped job execution (prevents VRAM leaks from per-job threads)
         self._job_session: JobSession | None = None
 
@@ -395,13 +395,13 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         self._loop = asyncio.get_running_loop()
         self._send_lock = None
         self._send_lock_loop = None
-        
+
         # Initialize job session for this WebSocket connection
         # This provides a shared event loop for all jobs in the session,
         # preventing VRAM leaks that occur with per-job threads
         self._job_session = JobSession()
         await self._job_session.start()
-        
+
         log.info("Unified WebSocket connection established with job session")
 
         # Start heartbeat to keep idle connections alive (skip in tests to avoid leaked tasks)
@@ -447,7 +447,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
                 job_ctx.streaming_task.cancel()
 
         self.active_jobs.clear()
-        
+
         # Stop job session to release thread resources and CUDA memory
         if self._job_session:
             await self._job_session.stop()
@@ -480,16 +480,16 @@ class UnifiedWebSocketRunner(BaseChatRunner):
     def _convert_to_serializable(self, obj: Any) -> Any:
         """
         Recursively convert objects to JSON/msgpack serializable types.
-        
+
         Handles:
         - Enum -> string (using .value)
         - BaseModel -> dict (using model_dump)
         - AssetRef -> dict
         - Other objects with dict() or __dict__ -> dict
-        
+
         Args:
             obj: Any object to convert
-            
+
         Returns:
             Serializable version of the object
         """
@@ -504,7 +504,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         elif hasattr(obj, "model_dump"):
             # Pydantic v2 models that don't inherit from BaseModel directly
             return self._convert_to_serializable(obj.model_dump())
-        elif hasattr(obj, "dict") and callable(getattr(obj, "dict")):
+        elif hasattr(obj, "dict") and callable(obj.dict):
             # Pydantic v1 models
             return self._convert_to_serializable(obj.dict())
         elif hasattr(obj, "__dict__") and not isinstance(obj, (str, bytes, int, float, bool, type(None))):
@@ -541,7 +541,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         try:
             # Convert message to serializable format
             serializable_message = self._convert_to_serializable(message)
-            
+
             async with self._get_send_lock():
                 if self.mode == WebSocketMode.BINARY:
                     packed_message = msgpack.packb(serializable_message, use_bin_type=True)
@@ -650,10 +650,10 @@ class UnifiedWebSocketRunner(BaseChatRunner):
             # Start job using session-scoped event loop (prevents VRAM leaks)
             if self._job_session is None:
                 raise RuntimeError("Job session not initialized")
-            
+
             job_execution = await self._job_session.start_job(req, context)
             job_id = job_execution.job_id
-            
+
             # Register with JobExecutionManager for discovery/reconnection support
             # Note: JobSession owns the event loop; JobExecutionManager handles
             # lifecycle but won't stop the shared event loop (owns_event_loop=False)
@@ -819,7 +819,7 @@ class UnifiedWebSocketRunner(BaseChatRunner):
         finally:
             # Clean up
             self.active_jobs.pop(job_ctx.job_id, None)
-            
+
             # Remove job from session (event loop is reused, so don't stop it)
             if self._job_session:
                 self._job_session.remove_job(job_ctx.job_id)

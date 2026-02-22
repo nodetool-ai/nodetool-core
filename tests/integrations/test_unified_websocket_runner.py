@@ -511,13 +511,13 @@ class TestUnifiedWebSocketRunnerJobSession:
         with patch.object(Environment, "enforce_auth", return_value=False):
             runner = UnifiedWebSocketRunner()
             assert runner._job_session is None
-            
+
             await wait_for(runner.connect(mock_websocket))
-            
+
             # Job session should be created
             assert runner._job_session is not None
             assert runner._job_session.is_running
-            
+
             await wait_for(runner.disconnect())
 
     async def test_disconnect_stops_job_session(self, mock_websocket):
@@ -525,14 +525,14 @@ class TestUnifiedWebSocketRunnerJobSession:
         with patch.object(Environment, "enforce_auth", return_value=False):
             runner = UnifiedWebSocketRunner()
             await wait_for(runner.connect(mock_websocket))
-            
+
             # Job session should be running
             assert runner._job_session is not None
             assert runner._job_session.is_running
-            
+
             mock_websocket.client_state = WebSocketState.CONNECTED
             await wait_for(runner.disconnect())
-            
+
             # Job session should be stopped
             assert runner._job_session is None
 
@@ -564,7 +564,7 @@ class TestUnifiedWebSocketRunnerJobSession:
 
             # Job should be started
             assert len(unified_runner.active_jobs) <= 1
-            
+
             # If there's an active job, it should use the session's event loop
             for job_ctx in unified_runner.active_jobs.values():
                 assert job_ctx.job_execution.event_loop is session_event_loop
@@ -608,7 +608,7 @@ class TestUnifiedWebSocketRunnerJobSession:
             # Both jobs should exist (or have completed)
             session = unified_runner._job_session
             assert session is not None
-            
+
             # The session should have tracked both jobs
             # (they may complete quickly and be removed)
             assert len(session.list_active_jobs()) <= 2
@@ -634,10 +634,10 @@ class TestUnifiedWebSocketRunnerJobSession:
             )
 
             await unified_runner.run_job(request)
-            
+
             # Wait for job to complete
             await asyncio.sleep(0.5)
-            
+
             # Simulate streaming completion cleanup
             for job_id in list(unified_runner.active_jobs.keys()):
                 unified_runner.active_jobs.pop(job_id, None)

@@ -68,8 +68,8 @@ from nodetool.workflows.memory_utils import (
 # PyTorch profiler imports (optional)
 try:
     from torch.profiler import (
-        profile,
         ProfilerActivity,
+        profile,
         record_function,
         schedule,
         tensorboard_trace_handler,
@@ -271,88 +271,88 @@ def get_gpu_lock_status() -> dict:
 class MemoryProfiler:
     """
     PyTorch-based memory profiler for debugging VRAM leaks in workflows.
-    
+
     This profiler integrates with PyTorch's profiler API to track memory usage
     across node executions and workflow runs. It can help identify:
     - Which nodes are leaking memory
     - Memory allocation patterns
     - VRAM growth over time
-    
+
     Usage:
         # Profile a single node
         with runner.memory_profiler.profile_node(node, context):
             await node.process(context)
-        
+
         # Profile entire workflow
         with runner.memory_profiler.profile_workflow(request.workflow_id):
             await runner.run(request, context)
     """
-    
+
     def __init__(self, enabled: bool = False, export_chrome_trace: bool = False):
         self.enabled = enabled and PROFILER_AVAILABLE and TORCH_AVAILABLE
         self.export_chrome_trace = export_chrome_trace
         self.profiles: list[tuple[str, Any]] = []
         self.snapshots: dict[str, dict] = {}
-        
+
     def _get_memory_summary(self) -> dict[str, float]:
         """Get current memory summary."""
         if not TORCH_AVAILABLE or not torch.cuda.is_available():
             return {}
-        
+
         return {
             "allocated_mb": torch.cuda.memory_allocated() / (1024 * 1024),
             "reserved_mb": torch.cuda.memory_reserved() / (1024 * 1024),
             "max_allocated_mb": torch.cuda.max_memory_allocated() / (1024 * 1024),
             "max_reserved_mb": torch.cuda.max_memory_reserved() / (1024 * 1024),
         }
-    
+
     def take_snapshot(self, label: str) -> dict[str, float]:
         """Take a memory snapshot."""
         if not self.enabled:
             return {}
-        
+
         # Force synchronization
         if TORCH_AVAILABLE and torch.cuda.is_available():
             torch.cuda.synchronize()
-        
+
         snapshot = self._get_memory_summary()
         snapshot["timestamp"] = time.time()
         self.snapshots[label] = snapshot
-        
+
         log.info(f"[MEMORY SNAPSHOT] {label}:")
         if snapshot:
             log.info(f"  Allocated: {snapshot.get('allocated_mb', 0):.2f} MB")
             log.info(f"  Reserved: {snapshot.get('reserved_mb', 0):.2f} MB")
             log.info(f"  Max Allocated: {snapshot.get('max_allocated_mb', 0):.2f} MB")
-        
+
         return snapshot
-    
+
     def compare_snapshots(self, before_label: str, after_label: str) -> dict[str, Any]:
         """Compare two memory snapshots."""
         if not self.enabled:
             return {}
-        
+
         if before_label not in self.snapshots or after_label not in self.snapshots:
             return {"error": "Snapshots not found"}
-        
+
         before = self.snapshots[before_label]
         after = self.snapshots[after_label]
-        
+
         diff = {
             "allocated_delta_mb": after.get("allocated_mb", 0) - before.get("allocated_mb", 0),
             "reserved_delta_mb": after.get("reserved_mb", 0) - before.get("reserved_mb", 0),
             "max_allocated_delta_mb": after.get("max_allocated_mb", 0) - before.get("max_allocated_mb", 0),
         }
-        
+
         log.info(f"\n[MEMORY COMPARISON] {before_label} -> {after_label}:")
         log.info(f"  Allocated delta: {diff['allocated_delta_mb']:+.2f} MB")
         log.info(f"  Reserved delta: {diff['reserved_delta_mb']:+.2f} MB")
-        
+
         if diff["allocated_delta_mb"] > 10:  # More than 10MB growth
             log.warning(f"  ⚠️  Potential memory leak detected! {diff['allocated_delta_mb']:.2f} MB growth")
-        
+
         return diff
-    
+
     @contextmanager
     def profile_execution(
         self,
@@ -363,7 +363,7 @@ class MemoryProfiler:
     ):
         """
         Profile a single execution block using PyTorch profiler.
-        
+
         Args:
             name: Name for this profiling session
             record_shapes: Whether to record tensor shapes
@@ -373,16 +373,16 @@ class MemoryProfiler:
         if not self.enabled or not PROFILER_AVAILABLE:
             yield None
             return
-        
+
         activities = [ProfilerActivity.CPU]
         if torch.cuda.is_available():
             activities.append(ProfilerActivity.CUDA)
-        
+
         log.info(f"[PROFILER] Starting profile: {name}")
-        
+
         # Take before snapshot
         self.take_snapshot(f"{name}_start")
-        
+
         with profile(
             activities=activities,
             record_shapes=record_shapes,
@@ -391,25 +391,25 @@ class MemoryProfiler:
         ) as prof:
             with record_function(name):
                 yield prof
-        
+
         # Take after snapshot
         self.take_snapshot(f"{name}_end")
-        
+
         # Print summary
         log.info(f"\n[PROFILER] Results for: {name}")
-        
+
         try:
             # Sort by CUDA memory usage if available
             if torch.cuda.is_available():
                 log.info("\n--- Top by CUDA Memory Usage ---")
                 stats = prof.key_averages().table(sort_by="cuda_memory_usage", row_limit=10)
                 log.info("\n" + stats)
-            
+
             # Sort by CPU memory usage
             log.info("\n--- Top by CPU Memory Usage ---")
             stats = prof.key_averages().table(sort_by="cpu_memory_usage", row_limit=10)
             log.info("\n" + stats)
-            
+
             # Export Chrome trace if requested
             if self.export_chrome_trace:
                 trace_path = f"profile_{name}_{int(time.time())}.json"
@@ -417,12 +417,12 @@ class MemoryProfiler:
                 log.info(f"\n[PROFILER] Chrome trace exported to: {trace_path}")
         except Exception as e:
             log.warning(f"Failed to process profiler results: {e}")
-        
+
         self.profiles.append((name, prof))
-        
+
         # Compare snapshots
         self.compare_snapshots(f"{name}_start", f"{name}_end")
-    
+
     @contextmanager
     def profile_node(self, node: BaseNode, context: ProcessingContext):
         """Profile a single node execution."""
@@ -433,7 +433,7 @@ class MemoryProfiler:
             profile_memory=True,
         ):
             yield
-    
+
     @contextmanager
     def profile_workflow(self, workflow_id: str):
         """Profile an entire workflow run."""
@@ -530,7 +530,7 @@ class WorkflowRunner:
 
         # Control edges: {target_id: [control_edges]}
         self._control_edges: dict[str, list[Edge]] = defaultdict(list)
-        
+
         # Memory profiler for debugging VRAM leaks
         # Enable by setting environment variable NODETOOL_ENABLE_MEMORY_PROFILER=1
         self.memory_profiler = MemoryProfiler(
@@ -1007,10 +1007,10 @@ class WorkflowRunner:
         """Internal method containing the actual workflow execution logic."""
         log.info("Starting workflow run: job_id=%s", self.job_id)
         log_memory(f"WorkflowRunner.run START job_id={self.job_id}")
-        
+
         # Take initial memory snapshot for profiling
         self.memory_profiler.take_snapshot(f"workflow_{self.job_id}_start")
-        
+
         self._edge_counters.clear()
         self.status = "running"
         log.debug("Run parameters: params=%s messages=%s", request.params, request.messages)
@@ -1362,7 +1362,7 @@ class WorkflowRunner:
 
                 # Log final memory state
                 log_memory_summary(f"WorkflowRunner.run END job_id={self.job_id}")
-                
+
                 # Take final memory snapshot and compare
                 self.memory_profiler.take_snapshot(f"workflow_{self.job_id}_end")
                 self.memory_profiler.compare_snapshots(
@@ -2000,26 +2000,26 @@ class WorkflowRunner:
         """
         log.debug(f"process_with_gpu called for node: {node.get_title()} ({node._id}), retries: {retries}")
         return await self._torch_support.process_with_gpu(self, context, node, retries)
-    
+
     @contextmanager
     def profile_node_execution(self, node: BaseNode):
         """
         Context manager for profiling a single node execution.
-        
+
         Usage in actor.py:
             with runner.profile_node_execution(node):
                 await node.process(context)
-        
+
         Args:
             node: The node being executed
-        
+
         Yields:
             None
         """
         if not self.memory_profiler.enabled:
             yield
             return
-        
+
         node_name = f"{node.get_node_type()}_{node._id[:8]}"
         with self.memory_profiler.profile_execution(
             name=node_name,
@@ -2027,27 +2027,27 @@ class WorkflowRunner:
             profile_memory=True,
         ):
             yield
-    
+
     def take_memory_snapshot(self, label: str) -> dict[str, float]:
         """
         Take a memory snapshot for debugging.
-        
+
         Args:
             label: Label for the snapshot
-        
+
         Returns:
             Memory summary dict
         """
         return self.memory_profiler.take_snapshot(label)
-    
+
     def compare_memory_snapshots(self, before_label: str, after_label: str) -> dict[str, Any]:
         """
         Compare two memory snapshots.
-        
+
         Args:
             before_label: Label of the before snapshot
             after_label: Label of the after snapshot
-        
+
         Returns:
             Comparison dict with deltas
         """
