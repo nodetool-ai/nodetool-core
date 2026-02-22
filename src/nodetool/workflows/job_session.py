@@ -96,6 +96,9 @@ class JobSession:
         if not self.is_running:
             raise RuntimeError("JobSession not started. Call start() first.")
 
+        # Type narrowing: _event_loop is not None when is_running is True
+        assert self._event_loop is not None, "Event loop must be initialized when is_running is True"
+
         job_id = job_id or uuid4().hex
         runner = WorkflowRunner(job_id=job_id)
 

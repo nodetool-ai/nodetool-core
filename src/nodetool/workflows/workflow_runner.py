@@ -74,6 +74,7 @@ try:
         schedule,
         tensorboard_trace_handler,
     )
+
     PROFILER_AVAILABLE = True
 except ImportError:
     PROFILER_AVAILABLE = False
@@ -1365,10 +1366,7 @@ class WorkflowRunner:
 
                 # Take final memory snapshot and compare
                 self.memory_profiler.take_snapshot(f"workflow_{self.job_id}_end")
-                self.memory_profiler.compare_snapshots(
-                    f"workflow_{self.job_id}_start",
-                    f"workflow_{self.job_id}_end"
-                )
+                self.memory_profiler.compare_snapshots(f"workflow_{self.job_id}_start", f"workflow_{self.job_id}_end")
 
                 # No legacy generator state to clear in actor mode
 
