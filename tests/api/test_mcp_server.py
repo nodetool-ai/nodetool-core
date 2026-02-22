@@ -24,27 +24,33 @@ from nodetool.models.message import Message
 from nodetool.models.thread import Thread
 from nodetool.models.workflow import Workflow
 
+# Helper to extract the underlying function from FastMCP tools if needed
+def _get_fn(tool):
+    return getattr(tool, "fn", tool)
+
+
 # In FastMCP 3.x, @mcp.tool() returns the function directly (no FunctionTool wrapper)
-create_workflow = mcp_server.create_workflow
-get_workflow = mcp_server.get_workflow
-run_workflow_tool = mcp_server.run_workflow_tool
-run_graph = mcp_server.run_graph
-list_nodes = mcp_server.list_nodes
-search_nodes = mcp_server.search_nodes
-get_node_info = mcp_server.get_node_info
-validate_workflow = mcp_server.validate_workflow
-list_workflows = mcp_server.list_workflows
-list_assets = mcp_server.list_assets
-get_asset = mcp_server.get_asset
-list_jobs = mcp_server.list_jobs
-get_job = mcp_server.get_job
-get_job_logs = mcp_server.get_job_logs
-start_background_job = mcp_server.start_background_job
-list_models = mcp_server.list_models
-list_collections = mcp_server.list_collections
-get_collection = mcp_server.get_collection
-query_collection = mcp_server.query_collection
-get_documents_from_collection = mcp_server.get_documents_from_collection
+# However, in some 2.x versions it returns a FunctionTool object
+create_workflow = _get_fn(mcp_server.create_workflow)
+get_workflow = _get_fn(mcp_server.get_workflow)
+run_workflow_tool = _get_fn(mcp_server.run_workflow_tool)
+run_graph = _get_fn(mcp_server.run_graph)
+list_nodes = _get_fn(mcp_server.list_nodes)
+search_nodes = _get_fn(mcp_server.search_nodes)
+get_node_info = _get_fn(mcp_server.get_node_info)
+validate_workflow = _get_fn(mcp_server.validate_workflow)
+list_workflows = _get_fn(mcp_server.list_workflows)
+list_assets = _get_fn(mcp_server.list_assets)
+get_asset = _get_fn(mcp_server.get_asset)
+list_jobs = _get_fn(mcp_server.list_jobs)
+get_job = _get_fn(mcp_server.get_job)
+get_job_logs = _get_fn(mcp_server.get_job_logs)
+start_background_job = _get_fn(mcp_server.start_background_job)
+list_models = _get_fn(mcp_server.list_models)
+list_collections = _get_fn(mcp_server.list_collections)
+get_collection = _get_fn(mcp_server.get_collection)
+query_collection = _get_fn(mcp_server.query_collection)
+get_documents_from_collection = _get_fn(mcp_server.get_documents_from_collection)
 # Thread operations (may not be implemented in mcp_tools yet)
 list_threads = getattr(mcp_server, "list_threads", None)
 get_thread = getattr(mcp_server, "get_thread", None)
