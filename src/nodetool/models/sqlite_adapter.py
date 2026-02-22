@@ -306,6 +306,15 @@ def _validate_column_name(column_name: str) -> str:
     return column_name
 
 
+def quote_identifier(name: str) -> str:
+    """
+    Safely quote a SQL identifier (table or column name).
+    In SQLite, identifiers are quoted with double quotes.
+    Internal double quotes are escaped by doubling them.
+    """
+    return '"' + name.replace('"', '""') + '"'
+
+
 class SQLiteAdapter(DatabaseAdapter):
     """
     Provides an adapter (`SQLiteAdapter`) to interface Pydantic-based models
@@ -352,7 +361,7 @@ class SQLiteAdapter(DatabaseAdapter):
             query_timeout: Optional timeout in seconds for queries. If None, queries
                           will not have a timeout (except during shutdown).
         """
-        self.table_name = table_schema["table_name"]
+        self.table_name = _validate_column_name(table_schema["table_name"])
         self.table_schema = table_schema
         self.fields = fields
         self.indexes = indexes
@@ -427,7 +436,7 @@ class SQLiteAdapter(DatabaseAdapter):
     async def get_current_schema(self) -> set[str]:
         """Retrieves the current schema of the table from the database."""
         async with self._pool.acquire_context() as conn:
-            cursor = await conn.execute(f"PRAGMA table_info({self.table_name})")
+            cursor = await conn.execute(f"PRAGMA table_info({quote_identifier(self.table_name)})")
             rows = await cursor.fetchall()
             current_schema = {row[1] for row in rows}
             return current_schema
@@ -452,11 +461,11 @@ class SQLiteAdapter(DatabaseAdapter):
         log.info(f"Creating table {table_name}")
         fields = self.fields
         primary_key = self.get_primary_key()
-        sql = f"CREATE TABLE IF NOT EXISTS {table_name} ("
+        sql = f"CREATE TABLE IF NOT EXISTS {quote_identifier(table_name)} ("
         for field_name, field in fields.items():
             field_type = field.annotation
-            sql += f"{field_name} {get_sqlite_type(field_type)}, "
-        sql += f"PRIMARY KEY ({primary_key}))"
+            sql += f"{quote_identifier(field_name)} {get_sqlite_type(field_type)}, "
+        sql += f"PRIMARY KEY ({quote_identifier(primary_key)}))"
 
         async def _create():
             async with self._pool.acquire_context() as conn:
@@ -472,7 +481,7 @@ class SQLiteAdapter(DatabaseAdapter):
     async def drop_table(self) -> None:
         """Drops the database table associated with this adapter."""
         log.warning(f"Dropping table {self.table_name}")
-        sql = f"DROP TABLE IF EXISTS {self.table_name}"
+        sql = f"DROP TABLE IF EXISTS {quote_identifier(self.table_name)}"
 
         async def _drop():
             async with self._pool.acquire_context() as conn:
@@ -490,13 +499,13 @@ class SQLiteAdapter(DatabaseAdapter):
             item: A dictionary representing the model instance to save.
         """
         valid_keys = [key for key in item if key in self.fields]
-        columns = ", ".join(valid_keys)
+        columns = ", ".join([quote_identifier(key) for key in valid_keys])
         placeholders = ", ".join(["?" for _ in valid_keys])
         values = tuple(
             convert_to_sqlite_format(item[key], self.fields[key].annotation)  # type: ignore
             for key in valid_keys
         )
-        query = f"INSERT OR REPLACE INTO {self.table_name} ({columns}) VALUES ({placeholders})"
+        query = f"INSERT OR REPLACE INTO {quote_identifier(self.table_name)} ({columns}) VALUES ({placeholders})"
 
         async def _save():
             async with self._pool.acquire_context() as conn:
@@ -516,8 +525,10 @@ class SQLiteAdapter(DatabaseAdapter):
             Attributes are converted back to their Python types.
         """
         primary_key = self.get_primary_key()
-        cols = ", ".join(self.fields.keys())
-        query = f"SELECT {cols} FROM {self.table_name} WHERE {primary_key} = ?"
+        cols = ", ".join([quote_identifier(key) for key in self.fields.keys()])
+        query = (
+            f"SELECT {cols} FROM {quote_identifier(self.table_name)} " f"WHERE {quote_identifier(primary_key)} = ?"
+        )
 
         async def _get():
             async with self._pool.acquire_context() as conn:
@@ -537,7 +548,7 @@ class SQLiteAdapter(DatabaseAdapter):
         """
         pk_column = self.get_primary_key()
         log.info(f"Deleting record {primary_key} from {self.table_name}")
-        query = f"DELETE FROM {self.table_name} WHERE {pk_column} = ?"
+        query = f"DELETE FROM {quote_identifier(self.table_name)} WHERE {quote_identifier(pk_column)} = ?"
 
         async def _delete():
             async with self._pool.acquire_context() as conn:
@@ -562,10 +573,10 @@ class SQLiteAdapter(DatabaseAdapter):
             validated_field = _validate_column_name(condition.field)
             if condition.operator == Operator.IN:
                 placeholders = ", ".join(["?" for _ in condition.value])
-                sql = f"{validated_field} IN ({placeholders})"
+                sql = f"{quote_identifier(validated_field)} IN ({placeholders})"
                 params = condition.value
             else:
-                sql = f"{validated_field} {condition.operator.value} ?"
+                sql = f"{quote_identifier(validated_field)} {condition.operator.value} ?"
                 params = [condition.value]
             return sql, params
         else:  # ConditionGroup
@@ -594,15 +605,20 @@ class SQLiteAdapter(DatabaseAdapter):
     ) -> tuple[list[dict[str, Any]], str]:
         pk = self.get_primary_key()
 
+        quoted_table = quote_identifier(self.table_name)
         if order_by is None:
-            order_by = f"{self.table_name}.{pk}"
+            order_by_clause = f"{quoted_table}.{quote_identifier(pk)}"
+        else:
+            _validate_column_name(order_by)
+            order_by_clause = f"{quoted_table}.{quote_identifier(order_by)}"
 
-        order_by = f"{order_by} DESC" if reverse else f"{order_by} ASC"
+        order_by_clause = f"{order_by_clause} DESC" if reverse else f"{order_by_clause} ASC"
 
         if columns:
-            cols = ", ".join([f"{self.table_name}.{col}" for col in columns])
+            validated_cols = [_validate_column_name(col) for col in columns]
+            cols = ", ".join([f"{quoted_table}.{quote_identifier(col)}" for col in validated_cols])
         else:
-            cols = ", ".join([f"{self.table_name}.{col}" for col in self.fields])
+            cols = ", ".join([f"{quoted_table}.{quote_identifier(col)}" for col in self.fields])
 
         params = []
         where_clause = "1=1"  # Default to select all if no condition
@@ -610,7 +626,7 @@ class SQLiteAdapter(DatabaseAdapter):
             where_clause, params = self._build_condition(condition.root)  # Pass the root group
 
         fetch_limit = limit + 1
-        query = f"SELECT {cols} FROM {self.table_name} WHERE {where_clause} ORDER BY {order_by} LIMIT {fetch_limit}"
+        query = f"SELECT {cols} FROM {quoted_table} WHERE {where_clause} ORDER BY {order_by_clause} LIMIT {fetch_limit}"
 
         async def _query():
             async with self._pool.acquire_context() as conn:
@@ -657,9 +673,10 @@ class SQLiteAdapter(DatabaseAdapter):
         return await _execute()
 
     async def create_index(self, index_name: str, columns: list[str], unique: bool = False) -> None:
+        _validate_column_name(index_name)
         unique_str = "UNIQUE" if unique else ""
-        columns_str = ", ".join(columns)
-        sql = f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON {self.table_name} ({columns_str})"
+        columns_str = ", ".join([quote_identifier(_validate_column_name(col)) for col in columns])
+        sql = f"CREATE {unique_str} INDEX IF NOT EXISTS {quote_identifier(index_name)} ON {quote_identifier(self.table_name)} ({columns_str})"
 
         log.info(f"Creating index {index_name} on {self.table_name}")
         try:
@@ -671,7 +688,8 @@ class SQLiteAdapter(DatabaseAdapter):
             raise e
 
     async def drop_index(self, index_name: str) -> None:
-        sql = f"DROP INDEX IF EXISTS {index_name}"
+        _validate_column_name(index_name)
+        sql = f"DROP INDEX IF EXISTS {quote_identifier(index_name)}"
 
         log.info(f"Dropping index {index_name}")
         try:
