@@ -56,20 +56,31 @@ class WebSocketProtocolTester:
             self.ws.send_json(msg)
 
     def receive(self) -> dict:
-        """Receive and decode a message."""
-        if self.mode == "binary":
-            data = self.ws.receive_bytes()
-            return msgpack.unpackb(data)
-        else:
-            return self.ws.receive_json()
+        """Receive and decode a message, skipping background updates like system_stats."""
+        while True:
+            if self.mode == "binary":
+                data = self.ws.receive_bytes()
+                msg = msgpack.unpackb(data)
+            else:
+                msg = self.ws.receive_json()
+
+            # Skip system_stats messages as they can arrive at any time
+            if isinstance(msg, dict) and msg.get("type") == "system_stats":
+                continue
+            return msg
 
     def _receive_in_mode(self, mode: str) -> dict:
-        """Receive a message in a specific mode (for mode switching responses)."""
-        if mode == "binary":
-            data = self.ws.receive_bytes()
-            return msgpack.unpackb(data)
-        else:
-            return self.ws.receive_json()
+        """Receive a message in a specific mode, skipping background updates."""
+        while True:
+            if mode == "binary":
+                data = self.ws.receive_bytes()
+                msg = msgpack.unpackb(data)
+            else:
+                msg = self.ws.receive_json()
+
+            if isinstance(msg, dict) and msg.get("type") == "system_stats":
+                continue
+            return msg
 
     def set_mode_text(self):
         """Switch to text mode."""
