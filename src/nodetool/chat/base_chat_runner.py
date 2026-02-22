@@ -315,7 +315,8 @@ class BaseChatRunner(ABC):
             bool: True if the token is valid, False otherwise.
         """
         await self.init_supabase()
-        assert self.supabase, "Supabase client not initialized"
+        if not self.supabase:
+            raise RuntimeError("Supabase client not initialized")
         try:
             # Validate the token using Supabase
             session = await self.supabase.auth.get_session()
@@ -431,7 +432,8 @@ class BaseChatRunner(ABC):
         if last_message.thread_id:
             processing_context.thread_id = last_message.thread_id  # type: ignore[attr-defined]
 
-        assert last_message.model, "Model is required"
+        if not last_message.model:
+            raise ValueError("Model is required")
 
         if not last_message.provider or last_message.provider == Provider.Empty:
             raise ValueError("No provider specified in the current conversation")
@@ -442,8 +444,10 @@ class BaseChatRunner(ABC):
         # Check for help request
         if last_message.help_mode:
             log.debug(f"Processing help request with model: {last_message.model}")
-            assert last_message.model, "Model is required"
-            assert last_message.provider, "Provider is required"
+            if not last_message.model:
+                raise ValueError("Model is required")
+            if not last_message.provider:
+                raise ValueError("Provider is required")
 
             from nodetool.messaging.help_message_processor import HelpMessageProcessor
 
@@ -481,8 +485,10 @@ class BaseChatRunner(ABC):
             raise ValueError("No chat history available")
 
         last_message = chat_history[-1]
-        assert last_message.model, "Model is required for agent mode"
-        assert last_message.provider, "Provider is required for agent mode"
+        if not last_message.model:
+            raise ValueError("Model is required for agent mode")
+        if not last_message.provider:
+            raise ValueError("Provider is required for agent mode")
 
         provider = await get_provider(last_message.provider)
 
