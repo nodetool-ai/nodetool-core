@@ -236,9 +236,11 @@ async def test_query_security(db_adapter):
     # Valid columns should work
     await db_adapter.query(columns=["name"])
     await db_adapter.query(columns=["id", "name"])
+    # Wildcard "*" should also work
+    await db_adapter.query(columns=["*"])
 
     # Invalid columns should raise ValueError
-    invalid_columns_lists = [["name; DROP TABLE test_table"], ["id --"], ["*"], ["name, id"], ["(SELECT 1) as col"]]
+    invalid_columns_lists = [["name; DROP TABLE test_table"], ["id --"], ["name, id"], ["(SELECT 1) as col"]]
     for cols in invalid_columns_lists:
         with pytest.raises(ValueError, match="Invalid column name"):
             await db_adapter.query(columns=cols)

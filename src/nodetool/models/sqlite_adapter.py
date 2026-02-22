@@ -301,6 +301,9 @@ def _validate_column_name(column_name: str) -> str:
     Raises:
         ValueError: If the column name contains invalid characters.
     """
+    # Allow "*" as a special case for selecting all columns
+    if column_name == "*":
+        return column_name
     if not VALID_COLUMN_NAME_RE.match(column_name):
         raise ValueError(f"Invalid column name: {column_name}")
     return column_name
@@ -616,7 +619,10 @@ class SQLiteAdapter(DatabaseAdapter):
 
         if columns:
             validated_cols = [_validate_column_name(col) for col in columns]
-            cols = ", ".join([f"{quoted_table}.{quote_identifier(col)}" for col in validated_cols])
+            # Handle "*" specially - it should not be quoted
+            cols = ", ".join(
+                [f"{quoted_table}.*" if col == "*" else f"{quoted_table}.{quote_identifier(col)}" for col in validated_cols]
+            )
         else:
             cols = ", ".join([f"{quoted_table}.{quote_identifier(col)}" for col in self.fields])
 
