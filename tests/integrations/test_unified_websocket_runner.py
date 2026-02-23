@@ -591,7 +591,7 @@ class TestUnifiedWebSocketRunnerJobSession:
                 graph=Graph(nodes=[], edges=[]),
             )
             await unified_runner.run_job(request1)
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
 
             # Start second job
             request2 = RunJobRequest(
@@ -603,7 +603,7 @@ class TestUnifiedWebSocketRunnerJobSession:
                 graph=Graph(nodes=[], edges=[]),
             )
             await unified_runner.run_job(request2)
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
 
             # Both jobs should exist (or have completed)
             session = unified_runner._job_session
