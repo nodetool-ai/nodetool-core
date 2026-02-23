@@ -1,4 +1,5 @@
 import re
+from functools import lru_cache
 from itertools import combinations, permutations
 
 from nodetool.metadata.node_metadata import NodeMetadata
@@ -43,7 +44,8 @@ def _normalize_query_tokens(query: list[str]) -> list[str]:
     return tokens
 
 
-def _compile_phrase_regexes(tokens: list[str]) -> list[tuple[int, re.Pattern[str]]]:
+@lru_cache(maxsize=128)
+def _compile_phrase_regexes(tokens: tuple[str]) -> list[tuple[int, re.Pattern[str]]]:
     """
     Builds a bounded set of regex patterns that match word sequences with gaps, e.g.:
       text.*to.*image
@@ -99,7 +101,7 @@ def search_nodes(
     node_metadata_list = get_registry().get_all_installed_nodes()
     query_tokens = _normalize_query_tokens(query)
     query_lower = [q.lower() for q in query_tokens]
-    phrase_regexes = _compile_phrase_regexes(query_tokens)
+    phrase_regexes = _compile_phrase_regexes(tuple(query_tokens))
     exclude_namespaces = exclude_namespaces or []
 
     def type_matches(type_metadata: TypeMetadata, type_str: str) -> bool:
