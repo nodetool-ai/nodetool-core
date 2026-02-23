@@ -24,6 +24,7 @@ from nodetool.models.message import Message
 from nodetool.models.thread import Thread
 from nodetool.models.workflow import Workflow
 
+
 # Helper to extract the underlying function from FastMCP tools if needed
 def _get_fn(tool):
     return getattr(tool, "fn", tool)

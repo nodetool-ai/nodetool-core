@@ -528,7 +528,7 @@ class SQLiteAdapter(DatabaseAdapter):
             Attributes are converted back to their Python types.
         """
         primary_key = self.get_primary_key()
-        cols = ", ".join([quote_identifier(key) for key in self.fields.keys()])
+        cols = ", ".join([quote_identifier(key) for key in self.fields])
         query = (
             f"SELECT {cols} FROM {quote_identifier(self.table_name)} " f"WHERE {quote_identifier(primary_key)} = ?"
         )
