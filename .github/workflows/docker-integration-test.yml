@@ -55,14 +55,15 @@ jobs:
 
       - name: Save image to tarball
         run: |
-          docker save ${{ env.DOCKER_IMAGE }} > nodetool-image.tar
+          docker save ${{ env.DOCKER_IMAGE }} | gzip > nodetool-image.tar.gz
 
       - name: Upload image artifact
         uses: actions/upload-artifact@v4
         with:
           name: docker-image
-          path: nodetool-image.tar
+          path: nodetool-image.tar.gz
           retention-days: 1
+          compression-level: 0
 
   integration-tests:
     name: Integration Tests
@@ -99,7 +100,7 @@ jobs:
       - name: Load Docker image
         if: github.event.inputs.skip_build != 'true'
         run: |
-          docker load < nodetool-image.tar
+          gunzip -c nodetool-image.tar.gz | docker load
           docker images | grep nodetool
 
       - name: Install uv

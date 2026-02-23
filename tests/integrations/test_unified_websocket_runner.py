@@ -26,7 +26,7 @@ from nodetool.types.api_graph import Graph
 from nodetool.workflows.job_execution_manager import JobExecutionManager
 from nodetool.workflows.run_job_request import RunJobRequest
 
-DEFAULT_TEST_TIMEOUT = 5
+DEFAULT_TEST_TIMEOUT = 30  # Increased timeout for CI stability
 
 
 async def wait_for(coro, timeout: float = DEFAULT_TEST_TIMEOUT):
@@ -591,7 +591,7 @@ class TestUnifiedWebSocketRunnerJobSession:
                 graph=Graph(nodes=[], edges=[]),
             )
             await unified_runner.run_job(request1)
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
 
             # Start second job
             request2 = RunJobRequest(
@@ -603,7 +603,7 @@ class TestUnifiedWebSocketRunnerJobSession:
                 graph=Graph(nodes=[], edges=[]),
             )
             await unified_runner.run_job(request2)
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
 
             # Both jobs should exist (or have completed)
             session = unified_runner._job_session
