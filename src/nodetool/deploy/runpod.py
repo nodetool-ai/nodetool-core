@@ -16,6 +16,10 @@ from nodetool.config.deployment import (
     RunPodDeployment,
 )
 from nodetool.deploy.deploy_to_runpod import deploy_to_runpod
+from nodetool.deploy.runpod_api import (
+    delete_runpod_endpoint_by_name,
+    delete_runpod_template_by_name,
+)
 from nodetool.deploy.state import StateManager
 
 logger = logging.getLogger(__name__)
@@ -233,12 +237,23 @@ class RunPodDeployer:
         try:
             results["steps"].append("Destroying RunPod endpoint...")
 
-            # TODO: Implement endpoint deletion via RunPod API
-            # For now, user must delete manually via RunPod console
-            results["steps"].append("⚠️  RunPod endpoint deletion must be done manually via RunPod console")
-            results["steps"].append(
-                f"Visit https://www.runpod.io/console/serverless and delete endpoint '{self.deployment_name}'"
-            )
+            # Delete endpoint
+            if delete_runpod_endpoint_by_name(self.deployment_name):
+                results["steps"].append(f"RunPod endpoint '{self.deployment_name}' deleted")
+            else:
+                results["steps"].append(
+                    f"Failed to delete RunPod endpoint '{self.deployment_name}' or it does not exist"
+                )
+
+            # Delete template if we know its name
+            state = self.state_manager.read_state(self.deployment_name)
+            template_name = state.get("template_name") if state else self.deployment_name
+
+            if template_name:
+                if delete_runpod_template_by_name(template_name):
+                    results["steps"].append(f"RunPod template '{template_name}' deleted")
+                else:
+                    results["steps"].append(f"Failed to delete RunPod template '{template_name}'")
 
             # Update state
             self.state_manager.update_deployment_status(self.deployment_name, DeploymentStatus.DESTROYED.value)

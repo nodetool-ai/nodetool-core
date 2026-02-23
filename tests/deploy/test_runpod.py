@@ -17,7 +17,7 @@ from nodetool.config.deployment import (
 from nodetool.deploy.runpod import RunPodDeployer
 
 # Mark all tests to not use any fixtures from conftest
-pytest_plugins = ()
+# pytest_plugins = ()
 
 
 class TestRunPodDeployer:
@@ -388,36 +388,52 @@ class TestRunPodDeployer:
 
     def test_destroy(self, basic_deployment, mock_state_manager):
         """Test deployment destruction."""
-        deployer = RunPodDeployer(
-            deployment_name="test-deployment",
-            deployment=basic_deployment,
-            state_manager=mock_state_manager,
-        )
+        with (
+            patch("nodetool.deploy.runpod.delete_runpod_endpoint_by_name") as mock_delete_endpoint,
+            patch("nodetool.deploy.runpod.delete_runpod_template_by_name") as mock_delete_template,
+        ):
+            mock_delete_endpoint.return_value = True
+            mock_delete_template.return_value = True
 
-        result = deployer.destroy()
+            deployer = RunPodDeployer(
+                deployment_name="test-deployment",
+                deployment=basic_deployment,
+                state_manager=mock_state_manager,
+            )
 
-        assert result["status"] == "success"
-        assert result["deployment_name"] == "test-deployment"
-        assert any("manually" in step for step in result["steps"])
-        assert any("console" in step for step in result["steps"])
+            result = deployer.destroy()
 
-        # Should update state
-        mock_state_manager.update_deployment_status.assert_called_once_with(
-            "test-deployment", DeploymentStatus.DESTROYED.value
-        )
+            assert result["status"] == "success"
+            assert result["deployment_name"] == "test-deployment"
+            assert any("endpoint 'test-deployment' deleted" in step for step in result["steps"])
+
+            # Should update state
+            mock_state_manager.update_deployment_status.assert_called_once_with(
+                "test-deployment", DeploymentStatus.DESTROYED.value
+            )
+            mock_delete_endpoint.assert_called_once_with("test-deployment")
+            # Should delete template as well (using deployment_name as default template name)
+            mock_delete_template.assert_called_once_with("test-deployment")
 
     def test_destroy_failure(self, basic_deployment, mock_state_manager):
         """Test destroy with state manager failure."""
         mock_state_manager.update_deployment_status.side_effect = Exception("State update failed")
 
-        deployer = RunPodDeployer(
-            deployment_name="test-deployment",
-            deployment=basic_deployment,
-            state_manager=mock_state_manager,
-        )
+        with (
+            patch("nodetool.deploy.runpod.delete_runpod_endpoint_by_name") as mock_delete_endpoint,
+            patch("nodetool.deploy.runpod.delete_runpod_template_by_name") as mock_delete_template,
+        ):
+            mock_delete_endpoint.return_value = True
+            mock_delete_template.return_value = True
 
-        with pytest.raises(Exception, match="State update failed"):
-            deployer.destroy()
+            deployer = RunPodDeployer(
+                deployment_name="test-deployment",
+                deployment=basic_deployment,
+                state_manager=mock_state_manager,
+            )
+
+            with pytest.raises(Exception, match="State update failed"):
+                deployer.destroy()
 
 
 class TestRunPodDeployerEdgeCases:
