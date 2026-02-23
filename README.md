@@ -1,4 +1,4 @@
-# NodeTool Core <img src="https://img.shields.io/badge/version-0.6.2--rc.27-blue.svg" alt="Version Badge">
+# NodeTool Core <img src="https://img.shields.io/badge/version-0.6.3--rc.26-blue.svg" alt="Version Badge">
 
 <h3>AI Workflow Engine</h3>
 
@@ -209,55 +209,7 @@ This setup is for developing the `nodetool-core` library itself. If you want to 
 - [NodeTool Website](https://nodetool.ai)
 - [Discord Community](https://discord.gg/nodetool)
 
-#### Example 2: PDF Indexing for RAG Applications
-
-This example shows how to create a workflow that loads a PDF document, extracts text, splits it into sentences, and
-indexes the chunks in a ChromaDB vector database for later retrieval:
-
-```python
-import asyncio
-import os
-from nodetool.dsl.graph import graph, run_graph
-from nodetool.dsl.chroma.collections import Collection
-from nodetool.dsl.chroma.index import IndexTextChunks
-from nodetool.dsl.lib.langchain import SentenceSplitter
-from nodetool.dsl.lib.pymupdf import ExtractText
-from nodetool.dsl.nodetool.os import LoadDocumentFile
-from nodetool.metadata.types import FilePath, LlamaModel
-
-# Set up paths
-dirname = os.path.dirname(__file__)
-file_path = os.path.join(dirname, "deepseek_r1.pdf")
-
-# Create indexing workflow
-g = IndexTextChunks(
-    collection=Collection(name="papers"),
-    text_chunks=SentenceSplitter(
-        text=ExtractText(
-            pdf=LoadDocumentFile(path=FilePath(path=file_path)),
-        ),
-        document_id=file_path,
-    ),
-)
-
-# Run the workflow
-asyncio.run(run_graph(graph(g)))
-```
-
-### Key Concepts
-
-When using NodeTool programmatically, keep these key concepts in mind:
-
-1. **Nodes**: Each node represents a specific operation or function. Nodes have inputs and outputs that can be connected
-   to form a workflow.
-
-1. **Graph**: A collection of nodes and their connections, representing the entire workflow.
-
-1. **DSL (Domain-Specific Language)**: NodeTool provides a Python DSL for creating workflows, with specialized modules
-   for different domains (e.g., `nodetool.dsl.google.mail`, `nodetool.dsl.chroma.collections`).
-
-1. **Execution**: Workflows are executed using the `run_graph` function, which takes a graph object created with the
-   `graph` function.
+For more examples including RAG applications, agent workflows, and AI provider integrations, see the `examples/` directory.
 
 ## Using the Workflow API 🔌
 

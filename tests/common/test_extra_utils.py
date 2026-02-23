@@ -10,7 +10,7 @@ def test_wrap_primitive_types_basic():
     assert wrap_primitive_types("a") == {"type": "string", "value": "a"}
     assert wrap_primitive_types(1) == {"type": "integer", "value": 1}
     assert wrap_primitive_types(1.5) == {"type": "float", "value": 1.5}
-    # bool is a subclass of int, but we explicitly handle it as boolean
+    # bool is now correctly identified as boolean (not integer)
     assert wrap_primitive_types(True) == {"type": "boolean", "value": True}
     assert wrap_primitive_types(b"x") == {"type": "bytes", "value": b"x"}
 
