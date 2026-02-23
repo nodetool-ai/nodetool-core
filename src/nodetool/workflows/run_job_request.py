@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel
@@ -28,7 +28,7 @@ class ResourceLimits(BaseModel):
     max_processes: int | None = None
 
 
-class ExecutionStrategy(str, Enum):
+class ExecutionStrategy(StrEnum):
     """Execution strategy for workflow jobs."""
 
     THREADED = "threaded"

@@ -4,7 +4,7 @@ import os
 import signal
 from contextlib import suppress
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any
 
 import msgpack
@@ -16,7 +16,7 @@ from nodetool.config.logging_config import get_logger
 log = get_logger(__name__)
 
 
-class WebSocketMode(str, Enum):
+class WebSocketMode(StrEnum):
     BINARY = "binary"
     TEXT = "text"
 

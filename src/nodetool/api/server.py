@@ -9,7 +9,7 @@ import platform
 import sys
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any, ClassVar
 
 from fastapi import APIRouter, FastAPI, Request, WebSocket
@@ -156,7 +156,7 @@ class ExtensionRouterRegistry:
         return cls._routers.copy()
 
 
-class ServerMode(str, Enum):
+class ServerMode(StrEnum):
     """High-level server runtime modes."""
 
     DESKTOP = "desktop"

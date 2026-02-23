@@ -6,8 +6,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nodetool.config.deployment import GCPDeployment, GCPResourceConfig, GCPImageConfig
+from nodetool.config.deployment import GCPDeployment, GCPImageConfig, GCPResourceConfig
 from nodetool.deploy.deploy_to_gcp import deploy_to_gcp
+
 
 class TestGCPResourceConfig:
     """Tests for GCPResourceConfig model."""

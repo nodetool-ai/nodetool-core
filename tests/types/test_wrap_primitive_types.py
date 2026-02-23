@@ -1,5 +1,6 @@
 from nodetool.types.wrap_primitive_types import wrap_primitive_types
 
+
 def test_wrap_string():
     assert wrap_primitive_types("hello") == {"type": "string", "value": "hello"}
     assert wrap_primitive_types("") == {"type": "string", "value": ""}
