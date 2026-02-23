@@ -72,11 +72,20 @@ class WebSocketProtocolTester:
     def _receive_in_mode(self, mode: str) -> dict:
         """Receive a message in a specific mode, skipping background updates."""
         while True:
-            if mode == "binary":
-                data = self.ws.receive_bytes()
+            # Use raw receive to handle potential mixed message types during mode switch
+            # (e.g. late-arriving binary system_stats while switching to text)
+            raw_msg = self.ws.receive()
+
+            if "text" in raw_msg:
+                # Text message
+                msg = json.loads(raw_msg["text"])
+            elif "bytes" in raw_msg:
+                # Binary message
+                data = raw_msg["bytes"]
                 msg = msgpack.unpackb(data)
             else:
-                msg = self.ws.receive_json()
+                # Unknown or control message, skip
+                continue
 
             if isinstance(msg, dict) and msg.get("type") == "system_stats":
                 continue
