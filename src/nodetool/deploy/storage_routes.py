@@ -25,7 +25,7 @@ from fastapi.responses import StreamingResponse
 from nodetool.config.logging_config import get_logger
 from nodetool.runtime.resources import require_scope
 from nodetool.security.admin_auth import require_admin
-from nodetool.types.content_types import EXTENSION_TO_CONTENT_TYPE
+from nodetool.types.content_types import EXTENSION_TO_CONTENT_TYPE, is_safe_inline
 
 log = get_logger(__name__)
 
@@ -96,6 +96,9 @@ async def _get_file(storage, key: str, request: Request):
         "Accept-Ranges": "bytes",
         "Content-Type": media_type,
     }
+
+    if not is_safe_inline(media_type):
+        headers["Content-Disposition"] = f'attachment; filename="{os.path.basename(safe_key)}"'
 
     range_header = request.headers.get("Range")
     start: Optional[int] = 0

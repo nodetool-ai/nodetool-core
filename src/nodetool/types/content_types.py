@@ -179,3 +179,27 @@ CONTENT_TYPE_TO_EXTENSION = {
 }
 
 EXTENSION_TO_CONTENT_TYPE = {value: key for key, value in CONTENT_TYPE_TO_EXTENSION.items()}
+
+
+def is_safe_inline(content_type: str) -> bool:
+    """
+    Check if the content type is safe to be displayed inline in the browser.
+
+    Safe types:
+    - image/* (except image/svg+xml)
+    - audio/*
+    - video/*
+    - text/plain
+    - application/pdf
+    """
+    if content_type.startswith("image/"):
+        return content_type != "image/svg+xml"
+    if content_type.startswith("audio/"):
+        return True
+    if content_type.startswith("video/"):
+        return True
+    if content_type == "text/plain":
+        return True
+    if content_type == "application/pdf":
+        return True
+    return False
