@@ -143,7 +143,12 @@ class TypeMetadata(BaseModel):
     def is_audio_type(self, recursive: bool = False):
         if recursive and self.is_union_type():
             return any(t.is_audio_type(recursive=True) for t in self.type_args)
-        return self.type == "audio"
+        return self.type == "audio" or self.type == "audio_stream"
+
+    def is_audio_stream_type(self, recursive: bool = False):
+        if recursive and self.is_union_type():
+            return any(t.is_audio_stream_type(recursive=True) for t in self.type_args)
+        return self.type == "audio_stream"
 
     def is_video_type(self, recursive: bool = False):
         if recursive and self.is_union_type():
