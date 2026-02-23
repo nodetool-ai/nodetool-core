@@ -817,6 +817,22 @@ class OpenAIProvider(BaseProvider):
         log.debug(f"Normalized data URI with mime type: {mime_type}")
         return result
 
+    async def _convert_message_content_item(
+        self, item: str | MessageContent
+    ) -> ChatCompletionContentPartParam:
+        """Convert a message content item (str or MessageContent) to an OpenAI content part.
+
+        Args:
+            item: A string or MessageContent variant.
+
+        Returns:
+            A content part Pydantic model per OpenAI's chat API specification.
+        """
+        if isinstance(item, str):
+            log.debug(f"Converting string content: {item[:50]}...")
+            return ChatCompletionContentPartTextParam(type="text", text=item)
+        return await self.message_content_to_openai_content_part(item)
+
     async def message_content_to_openai_content_part(self, content: MessageContent) -> ChatCompletionContentPartParam:
         """Convert a message content to an OpenAI content part.
 
@@ -935,8 +951,8 @@ class OpenAIProvider(BaseProvider):
             elif message.content is not None:
                 log.debug(f"Converting {len(message.content)} content parts")
                 content = await asyncio.gather(
-                    *[self.message_content_to_openai_content_part(c) for c in message.content]
-                )  # type: ignore[arg-type]
+                    *[self._convert_message_content_item(c) for c in message.content]
+                )
             else:
                 log.error(f"Unknown message content type {type(message.content)}")
                 raise ValueError(f"Unknown message content type {type(message.content)}")
@@ -962,8 +978,8 @@ class OpenAIProvider(BaseProvider):
             elif message.content is not None:
                 log.debug(f"Converting {len(message.content)} assistant content parts")
                 content = await asyncio.gather(
-                    *[self.message_content_to_openai_content_part(c) for c in message.content]
-                )  # type: ignore[arg-type]
+                    *[self._convert_message_content_item(c) for c in message.content]
+                )
             else:
                 content = None
                 log.debug("Assistant message has no content")
