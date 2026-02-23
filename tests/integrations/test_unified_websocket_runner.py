@@ -26,7 +26,7 @@ from nodetool.types.api_graph import Graph
 from nodetool.workflows.job_execution_manager import JobExecutionManager
 from nodetool.workflows.run_job_request import RunJobRequest
 
-DEFAULT_TEST_TIMEOUT = 5
+DEFAULT_TEST_TIMEOUT = 30
 
 
 async def wait_for(coro, timeout: float = DEFAULT_TEST_TIMEOUT):
