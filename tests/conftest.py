@@ -102,6 +102,23 @@ async def test_db_pool(worker_id):
     ) as temp_db:
         db_path = temp_db.name
 
+    # IMPORTANT: Set DB_PATH environment variable to the temp DB path.
+    # This ensures that even if context propagation fails in background threads
+    # (e.g. in ThreadedEventLoop), they fall back to opening this DB instead
+    # of the default empty one.
+    os.environ["DB_PATH"] = db_path
+
+    # Increase pool size to handle concurrent jobs in tests
+    # Default is 2, which causes timeouts when running multiple jobs concurrently
+    os.environ["NODETOOL_SQLITE_POOL_SIZE"] = "10"
+
+    # Patch Environment.get_db_path to return our unique session DB path.
+    # This overrides the default behavior (which might point to a fixed
+    # test DB or env var) and ensures that all components (including background
+    # threads that create new ResourceScopes) use this migrated test database.
+    original_get_db_path = Environment.get_db_path
+    Environment.get_db_path = classmethod(lambda cls: db_path)
+
     pool = None
     try:
         # Create connection pool (will be reused across all tests in this worker)
@@ -112,6 +129,9 @@ async def test_db_pool(worker_id):
         yield pool
 
     finally:
+        # Restore original get_db_path
+        Environment.get_db_path = original_get_db_path
+
         # Clean up pool at session end
         if pool is not None:
             try:
@@ -130,6 +150,10 @@ async def test_db_pool(worker_id):
             os.unlink(db_path)
         except Exception:
             pass
+
+        # Clean up env var
+        os.environ.pop("DB_PATH", None)
+        os.environ.pop("NODETOOL_SQLITE_POOL_SIZE", None)
 
 
 async def _truncate_all_tables(pool):
