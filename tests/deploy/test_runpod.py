@@ -17,7 +17,7 @@ from nodetool.config.deployment import (
 from nodetool.deploy.runpod import RunPodDeployer
 
 # Mark all tests to not use any fixtures from conftest
-pytest_plugins = ()
+# pytest_plugins = ()
 
 
 class TestRunPodDeployer:
