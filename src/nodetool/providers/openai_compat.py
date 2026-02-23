@@ -9,6 +9,7 @@ OpenAI endpoints).
 from __future__ import annotations
 
 import ast
+import asyncio
 import base64
 import io
 import json
@@ -170,7 +171,7 @@ class OpenAICompat:
             if isinstance(message.content, str):
                 content = message.content
             elif message.content is not None:
-                content = [await self.message_content_to_openai_content_part(c) for c in message.content]  # type: ignore[arg-type]
+                content = await asyncio.gather(*[self.message_content_to_openai_content_part(c) for c in message.content])  # type: ignore[arg-type]
             else:
                 raise ValueError(f"Unknown message content type {type(message.content)}")
             return ChatCompletionUserMessageParam(role=cast("Literal['user']", message.role), content=content)
@@ -204,7 +205,7 @@ class OpenAICompat:
             if isinstance(message.content, str):
                 content = message.content
             elif message.content is not None:
-                content = [await self.message_content_to_openai_content_part(c) for c in message.content]  # type: ignore[arg-type]
+                content = await asyncio.gather(*[self.message_content_to_openai_content_part(c) for c in message.content])  # type: ignore[arg-type]
             else:
                 content = None
 
