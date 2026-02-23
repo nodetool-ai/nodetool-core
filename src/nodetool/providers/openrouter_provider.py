@@ -10,6 +10,7 @@ OpenRouter Usage Accounting: https://openrouter.ai/docs/use-cases/usage-accounti
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
 
 import aiohttp
@@ -475,7 +476,7 @@ class OpenRouterProvider(OpenAIProvider):
             log.debug(f"Added {len(tools)} tools to request")
 
         log.debug(f"Converting {len(messages)} messages to OpenAI format")
-        openai_messages = [await self.convert_message(m) for m in messages]
+        openai_messages = await asyncio.gather(*[self.convert_message(m) for m in messages])
         log.debug("Making non-streaming API call to OpenRouter")
 
         # Make non-streaming call
@@ -646,7 +647,7 @@ class OpenRouterProvider(OpenAIProvider):
         )
 
         log.debug(f"Converting {len(messages)} messages to OpenAI format")
-        openai_messages = [await self.convert_message(m) for m in messages]
+        openai_messages = await asyncio.gather(*[self.convert_message(m) for m in messages])
         log.debug("Making streaming API call to OpenRouter")
 
         create_result = self.get_client().chat.completions.create(
