@@ -125,17 +125,78 @@ class TestRunPodDeployer:
             "status": "active",
         }
 
-        deployer = RunPodDeployer(
-            deployment_name="test-deployment",
-            deployment=basic_deployment,
-            state_manager=mock_state_manager,
-        )
+        with patch("nodetool.deploy.runpod.get_runpod_endpoint_by_name") as mock_get_endpoint, patch(
+            "nodetool.deploy.runpod.get_runpod_template_by_name"
+        ) as mock_get_template:
+            # Mock endpoint returning different values
+            mock_get_endpoint.return_value = {
+                "workersMin": 0,
+                "workersMax": 1,
+                "idleTimeout": 30,
+                "gpuIds": "AMPERE_16",
+                "flashboot": False,
+            }
+            # Mock template returning different image
+            mock_get_template.return_value = {
+                "imageName": "my-repo/my-image:old",
+                "env": [
+                    {"key": "ENV", "value": "old"},
+                    {"key": "PORT", "value": "8000"},
+                    {"key": "PORT_HEALTH", "value": "8000"},
+                ],
+            }
 
-        plan = deployer.plan()
+            deployer = RunPodDeployer(
+                deployment_name="test-deployment",
+                deployment=basic_deployment,
+                state_manager=mock_state_manager,
+            )
 
-        assert plan["deployment_name"] == "test-deployment"
-        assert "Configuration may have changed" in plan["changes"][0]
-        assert "RunPod endpoint configuration" in plan["will_update"]
+            plan = deployer.plan()
+
+            assert plan["deployment_name"] == "test-deployment"
+            assert any("Docker image changed" in c for c in plan["changes"])
+            assert "Update template image" in plan["will_update"]
+            assert "Redeploy endpoint" in plan["will_update"]
+
+    def test_plan_existing_deployment_no_changes(self, basic_deployment, mock_state_manager):
+        """Test generating plan for existing deployment with no changes."""
+        mock_state_manager.read_state.return_value = {
+            "last_deployed": "2024-01-15T10:30:00",
+            "status": "active",
+        }
+
+        with patch("nodetool.deploy.runpod.get_runpod_endpoint_by_name") as mock_get_endpoint, patch(
+            "nodetool.deploy.runpod.get_runpod_template_by_name"
+        ) as mock_get_template:
+            # Mock endpoint matching basic_deployment
+            # basic_deployment defaults: workers_min=0, workers_max=3, idle_timeout=5, flashboot=False, gpu_types=[]
+            # basic_deployment.gpu_types is empty list -> "AMPERE_24" default
+            mock_get_endpoint.return_value = {
+                "workersMin": 0,
+                "workersMax": 3,
+                "idleTimeout": 5,
+                "gpuIds": "AMPERE_24",
+                "flashboot": False,
+            }
+            # Mock template matching basic_deployment
+            # image: nodetool-workflow:latest
+            mock_get_template.return_value = {
+                "imageName": "nodetool-workflow:latest",
+                "env": [{"key": "PORT", "value": "8000"}, {"key": "PORT_HEALTH", "value": "8000"}],
+            }
+
+            deployer = RunPodDeployer(
+                deployment_name="test-deployment",
+                deployment=basic_deployment,
+                state_manager=mock_state_manager,
+            )
+
+            plan = deployer.plan()
+
+            assert plan["deployment_name"] == "test-deployment"
+            assert "No configuration changes detected" in plan["changes"][0]
+            assert len(plan["will_update"]) == 0
 
     def test_apply_dry_run(self, basic_deployment, mock_state_manager):
         """Test apply with dry_run=True returns plan."""
