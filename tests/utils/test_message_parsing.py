@@ -113,6 +113,61 @@ class TestLenientJsonParse:
         result = lenient_json_parse(text)
         assert result == {"outer": {"inner": "value"}}
 
+    def test_trailing_commas(self):
+        """Test parsing JSON with trailing commas (Python syntax)."""
+        from nodetool.utils.message_parsing import lenient_json_parse
+
+        assert lenient_json_parse('{"key": "value",}') == {"key": "value"}
+        assert lenient_json_parse('{"list": [1, 2,], "key": "val",}') == {"list": [1, 2], "key": "val"}
+
+    def test_python_comments(self):
+        """Test parsing JSON-like strings with Python comments."""
+        from nodetool.utils.message_parsing import lenient_json_parse
+
+        assert lenient_json_parse('{"key": "value"} # comment') == {"key": "value"}
+
+    def test_hex_values(self):
+        """Test parsing JSON-like strings with hexadecimal values."""
+        from nodetool.utils.message_parsing import lenient_json_parse
+
+        assert lenient_json_parse('{"val": 0xFF}') == {"val": 255}
+
+    def test_mixed_quotes_nested(self):
+        """Test parsing nested structures with mixed quotes."""
+        from nodetool.utils.message_parsing import lenient_json_parse
+
+        text = "{'outer': {'inner': \"val\"}}"
+        result = lenient_json_parse(text)
+        assert result == {"outer": {"inner": "val"}}
+
+    def test_string_content_modification(self):
+        """Document behavior: boolean/null keywords inside strings are capitalized."""
+        from nodetool.utils.message_parsing import lenient_json_parse
+
+        # Known limitation: "true", "false", "null" as whole words in strings get capitalized
+        # This only happens in the fallback path (e.g. single quotes), not valid JSON.
+        result = lenient_json_parse("{'msg': 'this is true'}")
+        assert result == {"msg": "this is True"}
+
+        result = lenient_json_parse("{'msg': 'do not be false'}")
+        assert result == {"msg": "do not be False"}
+
+        result = lenient_json_parse("{'msg': 'value is null'}")
+        assert result == {"msg": "value is None"}
+
+    def test_fallback_syntax_error(self):
+        """Test that syntax errors in fallback parsing return None."""
+        from nodetool.utils.message_parsing import lenient_json_parse
+
+        assert lenient_json_parse('{"key": "unclosed') is None
+        assert lenient_json_parse("{'key': 'unclosed") is None
+
+    def test_fallback_value_error(self):
+        """Test that value errors (unknown identifiers) return None."""
+        from nodetool.utils.message_parsing import lenient_json_parse
+
+        assert lenient_json_parse('{"key": unknown_var}') is None
+
 
 class TestExtractJsonFromMessage:
     """Tests for extract_json_from_message function."""
