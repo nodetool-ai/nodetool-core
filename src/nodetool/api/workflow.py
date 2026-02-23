@@ -703,9 +703,9 @@ async def run_workflow_by_id(
             if isinstance(msg, BaseModel):
                 msg = msg.model_dump()
 
-            if isinstance(msg, OutputUpdate):
-                name = msg.node_name
-                value = msg.value
+            if isinstance(msg, dict) and msg.get("type") == "output_update":
+                name = msg.get("node_name")
+                value = msg.get("value")
                 if isinstance(value, dict):
                     if "data" in value:
                         data = value["data"]
@@ -714,14 +714,22 @@ async def run_workflow_by_id(
                                 f"data:application/octet-stream;base64,{base64.b64encode(data).decode('utf-8')}"
                             )
                         elif isinstance(data, list):
-                            # TODO: handle multiple assets
-                            value["uri"] = (
-                                f"data:application/octet-stream;base64,{base64.b64encode(data[0]).decode('utf-8')}"
-                            )
-                        value["data"] = None
-                elif isinstance(msg, Error):
-                    raise HTTPException(status_code=500, detail=msg.message)
+                            # Handle multiple assets
+                            new_values = []
+                            for item_data in data:
+                                item_value = value.copy()
+                                item_value["data"] = None
+                                item_value["uri"] = (
+                                    f"data:application/octet-stream;base64,{base64.b64encode(item_data).decode('utf-8')}"
+                                )
+                                new_values.append(item_value)
+                            value = new_values
+
+                        if isinstance(value, dict):
+                            value["data"] = None
                 result[name] = value
+            elif isinstance(msg, dict) and msg.get("type") == "error":
+                raise HTTPException(status_code=500, detail=msg.get("message"))
         return result
 
 
