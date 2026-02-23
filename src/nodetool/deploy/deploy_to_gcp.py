@@ -130,9 +130,8 @@ def deploy_to_gcp(
     registry = deployment.image.registry
     cpu = deployment.resources.cpu
     memory = deployment.resources.memory
-    # TODO: Add gpu support to GCPDeployment
-    gpu_type = None
-    gpu_count = 0
+    gpu_type = deployment.resources.gpu_type
+    gpu_count = deployment.resources.gpu_count or (1 if gpu_type else 0)
     min_instances = deployment.resources.min_instances
     max_instances = deployment.resources.max_instances
     concurrency = deployment.resources.concurrency

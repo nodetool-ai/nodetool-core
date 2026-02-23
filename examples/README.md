@@ -104,11 +104,6 @@ Before running these examples, you'll need to:
 - Minimax provider integration
 - Cost optimization patterns
 
-#### HuggingFace OAuth (`huggingface_oauth_example.md`)
-
-- HuggingFace authentication
-- OAuth setup guide
-
 ### 5. Research & Analysis Agents
 
 #### ChromaDB Research Agent (`chromadb_research_agent.py`)
@@ -169,6 +164,41 @@ Before running these examples, you'll need to:
 
 - Workspace management
 - File operations
+
+#### Asset Tracking (`asset_tracking_example.py`)
+
+- Asset management demonstration
+- File tracking and organization
+
+#### Audio Streaming (`audio_stream_example.py`)
+
+- Audio processing with streaming
+- Chunk-based audio handling
+
+#### Checkpoint Manager (`checkpoint_manager_example.py`)
+
+- State persistence patterns
+- Resume from checkpoint
+
+#### Instagram Scraper (`instagram_scraper_task.py`)
+
+- Social media data collection
+- Instagram content scraping
+
+#### OpenAI Image Generation (`openai_image_generation_example.py`)
+
+- DALL-E integration
+- Text-to-image workflows
+
+#### Coding Agent (`test_coding_agent.py`)
+
+- Code generation agent
+- Development task automation
+
+#### 3D Model Example (`model3d_example.py`)
+
+- 3D content generation
+- Model processing workflows
 
 ## Running the Examples
 
