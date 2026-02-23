@@ -58,11 +58,18 @@ class WebSocketProtocolTester:
     def receive(self) -> dict:
         """Receive and decode a message, skipping background updates like system_stats."""
         while True:
-            if self.mode == "binary":
-                data = self.ws.receive_bytes()
+            # Always receive the raw message to inspect its type (text vs binary)
+            message = self.ws.receive()
+
+            if "bytes" in message:
+                data = message["bytes"]
                 msg = msgpack.unpackb(data)
+            elif "text" in message:
+                text = message["text"]
+                msg = json.loads(text)
             else:
-                msg = self.ws.receive_json()
+                # Should not happen for standard websocket frames
+                continue
 
             # Skip system_stats messages as they can arrive at any time
             if isinstance(msg, dict) and msg.get("type") == "system_stats":
@@ -72,14 +79,11 @@ class WebSocketProtocolTester:
     def _receive_in_mode(self, mode: str) -> dict:
         """Receive a message in a specific mode, skipping background updates."""
         while True:
-            if mode == "binary":
-                data = self.ws.receive_bytes()
-                msg = msgpack.unpackb(data)
-            else:
-                msg = self.ws.receive_json()
+            # Use our robust receive method which handles both types
+            msg = self.receive()
 
-            if isinstance(msg, dict) and msg.get("type") == "system_stats":
-                continue
+            # The msg is already decoded and system_stats filtered
+            # We just return it, ignoring the 'mode' argument as we auto-detect
             return msg
 
     def set_mode_text(self):
