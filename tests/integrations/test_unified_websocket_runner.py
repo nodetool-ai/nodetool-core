@@ -613,6 +613,11 @@ class TestUnifiedWebSocketRunnerJobSession:
             # (they may complete quickly and be removed)
             assert len(session.list_active_jobs()) <= 2
 
+            # Explicitly cancel jobs before disconnect to prevent race conditions
+            # with threaded event loop shutdown
+            for job_id in session.list_active_jobs():
+                session.remove_job(job_id)
+
             await unified_runner.disconnect()
 
     async def test_job_cleanup_removes_from_session(
