@@ -167,7 +167,14 @@ def type_to_string(field_type: type | GenericAlias | UnionType) -> str:
         'int | str'
     """
     if isinstance(field_type, UnionType):
-        return str(field_type)
+        args = []
+        for arg in field_type.__args__:
+            if arg is type(None):
+                args.append("None")
+            else:
+                args.append(type_to_string(arg))
+        return " | ".join(args)
+
     if isinstance(field_type, GenericAlias):
         args = [type_to_string(arg) for arg in field_type.__args__]
         if field_type.__origin__ is list:
@@ -180,7 +187,16 @@ def type_to_string(field_type: type | GenericAlias | UnionType) -> str:
             return f"tuple[{', '.join(args)}]"
 
     if isinstance(field_type, typing._UnionGenericAlias):  # type: ignore
-        return f"{type_to_string(field_type.__args__[0])} | None"
+        args = []
+        for arg in field_type.__args__:
+            if arg is type(None):
+                args.append("None")
+            else:
+                args.append(type_to_string(arg))
+        return " | ".join(args)
+
+    if isinstance(field_type, str):
+        return field_type
 
     assert isinstance(field_type, type), (
         f"Field type is not a type: {field_type}, generic aliases like List[str] are not supported, use list[str] instead"
@@ -188,8 +204,6 @@ def type_to_string(field_type: type | GenericAlias | UnionType) -> str:
 
     if issubclass(field_type, BaseType):
         return f"types.{field_type.__name__}"
-    if isinstance(field_type, str):
-        return field_type
     if isinstance(field_type, dict):
         return "dict"
     if field_type.__name__ == "Optional":
