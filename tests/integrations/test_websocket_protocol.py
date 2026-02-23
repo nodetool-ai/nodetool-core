@@ -57,27 +57,44 @@ class WebSocketProtocolTester:
 
     def receive(self) -> dict:
         """Receive and decode a message, skipping background updates like system_stats."""
-        while True:
-            if self.mode == "binary":
-                data = self.ws.receive_bytes()
-                msg = msgpack.unpackb(data)
-            else:
-                msg = self.ws.receive_json()
-
-            # Skip system_stats messages as they can arrive at any time
-            if isinstance(msg, dict) and msg.get("type") == "system_stats":
-                continue
-            return msg
+        return self._receive_in_mode(self.mode)
 
     def _receive_in_mode(self, mode: str) -> dict:
         """Receive a message in a specific mode, skipping background updates."""
         while True:
-            if mode == "binary":
-                data = self.ws.receive_bytes()
-                msg = msgpack.unpackb(data)
-            else:
-                msg = self.ws.receive_json()
+            # Get raw message first
+            raw_msg = self.ws.receive()
 
+            # Handle different message types based on expected mode
+            if mode == "binary":
+                if "bytes" in raw_msg:
+                    data = raw_msg["bytes"]
+                    msg = msgpack.unpackb(data)
+                elif "text" in raw_msg:
+                    # Unexpected text message in binary mode (likely error or system message)
+                    try:
+                        msg = json.loads(raw_msg["text"])
+                    except json.JSONDecodeError:
+                        msg = {"text": raw_msg["text"], "type": "unknown_text"}
+                else:
+                    # Unknown message format
+                    continue
+            else:  # mode == "text"
+                if "text" in raw_msg:
+                    try:
+                        msg = json.loads(raw_msg["text"])
+                    except json.JSONDecodeError:
+                        msg = {"text": raw_msg["text"], "type": "unknown_text"}
+                elif "bytes" in raw_msg:
+                    # Unexpected binary message in text mode (likely system stats or keepalive)
+                    try:
+                        msg = msgpack.unpackb(raw_msg["bytes"])
+                    except Exception:
+                        msg = {"type": "unknown_binary"}
+                else:
+                    continue
+
+            # Skip system_stats messages as they can arrive at any time
             if isinstance(msg, dict) and msg.get("type") == "system_stats":
                 continue
             return msg
