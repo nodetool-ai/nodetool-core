@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 
 import asyncio
 import base64
@@ -703,7 +703,10 @@ async def run_workflow_by_id(
             if isinstance(msg, BaseModel):
                 msg = msg.model_dump()
 
-            if isinstance(msg, dict) and msg.get("type") == "output_update":
+            # Resolve message type from dict or object
+            msg_type = msg.get("type") if isinstance(msg, dict) else getattr(msg, "type", None)
+
+            if msg_type == "output_update":
                 name = msg.get("node_name")
                 value = msg.get("value")
                 if isinstance(value, dict):
@@ -713,23 +716,28 @@ async def run_workflow_by_id(
                             value["uri"] = (
                                 f"data:application/octet-stream;base64,{base64.b64encode(data).decode('utf-8')}"
                             )
+                            value["data"] = None
                         elif isinstance(data, list):
                             # Handle multiple assets
-                            new_values = []
+                            assets = []
                             for item_data in data:
-                                item_value = value.copy()
-                                item_value["data"] = None
-                                item_value["uri"] = (
-                                    f"data:application/octet-stream;base64,{base64.b64encode(item_data).decode('utf-8')}"
-                                )
-                                new_values.append(item_value)
-                            value = new_values
-
-                        if isinstance(value, dict):
-                            value["data"] = None
+                                if isinstance(item_data, bytes):
+                                    asset = value.copy()
+                                    asset["uri"] = (
+                                        f"data:application/octet-stream;base64,{base64.b64encode(item_data).decode('utf-8')}"
+                                    )
+                                    asset["data"] = None
+                                    assets.append(asset)
+                                else:
+                                    assets.append(item_data)
+                            value = assets
+                        else:
+                            if isinstance(value, dict):
+                                value["data"] = None
                 result[name] = value
-            elif isinstance(msg, dict) and msg.get("type") == "error":
-                raise HTTPException(status_code=500, detail=msg.get("message"))
+            elif msg_type == "error":
+                message = msg.get("message") if isinstance(msg, dict) else getattr(msg, "message", "Unknown error")
+                raise HTTPException(status_code=500, detail=message)
         return result
 
 
@@ -1204,4 +1212,3 @@ async def gradio_export(
         raise HTTPException(status_code=500, detail=f"Error exporting workflow: {e}") from e
 
     return code
-
