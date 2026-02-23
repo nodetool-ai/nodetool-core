@@ -4,6 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from nodetool.api.utils import current_user
+from nodetool.config.logging_config import get_logger
+
+log = get_logger(__name__)
 
 
 class EncryptedSecretPayload(BaseModel):
@@ -40,4 +43,5 @@ async def import_secrets(
             imported += 1
         return {"imported": imported}
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        log.error("Failed to import secrets: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="An error occurred while importing secrets") from exc
