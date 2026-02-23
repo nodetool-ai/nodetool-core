@@ -35,6 +35,16 @@ Executor = Union["LocalExecutor", SSHConnection]
 TDeployment = TypeVar("TDeployment", bound=SelfHostedDeployment)
 
 
+def _safe_shlex_quote(s: str) -> str:
+    """
+    Quote a string for use in a shell command, but allow ~ at the start.
+    This ensures that the shell can still expand the home directory.
+    """
+    if s.startswith("~/"):
+        return "~/" + shlex.quote(s[2:])
+    return shlex.quote(s)
+
+
 def is_localhost(host: str) -> bool:
     """Check if host resolves to the local machine."""
     localhost_names = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
@@ -89,12 +99,11 @@ class LocalExecutor:
             Tuple of (returncode, stdout, stderr).
         """
         try:
-            # Use shell=True to mimic SSH command execution (which runs in user's shell)
-            # This is necessary for commands using pipes, redirects, env vars, etc.
+            # Use /bin/bash -c to mimic SSH command execution while avoiding shell=True.
+            # This still allows shell features like pipes and redirects if they are
+            # part of the command string.
             result = subprocess.run(
-                command,
-                shell=True,
-                executable="/bin/bash",  # Prefer bash if available, else default sh
+                ["/bin/bash", "-c", command],
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -175,8 +184,8 @@ class BaseSSHDeployer(ABC, Generic[TDeployment]):
             b64_content = base64.b64encode(content.encode()).decode()
             # Ensure directory exists
             dir_name = os.path.dirname(remote_path)
-            ssh.execute(f"mkdir -p {dir_name}", check=True)
-            ssh.execute(f"echo {b64_content} | base64 -d > {remote_path}", check=True)
+            ssh.execute(f"mkdir -p {_safe_shlex_quote(dir_name)}", check=True)
+            ssh.execute(f"echo {b64_content} | base64 -d > {_safe_shlex_quote(remote_path)}", check=True)
 
     def _create_directories(self, ssh: Executor, results: dict[str, Any]) -> None:
         """Create required directories on remote host."""
@@ -361,7 +370,7 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
     def _write_text_file(self, ssh, path: str, content: str, mode: str = "644") -> None:
         """Write text content to remote path using a here-doc."""
         sentinel = "__NODETOOL_CONFIG_EOF__"
-        command = f'umask 077 && cat <<\'{sentinel}\' > "{path}"\n{content}\n{sentinel}\nchmod {mode} "{path}"'
+        command = f'umask 077 && cat <<\'{sentinel}\' > {_safe_shlex_quote(path)}\n{content}\n{sentinel}\nchmod {_safe_shlex_quote(mode)} {_safe_shlex_quote(path)}'
         ssh.execute(command, check=True, timeout=30)
 
     def _stop_existing_container(self, ssh, results: dict[str, Any]) -> None:
@@ -375,15 +384,15 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
             return
 
         runtime = self._runtime_command_for_shell()
-        check_command = f"{runtime} ps -a -q -f name={container_name}"
+        check_command = f"{runtime} ps -a -q -f name={_safe_shlex_quote(container_name)}"
 
         try:
             _exit_code, stdout, _ = ssh.execute(check_command, check=False)
             if stdout.strip():
                 results["steps"].append(f"  Found existing app container: {container_name}")
-                ssh.execute(f"{runtime} stop {container_name}", check=False, timeout=60)
+                ssh.execute(f"{runtime} stop {_safe_shlex_quote(container_name)}", check=False, timeout=60)
                 results["steps"].append(f"  Stopped app container: {container_name}")
-                ssh.execute(f"{runtime} rm {container_name}", check=False, timeout=60)
+                ssh.execute(f"{runtime} rm {_safe_shlex_quote(container_name)}", check=False, timeout=60)
                 results["steps"].append(f"  Removed app container: {container_name}")
             else:
                 results["steps"].append("  No existing app container found")
@@ -391,7 +400,7 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
             results["steps"].append(f"  Warning: could not inspect app container: {exc}")
 
         # Also clean up legacy NodeTool containers that still hold the same host port.
-        publish_check = f"{runtime} ps -a --filter publish={self._app_host_port()} --format '{{{{.Names}}}}'"
+        publish_check = f"{runtime} ps -a --filter publish={int(self._app_host_port())} --format '{{{{.Names}}}}'"
         try:
             _code, stdout, _ = ssh.execute(publish_check, check=False)
             for conflict_name in [line.strip() for line in stdout.splitlines() if line.strip()]:
@@ -402,8 +411,8 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
                 results["steps"].append(
                     f"  Found conflicting NodeTool container on port {self._app_host_port()}: {conflict_name}"
                 )
-                ssh.execute(f"{runtime} stop {conflict_name}", check=False, timeout=60)
-                ssh.execute(f"{runtime} rm {conflict_name}", check=False, timeout=60)
+                ssh.execute(f"{runtime} stop {_safe_shlex_quote(conflict_name)}", check=False, timeout=60)
+                ssh.execute(f"{runtime} rm {_safe_shlex_quote(conflict_name)}", check=False, timeout=60)
                 results["steps"].append(f"  Removed conflicting container: {conflict_name}")
         except Exception as exc:
             results["steps"].append(f"  Warning: could not check port conflicts: {exc}")
@@ -511,7 +520,7 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
                 attempt_errors.append("app container not running")
 
             try:
-                ssh.execute(f"curl -fsS {health_url}", check=True, timeout=20)
+                ssh.execute(f"curl -fsS {_safe_shlex_quote(health_url)}", check=True, timeout=20)
                 if not attempt_errors:
                     results["steps"].append(f"  Health endpoint OK: {health_url}")
                     return
@@ -539,7 +548,7 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
 
         runtime = self._runtime_command_for_shell()
         status_cmd = (
-            f"{runtime} ps -f name={container_name} "
+            f"{runtime} ps -f name={_safe_shlex_quote(container_name)} "
             "--format '{{{{.Names}}}} {{{{.Status}}}} {{{{.Ports}}}}'"
         )
         try:
@@ -621,7 +630,7 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
 
                 # Stop container
                 runtime = self._runtime_command_for_shell()
-                stop_command = f"{runtime} stop {container_name}"
+                stop_command = f"{runtime} stop {_safe_shlex_quote(container_name)}"
                 try:
                     _exit_code, _stdout, _stderr = ssh.execute(stop_command, check=False, timeout=30)
                     results["steps"].append(f"Container stopped: {container_name}")
@@ -629,7 +638,7 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
                     results["steps"].append(f"Warning: Failed to stop container: {e.stderr}")
 
                 # Remove container
-                rm_command = f"{runtime} rm {container_name}"
+                rm_command = f"{runtime} rm {_safe_shlex_quote(container_name)}"
                 try:
                     _exit_code, _stdout, _stderr = ssh.execute(rm_command, check=False, timeout=30)
                     results["steps"].append(f"Container removed: {container_name}")
@@ -695,7 +704,7 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
 
                 # Get container status
                 runtime = self._runtime_command_for_shell()
-                command = f"{runtime} ps -a -f name={container_name} --format '{{{{.Status}}}}'"
+                command = f"{runtime} ps -a -f name={_safe_shlex_quote(container_name)} --format '{{{{.Status}}}}'"
                 _exit_code, stdout, _stderr = ssh.execute(command, check=False)
                 status_info["live_status"] = stdout.strip() if stdout else "Container not found"
         except Exception as e:
@@ -720,10 +729,10 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
                     pass
 
             runtime = self._runtime_command_for_shell()
-            command = f"{runtime} logs --tail={tail}"
+            command = f"{runtime} logs --tail={int(tail)}"
             if follow:
                 command += " -f"
-            command += f" {container_name}"
+            command += f" {_safe_shlex_quote(container_name)}"
             _exit_code, stdout, _stderr = ssh.execute(command, check=False, timeout=None if follow else 30)
             return stdout
 
@@ -737,7 +746,7 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
             return
 
         runtime = self._runtime_command_for_shell()
-        cmd = f"{runtime} images -q {image}"
+        cmd = f"{runtime} images -q {_safe_shlex_quote(image)}"
         _exit_code, stdout, _stderr = ssh.execute(cmd, check=False)
         if stdout.strip():
             self._log(results, "  Image already present.")
@@ -766,7 +775,7 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
         except Exception:
             # If SDK is unavailable locally, fallback to shell behavior.
             runtime = self._runtime_command_for_shell()
-            cmd = f"{runtime} images -q {image}"
+            cmd = f"{runtime} images -q {_safe_shlex_quote(image)}"
             _exit_code, stdout, _stderr = LocalExecutor().execute(cmd, check=False)
             if stdout.strip():
                 self._log(results, "  Image already present.")
@@ -948,8 +957,8 @@ class SSHDeployer(BaseSSHDeployer[SSHDeployment | LocalDeployment]):
 
                 # Stop service
                 try:
-                    ssh.execute(f"systemctl --user stop {service_name}", check=False)
-                    ssh.execute(f"systemctl --user disable {service_name}", check=False)
+                    ssh.execute(f"systemctl --user stop {_safe_shlex_quote(service_name)}", check=False)
+                    ssh.execute(f"systemctl --user disable {_safe_shlex_quote(service_name)}", check=False)
                     results["steps"].append(f"Service stopped: {service_name}")
                 except Exception as e:
                     results["steps"].append(f"Warning: Failed to stop service: {e}")
@@ -981,7 +990,7 @@ class SSHDeployer(BaseSSHDeployer[SSHDeployment | LocalDeployment]):
         try:
             with self._get_executor() as ssh:
                 service_name = self.deployment.service_name or f"nodetool-{self.deployment.port}"
-                _exit, stdout, _ = ssh.execute(f"systemctl --user is-active {service_name}", check=False)
+                _exit, stdout, _ = ssh.execute(f"systemctl --user is-active {_safe_shlex_quote(service_name)}", check=False)
                 status_info["live_status"] = stdout.strip()
         except Exception as e:
             status_info["live_status_error"] = str(e)
@@ -991,7 +1000,7 @@ class SSHDeployer(BaseSSHDeployer[SSHDeployment | LocalDeployment]):
     def logs(self, service: Optional[str] = None, follow: bool = False, tail: int = 100) -> str:
         with self._get_executor() as ssh:
             service_name = self.deployment.service_name or f"nodetool-{self.deployment.port}"
-            command = f"journalctl --user -u {service_name} -n {tail} --no-pager"
+            command = f"journalctl --user -u {_safe_shlex_quote(service_name)} -n {int(tail)} --no-pager"
             if follow:
                 command += " -f"
             _exit_code, stdout, _stderr = ssh.execute(command, check=False, timeout=None if follow else 30)
@@ -1017,7 +1026,7 @@ class SSHDeployer(BaseSSHDeployer[SSHDeployment | LocalDeployment]):
         micromamba_bin = f"{workspace}/micromamba/bin/micromamba"
 
         # Check if installed
-        _code, stdout, _ = ssh.execute(f"[ -f {micromamba_bin} ] && echo yes || echo no", check=False)
+        _code, stdout, _ = ssh.execute(f"[ -f {_safe_shlex_quote(micromamba_bin)} ] && echo yes || echo no", check=False)
         if stdout.strip() == "yes":
             self._log(results, "  Micromamba already installed")
             return
@@ -1028,8 +1037,8 @@ class SSHDeployer(BaseSSHDeployer[SSHDeployment | LocalDeployment]):
         url = f"https://github.com/mamba-org/micromamba-releases/releases/download/2.3.3-0/micromamba-{platform}"
 
         ssh.mkdir(f"{workspace}/micromamba/bin", parents=True)
-        ssh.execute(f"curl -L {url} -o {micromamba_bin}", check=True)
-        ssh.execute(f"chmod +x {micromamba_bin}", check=True)
+        ssh.execute(f"curl -L {_safe_shlex_quote(url)} -o {_safe_shlex_quote(micromamba_bin)}", check=True)
+        ssh.execute(f"chmod +x {_safe_shlex_quote(micromamba_bin)}", check=True)
         self._log(results, "  Micromamba installed")
 
     def _create_conda_env(self, ssh: Executor, results: dict[str, Any]) -> None:
@@ -1038,10 +1047,11 @@ class SSHDeployer(BaseSSHDeployer[SSHDeployment | LocalDeployment]):
         workspace = self.deployment.paths.workspace
         micromamba = f"{workspace}/micromamba/bin/micromamba"
         env_dir = f"{workspace}/env"
-        cmd_prefix = f"MAMBA_ROOT_PREFIX={workspace}/micromamba {micromamba}"
+        # Quote paths within cmd_prefix
+        cmd_prefix = f"MAMBA_ROOT_PREFIX={_safe_shlex_quote(workspace + '/micromamba')} {_safe_shlex_quote(micromamba)}"
 
         # Check if env exists to decide update message
-        _code, stdout, _ = ssh.execute(f"[ -d {env_dir} ] && echo yes || echo no", check=False)
+        _code, stdout, _ = ssh.execute(f"[ -d {_safe_shlex_quote(env_dir)} ] && echo yes || echo no", check=False)
         env_exists = stdout.strip() == "yes"
         action = "Updating" if env_exists else "Creating"
 
@@ -1082,11 +1092,11 @@ class SSHDeployer(BaseSSHDeployer[SSHDeployment | LocalDeployment]):
 
         self._log(results, f"  {action} environment (hardcoded)...")
         # Check if environment actually exists and is valid
-        _code, stdout, _ = ssh.execute(f"[ -d {env_dir}/conda-meta ] && echo yes || echo no", check=False)
+        _code, stdout, _ = ssh.execute(f"[ -d {_safe_shlex_quote(env_dir + '/conda-meta')} ] && echo yes || echo no", check=False)
         is_valid_env = stdout.strip() == "yes"
 
         op = "install" if is_valid_env else "create"
-        cmd = f"{cmd_prefix} {op} -y -p {env_dir} -f {remote_env_path}"
+        cmd = f"{cmd_prefix} {op} -y -p {_safe_shlex_quote(env_dir)} -f {_safe_shlex_quote(remote_env_path)}"
 
         ssh.execute(cmd, check=True, timeout=1200)
 
@@ -1101,8 +1111,10 @@ class SSHDeployer(BaseSSHDeployer[SSHDeployment | LocalDeployment]):
 
         # Packages
         packages = ["nodetool-core", "nodetool-base"]
+        # Quote all packages and paths
+        quoted_packages = [_safe_shlex_quote(p) for p in packages]
 
-        cmd = f"{uv} pip install {' '.join(packages)} --python {python} --pre --index-url https://nodetool-ai.github.io/nodetool-registry/simple/ --extra-index-url https://pypi.org/simple"
+        cmd = f"{_safe_shlex_quote(uv)} pip install {' '.join(quoted_packages)} --python {_safe_shlex_quote(python)} --pre --index-url https://nodetool-ai.github.io/nodetool-registry/simple/ --extra-index-url https://pypi.org/simple"
 
         ssh.execute(cmd, check=True, timeout=300)
         self._log(results, "  Packages installed")
@@ -1176,7 +1188,7 @@ WantedBy=default.target
 
             env_lines = [f"{key}={_format_env_value(str(value))}" for key, value in deployment_env.items()]
             self._upload_content(ssh, "\n".join(env_lines) + "\n", env_file_path)
-            ssh.execute(f"chmod 600 {shlex.quote(env_file_path)}", check=False)
+            ssh.execute(f"chmod 600 {_safe_shlex_quote(env_file_path)}", check=False)
             self._log(results, f"  Environment file written: {env_file_path}")
 
         import tempfile
@@ -1206,7 +1218,7 @@ WantedBy=default.target
 
         # Reload and enable
         ssh.execute("systemctl --user daemon-reload", check=True)
-        ssh.execute(f"systemctl --user enable --now {service_name}", check=True)
+        ssh.execute(f"systemctl --user enable --now {_safe_shlex_quote(service_name)}", check=True)
         # Ensure lingering is enabled so it runs without active session
         ssh.execute("loginctl enable-linger $USER", check=False)  # may fail if not authorized, but useful
 
@@ -1221,7 +1233,7 @@ WantedBy=default.target
         health_url = f"http://127.0.0.1:{port}/health"
 
         try:
-            ssh.execute(f"curl -fsS {health_url}", check=True, timeout=20)
+            ssh.execute(f"curl -fsS {_safe_shlex_quote(health_url)}", check=True, timeout=20)
             self._log(results, f"  Health endpoint OK: {health_url}")
         except Exception as exc:
             self._log(results, f"  Warning: health check failed: {exc}")
@@ -1240,7 +1252,7 @@ WantedBy=default.target
 
         # Skip SSL verification for self-signed certs
         try:
-            curl_cmd = f"curl -fsS -k {health_url}"
+            curl_cmd = f"curl -fsS -k {_safe_shlex_quote(health_url)}"
             ssh.execute(curl_cmd, check=True, timeout=20)
             self._log(results, f"  Nginx health endpoint OK: {health_url}")
         except Exception as exc:
@@ -1452,8 +1464,8 @@ server {{
             )
 
             # Set permissions on remote
-            ssh.execute(f"sudo chmod 644 {cert_dest}", check=True)
-            ssh.execute(f"sudo chmod 600 {key_dest}", check=True)
+            ssh.execute(f"sudo chmod 644 {_safe_shlex_quote(cert_dest)}", check=True)
+            ssh.execute(f"sudo chmod 600 {_safe_shlex_quote(key_dest)}", check=True)
             results["steps"].append("  SSL certificates copied to remote host")
         except subprocess.CalledProcessError as e:
             results["errors"].append(f"Failed to copy SSL certificates: {e.stderr.decode()}")

@@ -40,15 +40,16 @@ class WebSocketProtocolTester:
 
     def send_command(self, command: str, data: dict):
         """Send a command message."""
-        msg = {"command": command, "data": data}
-        self._send(msg)
+        if self.mode == "binary":
+            msg = {"command": command, "data": data}
+            packed = msgpack.packb(msg, use_bin_type=True)
+            self.ws.send_bytes(packed)
+        else:
+            msg = {"command": command, "data": data}
+            self.ws.send_json(msg)
 
     def send_raw(self, msg: dict):
         """Send a raw message (for ping, etc.)."""
-        self._send(msg)
-
-    def _send(self, msg: dict):
-        """Internal send method."""
         if self.mode == "binary":
             packed = msgpack.packb(msg, use_bin_type=True)
             self.ws.send_bytes(packed)
@@ -125,7 +126,13 @@ def client():
 def ws(client):
     """Create a WebSocket connection."""
     with client.websocket_connect("/ws") as ws:
-        yield WebSocketProtocolTester(ws)
+        tester = WebSocketProtocolTester(ws)
+        yield tester
+        # Clean up by closing
+        try:
+            ws.close()
+        except:
+            pass
 
 
 class TestWebSocketProtocolBasics:
@@ -141,20 +148,27 @@ class TestWebSocketProtocolBasics:
 
     def test_set_mode_text(self, ws):
         """Test switching to text mode."""
-        ws.send_command("set_mode", {"mode": "text"})
-        # Server responds in text mode
-        msg = ws._receive_in_mode("text")
-        assert msg.get("message", "").startswith("Mode set to")
-        # Now switch our local mode to match
-        ws.mode = "text"
+        ws.set_mode_text()
         assert ws.mode == "text"
+
+        # Verify we can send/receive in text mode
+        ws.send_command("get_status", {})
+        msg = ws.receive()
+        assert "active_jobs" in msg
 
     def test_set_mode_binary(self, ws):
         """Test switching to binary mode."""
-        ws.send_command("set_mode", {"mode": "binary"})
-        msg = ws.receive()
-        assert msg.get("message", "").startswith("Mode set to")
+        # First ensure we are in text mode to test switching back
+        ws.set_mode_text()
+
+        # Now switch back to binary
+        ws.set_mode_binary()
         assert ws.mode == "binary"
+
+        # Verify we can send/receive in binary mode
+        ws.send_command("get_status", {})
+        msg = ws.receive()
+        assert "active_jobs" in msg
 
 
 class TestWebSocketPingPong:
