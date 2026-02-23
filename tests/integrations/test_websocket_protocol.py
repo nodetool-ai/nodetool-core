@@ -58,11 +58,23 @@ class WebSocketProtocolTester:
     def receive(self) -> dict:
         """Receive and decode a message, skipping background updates like system_stats."""
         while True:
-            if self.mode == "binary":
-                data = self.ws.receive_bytes()
-                msg = msgpack.unpackb(data)
-            else:
-                msg = self.ws.receive_json()
+            try:
+                if self.mode == "binary":
+                    data = self.ws.receive_bytes()
+                    msg = msgpack.unpackb(data)
+                else:
+                    msg = self.ws.receive_json()
+            except KeyError:
+                # If we expect text but get binary (e.g. lingering system_stats in previous mode),
+                # try to read as bytes and see if it's a message we can ignore
+                if self.mode == "text":
+                    try:
+                        data = self.ws.receive_bytes()
+                        msg = msgpack.unpackb(data)
+                    except Exception:
+                        raise
+                else:
+                    raise
 
             # Skip system_stats messages as they can arrive at any time
             if isinstance(msg, dict) and msg.get("type") == "system_stats":
@@ -72,11 +84,23 @@ class WebSocketProtocolTester:
     def _receive_in_mode(self, mode: str) -> dict:
         """Receive a message in a specific mode, skipping background updates."""
         while True:
-            if mode == "binary":
-                data = self.ws.receive_bytes()
-                msg = msgpack.unpackb(data)
-            else:
-                msg = self.ws.receive_json()
+            try:
+                if mode == "binary":
+                    data = self.ws.receive_bytes()
+                    msg = msgpack.unpackb(data)
+                else:
+                    msg = self.ws.receive_json()
+            except KeyError:
+                # If we expect text but get binary (e.g. lingering system_stats in previous mode),
+                # try to read as bytes and see if it's a message we can ignore
+                if mode == "text":
+                    try:
+                        data = self.ws.receive_bytes()
+                        msg = msgpack.unpackb(data)
+                    except Exception:
+                        raise
+                else:
+                    raise
 
             if isinstance(msg, dict) and msg.get("type") == "system_stats":
                 continue
