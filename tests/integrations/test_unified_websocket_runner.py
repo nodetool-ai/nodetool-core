@@ -613,6 +613,12 @@ class TestUnifiedWebSocketRunnerJobSession:
             # (they may complete quickly and be removed)
             assert len(session.list_active_jobs()) <= 2
 
+            # Wait for jobs to clean up to avoid shutdown race conditions in CI
+            for _ in range(50):
+                if not unified_runner.active_jobs:
+                    break
+                await asyncio.sleep(0.1)
+
             await unified_runner.disconnect()
 
     async def test_job_cleanup_removes_from_session(
