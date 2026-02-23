@@ -612,7 +612,15 @@ class TestUnifiedWebSocketRunnerJobSession:
             # The session should have tracked both jobs
             # (they may complete quickly and be removed)
             # The exact number depends on completion speed, but should not be > 2
-            assert len(session.list_active_jobs()) <= 2
+            active_jobs = session.list_active_jobs()
+            assert len(active_jobs) <= 2
+
+            # Explicitly cancel jobs before disconnect to avoid event loop crash
+            for job_id in active_jobs:
+                session.remove_job(job_id)
+
+            # Give a moment for cleanup
+            await asyncio.sleep(0.1)
 
             await unified_runner.disconnect()
 
