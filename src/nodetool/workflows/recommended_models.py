@@ -12,7 +12,7 @@ _server_status_cache: dict[str, tuple[bool, float]] = {}
 _SERVER_CACHE_TTL = 30.0
 
 
-def _check_server_health(url: str) -> bool:
+async def _check_server_health(url: str) -> bool:
     """Check if a server is reachable via its health endpoint.
 
     Args:
@@ -24,11 +24,11 @@ def _check_server_health(url: str) -> bool:
     try:
         import httpx
 
-        with httpx.Client(timeout=2.0) as client:
+        async with httpx.AsyncClient(timeout=2.0) as client:
             # Try common health endpoints
             for endpoint in ["/health", "/api/tags", "/"]:
                 try:
-                    response = client.get(f"{url.rstrip('/')}{endpoint}")
+                    response = await client.get(f"{url.rstrip('/')}{endpoint}")
                     if response.status_code == 200:
                         return True
                 except Exception:
@@ -38,7 +38,7 @@ def _check_server_health(url: str) -> bool:
         return False
 
 
-def _is_ollama_available() -> bool:
+async def _is_ollama_available() -> bool:
     """Check if Ollama server is running and reachable.
 
     Uses cached status with 30-second TTL to avoid repeated checks.
@@ -57,12 +57,12 @@ def _is_ollama_available() -> bool:
         if now - cached_at < _SERVER_CACHE_TTL:
             return is_available
 
-    is_available = _check_server_health(url)
+    is_available = await _check_server_health(url)
     _server_status_cache[cache_key] = (is_available, now)
     return is_available
 
 
-def _is_llama_server_available() -> bool:
+async def _is_llama_server_available() -> bool:
     """Check if llama-server is running and reachable.
 
     Uses cached status with 30-second TTL to avoid repeated checks.
@@ -81,24 +81,28 @@ def _is_llama_server_available() -> bool:
         if now - cached_at < _SERVER_CACHE_TTL:
             return is_available
 
-    is_available = _check_server_health(url)
+    is_available = await _check_server_health(url)
     _server_status_cache[cache_key] = (is_available, now)
     return is_available
 
 
-def get_server_availability() -> dict[str, bool]:
+async def get_server_availability() -> dict[str, bool]:
     """Get availability status for all external model servers.
 
     Returns:
         Dict with 'ollama' and 'llama_server' keys indicating availability.
     """
+    # Run checks concurrently
+    import asyncio
+
+    results = await asyncio.gather(_is_ollama_available(), _is_llama_server_available())
     return {
-        "ollama": _is_ollama_available(),
-        "llama_server": _is_llama_server_available(),
+        "ollama": results[0],
+        "llama_server": results[1],
     }
 
 
-def _server_allows_model(m: UnifiedModel, servers: dict[str, bool] | None = None) -> bool:
+async def _server_allows_model(m: UnifiedModel, servers: dict[str, bool] | None = None) -> bool:
     """Check if a model's required server is available.
 
     Args:
@@ -109,7 +113,7 @@ def _server_allows_model(m: UnifiedModel, servers: dict[str, bool] | None = None
         True if the model can run (server available or no server needed).
     """
     if servers is None:
-        servers = get_server_availability()
+        servers = await get_server_availability()
 
     model_type = (m.type or "").lower()
 
@@ -316,7 +320,7 @@ def _is_tts_model(m: UnifiedModel) -> bool:
     return pipe == "text-to-speech" or t == "hf.text_to_speech"
 
 
-def _filter_models(
+async def _filter_models(
     models: Iterable[UnifiedModel],
     *,
     predicate,
@@ -335,14 +339,14 @@ def _filter_models(
     seen: set[str] = set()
 
     # Pre-fetch server availability once for efficiency
-    servers = get_server_availability() if check_servers else None
+    servers = await get_server_availability() if check_servers else None
 
     for m in models:
         if m.id in seen:
             continue
         if not _platform_allows_model(m, system=system):
             continue
-        if check_servers and not _server_allows_model(m, servers):
+        if check_servers and not await _server_allows_model(m, servers):
             continue
         if not predicate(m):
             continue
@@ -357,20 +361,22 @@ def get_recommended_models_flat() -> list[UnifiedModel]:
     return _flatten_unique(get_recommended_models())
 
 
-def get_recommended_image_models(system: str | None = None) -> list[UnifiedModel]:
+async def get_recommended_image_models(system: str | None = None) -> list[UnifiedModel]:
     """All image-capable recommended models across installed packages.
 
     Platform-aware: Mac returns MLX if available; Windows/Linux exclude MLX.
     """
-    return _filter_models(get_recommended_models_flat(), predicate=_is_image_model, system=system)
+    return await _filter_models(get_recommended_models_flat(), predicate=_is_image_model, system=system)
 
 
-def get_recommended_text_to_image_models(system: str | None = None) -> list[UnifiedModel]:
-    return [m for m in get_recommended_image_models(system) if _is_text_to_image_model(m)]
+async def get_recommended_text_to_image_models(system: str | None = None) -> list[UnifiedModel]:
+    models = await get_recommended_image_models(system)
+    return [m for m in models if _is_text_to_image_model(m)]
 
 
-def get_recommended_image_to_image_models(system: str | None = None) -> list[UnifiedModel]:
-    return [m for m in get_recommended_image_models(system) if _is_image_to_image_model(m)]
+async def get_recommended_image_to_image_models(system: str | None = None) -> list[UnifiedModel]:
+    models = await get_recommended_image_models(system)
+    return [m for m in models if _is_image_to_image_model(m)]
 
 
 def _is_text_to_video_model(m: UnifiedModel) -> bool:
@@ -389,47 +395,49 @@ def _is_image_to_video_model(m: UnifiedModel) -> bool:
     return "image-to-video" in tags
 
 
-def get_recommended_text_to_video_models(system: str | None = None) -> list[UnifiedModel]:
+async def get_recommended_text_to_video_models(system: str | None = None) -> list[UnifiedModel]:
     # Reuse generic aggregation then filter by tag
     models = get_recommended_models_flat()
-    return _filter_models(models, predicate=_is_text_to_video_model, system=system)
+    return await _filter_models(models, predicate=_is_text_to_video_model, system=system)
 
 
-def get_recommended_image_to_video_models(system: str | None = None) -> list[UnifiedModel]:
+async def get_recommended_image_to_video_models(system: str | None = None) -> list[UnifiedModel]:
     models = get_recommended_models_flat()
-    return _filter_models(models, predicate=_is_image_to_video_model, system=system)
+    return await _filter_models(models, predicate=_is_image_to_video_model, system=system)
 
 
-def get_recommended_language_models(system: str | None = None) -> list[UnifiedModel]:
+async def get_recommended_language_models(system: str | None = None) -> list[UnifiedModel]:
     """All language-capable recommended models across installed packages.
 
     Platform-aware: Mac returns MLX if available; Windows/Linux exclude MLX.
     """
-    return _filter_models(get_recommended_models_flat(), predicate=_is_language_model, system=system)
+    return await _filter_models(get_recommended_models_flat(), predicate=_is_language_model, system=system)
 
 
-def get_recommended_language_text_generation_models(system: str | None = None) -> list[UnifiedModel]:
-    return [m for m in get_recommended_language_models(system) if _is_language_text_generation_model(m)]
+async def get_recommended_language_text_generation_models(system: str | None = None) -> list[UnifiedModel]:
+    models = await get_recommended_language_models(system)
+    return [m for m in models if _is_language_text_generation_model(m)]
 
 
-def get_recommended_language_embedding_models(system: str | None = None) -> list[UnifiedModel]:
-    return [m for m in get_recommended_language_models(system) if _is_language_embedding_model(m)]
+async def get_recommended_language_embedding_models(system: str | None = None) -> list[UnifiedModel]:
+    models = await get_recommended_language_models(system)
+    return [m for m in models if _is_language_embedding_model(m)]
 
 
-def get_recommended_asr_models(system: str | None = None) -> list[UnifiedModel]:
+async def get_recommended_asr_models(system: str | None = None) -> list[UnifiedModel]:
     """All ASR-capable recommended models across installed packages.
 
     Platform-aware: Mac returns MLX if available; Windows/Linux exclude MLX.
     """
-    return _filter_models(get_recommended_models_flat(), predicate=_is_asr_model, system=system)
+    return await _filter_models(get_recommended_models_flat(), predicate=_is_asr_model, system=system)
 
 
-def get_recommended_tts_models(system: str | None = None) -> list[UnifiedModel]:
+async def get_recommended_tts_models(system: str | None = None) -> list[UnifiedModel]:
     """All TTS-capable recommended models across installed packages.
 
     Platform-aware: Mac returns MLX if available; Windows/Linux exclude MLX.
     """
-    return _filter_models(get_recommended_models_flat(), predicate=_is_tts_model, system=system)
+    return await _filter_models(get_recommended_models_flat(), predicate=_is_tts_model, system=system)
 
 
 # Platform-agnostic variants for package metadata (include all models)

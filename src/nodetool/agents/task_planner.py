@@ -540,33 +540,6 @@ class TaskPlanner:
         The LLM should generate the correct output_schema directly.
         """
         pass
-        # Original implementation commented out to fix AttributeError:
-        # process_steps = [st for st in steps if st.mode == "process"]
-        # aggregate_steps = [st for st in steps if st.mode == "aggregate"]
-
-        # # 1. Process Schema Wrapping (Apply to ALL process steps)
-        # for process_step in process_steps:
-        #     item_schema_str = (process_step.per_item_schema or "").strip()
-        #     if item_schema_str:
-        #         try:
-        #             item_schema = json.loads(item_schema_str)
-        #             process_step.output_schema = json.dumps(
-        #                 {"type": "array", "items": item_schema}
-        #             )
-        #         except Exception as exc:
-        #             # We log/ignore here because validation will catch it later
-        #             log.warning(
-        #                 "Process step '%s' has invalid per_item_schema JSON: %s",
-        #                 process_step.id,
-        #                 exc,
-        #             )
-
-        # # 2. Aggregate Schema Override (Apply to ALL aggregate steps if they lack schema)
-        # if self.output_schema:
-        #     output_schema_str = json.dumps(self.output_schema)
-        #     for agg_step in aggregate_steps:
-        #         if not agg_step.output_schema:
-        #             agg_step.output_schema = output_schema_str
 
     def _validate_legacy_plan_semantics(self, steps: list[Step]) -> list[str]:
         """Legacy validation for plans that enumerate per-item steps."""

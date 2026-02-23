@@ -7,6 +7,7 @@ supporting GPU assignments, volume mounts, and environment variables.
 
 import hashlib
 import json
+import shlex
 
 from nodetool.config.deployment import SelfHostedDeployment
 
@@ -40,14 +41,14 @@ class DockerRunGenerator:
         Returns:
             Docker run command string
         """
-        parts = [f"{self.runtime_command} run"]
+        parts = [f"{shlex.quote(self.runtime_command)} run"]
 
         # Detached mode
         parts.append("-d")
 
         # Container name
         container_name = f"nodetool-{self.container.name}"
-        parts.append(f"--name {container_name}")
+        parts.append(f"--name {shlex.quote(container_name)}")
 
         # Restart policy
         parts.append("--restart unless-stopped")
@@ -70,6 +71,8 @@ class DockerRunGenerator:
             parts.extend(gpu_args)
 
         # Health check
+        # This is a fixed string, but it contains double quotes already.
+        # We leave it as is because it doesn't contain user input.
         healthcheck = (
             f'--health-cmd="curl -f http://localhost:{INTERNAL_API_PORT}/health || exit 1" '
             "--health-interval=30s "
@@ -80,7 +83,7 @@ class DockerRunGenerator:
         parts.append(healthcheck)
 
         # Image name
-        parts.append(self.deployment.image.full_name)
+        parts.append(shlex.quote(self.deployment.image.full_name))
 
         return " \\\n  ".join(parts)
 
@@ -137,7 +140,7 @@ class DockerRunGenerator:
             # Default: read-only for safety when not using persistent storage
             volumes.append(f"{self.deployment.paths.hf_cache}:/hf-cache:ro")
 
-        return volumes
+        return [_safe_shlex_quote(v) for v in volumes]
 
     def _build_environment(self) -> list[str]:
         """
@@ -179,8 +182,8 @@ class DockerRunGenerator:
         if self.deployment.server_auth_token:
             env["SERVER_AUTH_TOKEN"] = self.deployment.server_auth_token
 
-        # Convert to KEY=value format
-        return [f"{key}={value}" for key, value in env.items()]
+        # Convert to KEY=value format and quote
+        return [_safe_shlex_quote(f"{key}={value}") for key, value in env.items()]
 
     def _resolve_host_port(self) -> int:
         """Return the host port to expose for this container."""
@@ -204,9 +207,11 @@ class DockerRunGenerator:
         gpu_ids = self.container.gpu.strip()
 
         # Use --gpus flag with device specification
+        # Use shlex.quote to handle potentially malicious input safely.
         # Format: --gpus '"device=0,1"' for multiple GPUs
         # Format: --gpus '"device=0"' for single GPU
-        return [f"--gpus '\"device={gpu_ids}\"'"]
+        quoted_device = shlex.quote(f'"{f"device={gpu_ids}"}"')
+        return [f"--gpus {quoted_device}"]
 
 
 def generate_docker_run_command(deployment: SelfHostedDeployment) -> str:
@@ -249,3 +254,13 @@ def get_container_name(deployment: SelfHostedDeployment) -> str:
     """
     generator = DockerRunGenerator(deployment)
     return generator.get_container_name()
+
+
+def _safe_shlex_quote(s: str) -> str:
+    """
+    Quote a string for use in a shell command, but allow ~ at the start.
+    This ensures that the shell can still expand the home directory.
+    """
+    if s.startswith("~/"):
+        return "~/" + shlex.quote(s[2:])
+    return shlex.quote(s)

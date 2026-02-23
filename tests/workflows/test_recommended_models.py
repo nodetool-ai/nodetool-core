@@ -55,16 +55,18 @@ def make_model(
 class TestServerHealthCheck:
     """Tests for server health check functions."""
 
-    def test_check_server_health_returns_false_on_connection_error(self):
+    @pytest.mark.asyncio
+    async def test_check_server_health_returns_false_on_connection_error(self):
         """Test that health check returns False when server is unreachable."""
-        result = _check_server_health("http://localhost:99999")
+        result = await _check_server_health("http://localhost:99999")
         assert result is False
 
 
 class TestOllamaAvailability:
     """Tests for Ollama server availability."""
 
-    def test_is_ollama_available_returns_false_when_no_url(self):
+    @pytest.mark.asyncio
+    async def test_is_ollama_available_returns_false_when_no_url(self):
         """Test that returns False when OLLAMA_API_URL is not set."""
         # Clear cache
         _server_status_cache.clear()
@@ -76,7 +78,7 @@ class TestOllamaAvailability:
             if "OLLAMA_API_URL" in os.environ:
                 del os.environ["OLLAMA_API_URL"]
             with patch("nodetool.config.environment.Environment.get", return_value=None):
-                result = _is_ollama_available()
+                result = await _is_ollama_available()
                 assert result is False
         finally:
             if old_val is not None:
@@ -86,7 +88,8 @@ class TestOllamaAvailability:
 class TestLlamaServerAvailability:
     """Tests for llama-server availability."""
 
-    def test_is_llama_server_available_returns_false_when_no_url(self):
+    @pytest.mark.asyncio
+    async def test_is_llama_server_available_returns_false_when_no_url(self):
         """Test that returns False when LLAMA_CPP_URL is not set."""
         # Clear cache
         _server_status_cache.clear()
@@ -98,7 +101,7 @@ class TestLlamaServerAvailability:
             if "LLAMA_CPP_URL" in os.environ:
                 del os.environ["LLAMA_CPP_URL"]
             with patch("nodetool.config.environment.Environment.get", return_value=None):
-                result = _is_llama_server_available()
+                result = await _is_llama_server_available()
                 assert result is False
         finally:
             if old_val is not None:
@@ -108,9 +111,10 @@ class TestLlamaServerAvailability:
 class TestGetServerAvailability:
     """Tests for get_server_availability function."""
 
-    def test_get_server_availability_returns_dict(self):
+    @pytest.mark.asyncio
+    async def test_get_server_availability_returns_dict(self):
         """Test that get_server_availability returns a dict with expected keys."""
-        result = get_server_availability()
+        result = await get_server_availability()
 
         assert isinstance(result, dict)
         assert "ollama" in result
@@ -120,32 +124,35 @@ class TestGetServerAvailability:
 class TestServerAllowsModel:
     """Tests for _server_allows_model function."""
 
-    def test_server_allows_model_for_non_server_types(self):
+    @pytest.mark.asyncio
+    async def test_server_allows_model_for_non_server_types(self):
         """Test that non-server model types are always allowed."""
         model = make_model(type="hf.text_generation")
         servers = {"ollama": False, "llama_server": False}
 
-        result = _server_allows_model(model, servers)
+        result = await _server_allows_model(model, servers)
         assert result is True
 
-    def test_server_allows_model_llama_cpp_requires_server(self):
+    @pytest.mark.asyncio
+    async def test_server_allows_model_llama_cpp_requires_server(self):
         """Test that llama_cpp models require llama_server."""
         model = make_model(type="llama_cpp")
 
-        result = _server_allows_model(model, {"ollama": False, "llama_server": False})
+        result = await _server_allows_model(model, {"ollama": False, "llama_server": False})
         assert result is False
 
-        result = _server_allows_model(model, {"ollama": False, "llama_server": True})
+        result = await _server_allows_model(model, {"ollama": False, "llama_server": True})
         assert result is True
 
-    def test_server_allows_model_llama_model_requires_ollama(self):
+    @pytest.mark.asyncio
+    async def test_server_allows_model_llama_model_requires_ollama(self):
         """Test that llama_model types require ollama server."""
         model = make_model(type="llama_model")
 
-        result = _server_allows_model(model, {"ollama": False, "llama_server": False})
+        result = await _server_allows_model(model, {"ollama": False, "llama_server": False})
         assert result is False
 
-        result = _server_allows_model(model, {"ollama": True, "llama_server": False})
+        result = await _server_allows_model(model, {"ollama": True, "llama_server": False})
         assert result is True
 
 
@@ -450,7 +457,8 @@ class TestIsImageToVideoModel:
 class TestFilterModels:
     """Tests for _filter_models function."""
 
-    def test_filter_models_applies_predicate(self):
+    @pytest.mark.asyncio
+    async def test_filter_models_applies_predicate(self):
         """Test that filter applies the predicate."""
         models = [
             make_model(id="1", pipeline_tag="text-generation"),
@@ -458,7 +466,7 @@ class TestFilterModels:
             make_model(id="3", pipeline_tag="text-generation"),
         ]
 
-        result = _filter_models(
+        result = await _filter_models(
             models,
             predicate=_is_language_model,
             system="linux",
@@ -468,14 +476,15 @@ class TestFilterModels:
         assert len(result) == 2
         assert all(_is_language_model(m) for m in result)
 
-    def test_filter_models_deduplicates_by_id(self):
+    @pytest.mark.asyncio
+    async def test_filter_models_deduplicates_by_id(self):
         """Test that filter deduplicates by id."""
         models = [
             make_model(id="same-id", pipeline_tag="text-generation"),
             make_model(id="same-id", pipeline_tag="text-generation"),
         ]
 
-        result = _filter_models(
+        result = await _filter_models(
             models,
             predicate=_is_language_model,
             system="linux",
@@ -484,7 +493,8 @@ class TestFilterModels:
 
         assert len(result) == 1
 
-    def test_filter_models_applies_platform_filter(self):
+    @pytest.mark.asyncio
+    async def test_filter_models_applies_platform_filter(self):
         """Test that filter applies platform filtering."""
         models = [
             make_model(id="1", type="mlx"),
@@ -492,7 +502,7 @@ class TestFilterModels:
         ]
 
         # Linux should exclude MLX
-        result = _filter_models(
+        result = await _filter_models(
             models,
             predicate=lambda m: True,
             system="linux",
