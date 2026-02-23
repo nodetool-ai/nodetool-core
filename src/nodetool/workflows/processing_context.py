@@ -2160,8 +2160,6 @@ class ProcessingContext:
         Returns:
             np.ndarray: Audio samples as numpy array
         """
-        from nodetool.metadata.types import AudioStream
-
         np = _ensure_numpy()
 
         # Decode bytes to numpy array based on sample width
@@ -2199,8 +2197,6 @@ class ProcessingContext:
         Returns:
             AudioSegment: The pydub AudioSegment
         """
-        from nodetool.metadata.types import AudioStream
-
         AudioSegment = _ensure_audio_segment()
 
         return AudioSegment(

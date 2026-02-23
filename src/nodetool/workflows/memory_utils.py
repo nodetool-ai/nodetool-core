@@ -65,7 +65,6 @@ import traceback
 from collections import defaultdict
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 import psutil
 
