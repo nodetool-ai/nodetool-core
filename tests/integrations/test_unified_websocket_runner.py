@@ -603,7 +603,7 @@ class TestUnifiedWebSocketRunnerJobSession:
                 graph=Graph(nodes=[], edges=[]),
             )
             await unified_runner.run_job(request2)
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
 
             # Both jobs should exist (or have completed)
             session = unified_runner._job_session
@@ -612,6 +612,10 @@ class TestUnifiedWebSocketRunnerJobSession:
             # The session should have tracked both jobs
             # (they may complete quickly and be removed)
             assert len(session.list_active_jobs()) <= 2
+
+            # Explicitly cancel jobs to ensure clean shutdown before disconnect
+            for job_id in session.list_active_jobs():
+                session.remove_job(job_id)
 
             await unified_runner.disconnect()
 

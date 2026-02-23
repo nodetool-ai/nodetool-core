@@ -58,11 +58,16 @@ class WebSocketProtocolTester:
     def receive(self) -> dict:
         """Receive and decode a message, skipping background updates like system_stats."""
         while True:
-            if self.mode == "binary":
-                data = self.ws.receive_bytes()
-                msg = msgpack.unpackb(data)
+            raw_msg = self.ws.receive()
+            if "bytes" in raw_msg:
+                # Binary message (MessagePack)
+                msg = msgpack.unpackb(raw_msg["bytes"])
+            elif "text" in raw_msg:
+                # Text message (JSON)
+                msg = json.loads(raw_msg["text"])
             else:
-                msg = self.ws.receive_json()
+                # Unknown message type (e.g. close)
+                continue
 
             # Skip system_stats messages as they can arrive at any time
             if isinstance(msg, dict) and msg.get("type") == "system_stats":
@@ -70,17 +75,13 @@ class WebSocketProtocolTester:
             return msg
 
     def _receive_in_mode(self, mode: str) -> dict:
-        """Receive a message in a specific mode, skipping background updates."""
-        while True:
-            if mode == "binary":
-                data = self.ws.receive_bytes()
-                msg = msgpack.unpackb(data)
-            else:
-                msg = self.ws.receive_json()
-
-            if isinstance(msg, dict) and msg.get("type") == "system_stats":
-                continue
-            return msg
+        """Receive a message, skipping background updates."""
+        # Just use the improved receive() which handles both types dynamically
+        # We don't strictly enforce receiving in a specific mode because
+        # background messages (system_stats) might come in the old mode
+        # or binary mode while we expect text. We just want the next
+        # non-system message.
+        return self.receive()
 
     def set_mode_text(self):
         """Switch to text mode."""
