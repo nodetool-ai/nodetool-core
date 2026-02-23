@@ -703,9 +703,11 @@ async def run_workflow_by_id(
             if isinstance(msg, BaseModel):
                 msg = msg.model_dump()
 
-            if isinstance(msg, OutputUpdate):
-                name = msg.node_name
-                value = msg.value
+            msg_type = msg.get("type") if isinstance(msg, dict) else getattr(msg, "type", None)
+
+            if msg_type == "output_update":
+                name = msg.get("node_name")
+                value = msg.get("value")
                 if isinstance(value, dict):
                     if "data" in value:
                         data = value["data"]
@@ -713,15 +715,27 @@ async def run_workflow_by_id(
                             value["uri"] = (
                                 f"data:application/octet-stream;base64,{base64.b64encode(data).decode('utf-8')}"
                             )
+                            value["data"] = None
                         elif isinstance(data, list):
-                            # TODO: handle multiple assets
-                            value["uri"] = (
-                                f"data:application/octet-stream;base64,{base64.b64encode(data[0]).decode('utf-8')}"
-                            )
-                        value["data"] = None
-                elif isinstance(msg, Error):
-                    raise HTTPException(status_code=500, detail=msg.message)
+                            # Handle multiple assets
+                            assets = []
+                            for item_data in data:
+                                if isinstance(item_data, bytes):
+                                    asset = value.copy()
+                                    asset["uri"] = (
+                                        f"data:application/octet-stream;base64,{base64.b64encode(item_data).decode('utf-8')}"
+                                    )
+                                    asset["data"] = None
+                                    assets.append(asset)
+                                else:
+                                    assets.append(item_data)
+                            value = assets
+                        else:
+                            value["data"] = None
                 result[name] = value
+            elif msg_type == "error":
+                message = msg.get("message") if isinstance(msg, dict) else getattr(msg, "message", "Unknown error")
+                raise HTTPException(status_code=500, detail=message)
         return result
 
 
