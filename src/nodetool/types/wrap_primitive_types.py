@@ -4,12 +4,12 @@ from typing import Any
 def wrap_primitive_types(value: Any) -> dict[str, Any] | list[Any] | Any:
     if isinstance(value, str):
         return {"type": "string", "value": value}
+    elif isinstance(value, bool):
+        return {"type": "boolean", "value": value}
     elif isinstance(value, int):
         return {"type": "integer", "value": value}
     elif isinstance(value, float):
         return {"type": "float", "value": value}
-    elif isinstance(value, bool):
-        return {"type": "boolean", "value": value}
     elif isinstance(value, bytes):
         return {"type": "bytes", "value": value}  # Keep bytes as-is
     elif isinstance(value, list):
