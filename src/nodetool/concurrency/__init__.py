@@ -9,6 +9,7 @@ from .async_channel import (
 )
 from .async_condition import AsyncCondition
 from .async_event import AsyncEvent
+from .async_lru_cache import AsyncLRUCache, async_lru_cache
 from .async_iterators import (
     AsyncByteStream,
     async_chunked,
@@ -49,6 +50,7 @@ from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_
 
 __all__ = [
     "AdaptiveThrottle",
+    "async_lru_cache",
     "AsyncBarrier",
     "AsyncByteStream",
     "AsyncChannel",
@@ -56,6 +58,7 @@ __all__ = [
     "AsyncCondition",
     "AsyncDebounce",
     "AsyncEvent",
+    "AsyncLRUCache",
     "AsyncLock",
     "AsyncPriorityQueue",
     "AsyncRateLimiter",
