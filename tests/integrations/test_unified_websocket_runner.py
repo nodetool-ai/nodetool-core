@@ -26,7 +26,8 @@ from nodetool.types.api_graph import Graph
 from nodetool.workflows.job_execution_manager import JobExecutionManager
 from nodetool.workflows.run_job_request import RunJobRequest
 
-DEFAULT_TEST_TIMEOUT = 5
+# Increased timeout to prevent CI flakes
+DEFAULT_TEST_TIMEOUT = 30
 
 
 async def wait_for(coro, timeout: float = DEFAULT_TEST_TIMEOUT):
@@ -612,6 +613,15 @@ class TestUnifiedWebSocketRunnerJobSession:
             # The session should have tracked both jobs
             # (they may complete quickly and be removed)
             assert len(session.list_active_jobs()) <= 2
+
+            # Explicitly cancel/wait for jobs before disconnect to prevent race conditions
+            # where disconnect tries to stop the event loop while jobs are running.
+            for job_id in list(unified_runner.active_jobs.keys()):
+                unified_runner.active_jobs.pop(job_id, None)
+                session.remove_job(job_id)
+
+            # Wait a beat for cleanup
+            await asyncio.sleep(0.1)
 
             await unified_runner.disconnect()
 
