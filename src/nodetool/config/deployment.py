@@ -396,6 +396,8 @@ class GCPResourceConfig(BaseModel):
     max_instances: int = 3
     concurrency: int = 80
     timeout: int = 3600
+    gpu_type: Optional[str] = Field(None, description="GPU type (e.g., nvidia-l4)")
+    gpu_count: Optional[int] = Field(None, description="Number of GPUs")
 
 
 class GCPStorageConfig(BaseModel):
