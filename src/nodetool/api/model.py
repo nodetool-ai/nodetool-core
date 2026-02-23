@@ -203,7 +203,7 @@ async def recommended_image_models_endpoint(
     from nodetool.workflows.recommended_models import get_recommended_image_models
 
     # Determine platform on the server; do not accept client override
-    models = get_recommended_image_models()
+    models = await get_recommended_image_models()
     return models
 
 
@@ -213,7 +213,7 @@ async def recommended_text_to_image_models_endpoint(
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_text_to_image_models
 
-    models = get_recommended_text_to_image_models()
+    models = await get_recommended_text_to_image_models()
     return models
 
 
@@ -223,7 +223,7 @@ async def recommended_image_to_image_models_endpoint(
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_image_to_image_models
 
-    models = get_recommended_image_to_image_models()
+    models = await get_recommended_image_to_image_models()
     return models
 
 
@@ -233,7 +233,7 @@ async def recommended_language_models_endpoint(
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_language_models
 
-    models = get_recommended_language_models()
+    models = await get_recommended_language_models()
     return models
 
 
@@ -243,7 +243,7 @@ async def recommended_language_text_generation_models_endpoint(
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_language_text_generation_models
 
-    models = get_recommended_language_text_generation_models()
+    models = await get_recommended_language_text_generation_models()
     return models
 
 
@@ -253,7 +253,7 @@ async def recommended_language_embedding_models_endpoint(
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_language_embedding_models
 
-    models = get_recommended_language_embedding_models()
+    models = await get_recommended_language_embedding_models()
     return models
 
 
@@ -263,7 +263,7 @@ async def recommended_asr_models_endpoint(
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_asr_models
 
-    models = get_recommended_asr_models()
+    models = await get_recommended_asr_models()
     return models
 
 
@@ -273,7 +273,7 @@ async def recommended_tts_models_endpoint(
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_tts_models
 
-    models = get_recommended_tts_models()
+    models = await get_recommended_tts_models()
     return models
 
 
@@ -283,7 +283,7 @@ async def recommended_text_to_video_models_endpoint(
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_text_to_video_models
 
-    models = get_recommended_text_to_video_models()
+    models = await get_recommended_text_to_video_models()
     return models
 
 
@@ -293,7 +293,7 @@ async def recommended_image_to_video_models_endpoint(
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_image_to_video_models
 
-    models = get_recommended_image_to_video_models()
+    models = await get_recommended_image_to_video_models()
     return models
 
 
