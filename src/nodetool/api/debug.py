@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from nodetool.config.logging_config import get_logger
+from nodetool.config.logging_config import get_app_start_time, get_logger
 from nodetool.config.settings import get_system_data_path, load_settings
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.system import system_stats
@@ -114,6 +114,50 @@ def _redact_log_secrets(log_content: str) -> str:
     return result
 
 
+def _filter_logs_since_start(log_content: str, start_time: datetime) -> str:
+    """
+    Filter log content to only include lines logged since *start_time*.
+
+    Lines whose timestamp cannot be parsed (e.g. multi-line stack-trace
+    continuations) are kept together with the log entry they belong to.
+    """
+    # Timestamps written by the file handler: "2024-01-15 10:30:00"
+    _ts_re = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
+    start_naive = start_time.replace(tzinfo=None)
+
+    result: list[str] = []
+    include_current = False
+
+    for line in log_content.splitlines(keepends=True):
+        m = _ts_re.match(line)
+        if m:
+            try:
+                ts = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
+                include_current = ts >= start_naive
+            except ValueError:
+                pass
+        # Continuation lines (no timestamp) inherit the previous decision.
+        if include_current:
+            result.append(line)
+
+    return "".join(result)
+
+
+def _collect_installed_packages() -> list[dict[str, str]]:
+    """Return a sorted list of installed Python packages with their versions."""
+    try:
+        from importlib.metadata import distributions
+
+        pkgs = sorted(
+            ({"name": d.metadata["Name"], "version": d.metadata["Version"]} for d in distributions()),
+            key=lambda p: p["name"].lower(),
+        )
+        return pkgs
+    except Exception:
+        return []
+
+
+
 router = APIRouter(prefix="/api/debug", tags=["debug"])
 
 log = get_logger(__name__)
@@ -199,6 +243,8 @@ def _collect_env_info() -> dict[str, Any]:
 
     disk = _shutil.disk_usage(str(Path.home()))
     gpu_name = _get_gpu_name()
+    app_start = get_app_start_time()
+    uptime_seconds = (datetime.now() - app_start).total_seconds()
     return {
         "os": platform.system(),
         "os_version": platform.version(),
@@ -215,6 +261,9 @@ def _collect_env_info() -> dict[str, Any]:
         "disk_total_gb": round(disk.total / (1024**3), 2),
         "disk_free_gb": round(disk.free / (1024**3), 2),
         "nodetool_version": _get_nodetool_version(),
+        "process_id": os.getpid(),
+        "app_start_time": app_start.isoformat(),
+        "uptime_seconds": round(uptime_seconds, 1),
     }
 
 
@@ -253,10 +302,11 @@ def _write_readme(target_root: Path) -> None:
         "NodeTool Debug Bundle\n\n"
         "Attach this ZIP when reporting a bug.\n\n"
         "Contents:\n"
-        "- logs/nodetool.log\n"
+        "- logs/nodetool.log  (entries since this app session started; secrets redacted)\n"
         "- workflow/last-template.json (redacted)\n"
-        "- env/system.json\n"
-        "- env/config.json\n"
+        "- env/system.json    (OS, CPU, memory, GPU, disk, process uptime)\n"
+        "- env/config.json    (run mode, provider availability)\n"
+        "- env/packages.json  (installed Python packages)\n"
     )
     (target_root / "README.txt").write_text(text, encoding="utf-8")
 
@@ -295,6 +345,9 @@ async def export_debug_bundle(payload: DebugBundleRequest) -> DebugBundleRespons
         try:
             log_content = log_file_path.read_text(encoding="utf-8")
             if log_content.strip():
+                # Keep only log lines produced since this app session started
+                app_start = get_app_start_time()
+                log_content = _filter_logs_since_start(log_content, app_start)
                 # Redact secrets from log content before saving
                 redacted_log = _redact_log_secrets(log_content)
                 (staging_logs_dir / "nodetool.log").write_text(redacted_log, encoding="utf-8")
@@ -334,6 +387,8 @@ async def export_debug_bundle(payload: DebugBundleRequest) -> DebugBundleRespons
     config_info = _collect_config_info()
     (env_dir / "system.json").write_text(json.dumps(system_info, indent=2), encoding="utf-8")
     (env_dir / "config.json").write_text(json.dumps(config_info, indent=2), encoding="utf-8")
+    packages = _collect_installed_packages()
+    (env_dir / "packages.json").write_text(json.dumps(packages, indent=2), encoding="utf-8")
 
     # README
     _write_readme(staging_dir)

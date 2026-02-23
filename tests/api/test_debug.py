@@ -2,6 +2,7 @@
 
 import json
 import zipfile
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -11,6 +12,8 @@ from fastapi.testclient import TestClient
 from nodetool.api.debug import (
     _collect_config_info,
     _collect_env_info,
+    _collect_installed_packages,
+    _filter_logs_since_start,
     _get_default_save_dir,
     _get_nodetool_version,
     _redact_log_secrets,
@@ -159,6 +162,82 @@ class TestSaveDirectoryDetection:
         assert path.exists()
 
 
+class TestFilterLogsSinceStart:
+    """Tests for log filtering by app start time."""
+
+    def _make_log(self, lines: list[tuple[str, str]]) -> str:
+        """Build a log string from (timestamp, message) pairs."""
+        return "".join(f"{ts} | INFO | test | {msg}\n" for ts, msg in lines)
+
+    def test_filters_old_lines(self):
+        """Lines before start_time are excluded."""
+        start = datetime(2024, 1, 15, 10, 0, 0)
+        log = self._make_log([
+            ("2024-01-15 09:00:00", "old message"),
+            ("2024-01-15 10:00:00", "start message"),
+            ("2024-01-15 10:01:00", "new message"),
+        ])
+        result = _filter_logs_since_start(log, start)
+        assert "old message" not in result
+        assert "start message" in result
+        assert "new message" in result
+
+    def test_keeps_continuation_lines(self):
+        """Lines without a timestamp (e.g. stack traces) follow previous entry."""
+        start = datetime(2024, 1, 15, 10, 0, 0)
+        log = (
+            "2024-01-15 10:00:00 | ERROR | test | crash\n"
+            "  Traceback (most recent call last):\n"
+            "    File 'foo.py', line 1\n"
+        )
+        result = _filter_logs_since_start(log, start)
+        assert "Traceback" in result
+        assert "File 'foo.py'" in result
+
+    def test_old_continuation_lines_excluded(self):
+        """Continuation lines belonging to an old entry are also excluded."""
+        start = datetime(2024, 1, 15, 10, 0, 0)
+        log = (
+            "2024-01-15 09:00:00 | ERROR | test | old crash\n"
+            "  Traceback (old)\n"
+            "2024-01-15 10:00:00 | INFO | test | new entry\n"
+        )
+        result = _filter_logs_since_start(log, start)
+        assert "old crash" not in result
+        assert "Traceback (old)" not in result
+        assert "new entry" in result
+
+    def test_empty_log(self):
+        """Empty log content returns empty string."""
+        start = datetime(2024, 1, 15, 10, 0, 0)
+        assert _filter_logs_since_start("", start) == ""
+
+    def test_all_lines_old(self):
+        """All lines before start_time returns empty string."""
+        start = datetime(2024, 1, 15, 12, 0, 0)
+        log = self._make_log([
+            ("2024-01-15 09:00:00", "old1"),
+            ("2024-01-15 10:00:00", "old2"),
+        ])
+        assert _filter_logs_since_start(log, start) == ""
+
+
+class TestCollectInstalledPackages:
+    """Tests for installed packages collection."""
+
+    def test_returns_list_of_dicts(self):
+        pkgs = _collect_installed_packages()
+        assert isinstance(pkgs, list)
+        assert len(pkgs) > 0
+        assert all(isinstance(p, dict) for p in pkgs)
+        assert all("name" in p and "version" in p for p in pkgs)
+
+    def test_sorted_by_name(self):
+        pkgs = _collect_installed_packages()
+        names = [p["name"].lower() for p in pkgs]
+        assert names == sorted(names)
+
+
 class TestDebugExportEndpoint:
     """Tests for debug export endpoint."""
 
@@ -196,14 +275,28 @@ class TestDebugExportEndpoint:
                 assert "env/system.json" in files
                 assert "env/config.json" in files
 
-    def test_export_includes_readme(self, client, tmp_path):
-        """Test that export includes README."""
+    def test_export_includes_packages(self, client, tmp_path):
+        """Test that export includes installed packages."""
         with patch("nodetool.api.debug._get_default_save_dir", return_value=tmp_path):
             response = client.post("/api/debug/export", json={})
             assert response.status_code == 200
 
-            # Extract and verify README
             zip_path = Path(response.json()["file_path"])
             with zipfile.ZipFile(zip_path) as zf:
-                readme = zf.read("README.txt").decode("utf-8")
-                assert "NodeTool Debug Bundle" in readme
+                files = zf.namelist()
+                assert "env/packages.json" in files
+                pkgs = json.loads(zf.read("env/packages.json"))
+                assert isinstance(pkgs, list)
+
+    def test_system_info_includes_process_fields(self, client, tmp_path):
+        """Test that system.json includes process_id and uptime."""
+        with patch("nodetool.api.debug._get_default_save_dir", return_value=tmp_path):
+            response = client.post("/api/debug/export", json={})
+            assert response.status_code == 200
+
+            zip_path = Path(response.json()["file_path"])
+            with zipfile.ZipFile(zip_path) as zf:
+                system = json.loads(zf.read("env/system.json"))
+                assert "process_id" in system
+                assert "app_start_time" in system
+                assert "uptime_seconds" in system

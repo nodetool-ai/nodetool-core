@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import ClassVar, Optional
 
@@ -12,6 +13,14 @@ _DEFAULT_FORMAT = os.getenv(
 _DEFAULT_DATEFMT = os.getenv("NODETOOL_LOG_DATEFMT", "%Y-%m-%d %H:%M:%S")
 _configured = False
 _current_config: dict = {}
+
+# Record process start time when this module is first imported
+_app_start_time: datetime = datetime.now()
+
+
+def get_app_start_time() -> datetime:
+    """Return the time this process started (when this module was first imported)."""
+    return _app_start_time
 
 
 def _supports_color() -> bool:
