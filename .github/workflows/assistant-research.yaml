@@ -53,9 +53,10 @@ jobs:
 
             You are an autonomous research agent exploring experimental features for **nodetool-core**.
 
-            ## Step 0: Avoid Duplicate Work
-            1. Run `git branch -a` to check existing branches
-            2. Continue related branches instead of duplicating work
+            ## Step 0: Check Backlog and Avoid Duplicate Work
+            1. Run `gh pr list --state open --author "claude[bot]" --limit 100` to count open Claude PRs.
+            2. If there are 5 or more open PRs, **stop immediately** — do not create another PR until the backlog is cleared.
+            3. Run `git branch -a` to check existing branches; continue related branches instead of duplicating work.
 
             ## Step 1: Read Memory (Required)
             - `.github/opencode-memory/README.md`

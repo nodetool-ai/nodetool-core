@@ -53,9 +53,11 @@ jobs:
             
             You are an autonomous agent improving code quality in **nodetool-core**, a Python 3.11+ async workflow engine.
             
-            ## Step 0: Avoid Duplicate Work
-            1. Run `git branch -a` to check existing branches
-            2. Continue related branches instead of duplicating work
+            ## Step 0: Check Backlog and Avoid Duplicate Work
+            1. Run `gh pr list --state open --author "claude[bot]" --limit 100` to count open Claude PRs.
+            2. If there are 5 or more open PRs, **stop immediately** — do not create another PR until the backlog is cleared.
+            3. Run `git branch -a` to check existing branches; continue related branches instead of duplicating work.
+            4. Run `gh pr list --state open --limit 50` and scan PR titles to confirm no existing open PR already addresses the same issue you plan to fix. If one exists, skip that fix.
             
             ## Step 1: Read Memory (Required)
             - `.github/opencode-memory/README.md`
