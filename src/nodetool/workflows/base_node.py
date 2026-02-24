@@ -2202,9 +2202,6 @@ class Preview(BaseNode):
         """Consume inbound preview values as a stream to avoid missing items."""
         return True
 
-    # def result_for_client(self, result: dict[str, Any]) -> dict[str, Any]:
-    #     return self.result_for_all_outputs(result)
-
 
 def find_node_class_by_name(class_name: str) -> type[BaseNode] | None:
     """Find a node class by its class name (without namespace).
