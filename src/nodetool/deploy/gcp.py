@@ -18,8 +18,10 @@ from nodetool.config.deployment import (
 from nodetool.deploy.deploy_to_gcp import (
     delete_gcp_service,
     deploy_to_gcp,
+    get_gcp_default_env,
     list_gcp_services,
 )
+from nodetool.deploy.google_cloud_run_api import get_cloud_run_service
 from nodetool.deploy.state import StateManager
 
 logger = logging.getLogger(__name__)
@@ -54,6 +56,101 @@ class GCPDeployer:
         self.deployment = deployment
         self.state_manager = state_manager or StateManager()
 
+    def _detect_changes(self, current_service: dict[str, Any]) -> list[str]:
+        """
+        Detect changes between local configuration and remote service.
+
+        Args:
+            current_service: Remote service configuration (from gcloud describe)
+
+        Returns:
+            List of detected changes
+        """
+        changes = []
+        spec = current_service.get("spec", {}).get("template", {}).get("spec", {})
+        metadata = current_service.get("spec", {}).get("template", {}).get("metadata", {})
+        annotations = metadata.get("annotations", {})
+        containers = spec.get("containers", [{}])
+        container = containers[0] if containers else {}
+        resources = container.get("resources", {}).get("limits", {})
+
+        # 1. Resources (CPU, Memory)
+        remote_cpu = resources.get("cpu", "")
+        # Normalize remote CPU (1000m -> 1)
+        if remote_cpu.endswith("m"):
+            remote_cpu_val = int(remote_cpu[:-1]) / 1000
+            remote_cpu_str = str(int(remote_cpu_val)) if remote_cpu_val.is_integer() else str(remote_cpu_val)
+        else:
+            remote_cpu_str = remote_cpu
+
+        if str(self.deployment.resources.cpu) != remote_cpu_str:
+            changes.append(f"CPU: {remote_cpu_str} -> {self.deployment.resources.cpu}")
+
+        remote_memory = resources.get("memory", "")
+        if self.deployment.resources.memory != remote_memory:
+            changes.append(f"Memory: {remote_memory} -> {self.deployment.resources.memory}")
+
+        # 2. GPU
+        remote_gpu_count = annotations.get("run.googleapis.com/gpu", "0")
+        expected_gpu_count = self.deployment.resources.gpu_count or (
+            1 if self.deployment.resources.gpu_type else 0
+        )
+        if str(expected_gpu_count) != str(remote_gpu_count):
+            changes.append(f"GPU Count: {remote_gpu_count} -> {expected_gpu_count}")
+
+        # 3. Scaling
+        remote_min = annotations.get("autoscaling.knative.dev/minScale", "0")
+        if str(self.deployment.resources.min_instances) != str(remote_min):
+            changes.append(
+                f"Min Instances: {remote_min} -> {self.deployment.resources.min_instances}"
+            )
+
+        remote_max = annotations.get("autoscaling.knative.dev/maxScale", "0")
+        if str(self.deployment.resources.max_instances) != str(remote_max):
+            changes.append(
+                f"Max Instances: {remote_max} -> {self.deployment.resources.max_instances}"
+            )
+
+        # 4. Concurrency & Timeout
+        remote_concurrency = spec.get("containerConcurrency")
+        if remote_concurrency and str(self.deployment.resources.concurrency) != str(
+            remote_concurrency
+        ):
+            changes.append(
+                f"Concurrency: {remote_concurrency} -> {self.deployment.resources.concurrency}"
+            )
+
+        remote_timeout = spec.get("timeoutSeconds")
+        if remote_timeout and str(self.deployment.resources.timeout) != str(remote_timeout):
+            changes.append(f"Timeout: {remote_timeout}s -> {self.deployment.resources.timeout}s")
+
+        # 5. Service Account
+        remote_sa = spec.get("serviceAccountName")
+        if (
+            self.deployment.iam.service_account
+            and self.deployment.iam.service_account != remote_sa
+        ):
+            changes.append(
+                f"Service Account: {remote_sa} -> {self.deployment.iam.service_account}"
+            )
+
+        # 6. Environment Variables
+        remote_env_list = container.get("env", [])
+        remote_env = {item["name"]: item.get("value", "") for item in remote_env_list}
+
+        expected_env = get_gcp_default_env(self.deployment)
+        env_changes = []
+        for k, v in expected_env.items():
+            if k not in remote_env:
+                env_changes.append(f"added {k}")
+            elif remote_env[k] != str(v):
+                env_changes.append(f"changed {k}")
+
+        if env_changes:
+            changes.append(f"Environment variables: {', '.join(env_changes)}")
+
+        return changes
+
     def plan(self) -> dict[str, Any]:
         """
         Generate a deployment plan showing what changes will be made.
@@ -75,20 +172,33 @@ class GCPDeployer:
         # Get current state
         current_state = self.state_manager.read_state(self.deployment_name)
 
-        # Check if this is initial deployment
-        if not current_state or not current_state.get("last_deployed"):
-            plan["changes"].append("Initial deployment - will create all resources")
-            plan["will_create"].extend(
-                [
-                    "Docker image",
-                    f"Cloud Run service: {self.deployment.service_name}",
-                ]
+        # Check if service exists remotely
+        try:
+            remote_service = get_cloud_run_service(
+                self.deployment.service_name,
+                self.deployment.region,
+                self.deployment.project_id,
             )
+        except Exception:
+            remote_service = None
+
+        # Always plan to build/push Docker image (generic action)
+        # Note: If we wanted to be smarter, we'd check if image needs building,
+        # but that requires deeper inspection. For now, we always list it.
+        # However, for clarity in "changes", we only list "Service Config" changes below.
+        plan["will_create"].append("Docker image (if changed)")
+
+        if not current_state or not current_state.get("last_deployed") or not remote_service:
+            plan["changes"].append("Initial deployment - will create all resources")
+            plan["will_create"].append(f"Cloud Run service: {self.deployment.service_name}")
         else:
             # Check for configuration changes
-            # TODO: Implement more granular change detection
-            plan["changes"].append("Configuration may have changed")
-            plan["will_update"].append(f"Cloud Run service: {self.deployment.service_name}")
+            detected_changes = self._detect_changes(remote_service)
+            if detected_changes:
+                plan["changes"].extend(detected_changes)
+                plan["will_update"].append(f"Cloud Run service: {self.deployment.service_name}")
+            else:
+                plan["changes"].append("No configuration changes detected")
 
         return plan
 
