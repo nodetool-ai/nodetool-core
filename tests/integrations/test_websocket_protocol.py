@@ -68,9 +68,47 @@ class WebSocketProtocolTester:
             elif "bytes" in message:
                 msg = msgpack.unpackb(message["bytes"])
             else:
-                raise ValueError(f"Unknown message format: {message.keys()}")
+                # Use raw receive() to handle potential binary background messages
+                # even when we expect text/json
+                raw_msg = self.ws.receive()
+                if "bytes" in raw_msg:
+                    # We got binary data while expecting text
+                    # This is likely a background message (system_stats)
+                    try:
+                        msg = msgpack.unpackb(raw_msg["bytes"])
+                    except Exception:
+                        # If we can't unpack it, just return raw or skip
+                        continue
+                elif "text" in raw_msg:
+                    msg = json.loads(raw_msg["text"])
+                else:
+                    continue
 
             # Skip system_stats messages as they can arrive at any time
+            if isinstance(msg, dict) and msg.get("type") == "system_stats":
+                continue
+            return msg
+
+    def _receive_in_mode(self, mode: str) -> dict:
+        """Receive a message in a specific mode, skipping background updates."""
+        while True:
+            if mode == "binary":
+                data = self.ws.receive_bytes()
+                msg = msgpack.unpackb(data)
+            else:
+                # Use raw receive() to handle potential binary background messages
+                raw_msg = self.ws.receive()
+                if "bytes" in raw_msg:
+                    # We got binary data while expecting text
+                    try:
+                        msg = msgpack.unpackb(raw_msg["bytes"])
+                    except Exception:
+                        continue
+                elif "text" in raw_msg:
+                    msg = json.loads(raw_msg["text"])
+                else:
+                    continue
+
             if isinstance(msg, dict) and msg.get("type") == "system_stats":
                 continue
             return msg

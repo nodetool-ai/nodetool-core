@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 
 import asyncio
 import base64
@@ -703,6 +703,7 @@ async def run_workflow_by_id(
             if isinstance(msg, BaseModel):
                 msg = msg.model_dump()
 
+            # Resolve message type from dict or object
             msg_type = msg.get("type") if isinstance(msg, dict) else getattr(msg, "type", None)
 
             if msg_type == "output_update":
@@ -731,7 +732,8 @@ async def run_workflow_by_id(
                                     assets.append(item_data)
                             value = assets
                         else:
-                            value["data"] = None
+                            if isinstance(value, dict):
+                                value["data"] = None
                 result[name] = value
             elif msg_type == "error":
                 message = msg.get("message") if isinstance(msg, dict) else getattr(msg, "message", "Unknown error")
@@ -1210,4 +1212,3 @@ async def gradio_export(
         raise HTTPException(status_code=500, detail=f"Error exporting workflow: {e}") from e
 
     return code
-
