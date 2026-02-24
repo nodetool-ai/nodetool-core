@@ -4193,167 +4193,10 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
     Automatically downloads referenced models (HuggingFace, Ollama) and syncs assets."""
     import asyncio
     from contextlib import suppress
-    from io import BytesIO
 
-    from nodetool.api.workflow import from_model
     from nodetool.deploy.admin_client import AdminHTTPClient
     from nodetool.deploy.manager import DeploymentManager
-    from nodetool.deploy.sync import extract_models
-    from nodetool.models.asset import Asset as AssetModel
-    from nodetool.models.workflow import Workflow
-    from nodetool.runtime.resources import require_scope
-
-    async def extract_and_download_models(workflow_data: dict, client: AdminHTTPClient) -> int:
-        """Extract model references from workflow and download them on remote."""
-        models = extract_models(workflow_data)
-
-        if not models:
-            return 0
-
-        console.print(f"[cyan]Found {len(models)} model(s) to download[/]")
-
-        downloaded_count = 0
-        for model in models:
-            try:
-                model_type = model.get("type", "")
-
-                # Handle HuggingFace models
-                if model_type.startswith("hf."):
-                    repo_id = model.get("repo_id")
-                    if not repo_id:
-                        console.print("  [red]Error: repo_id is required for HF models[/]")
-                        continue
-                    console.print(f"  [cyan]Downloading HF model: {repo_id}[/]")
-
-                    # Start download (streaming progress)
-                    last_status = None
-                    async for progress in client.download_huggingface_model(
-                        repo_id=repo_id,  # type: ignore[arg-type]
-                        file_path=model.get("path"),
-                        ignore_patterns=model.get("ignore_patterns"),
-                        allow_patterns=model.get("allow_patterns"),
-                    ):
-                        last_status = progress.get("status")
-                        if last_status == "downloading":
-                            file_name = progress.get("file", "")
-                            percent = progress.get("percent", 0)
-                            console.print(
-                                f"    [yellow]{file_name}: {percent:.1f}%[/]",
-                                end="\r",
-                            )
-                        elif last_status == "complete":
-                            console.print(f"    [green]✓ Downloaded {repo_id}[/]")
-
-                    # Stream completed - mark as downloaded
-                    if last_status != "complete":
-                        console.print(f"    [green]✓ Downloaded {repo_id}[/]")
-                    downloaded_count += 1
-
-                # Handle Ollama models
-                elif model_type == "language_model" and model.get("provider") == "ollama":
-                    model_id = model.get("id")
-                    if not model_id:
-                        console.print("  [red]Error: model id is required for Ollama models[/]")
-                        continue
-                    console.print(f"  [cyan]Downloading Ollama model: {model_id}[/]")
-
-                    last_status = None
-                    async for progress in client.download_ollama_model(model_name=model_id):  # type: ignore[arg-type]
-                        last_status = progress.get("status")
-                        if last_status and last_status != "success":
-                            console.print(f"    [yellow]{last_status}[/]", end="\r")
-                        elif last_status == "success":
-                            console.print(f"    [green]✓ Downloaded {model_id}[/]")
-
-                    # Stream completed - mark as downloaded
-                    if last_status != "success":
-                        console.print(f"    [green]✓ Downloaded {model_id}[/]")
-                    downloaded_count += 1
-
-            except Exception as e:
-                console.print(f"    [red]✗ Failed to download model: {e}[/]")
-
-        return downloaded_count
-
-    async def extract_and_sync_assets(workflow_data: dict, client: AdminHTTPClient) -> int:
-        """Extract asset references from workflow and sync them to remote."""
-        asset_ids = set()
-
-        # Extract asset IDs from constant nodes
-        for node in workflow_data.get("graph", {}).get("nodes", []):
-            node_type = node.get("type", "")
-            if node_type.startswith("nodetool.constant."):
-                value = node.get("data", {}).get("value", {})
-                if isinstance(value, dict):
-                    # Check for asset_id field
-                    asset_id = value.get("asset_id")
-                    if asset_id:
-                        asset_ids.add(asset_id)
-
-        if not asset_ids:
-            return 0
-
-        console.print(f"[cyan]Found {len(asset_ids)} asset(s) to sync[/]")
-
-        # Get local storage
-        storage = require_scope().get_asset_storage()
-        synced_count = 0
-
-        for asset_id in asset_ids:
-            try:
-                # Get local asset metadata
-                asset = await AssetModel.get(asset_id)
-                if not asset:
-                    console.print(f"  [yellow]⚠️  Asset {asset_id} not found locally, skipping[/]")
-                    continue
-
-                console.print(f"  [cyan]Syncing asset: {asset.name}[/]")
-
-                # Check if asset already exists on remote
-                try:
-                    await client.get_asset(asset_id)
-                    console.print("    [yellow]Asset already exists on remote, skipping[/]")
-                    synced_count += 1
-                    continue
-                except Exception:
-                    # Asset doesn't exist, continue with sync
-                    pass
-
-                # Create asset metadata on remote (preserve asset ID)
-                await client.create_asset(
-                    id=asset.id,
-                    user_id=asset.user_id,
-                    name=asset.name,
-                    content_type=asset.content_type,
-                    parent_id=asset.parent_id,
-                    workflow_id=asset.workflow_id,
-                    metadata=asset.metadata,
-                )
-
-                # Upload asset file if it's not a folder
-                if asset.content_type != "folder" and asset.file_name:
-                    # Download from local storage
-                    stream = BytesIO()
-                    await storage.download(asset.file_name, stream)
-                    file_data = stream.getvalue()
-
-                    # Upload to remote storage
-                    await client.upload_asset_file(asset.file_name, file_data)
-
-                    # Upload thumbnail if exists
-                    if asset.has_thumbnail and asset.thumb_file_name:
-                        thumb_stream = BytesIO()
-                        await storage.download(asset.thumb_file_name, thumb_stream)
-                        thumb_data = thumb_stream.getvalue()
-                        await client.upload_asset_file(asset.thumb_file_name, thumb_data)
-
-                console.print(f"    [green]✓ Synced {asset.name}[/]")
-                synced_count += 1
-
-            except Exception as e:
-                console.print(f"    [red]✗ Failed to sync asset {asset_id}: {e}[/]")
-
-        return synced_count
+    from nodetool.deploy.workflow_syncer import WorkflowSyncer
 
     async def run_sync():
         try:
@@ -4376,12 +4219,6 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
             from nodetool.runtime.resources import ResourceScope
 
             async with ResourceScope():
-                # Get local workflow
-                workflow = await Workflow.get(workflow_id)
-                if workflow is None:
-                    console.print(f"[red]❌ Workflow not found locally: {workflow_id}[/]")
-                    sys.exit(1)
-
                 # Get auth token from deployment (for self-hosted deployments)
                 from nodetool.config.deployment import SelfHostedDeployment
 
@@ -4392,22 +4229,12 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
                 # Create client
                 client = AdminHTTPClient(server_url, auth_token=auth_token)  # type: ignore[arg-type]
 
-                # Sync assets first
-                workflow_data = (await from_model(workflow)).model_dump()
-                synced_assets = await extract_and_sync_assets(workflow_data, client)
-                if synced_assets > 0:
-                    console.print(f"[green]✅ Synced {synced_assets} asset(s)[/]")
-                    console.print()
+                # Run sync
+                syncer = WorkflowSyncer(client, console)
+                success = await syncer.sync_workflow(workflow_id)
 
-                # Download models required by the workflow
-                synced_models = await extract_and_download_models(workflow_data, client)
-                if synced_models > 0:
-                    console.print(f"[green]✅ Downloaded {synced_models} model(s)[/]")
-                    console.print()
-
-                # Sync workflow
-                await client.update_workflow(workflow_id, workflow_data)
-                console.print("[green]✅ Workflow synced successfully[/]")
+                if success:
+                    console.print("[green]✅ Workflow synced successfully[/]")
 
                 # Close database connections
                 from nodetool.runtime.db_sqlite import shutdown_all_sqlite_pools
@@ -4425,7 +4252,7 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
                         task.cancel()
                     await asyncio.gather(*tasks, return_exceptions=True)
 
-            return 0
+            return 0 if success else 1
 
         except KeyError:
             console.print(f"[red]Deployment '{deployment_name}' not found[/]")
