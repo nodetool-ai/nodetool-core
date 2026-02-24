@@ -772,6 +772,23 @@ def _get_file_size(file_path: Path) -> int:
     return 0
 
 
+def _calculate_repo_stats(
+    snapshot_path: Path,
+    file_list: Sequence[str] | None,
+) -> tuple[int, list[tuple[str, int]]]:
+    """Calculate total size and file entries for a repo, resolving paths."""
+    size_on_disk = 0
+    file_entries: list[tuple[str, int]] = []
+
+    for file_name in file_list or []:
+        file_path = snapshot_path / file_name
+        file_size = _get_file_size(file_path)
+        size_on_disk += file_size
+        file_entries.append((file_name, file_size))
+
+    return size_on_disk, file_entries
+
+
 def _safe_load_json(file_path: Path) -> dict:
     """Best-effort JSON loader that logs failures without interrupting discovery."""
     try:
@@ -854,11 +871,8 @@ async def _build_cached_repo_entry(
         if file_list is None:
             file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
 
-        for file_name in file_list or []:
-            file_path = snapshot_path / file_name
-            file_size = _get_file_size(file_path)
-            size_on_disk += file_size
-            file_entries.append((file_name, file_size))
+        # Offload blocking IO loop to thread
+        size_on_disk, file_entries = await asyncio.to_thread(_calculate_repo_stats, snapshot_path, file_list)
 
     if repo_id in recommended_models:
         model = recommended_models[repo_id][0]
