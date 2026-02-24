@@ -98,3 +98,29 @@ class TestHuggingFaceModels(unittest.TestCase):
         self.assertEqual(target_file.id, f"{repo_id}:my_model.safetensors")
         self.assertEqual(repo_models[0].id, repo_id)
         self.assertIn("text_to_image", target_file.supported_tasks)
+
+    @patch("nodetool.integrations.huggingface.huggingface_models._get_file_size")
+    def test_calculate_repo_stats(self, mock_get_size):
+        # Setup
+        snapshot_dir = Path("/tmp/snapshot")
+        file_list = ["file1.txt", "file2.txt"]
+        mock_get_size.side_effect = [100, 200]
+
+        # Execute
+        size, entries = huggingface_models._calculate_repo_stats(snapshot_dir, file_list)
+
+        # Verify
+        self.assertEqual(size, 300)
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0], ("file1.txt", 100))
+        self.assertEqual(entries[1], ("file2.txt", 200))
+
+        # Test empty
+        size, entries = huggingface_models._calculate_repo_stats(snapshot_dir, [])
+        self.assertEqual(size, 0)
+        self.assertEqual(entries, [])
+
+        # Test None
+        size, entries = huggingface_models._calculate_repo_stats(snapshot_dir, None)
+        self.assertEqual(size, 0)
+        self.assertEqual(entries, [])
