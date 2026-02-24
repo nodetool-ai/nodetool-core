@@ -129,7 +129,7 @@ def ws(client):
         # Clean up by closing
         try:
             ws.close()
-        except:
+        except Exception:
             pass
 
 
