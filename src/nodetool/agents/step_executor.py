@@ -538,6 +538,7 @@ class StepExecutor:
 
         # Track sources for data lineage
         self.sources = []
+        self._sources_set = set()
 
         # Track progress for this step
         self.progress = []
@@ -1414,8 +1415,9 @@ class StepExecutor:
 
         if tool_call.name == "browser" and isinstance(tool_call.args, dict):
             url = tool_call.args.get("url", "")
-            if url and url not in self.sources:  # Avoid duplicates
+            if url and url not in self._sources_set:  # Avoid duplicates
                 self.sources.append(url)
+                self._sources_set.add(url)
 
     def _serialize_tool_result_for_history(self, tool_result: Any, tool_name: str) -> str:
         """Serializes the tool result to a JSON string for message history."""
