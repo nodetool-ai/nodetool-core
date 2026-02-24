@@ -292,10 +292,12 @@ def extract_video_frames(
             raise ImportError(
                 "imageio or OpenCV is required for video reading. Please install imageio: `pip install imageio imageio-ffmpeg`"
             )
-        # TODO: Implement cv2 fallback for reading
         import logging
 
-        logging.warning("imageio not found, cv2 fallback for reading not fully implemented except for files")
+        logging.warning(
+            "imageio not available, falling back to OpenCV backend. "
+            "For better quality, install imageio: `pip install imageio imageio-ffmpeg`"
+        )
         return _legacy_read_video_frames(input_video, fps)
 
     import imageio
@@ -304,6 +306,12 @@ def extract_video_frames(
     try:
         imageio.plugins.ffmpeg.get_exe()
     except (AttributeError, RuntimeError):
+        import logging
+
+        logging.warning(
+            "ffmpeg not found for imageio, falling back to OpenCV backend. "
+            "Install ffmpeg support: `pip install imageio-ffmpeg`"
+        )
         return _legacy_read_video_frames(input_video, fps)
 
     frames = []
