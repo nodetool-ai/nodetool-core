@@ -682,12 +682,41 @@ def create_app(
     for extension_router in ExtensionRouterRegistry().get_routers():
         app.include_router(extension_router)
 
-    if not Environment.is_production():
-
-        @app.exception_handler(RequestValidationError)
-        async def validation_exception_handler(request: Request, exc: RequestValidationError):
-            log.error(f"Request validation error: {exc}")
-            return JSONResponse({"detail": exc.errors()}, status_code=422)
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        # Log with request context for better traceability
+        log.error(
+            "Request validation error: %s | Method: %s | Path: %s | Client: %s",
+            exc.errors(),
+            request.method,
+            request.url.path,
+            request.client.host if request.client else "unknown",
+        )
+        # Provide user-friendly validation errors
+        # In production, sanitize sensitive details while keeping actionable information
+        errors = exc.errors()
+        if Environment.is_production():
+            # Sanitize error details for production (remove field locations that might expose internals)
+            sanitized_errors = [
+                {"msg": e["msg"], "type": e["type"]}
+                for e in errors
+            ]
+            return JSONResponse(
+                {
+                    "detail": "Request validation failed",
+                    "errors": sanitized_errors,
+                },
+                status_code=422,
+            )
+        else:
+            # In development, provide full error details for debugging
+            return JSONResponse(
+                {
+                    "detail": "Request validation failed",
+                    "errors": errors,
+                },
+                status_code=422,
+            )
 
     @app.get("/health")
     async def health_check() -> str:
