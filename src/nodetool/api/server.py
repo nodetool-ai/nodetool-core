@@ -27,34 +27,44 @@ _windows_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
 if platform.system() == "Windows" and _windows_policy is not None:
     asyncio.set_event_loop_policy(_windows_policy())
 
-# FIX: Windows: mimetypes.guess_type() returns None for some files
-# See:
-# - https://github.com/encode/starlette/issues/829
-# - https://github.com/pallets/flask/issues/1045
-#
-# The Python mimetypes module on Windows pulls values from the registry.
-# If mimetypes.guess_type() returns None for some files, it may indicate
-# that the Windows registry is corrupted or missing entries.
-#
-# This issue affects Windows systems and may cause problems with
-# file type detection in web frameworks like Starlette or Flask.
-#
-# Let's add the missing mime types to the mimetypes module.
-mimetypes.init()
-mimetypes.add_type("text/css", ".css")
-mimetypes.add_type("text/javascript", ".js")
-mimetypes.add_type("application/json", ".json")
-mimetypes.add_type("text/html", ".html")
-mimetypes.add_type("image/png", ".png")
-mimetypes.add_type("image/jpeg", ".jpg")
-mimetypes.add_type("image/jpeg", ".jpeg")
-mimetypes.add_type("image/gif", ".gif")
-mimetypes.add_type("image/svg+xml", ".svg")
-mimetypes.add_type("application/pdf", ".pdf")
-mimetypes.add_type("font/woff", ".woff")
-mimetypes.add_type("font/woff2", ".woff2")
-mimetypes.add_type("application/xml", ".xml")
-mimetypes.add_type("text/plain", ".txt")
+
+def _fix_mimetypes():
+    """
+    Ensure critical MIME types are correctly registered.
+
+    This fixes issues on Windows where the registry might be corrupted or missing entries,
+    causing mimetypes.guess_type() to return None or incorrect values (e.g. text/plain for .js).
+    See:
+    - https://github.com/encode/starlette/issues/829
+    - https://github.com/pallets/flask/issues/1045
+    """
+    mimetypes.init()
+
+    # Common web types
+    mimetypes.add_type("text/css", ".css")
+    mimetypes.add_type("text/javascript", ".js")
+    mimetypes.add_type("application/json", ".json")
+    mimetypes.add_type("text/html", ".html")
+    mimetypes.add_type("text/plain", ".txt")
+
+    # Images
+    mimetypes.add_type("image/png", ".png")
+    mimetypes.add_type("image/jpeg", ".jpg")
+    mimetypes.add_type("image/jpeg", ".jpeg")
+    mimetypes.add_type("image/gif", ".gif")
+    mimetypes.add_type("image/svg+xml", ".svg")
+    mimetypes.add_type("image/webp", ".webp")
+    mimetypes.add_type("image/x-icon", ".ico")
+
+    # Documents and fonts
+    mimetypes.add_type("application/pdf", ".pdf")
+    mimetypes.add_type("font/woff", ".woff")
+    mimetypes.add_type("font/woff2", ".woff2")
+    mimetypes.add_type("application/xml", ".xml")
+
+
+# Apply the fix unconditionally to ensure consistent behavior across platforms
+_fix_mimetypes()
 
 
 def initialize_sentry():
@@ -804,7 +814,9 @@ def create_app(
                     log.warning(f"Blocking external terminal access from {client_host} because auth is not enforced.")
                     # Accept then close with policy violation
                     await websocket.accept()
-                    await websocket.close(code=1008, reason="External terminal access requires configured authentication.")
+                    await websocket.close(
+                        code=1008, reason="External terminal access requires configured authentication."
+                    )
                     return
 
                 token = None
