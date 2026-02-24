@@ -111,6 +111,46 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
         super().__init__()
         self.user_id = user_id
 
+    async def _detect_message_input_names(
+        self, processing_context: ProcessingContext, workflow_id: str
+    ) -> tuple[str | None, str | None]:
+        """Best-effort detection of user-defined Message input node names from graph."""
+        try:
+            workflow = await processing_context.get_workflow(workflow_id)
+            graph = getattr(workflow, "graph", None) if workflow else None
+            nodes = graph.get("nodes", []) if isinstance(graph, dict) else []
+        except Exception as exc:
+            log.debug(f"Failed to detect message input names from workflow graph: {exc}")
+            return None, None
+
+        message_name: str | None = None
+        messages_name: str | None = None
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            node_type = node.get("type")
+            if not isinstance(node_type, str):
+                continue
+            data = node.get("data", {})
+            if not isinstance(data, dict):
+                continue
+            node_name = data.get("name")
+            if not isinstance(node_name, str) or not node_name.strip():
+                continue
+
+            if (
+                message_name is None
+                and (node_type == "nodetool.input.MessageInput" or node_type.endswith(".MessageInput"))
+            ):
+                message_name = node_name.strip()
+            if (
+                messages_name is None
+                and (node_type == "nodetool.input.MessageListInput" or node_type.endswith(".MessageListInput"))
+            ):
+                messages_name = node_name.strip()
+
+        return message_name, messages_name
+
     async def process(
         self,
         chat_history: list[Message],
@@ -134,7 +174,15 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
 
         # Prepare workflow parameters
         # New interface: pass full message object and message history
-        params = self._prepare_workflow_params(chat_history, last_message)
+        detected_message_name, detected_messages_name = await self._detect_message_input_names(
+            processing_context, last_message.workflow_id
+        )
+        params = self._prepare_workflow_params(
+            chat_history,
+            last_message,
+            detected_message_name=detected_message_name,
+            detected_messages_name=detected_messages_name,
+        )
 
         request = RunJobRequest(
             workflow_id=last_message.workflow_id,
@@ -207,7 +255,14 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
             # Always mark processing as complete
             self.is_processing = False
 
-    def _prepare_workflow_params(self, chat_history: list[Message], last_message: Message) -> dict:
+    def _prepare_workflow_params(
+        self,
+        chat_history: list[Message],
+        last_message: Message,
+        *,
+        detected_message_name: str | None = None,
+        detected_messages_name: str | None = None,
+    ) -> dict:
         """
         Prepare workflow parameters from chat history and message.
 
@@ -223,10 +278,18 @@ class ChatWorkflowMessageProcessor(MessageProcessor):
         Returns:
             dict: Parameters to pass to the workflow
         """
+        message_input_name = (
+            last_message.workflow_message_input_name or detected_message_name or "message"
+        )
+        messages_input_name = (
+            last_message.workflow_messages_input_name or detected_messages_name or "messages"
+        )
         params = {
-            "message": last_message,
-            "messages": chat_history,
+            message_input_name: last_message,
         }
+        if messages_input_name != "messages":
+            # Preserve full Message[] only when caller provided an explicit input name.
+            params[messages_input_name] = chat_history
 
         log.debug(f"Prepared {len(chat_history)} messages for workflow, last message role={last_message.role}")
 

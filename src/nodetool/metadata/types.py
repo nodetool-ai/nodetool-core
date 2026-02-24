@@ -1971,6 +1971,18 @@ class Message(BaseType):
     to the workflow processor (bypassing normal chat routing). If null or "chat", uses normal routing.
     """
 
+    workflow_message_input_name: str | None = None
+    """
+    Optional explicit workflow input node name for a single Message input.
+    Used by workflow chat to map the current message to a user-defined MessageInput name.
+    """
+
+    workflow_messages_input_name: str | None = None
+    """
+    Optional explicit workflow input node name for Message history input.
+    Used by workflow chat to map chat history to a user-defined MessageListInput name.
+    """
+
     @model_validator(mode="before")
     @classmethod
     def _coerce_instructions_to_content(cls, data: Any) -> Any:

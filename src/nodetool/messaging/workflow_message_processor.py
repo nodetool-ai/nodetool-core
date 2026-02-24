@@ -50,6 +50,46 @@ class WorkflowMessageProcessor(MessageProcessor):
         super().__init__()
         self.user_id = user_id
 
+    async def _detect_message_input_names(
+        self, processing_context: ProcessingContext, workflow_id: str
+    ) -> tuple[str | None, str | None]:
+        """Best-effort detection of user-defined Message input node names from graph."""
+        try:
+            workflow = await processing_context.get_workflow(workflow_id)
+            graph = getattr(workflow, "graph", None) if workflow else None
+            nodes = graph.get("nodes", []) if isinstance(graph, dict) else []
+        except Exception as exc:
+            log.debug(f"Failed to detect message input names from workflow graph: {exc}")
+            return None, None
+
+        message_name: str | None = None
+        messages_name: str | None = None
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            node_type = node.get("type")
+            if not isinstance(node_type, str):
+                continue
+            data = node.get("data", {})
+            if not isinstance(data, dict):
+                continue
+            node_name = data.get("name")
+            if not isinstance(node_name, str) or not node_name.strip():
+                continue
+
+            if (
+                message_name is None
+                and (node_type == "nodetool.input.MessageInput" or node_type.endswith(".MessageInput"))
+            ):
+                message_name = node_name.strip()
+            if (
+                messages_name is None
+                and (node_type == "nodetool.input.MessageListInput" or node_type.endswith(".MessageListInput"))
+            ):
+                messages_name = node_name.strip()
+
+        return message_name, messages_name
+
     async def process(
         self,
         chat_history: list[Message],
@@ -72,11 +112,19 @@ class WorkflowMessageProcessor(MessageProcessor):
         processing_context.workflow_id = last_message.workflow_id
         processing_context.user_id = self.user_id or processing_context.user_id
 
-        # Prepare workflow parameters
-        # New interface: pass full message object and message history
+        detected_message_name, detected_messages_name = await self._detect_message_input_names(
+            processing_context, last_message.workflow_id
+        )
+        # Prefer explicit names from UI, then detected graph names, then legacy defaults.
+        message_input_name = (
+            last_message.workflow_message_input_name or detected_message_name or "message"
+        )
+        messages_input_name = (
+            last_message.workflow_messages_input_name or detected_messages_name or "messages"
+        )
         params = {
-            "message": _serialize_message(last_message),
-            "messages": [_serialize_message(msg) for msg in chat_history],
+            message_input_name: _serialize_message(last_message),
+            messages_input_name: [_serialize_message(msg) for msg in chat_history],
         }
 
         request = RunJobRequest(
