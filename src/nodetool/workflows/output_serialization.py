@@ -16,10 +16,14 @@ Important for Streaming:
 - Store compressed chunks in temp storage if needed
 """
 
+import gzip
+import io
 import json
+import uuid
 from typing import Any
 
 from nodetool.config.logging_config import get_logger
+from nodetool.runtime.resources import maybe_scope
 
 log = get_logger(__name__)
 
@@ -270,7 +274,7 @@ def deserialize_outputs_dict(serialized_outputs: dict[str, dict]) -> dict[str, A
     return result
 
 
-def compress_streaming_outputs(outputs: dict[str, Any]) -> dict:
+async def compress_streaming_outputs(outputs: dict[str, Any]) -> dict:
     """Compress streaming outputs into single log entry.
 
     Streaming nodes can emit thousands of chunks (e.g., 1000 video frames),
@@ -285,13 +289,13 @@ def compress_streaming_outputs(outputs: dict[str, Any]) -> dict:
         - {'type': 'streaming_compressed', 'chunk_count': N, 'storage_id': 'not_implemented', 'size_bytes': X}
 
     Note:
-        The actual chunks should be stored in temp storage (not implemented yet).
+        The actual chunks should be stored in temp storage.
         This prevents bloating the event log while maintaining recoverability.
 
     Example:
         >>> # Node emits 1000 image chunks
         >>> outputs = {'frames': [ImageRef(...) for _ in range(1000)]}
-        >>> compressed = compress_streaming_outputs(outputs)
+        >>> compressed = await compress_streaming_outputs(outputs)
         >>> compressed['chunk_count']
         1000
         >>> compressed['type']
@@ -310,16 +314,43 @@ def compress_streaming_outputs(outputs: dict[str, Any]) -> dict:
         serialized = json.dumps(outputs, default=str)
         size_bytes = len(serialized.encode("utf-8"))
     except Exception:
+        serialized = "{}"
         size_bytes = 0
 
+    storage_id = "not_implemented"
+
+    # Compress and store in temp storage
+    try:
+        scope = maybe_scope()
+        if scope:
+            temp_storage = scope.get_temp_storage()
+            if temp_storage:
+                # Compress
+                compressed_io = io.BytesIO()
+                with gzip.GzipFile(fileobj=compressed_io, mode="wb") as gz:
+                    gz.write(serialized.encode("utf-8"))
+                compressed_io.seek(0)
+
+                # Upload
+                key = f"streaming/{uuid.uuid4()}.json.gz"
+                storage_id = await temp_storage.upload(key, compressed_io)
+            else:
+                log.warning("No temp storage available in current scope")
+        else:
+            log.warning("No resource scope available for streaming outputs")
+
+    except Exception as e:
+        log.error(f"Failed to compress streaming outputs: {e}")
+        storage_id = f"error_{str(e)[:50]}"
+
     log.debug(
-        f"Compressing streaming outputs: {chunk_count} chunks, ~{size_bytes} bytes (should store in temp storage)"
+        f"Compressing streaming outputs: {chunk_count} chunks, ~{size_bytes} bytes (stored as {storage_id})"
     )
 
     return {
         "type": "streaming_compressed",
         "chunk_count": chunk_count,
-        "storage_id": "not_implemented",  # TODO: store in temp storage
+        "storage_id": storage_id,
         "size_bytes": size_bytes,
     }
 

@@ -2,6 +2,8 @@
 Tests for output serialization utilities.
 """
 
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
 
 from nodetool.workflows.output_serialization import (
@@ -192,23 +194,67 @@ def test_deserialize_outputs_dict():
     assert hasattr(result["image"], "uri")
 
 
-def test_compress_streaming_outputs():
+@pytest.mark.asyncio
+async def test_compress_streaming_outputs():
     """Test compression of streaming outputs."""
     from nodetool.metadata.types import ImageRef
     from nodetool.workflows.output_serialization import compress_streaming_outputs
 
     # Simulate 1000 image chunks from streaming node
     outputs = {
-        "frames": [ImageRef(uri=f"temp://frame_{i}.png", asset_id=f"frame_{i}") for i in range(1000)],
+        "frames": [
+            ImageRef(uri=f"temp://frame_{i}.png", asset_id=f"frame_{i}")
+            for i in range(1000)
+        ],
         "metadata": {"fps": 30, "duration": 33.33},
     }
 
-    compressed = compress_streaming_outputs(outputs)
+    # Mock scope and temp storage
+    mock_storage = AsyncMock()
+    mock_storage.upload.return_value = "streaming/mock_uuid.json.gz"
+
+    mock_scope = Mock()
+    mock_scope.get_temp_storage.return_value = mock_storage
+
+    with patch(
+        "nodetool.workflows.output_serialization.maybe_scope", return_value=mock_scope
+    ):
+        compressed = await compress_streaming_outputs(outputs)
 
     assert compressed["type"] == "streaming_compressed"
     assert compressed["chunk_count"] == 1001  # 1000 frames + 1 metadata
     assert "size_bytes" in compressed
-    assert compressed["storage_id"] == "not_implemented"  # TODO: implement temp storage
+    assert compressed["storage_id"] == "streaming/mock_uuid.json.gz"
+
+    # Verify upload was called
+    assert mock_storage.upload.called
+    args, _ = mock_storage.upload.call_args
+    key, content = args
+    assert key.startswith("streaming/")
+    assert key.endswith(".json.gz")
+    # check content is gzipped json
+    import gzip
+    import json
+
+    content.seek(0)
+    with gzip.GzipFile(fileobj=content, mode="rb") as gz:
+        data = json.load(gz)
+        assert len(data["frames"]) == 1000
+
+
+@pytest.mark.asyncio
+async def test_compress_streaming_outputs_no_scope():
+    """Test fallback when no scope is available."""
+    from nodetool.workflows.output_serialization import compress_streaming_outputs
+
+    outputs = {"data": [1, 2, 3]}
+
+    with patch(
+        "nodetool.workflows.output_serialization.maybe_scope", return_value=None
+    ):
+        compressed = await compress_streaming_outputs(outputs)
+
+    assert compressed["storage_id"] == "not_implemented"
 
 
 def test_should_compress_streaming():
