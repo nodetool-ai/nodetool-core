@@ -11,11 +11,14 @@ This module handles deployment to RunPod serverless infrastructure, including:
 import logging
 from typing import Any, Optional
 
+import requests
+
 from nodetool.config.deployment import (
     DeploymentStatus,
     RunPodDeployment,
 )
 from nodetool.deploy.deploy_to_runpod import deploy_to_runpod
+from nodetool.deploy.runpod_api import make_runpod_api_call
 from nodetool.deploy.state import StateManager
 
 logger = logging.getLogger(__name__)
@@ -188,7 +191,41 @@ class RunPodDeployer:
             status_info["template_name"] = state.get("template_name", "unknown")
             status_info["pod_id"] = state.get("pod_id", "unknown")
 
-        # TODO: Query RunPod API for live status
+        try:
+            endpoints_response = make_runpod_api_call("endpoints", "GET")
+            # Handle response that could be a list or a dict with "endpoints" key
+            endpoints = (
+                endpoints_response
+                if isinstance(endpoints_response, list)
+                else endpoints_response.get("endpoints", [])
+            )
+
+            # Find our endpoint (check for exact name match)
+            # RunPod API usually returns list of all endpoints
+            live_endpoint = next((ep for ep in endpoints if ep.get("name") == self.deployment_name), None)
+
+            if live_endpoint:
+                status_info["live_status"] = "active"
+                status_info["endpoint_id"] = live_endpoint.get("id")
+                status_info["gpu_ids"] = live_endpoint.get("gpuIds")
+                status_info["worker_count"] = (
+                    f"{live_endpoint.get('workersMin')}-{live_endpoint.get('workersMax')}"
+                )
+                if live_endpoint.get("id"):
+                    status_info["urls"] = {
+                        "runsync": f"https://api.runpod.ai/v2/{live_endpoint.get('id')}/runsync",
+                        "run": f"https://api.runpod.ai/v2/{live_endpoint.get('id')}/run",
+                    }
+            else:
+                status_info["live_status"] = "not_found"
+
+        except (requests.exceptions.RequestException, AssertionError) as e:
+            # AssertionError is raised if API key is missing
+            logger.warning("Failed to query RunPod API status: %s", e)
+            status_info["live_status_error"] = str(e)
+        except Exception as e:
+            logger.warning("Unexpected error querying RunPod API status: %s", e)
+            status_info["live_status_error"] = str(e)
 
         return status_info
 

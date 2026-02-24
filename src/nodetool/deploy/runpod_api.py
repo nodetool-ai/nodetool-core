@@ -149,7 +149,7 @@ def make_runpod_api_call(endpoint: str, method: str = "GET", data: dict | None =
         if hasattr(e, "response") and e.response is not None:
             logger.error("Response status: %s", e.response.status_code)
             logger.error("Response body: %s", e.response.text)
-        sys.exit(1)
+        raise
 
 
 # Network Volume Management
