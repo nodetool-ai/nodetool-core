@@ -2,9 +2,14 @@
 Tests for output serialization utilities.
 """
 
+import json
+from unittest.mock import MagicMock, patch
+
 import pytest
 
+from nodetool.runtime.resources import require_scope
 from nodetool.workflows.output_serialization import (
+    compress_streaming_outputs,
     deserialize_output_from_event_log,
     deserialize_outputs_dict,
     serialize_output_for_event_log,
@@ -45,6 +50,21 @@ def test_serialize_large_object():
 
     assert result["type"] == "external_ref"
     assert "size_bytes" in result
+    # Verify storage_id format and storage
+    assert result["storage_id"].startswith("large_output/")
+
+    # Verify content in temp storage
+    scope = require_scope()
+    storage = scope.get_temp_storage()
+    storage_id = result["storage_id"]
+
+    if hasattr(storage, "storage"):
+        assert storage_id in storage.storage
+        stored_data = storage.storage[storage_id]
+        restored_json = json.loads(stored_data.decode("utf-8"))
+        assert restored_json == data
+    else:
+        pytest.fail(f"Test expected MemoryStorage, got {type(storage)}")
 
 
 def test_serialize_non_json_serializable():
@@ -91,6 +111,7 @@ def test_serialize_outputs_dict_mixed():
     assert result["video"]["type"] == "asset_ref"
     assert result["result"]["type"] == "inline"
     assert result["large"]["type"] == "external_ref"
+    assert result["large"]["storage_id"].startswith("large_output/")
 
 
 def test_deserialize_inline():
@@ -208,7 +229,18 @@ def test_compress_streaming_outputs():
     assert compressed["type"] == "streaming_compressed"
     assert compressed["chunk_count"] == 1001  # 1000 frames + 1 metadata
     assert "size_bytes" in compressed
-    assert compressed["storage_id"] == "not_implemented"  # TODO: implement temp storage
+    assert compressed["storage_id"].startswith("streaming_output/")
+
+    # Verify content in temp storage
+    scope = require_scope()
+    storage = scope.get_temp_storage()
+    storage_id = compressed["storage_id"]
+
+    if hasattr(storage, "storage"):
+        assert storage_id in storage.storage
+        # No need to decode and verify content as we trust json.dumps, but we confirmed storage works
+    else:
+        pytest.fail(f"Test expected MemoryStorage, got {type(storage)}")
 
 
 def test_should_compress_streaming():
@@ -253,3 +285,44 @@ def test_serialize_with_memory_uri_warning(caplog):
 
     assert result["type"] == "asset_ref"
     assert "non-durable storage" in caplog.text
+
+
+def test_serialize_large_output_no_scope():
+    """Test serialization fallback when no scope is available."""
+    # Mock maybe_scope to return None
+    with patch("nodetool.workflows.output_serialization.maybe_scope", return_value=None):
+        large_data = {"data": "x" * 1_000_001}
+
+        result = serialize_output_for_event_log(large_data)
+
+        assert result["type"] == "external_ref"
+        assert result["storage_id"] == "not_implemented"
+
+
+def test_compress_streaming_outputs_no_scope():
+    """Test compression fallback when no scope is available."""
+    # Mock maybe_scope to return None
+    with patch("nodetool.workflows.output_serialization.maybe_scope", return_value=None):
+        outputs = {"frames": [{"id": i} for i in range(100)]}
+
+        result = compress_streaming_outputs(outputs)
+
+        assert result["type"] == "streaming_compressed"
+        assert result["storage_id"] == "not_implemented"
+
+
+def test_upload_failure_fallback():
+    """Test fallback when storage upload fails."""
+    # Mock maybe_scope to return a scope with a broken storage
+    mock_scope = MagicMock()
+    mock_storage = MagicMock()
+    mock_storage.upload_sync.side_effect = Exception("Upload failed")
+    mock_scope.get_temp_storage.return_value = mock_storage
+
+    with patch("nodetool.workflows.output_serialization.maybe_scope", return_value=mock_scope):
+        large_data = {"data": "x" * 1_000_001}
+
+        result = serialize_output_for_event_log(large_data)
+
+        assert result["type"] == "external_ref"
+        assert result["storage_id"] == "not_implemented"

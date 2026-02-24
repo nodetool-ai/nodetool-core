@@ -16,10 +16,13 @@ Important for Streaming:
 - Store compressed chunks in temp storage if needed
 """
 
+import io
 import json
+import uuid
 from typing import Any
 
 from nodetool.config.logging_config import get_logger
+from nodetool.runtime.resources import maybe_scope
 
 log = get_logger(__name__)
 
@@ -40,6 +43,31 @@ def is_asset_ref(value: Any) -> bool:
 def uses_temp_storage(uri: str) -> bool:
     """Check if a URI uses temp storage (needs migration for durability)."""
     return uri.startswith("memory://") or uri.startswith("temp://")
+
+
+def _upload_to_temp_storage(data: bytes, key_prefix: str = "output") -> str | None:
+    """Upload data to temporary storage.
+
+    Args:
+        data: The bytes to upload
+        key_prefix: Prefix for the storage key
+
+    Returns:
+        The storage key (URI path) or None if upload failed
+    """
+    scope = maybe_scope()
+    if not scope:
+        log.warning("No resource scope found, cannot upload large output to temp storage")
+        return None
+
+    try:
+        storage = scope.get_temp_storage()
+        key = f"{key_prefix}/{uuid.uuid4()}"
+        storage.upload_sync(key, io.BytesIO(data))
+        return key
+    except Exception as e:
+        log.error(f"Failed to upload to temp storage: {e}")
+        return None
 
 
 def serialize_output_for_event_log(value: Any, max_size: int = MAX_INLINE_SIZE, use_temp_storage: bool = True) -> dict:
@@ -111,8 +139,9 @@ def serialize_output_for_event_log(value: Any, max_size: int = MAX_INLINE_SIZE, 
     # Try to serialize inline if small enough
     try:
         # First check if it's JSON-serializable
-        serialized = json.dumps(value)
-        size_bytes = len(serialized.encode("utf-8"))
+        serialized_str = json.dumps(value)
+        serialized_bytes = serialized_str.encode("utf-8")
+        size_bytes = len(serialized_bytes)
 
         if size_bytes <= max_size:
             return {"type": "inline", "value": value}
@@ -120,9 +149,12 @@ def serialize_output_for_event_log(value: Any, max_size: int = MAX_INLINE_SIZE, 
             # Too large for inline storage
             # Should be stored in temp storage
             log.debug(f"Output too large for inline storage: {size_bytes} bytes (store in temp)")
+
+            storage_id = _upload_to_temp_storage(serialized_bytes, key_prefix="large_output")
+
             return {
                 "type": "external_ref",
-                "storage_id": "not_implemented",  # TODO: implement temp storage
+                "storage_id": storage_id or "not_implemented",
                 "size_bytes": size_bytes,
             }
 
@@ -306,9 +338,13 @@ def compress_streaming_outputs(outputs: dict[str, Any]) -> dict:
             chunk_count += 1
 
     # Estimate size (would be actual size if stored)
+    serialized_bytes = b""
+    size_bytes = 0
+
     try:
-        serialized = json.dumps(outputs, default=str)
-        size_bytes = len(serialized.encode("utf-8"))
+        serialized_str = json.dumps(outputs, default=str)
+        serialized_bytes = serialized_str.encode("utf-8")
+        size_bytes = len(serialized_bytes)
     except Exception:
         size_bytes = 0
 
@@ -316,10 +352,14 @@ def compress_streaming_outputs(outputs: dict[str, Any]) -> dict:
         f"Compressing streaming outputs: {chunk_count} chunks, ~{size_bytes} bytes (should store in temp storage)"
     )
 
+    storage_id = None
+    if size_bytes > 0:
+        storage_id = _upload_to_temp_storage(serialized_bytes, key_prefix="streaming_output")
+
     return {
         "type": "streaming_compressed",
         "chunk_count": chunk_count,
-        "storage_id": "not_implemented",  # TODO: store in temp storage
+        "storage_id": storage_id or "not_implemented",
         "size_bytes": size_bytes,
     }
 
