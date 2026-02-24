@@ -1,8 +1,11 @@
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 from fastapi import WebSocket
+
 from nodetool.api.server import create_app
+
 
 @pytest.mark.asyncio
 async def test_terminal_rejects_external_ip_when_auth_disabled(monkeypatch):

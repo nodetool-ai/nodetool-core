@@ -1,9 +1,12 @@
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from nodetool.chat.search_nodes import search_nodes
-from nodetool.metadata.node_metadata import NodeMetadata, Property, OutputSlot
+from nodetool.metadata.node_metadata import NodeMetadata, OutputSlot, Property
 from nodetool.metadata.type_metadata import TypeMetadata
+
 
 @pytest.fixture
 def mock_registry():
