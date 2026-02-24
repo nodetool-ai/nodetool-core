@@ -6,7 +6,7 @@ deployments (self-hosted, RunPod, GCP) are managed through a single deployment.y
 """
 
 from datetime import datetime
-from enum import Enum
+from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Any, Literal, Optional
 
@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from nodetool.config.settings import get_system_file_path
 
 
-class DeploymentType(str, Enum):
+class DeploymentType(StrEnum):
     """Supported deployment types."""
 
     DOCKER = "docker"
@@ -26,7 +26,7 @@ class DeploymentType(str, Enum):
     GCP = "gcp"
 
 
-class DeploymentStatus(str, Enum):
+class DeploymentStatus(StrEnum):
     """Deployment status values."""
 
     UNKNOWN = "unknown"

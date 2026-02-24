@@ -45,7 +45,7 @@ import readline
 import sys
 from contextlib import suppress
 from datetime import UTC, datetime
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import TYPE_CHECKING, Any, Optional
 
 import msgpack
@@ -55,7 +55,7 @@ if TYPE_CHECKING:
     from websockets.asyncio.client import ClientConnection
 
 
-class MessageFormat(str, Enum):
+class MessageFormat(StrEnum):
     TEXT = "text"
     BINARY = "binary"
 

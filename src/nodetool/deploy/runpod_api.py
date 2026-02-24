@@ -26,7 +26,7 @@ import logging
 import os
 import sys
 import traceback
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any, Optional
 
 import requests
@@ -67,7 +67,7 @@ def run_graphql_query(query: str) -> dict[str, Any]:
     return response.json()
 
 
-class GPUType(str, Enum):
+class GPUType(StrEnum):
     """GPU types available in RunPod using their official GPU ID codes."""
 
     # Ada Lovelace Architecture
@@ -215,7 +215,7 @@ def update_network_volume(volume_id: str, name: str | None = None, size: int | N
 
 
 # RunPod API Enums and Constants
-class ComputeType(str, Enum):
+class ComputeType(StrEnum):
     """Compute types for RunPod endpoints."""
 
     CPU = "CPU"
@@ -229,7 +229,7 @@ class ComputeType(str, Enum):
         return [item.value for item in cls]
 
 
-class CPUFlavor(str, Enum):
+class CPUFlavor(StrEnum):
     """CPU flavor IDs for RunPod endpoints."""
 
     CPU_3C = "cpu3c"
@@ -245,7 +245,7 @@ class CPUFlavor(str, Enum):
         return [item.value for item in cls]
 
 
-class DataCenter(str, Enum):
+class DataCenter(StrEnum):
     """Data center locations for RunPod endpoints."""
 
     # United States
@@ -294,7 +294,7 @@ class DataCenter(str, Enum):
         return [item.value for item in cls]
 
 
-class CUDAVersion(str, Enum):
+class CUDAVersion(StrEnum):
     """CUDA versions available in RunPod."""
 
     CUDA_11_8 = "11.8"

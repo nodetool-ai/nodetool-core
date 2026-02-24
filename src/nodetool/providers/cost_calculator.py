@@ -17,14 +17,14 @@ Usage:
 """
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 
 from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
 
 
-class CostType(str, Enum):
+class CostType(StrEnum):
     """Types of cost calculation methods."""
 
     TOKEN_BASED = "token_based"  # Chat models (input/output tokens)

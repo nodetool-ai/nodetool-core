@@ -1,6 +1,6 @@
 """Tests for the KieProvider implementation."""
 
-from enum import Enum
+from enum import Enum, StrEnum
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -298,7 +298,7 @@ class TestKieProviderApiInteraction:
         )
 
         # Mock an Enum for image_size
-        class MockImageSize(str, Enum):
+        class MockImageSize(StrEnum):
             SQUARE = "1:1"
 
         params.image_size = MockImageSize.SQUARE

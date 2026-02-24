@@ -6,14 +6,14 @@ files represent shards of the same model or independent variants.
 """
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Iterable, Sequence
 
 from safetensors import safe_open
 
 
-class SafetensorLayoutHint(str, Enum):
+class SafetensorLayoutHint(StrEnum):
     """Classification for a set of safetensors files."""
 
     EMPTY = "empty"
