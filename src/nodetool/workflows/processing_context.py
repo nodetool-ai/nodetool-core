@@ -43,7 +43,6 @@ except ImportError:  # pragma: no cover - playwright is optional
 
 
 from io import BytesIO
-from pickle import loads
 from typing import IO, Any, AsyncGenerator, Callable
 
 from nodetool.config.environment import Environment
@@ -2233,10 +2232,19 @@ class ProcessingContext:
             return await _in_thread(pd.DataFrame, df.data, columns=column_names)  # type: ignore[arg-type]
         else:
             io = await self.asset_to_io(df)
-            raw = await _in_thread(io.read)
-            loaded = await _in_thread(loads, raw)
-            assert isinstance(loaded, pd.DataFrame), "Is not a dataframe"
-            return loaded
+            try:
+                # asset_storage.py serializes with orient="records"
+                return await _in_thread(pd.read_json, io, orient="records")
+            except Exception:
+                try:
+                    # Fallback to default orient if records fails
+                    if hasattr(io, "seek"):
+                        io.seek(0)
+                    return await _in_thread(pd.read_json, io)
+                except Exception:
+                    raise ValueError(
+                        "Could not load dataframe from asset. Only JSON format is supported for external assets."
+                    )
 
     async def dataframe_from_pandas(
         self, data: pd.DataFrame, name: str | None = None, parent_id: str | None = None

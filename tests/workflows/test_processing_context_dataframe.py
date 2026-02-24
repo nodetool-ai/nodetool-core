@@ -38,3 +38,31 @@ async def test_dataframe_from_columns_and_data_fallback(context: ProcessingConte
     df = await context.dataframe_to_pandas(ref)
     assert list(df.columns) == ["a", "b"]
     assert df.shape == (2, 2)
+
+
+@pytest.mark.asyncio
+async def test_dataframe_from_json_asset(context: ProcessingContext):
+    # Test loading from JSON asset (external file scenario)
+    import json
+    import tempfile
+    from pathlib import Path
+
+    df_data = [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}]
+
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
+        json.dump(df_data, f)
+        filepath = Path(f.name)
+
+    try:
+        # Create DataframeRef pointing to the file, without columns/data
+        # This forces the else block in dataframe_to_pandas
+        ref = DataframeRef(uri=f"file://{filepath.resolve()}")
+
+        df = await context.dataframe_to_pandas(ref)
+
+        assert list(df.columns) == ["a", "b"]
+        assert df.shape == (2, 2)
+        assert df.iloc[0]["a"] == 1
+        assert df.iloc[0]["b"] == "x"
+    finally:
+        filepath.unlink()
