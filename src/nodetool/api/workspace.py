@@ -104,8 +104,11 @@ async def list_workspaces(
             next_cursor=next_cursor,
         )
     except Exception as e:
-        log.error(f"Error listing workspaces: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        log.error("Error listing workspaces for user %s: %s", user, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to list workspaces. Please try again later.",
+        ) from e
 
 
 @router.post("/", response_model=WorkspaceResponse, status_code=201)
@@ -125,14 +128,14 @@ async def create_workspace(
     if not os.path.isabs(request.path):
         raise HTTPException(
             status_code=400,
-            detail=f"Workspace path must be absolute. Got: {request.path}",
+            detail=f"Workspace path must be absolute (start with '/' on Unix or 'C:\\' on Windows). Got: {request.path}",
         )
 
     # Validate path exists
     if not os.path.exists(request.path):
         raise HTTPException(
             status_code=400,
-            detail=f"Workspace path does not exist: {request.path}",
+            detail=f"Workspace path does not exist: {request.path}. Please create the directory first.",
         )
 
     # Validate path is a directory
@@ -160,8 +163,11 @@ async def create_workspace(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        log.error(f"Error creating workspace: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        log.error("Error creating workspace for user %s: %s", user, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create workspace. Please check the path and try again.",
+        ) from e
 
 
 @router.get("/default", response_model=Optional[WorkspaceResponse])
@@ -236,8 +242,11 @@ async def update_workspace(
         await workspace.save()
         return workspace_to_response(workspace)
     except Exception as e:
-        log.error(f"Error updating workspace: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        log.error("Error updating workspace %s for user %s: %s", workspace_id, user, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update workspace. Please try again later.",
+        ) from e
 
 
 @router.delete("/{workspace_id}", status_code=204)
@@ -265,8 +274,11 @@ async def delete_workspace(
     try:
         await workspace.delete()
     except Exception as e:
-        log.error(f"Error deleting workspace: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        log.error("Error deleting workspace %s for user %s: %s", workspace_id, user, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete workspace. Please try again later.",
+        ) from e
 
 
 # --- File listing functionality ---
@@ -392,8 +404,11 @@ async def list_workflow_files(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"Error listing workspace files for workflow {workflow_id}/{path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        log.error("Error listing workspace files for workflow %s/%s: %s", workflow_id, path, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to list workspace files. Please check the path and try again.",
+        ) from e
 
 
 async def get_workspace_path_for_workflow(user: str, workflow_id: str) -> str:
@@ -482,8 +497,11 @@ async def download_workflow_file(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"Error downloading file from workflow {workflow_id}/{file_path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        log.error("Error downloading file from workflow %s/%s: %s", workflow_id, file_path, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to download file. Please check the file path and try again.",
+        ) from e
 
 
 @router.post("/workflow/{workflow_id}/upload/{file_path:path}")
@@ -533,5 +551,8 @@ async def upload_workflow_file(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"Error uploading file to workflow {workflow_id}/{file_path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        log.error("Error uploading file to workflow %s/%s: %s", workflow_id, file_path, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to upload file. Please check the file path and try again.",
+        ) from e

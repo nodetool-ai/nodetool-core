@@ -217,7 +217,11 @@ def _load_json_input(
     json_file_option: str,
 ) -> Any:
     if json_text and json_file:
-        raise click.UsageError(f"Use only one of {json_option} or {json_file_option}.")
+        raise click.UsageError(
+            f"Cannot specify both {json_option} and {json_file_option}. "
+            f"Provide JSON data via only one option: use {json_option} for inline JSON "
+            f"or {json_file_option} to read from a file."
+        )
     if json_file:
         with open(json_file, encoding="utf-8") as f:
             return json.load(f)
@@ -468,7 +472,11 @@ def workflows_run(workflow_id: str, params_json: str | None, params_file: str | 
 
     params = _load_json_input(params_json, params_file, json_option="--params", json_file_option="--params-file")
     if params is not None and not isinstance(params, dict):
-        raise click.UsageError("--params/--params-file must decode to a JSON object.")
+        raise click.UsageError(
+            "--params/--params-file must decode to a JSON object (dict). "
+            f"Got type: {type(params).__name__}. "
+            "Example: '{\"param_name\": \"value\"}'"
+        )
 
     async def _run() -> dict[str, Any]:
         async with ResourceScope():
@@ -719,7 +727,11 @@ def jobs_start(
 
     params = _load_json_input(params_json, params_file, json_option="--params", json_file_option="--params-file")
     if params is not None and not isinstance(params, dict):
-        raise click.UsageError("--params/--params-file must decode to a JSON object.")
+        raise click.UsageError(
+            "--params/--params-file must decode to a JSON object (dict). "
+            f"Got type: {type(params).__name__}. "
+            "Example: '{\"param_name\": \"value\"}'"
+        )
 
     async def _run() -> dict[str, Any]:
         async with ResourceScope():
