@@ -458,7 +458,7 @@ class NodeRef(BaseType):
     id: str = ""
 
 
-class FontSource(str, enum.Enum):
+class FontSource(enum.StrEnum):
     """Source of a font file."""
 
     SYSTEM = "system"  # Local system font
@@ -493,7 +493,7 @@ class FontRef(BaseType):
     weight: str = "regular"  # Font weight: regular, bold, italic, etc.
 
 
-class Provider(str, enum.Enum):
+class Provider(enum.StrEnum):
     AIME = "aime"
     OpenAI = "openai"
     OpenRouter = "openrouter"
@@ -543,7 +543,7 @@ class Provider(str, enum.Enum):
     Rodin = "rodin"
 
 
-class InferenceProvider(str, Enum):
+class InferenceProvider(enum.StrEnum):
     cerebras = "cerebras"
     cohere = "cohere"
     fal_ai = "fal-ai"
@@ -643,7 +643,7 @@ class InferenceProviderTextGenerationModel(BaseType):
     model_id: str = ""
 
 
-class OpenAIEmbeddingModel(str, enum.Enum):
+class OpenAIEmbeddingModel(enum.StrEnum):
     ADA_002 = "text-embedding-ada-002"
     SMALL = "text-embedding-3-small"
     LARGE = "text-embedding-3-large"
@@ -2132,7 +2132,7 @@ class SVGElement(BaseType):
         return f"<{self.name} {self.render_attributes()}>{inner_content}</{self.name}>"
 
 
-class SeabornPlotType(str, Enum):
+class SeabornPlotType(enum.StrEnum):
     # Relational plots
     SCATTER = "scatter"
     LINE = "line"
@@ -2174,7 +2174,7 @@ class SeabornPlotType(str, Enum):
     FACETGRID = "facetgrid"
 
 
-class SeabornEstimator(str, Enum):
+class SeabornEstimator(enum.StrEnum):
     MEAN = "mean"
     MEDIAN = "median"
     COUNT = "count"
@@ -2185,7 +2185,7 @@ class SeabornEstimator(str, Enum):
     STD = "std"
 
 
-class SeabornStatistic(str, Enum):
+class SeabornStatistic(enum.StrEnum):
     COUNT = "count"
     FREQUENCY = "frequency"
     PROBABILITY = "probability"
@@ -2395,7 +2395,7 @@ class ChartConfigSchema(BaseModel):
 # Types for handling email data
 
 
-class EmailFlag(str, Enum):
+class EmailFlag(enum.StrEnum):
     SEEN = "SEEN"
     UNSEEN = "UNSEEN"
     ANSWERED = "ANSWERED"
@@ -2404,7 +2404,7 @@ class EmailFlag(str, Enum):
     UNFLAGGED = "UNFLAGGED"
 
 
-class DateCriteria(str, Enum):
+class DateCriteria(enum.StrEnum):
     BEFORE = "BEFORE"
     SINCE = "SINCE"
     ON = "ON"

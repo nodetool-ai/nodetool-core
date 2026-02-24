@@ -24,7 +24,7 @@ import asyncio
 import json
 import os
 import shutil
-from enum import Enum
+from enum import Enum, StrEnum
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Sequence
@@ -207,7 +207,7 @@ for _base, _ckpt in _CHECKPOINT_BASES.items():
         HF_TYPE_KEYWORD_MATCHERS[_ckpt] = list(HF_TYPE_KEYWORD_MATCHERS[_base])
 
 
-class RepoPackagingHint(str, Enum):
+class RepoPackagingHint(StrEnum):
     """
     Hint describing how a HF repo should be presented to the user.
 
@@ -825,10 +825,7 @@ def _infer_model_type_from_local_configs(
         architectures = data.get("architectures")
         if isinstance(architectures, list):
             for arch in architectures:
-                mapped = _CONFIG_MODEL_TYPE_ARCHITECTURE_MAPPING.get(
-                    str(arch),
-                    None,
-                )
+                mapped = _CONFIG_MODEL_TYPE_ARCHITECTURE_MAPPING.get(str(arch))
                 if mapped:
                     return mapped
     return None

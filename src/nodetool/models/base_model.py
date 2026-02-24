@@ -1,6 +1,6 @@
 import hashlib
 import json
-from enum import Enum
+from enum import Enum, StrEnum
 from random import randint
 from typing import Any, Callable, ClassVar
 from uuid import uuid1
@@ -34,7 +34,7 @@ Key Components:
 log = get_logger(__name__)
 
 
-class ModelChangeEvent(str, Enum):
+class ModelChangeEvent(StrEnum):
     """Types of model change events."""
 
     CREATED = "created"

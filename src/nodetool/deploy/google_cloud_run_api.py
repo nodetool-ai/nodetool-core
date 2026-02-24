@@ -23,7 +23,7 @@ import json
 import subprocess
 import sys
 from contextlib import suppress
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any, Optional, cast
 
 from rich.console import Console
@@ -31,7 +31,7 @@ from rich.console import Console
 console = Console()
 
 
-class CloudRunRegion(str, Enum):
+class CloudRunRegion(StrEnum):
     """Google Cloud Run supported regions."""
 
     # Americas
@@ -80,7 +80,7 @@ class CloudRunRegion(str, Enum):
         return [item.value for item in cls]
 
 
-class CloudRunCPU(str, Enum):
+class CloudRunCPU(StrEnum):
     """Google Cloud Run CPU allocation options."""
 
     CPU_1 = "1"
@@ -97,7 +97,7 @@ class CloudRunCPU(str, Enum):
         return [item.value for item in cls]
 
 
-class CloudRunMemory(str, Enum):
+class CloudRunMemory(StrEnum):
     """Google Cloud Run memory allocation options."""
 
     MEMORY_512Mi = "512Mi"

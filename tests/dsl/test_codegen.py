@@ -1,9 +1,10 @@
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from types import GenericAlias, UnionType
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
+
 import pytest
 
 from nodetool.dsl.codegen import type_to_string
-from nodetool.metadata.types import BaseType, ImageRef, AudioRef
+from nodetool.metadata.types import AudioRef, BaseType, ImageRef
 
 
 def test_primitive_types():
@@ -22,21 +23,21 @@ def test_generic_types():
 
 def test_union_types():
     # Test Union[...] syntax
-    assert type_to_string(Union[int, str]) == "int | str"
+    assert type_to_string(Union[int, str]) == "int | str"  # noqa: UP007
     # Test | syntax (Python 3.10+)
     assert type_to_string(int | str) == "int | str"
 
     # Complex unions
-    assert type_to_string(Union[int, str, float]) == "int | str | float"
+    assert type_to_string(Union[int, str, float]) == "int | str | float"  # noqa: UP007
     assert type_to_string(int | str | float) == "int | str | float"
 
     # Union with None (explicit)
-    assert type_to_string(Union[int, None]) == "int | None"
+    assert type_to_string(Union[int, None]) == "int | None"  # noqa: UP007
 
 
 def test_optional_types():
     assert type_to_string(Optional[int]) == "int | None"
-    assert type_to_string(Union[int, None]) == "int | None"
+    assert type_to_string(Union[int, None]) == "int | None"  # noqa: UP007
     assert type_to_string(int | None) == "int | None"
 
 

@@ -9,7 +9,7 @@ import urllib.parse
 import uuid
 from contextlib import suppress
 from datetime import datetime
-from enum import Enum
+from enum import Enum, StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -233,7 +233,7 @@ def _resolve_default_device(explicit_device: str | None = None) -> str | None:
     return "cpu"
 
 
-class AssetOutputMode(str, Enum):
+class AssetOutputMode(StrEnum):
     """Controls how assets are materialized when emitting workflow messages."""
 
     PYTHON = "python"

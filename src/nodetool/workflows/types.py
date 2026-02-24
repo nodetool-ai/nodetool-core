@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -70,7 +70,7 @@ def sanitize_memory_uris_for_client(value: Any) -> Any:
         return value
 
 
-class TaskUpdateEvent(str, Enum):
+class TaskUpdateEvent(StrEnum):
     """Enum for different task update event types."""
 
     TASK_CREATED = "task_created"

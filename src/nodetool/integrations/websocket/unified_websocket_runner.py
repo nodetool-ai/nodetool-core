@@ -45,7 +45,7 @@ import json
 import time
 from contextlib import suppress
 from datetime import datetime
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any, AsyncGenerator, Optional
 
 import msgpack
@@ -89,7 +89,7 @@ from nodetool.workflows.types import Chunk, Error
 log = get_logger(__name__)
 
 
-class CommandType(str, Enum):
+class CommandType(StrEnum):
     """
     Supported WebSocket commands for the unified runner.
 
@@ -138,7 +138,7 @@ class WebSocketCommand(BaseModel):
     data: dict
 
 
-class WebSocketMode(str, Enum):
+class WebSocketMode(StrEnum):
     """WebSocket protocol mode."""
 
     BINARY = "binary"

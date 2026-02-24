@@ -38,7 +38,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any, AsyncGenerator, Generator, Literal, Optional
 
 from nodetool.config.env_guard import get_system_env_value
@@ -65,7 +65,7 @@ def _truncate_text(text: str, max_length: int = 200) -> str:
     return text[:max_length] if len(text) > max_length else text
 
 
-class SpanKind(str, Enum):
+class SpanKind(StrEnum):
     """OpenTelemetry-compatible span kinds."""
 
     INTERNAL = "internal"
@@ -75,7 +75,7 @@ class SpanKind(str, Enum):
     CONSUMER = "consumer"
 
 
-class SpanStatus(str, Enum):
+class SpanStatus(StrEnum):
     """OpenTelemetry-compatible span status codes."""
 
     UNSET = "unset"

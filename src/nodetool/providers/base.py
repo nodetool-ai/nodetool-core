@@ -8,7 +8,7 @@ and other AI capabilities. Providers declare their capabilities at runtime.
 
 import datetime
 import json
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import (
     Any,
     AsyncGenerator,
@@ -43,7 +43,7 @@ from nodetool.workflows.types import Chunk
 log = get_logger(__name__)
 
 
-class ProviderCapability(str, Enum):
+class ProviderCapability(StrEnum):
     """Capabilities that a provider can support.
 
     Providers expose capabilities automatically via BaseProvider.get_capabilities(),
