@@ -41,17 +41,27 @@ def _legacy_export_to_video(
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
             output_video_path = tmp_file.name
 
-    if isinstance(video_frames[0], np.ndarray):
-        video_frames = [(frame * 255).astype(np.uint8) for frame in video_frames]  # type: ignore[union-attr]
-    elif isinstance(video_frames[0], PIL.Image.Image):
-        video_frames = [np.array(frame) for frame in video_frames]
+    # Initialize writer using dimensions from the first frame
+    first_frame = video_frames[0]
+    if isinstance(first_frame, PIL.Image.Image):
+        w, h = first_frame.size
+    elif isinstance(first_frame, np.ndarray):
+        h, w = first_frame.shape[:2]
+    else:
+        raise ValueError(f"Unsupported frame type: {type(first_frame)}")
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
-    h, w, _c = video_frames[0].shape
     video_writer = cv2.VideoWriter(output_video_path, fourcc, fps=fps, frameSize=(w, h))
 
-    for i in range(len(video_frames)):
-        img = cv2.cvtColor(video_frames[i], cv2.COLOR_RGB2BGR)
+    for frame in video_frames:
+        if isinstance(frame, PIL.Image.Image):
+            frame = np.array(frame)
+
+        # Convert to uint8 if needed (assume float 0..1 if not uint8)
+        if frame.dtype != np.uint8:
+            frame = (frame * 255).astype(np.uint8)
+
+        img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         video_writer.write(img)
 
     video_writer.release()
@@ -113,11 +123,8 @@ def export_to_video(
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
             output_video_path = tmp_file.name
 
-    # Convert frames to uint8 format
-    if isinstance(video_frames[0], np.ndarray):
-        video_frames = [(frame * 255).astype(np.uint8) for frame in video_frames]  # type: ignore[union-attr]
-    elif isinstance(video_frames[0], PIL.Image.Image):
-        video_frames = [np.array(frame) for frame in video_frames]
+    if not video_frames:
+        raise IndexError("list index out of range")
 
     # Export using imageio
     with imageio.get_writer(
@@ -128,6 +135,13 @@ def export_to_video(
         macro_block_size=macro_block_size,
     ) as writer:
         for frame in video_frames:
+            if isinstance(frame, PIL.Image.Image):
+                frame = np.array(frame)
+
+            # Convert to uint8 if needed (assume float 0..1 if not uint8)
+            if frame.dtype != np.uint8:
+                frame = (frame * 255).astype(np.uint8)
+
             writer.append_data(frame)  # type: ignore[attr-defined]
 
     return output_video_path
@@ -182,11 +196,8 @@ def export_to_video_bytes(
         )
         return _legacy_export_to_video_bytes(video_frames, fps)
 
-    # Convert frames to uint8 format
-    if isinstance(video_frames[0], np.ndarray):
-        video_frames = [(frame * 255).astype(np.uint8) for frame in video_frames]  # type: ignore[union-attr]
-    elif isinstance(video_frames[0], PIL.Image.Image):
-        video_frames = [np.array(frame) for frame in video_frames]
+    if not video_frames:
+        raise IndexError("list index out of range")
 
     # Export using imageio to bytes
     from io import BytesIO
@@ -201,6 +212,13 @@ def export_to_video_bytes(
         macro_block_size=macro_block_size,
     ) as writer:
         for frame in video_frames:
+            if isinstance(frame, PIL.Image.Image):
+                frame = np.array(frame)
+
+            # Convert to uint8 if needed (assume float 0..1 if not uint8)
+            if frame.dtype != np.uint8:
+                frame = (frame * 255).astype(np.uint8)
+
             writer.append_data(frame)  # type: ignore[attr-defined]
 
     return buffer.getvalue()
@@ -218,17 +236,27 @@ def _legacy_export_to_video_bytes(
 
     import cv2
 
-    if isinstance(video_frames[0], np.ndarray):
-        video_frames = [(frame * 255).astype(np.uint8) for frame in video_frames]  # type: ignore[union-attr]
-    elif isinstance(video_frames[0], PIL.Image.Image):
-        video_frames = [np.array(frame) for frame in video_frames]
+    # Initialize writer using dimensions from the first frame
+    first_frame = video_frames[0]
+    if isinstance(first_frame, PIL.Image.Image):
+        w, h = first_frame.size
+    elif isinstance(first_frame, np.ndarray):
+        h, w = first_frame.shape[:2]
+    else:
+        raise ValueError(f"Unsupported frame type: {type(first_frame)}")
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
-    h, w, _c = video_frames[0].shape
     video_writer = cv2.VideoWriter("/tmp/temp_video.mp4", fourcc, fps=fps, frameSize=(w, h))
 
-    for i in range(len(video_frames)):
-        img = cv2.cvtColor(video_frames[i], cv2.COLOR_RGB2BGR)
+    for frame in video_frames:
+        if isinstance(frame, PIL.Image.Image):
+            frame = np.array(frame)
+
+        # Convert to uint8 if needed (assume float 0..1 if not uint8)
+        if frame.dtype != np.uint8:
+            frame = (frame * 255).astype(np.uint8)
+
+        img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         video_writer.write(img)
 
     video_writer.release()
