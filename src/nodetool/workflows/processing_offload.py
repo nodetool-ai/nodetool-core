@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import pickle
 from contextlib import suppress
 from io import BytesIO
 from typing import IO, Any, Callable, ParamSpec, TypeVar
@@ -208,6 +209,61 @@ def _audio_segment_to_numpy(
 
 def _joblib_load_from_io(buffer: IO[bytes]) -> Any:
     joblib = _ensure_joblib()
+    from joblib.numpy_pickle import NumpyUnpickler
+    from joblib.numpy_pickle_utils import _validate_fileobject_and_memmap
+
+    class SafeUnpickler(NumpyUnpickler):
+        def find_class(self, module, name):
+            # Allow basic types and collections
+            if module == "builtins":
+                if name in (
+                    "list",
+                    "dict",
+                    "set",
+                    "frozenset",
+                    "tuple",
+                    "int",
+                    "float",
+                    "complex",
+                    "bool",
+                    "str",
+                    "bytes",
+                    "bytearray",
+                    "range",
+                    "slice",
+                    "None",
+                    "True",
+                    "False",
+                ):
+                    return super().find_class(module, name)
+                raise pickle.UnpicklingError(f"Global '{module}.{name}' is forbidden")
+
+            if module in ("collections", "datetime", "_codecs", "copyreg"):
+                return super().find_class(module, name)
+
+            # Allow safe data science libraries
+            if module.split(".")[0] in ("numpy", "pandas", "scipy", "sklearn", "joblib"):
+                return super().find_class(module, name)
+
+            raise pickle.UnpicklingError(f"Global '{module}.{name}' is forbidden")
+
+    # Validate content with SafeUnpickler first
+    with suppress(Exception):
+        buffer.seek(0)
+
+    try:
+        # Use joblib's utility to handle compression and get a readable stream
+        # This returns a context manager that yields (fobj, mmap_mode)
+        # We pass filename="" as we are reading from a buffer without a name
+        with _validate_fileobject_and_memmap(buffer, "", None) as (fobj, _):
+            # Use joblib's NumpyUnpickler logic to handle array persistence
+            # Signature: (filename, file_handle, ensure_native_byte_order, mmap_mode=None)
+            # Pass empty string as filename if reading from buffer (similar to joblib.load)
+            unpickler = SafeUnpickler("", fobj, ensure_native_byte_order=True)
+            unpickler.load()
+    except Exception as e:
+        raise ValueError(f"Unsafe or invalid model data: {e}") from e
+
     with suppress(Exception):
         buffer.seek(0)
     return joblib.load(buffer)
