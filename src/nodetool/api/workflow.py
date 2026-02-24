@@ -33,7 +33,6 @@ from nodetool.types.workflow import (
     WorkflowVersionList,
 )
 from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.types import Error, OutputUpdate
 
 log = get_logger(__name__)
 

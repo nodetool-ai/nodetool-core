@@ -146,12 +146,9 @@ from nodetool.workflows.types import NodeUpdate
 
 
 def _is_torch_available() -> bool:
-    try:
-        import torch
+    import importlib.util
 
-        return True
-    except ImportError:
-        return False
+    return importlib.util.find_spec("torch") is not None
 
 
 NODE_BY_TYPE: dict[str, type["BaseNode"]] = {}
