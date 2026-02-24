@@ -568,7 +568,7 @@ class ProcessingContext:
     def _workspace_path(self, filename: str) -> Path:
         if not self.workspace_dir:
             raise ValueError("workspace_dir is required to store subtask results")
-        return Path(self.workspace_dir) / filename
+        return Path(self.resolve_workspace_path(filename))
 
     async def pop_message_async(self) -> ProcessingMessage:
         """
