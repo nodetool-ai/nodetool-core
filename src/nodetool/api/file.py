@@ -164,9 +164,19 @@ SENSITIVE_PATHS = {"/etc/passwd", "/etc/shadow", "/root", "/home", "/var/log", "
 
 
 def _is_safe_download_path(path: str) -> bool:
-    """Check if the path is safe for download (not a sensitive system path)."""
+    """Check if the path is safe for download (not a sensitive system path and not hidden)."""
     abs_path = os.path.abspath(path)
-    return all(not (abs_path == sensitive or abs_path.startswith(sensitive + os.sep)) for sensitive in SENSITIVE_PATHS)
+
+    # Check sensitive system paths
+    if any(abs_path == sensitive or abs_path.startswith(sensitive + os.sep) for sensitive in SENSITIVE_PATHS):
+        return False
+
+    # Check for hidden files or directories (starting with .)
+    parts = abs_path.split(os.sep)
+    if any(part.startswith(".") for part in parts if part):
+        return False
+
+    return True
 
 
 @router.get("/download/{path:path}")
