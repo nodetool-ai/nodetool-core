@@ -108,6 +108,52 @@ def infer_registry_from_region(region: str) -> str:
     return f"{region}-docker.pkg.dev"
 
 
+def get_gcp_default_env(deployment: GCPDeployment) -> dict[str, str]:
+    """
+    Get the default environment variables for a GCP deployment.
+
+    Args:
+        deployment: GCP deployment configuration
+
+    Returns:
+        dict: Default environment variables
+    """
+    env = {}
+    gcs_bucket = deployment.storage.gcs_bucket if deployment.storage else None
+    gcs_mount_path = deployment.storage.gcs_mount_path if deployment.storage else "/mnt/gcs"
+
+    env["NODETOOL_SERVER_MODE"] = "private"
+    env["HF_HOME"] = (
+        f"{gcs_mount_path}/.cache/huggingface" if gcs_bucket else "/workspace/.cache/huggingface"
+    )
+    env["HF_HUB_CACHE"] = (
+        f"{gcs_mount_path}/.cache/huggingface/hub"
+        if gcs_bucket
+        else "/workspace/.cache/huggingface/hub"
+    )
+    env["TRANSFORMERS_CACHE"] = (
+        f"{gcs_mount_path}/.cache/transformers"
+        if gcs_bucket
+        else "/workspace/.cache/transformers"
+    )
+    env["OLLAMA_MODELS"] = (
+        f"{gcs_mount_path}/.ollama/models" if gcs_bucket else "/workspace/.ollama/models"
+    )
+
+    persistent_paths = deployment.persistent_paths
+    if persistent_paths:
+        env["USERS_FILE"] = persistent_paths.users_file
+        env["DB_PATH"] = persistent_paths.db_path
+        env["CHROMA_PATH"] = persistent_paths.chroma_path
+        env["ASSET_BUCKET"] = persistent_paths.asset_bucket
+        # Enable multi_user auth when persistent_paths is configured
+        env["AUTH_PROVIDER"] = "multi_user"
+    else:
+        env["AUTH_PROVIDER"] = "static"
+
+    return env
+
+
 def deploy_to_gcp(
     deployment: GCPDeployment,
     env: dict[str, str] | None = None,
@@ -215,35 +261,9 @@ def deploy_to_gcp(
             console.print(f"[bold green]✅ Image pushed to registry: {gcp_image_url}[/]")
 
         # Set default cache envs (respect provided values)
-        env.setdefault("NODETOOL_SERVER_MODE", "private")
-        env.setdefault(
-            "HF_HOME",
-            f"{gcs_mount_path}/.cache/huggingface" if gcs_bucket else "/workspace/.cache/huggingface",
-        )
-        env.setdefault(
-            "HF_HUB_CACHE",
-            f"{gcs_mount_path}/.cache/huggingface/hub" if gcs_bucket else "/workspace/.cache/huggingface/hub",
-        )
-        env.setdefault(
-            "TRANSFORMERS_CACHE",
-            f"{gcs_mount_path}/.cache/transformers" if gcs_bucket else "/workspace/.cache/transformers",
-        )
-        env.setdefault(
-            "OLLAMA_MODELS",
-            f"{gcs_mount_path}/.ollama/models" if gcs_bucket else "/workspace/.ollama/models",
-        )
-
-        # Configure paths from persistent_paths if available
-        persistent_paths = deployment.persistent_paths
-        if persistent_paths:
-            env.setdefault("USERS_FILE", persistent_paths.users_file)
-            env.setdefault("DB_PATH", persistent_paths.db_path)
-            env.setdefault("CHROMA_PATH", persistent_paths.chroma_path)
-            env.setdefault("ASSET_BUCKET", persistent_paths.asset_bucket)
-            # Enable multi_user auth when persistent_paths is configured
-            env.setdefault("AUTH_PROVIDER", "multi_user")
-        else:
-            env.setdefault("AUTH_PROVIDER", "static")
+        default_env = get_gcp_default_env(deployment)
+        for key, value in default_env.items():
+            env.setdefault(key, value)
 
         # Deploy to Cloud Run
         if not skip_deploy and gcp_image_url:
