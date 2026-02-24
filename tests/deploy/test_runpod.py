@@ -388,36 +388,59 @@ class TestRunPodDeployer:
 
     def test_destroy(self, basic_deployment, mock_state_manager):
         """Test deployment destruction."""
-        deployer = RunPodDeployer(
-            deployment_name="test-deployment",
-            deployment=basic_deployment,
-            state_manager=mock_state_manager,
-        )
+        with patch("nodetool.deploy.runpod.delete_runpod_endpoint_by_name") as mock_delete:
+            mock_delete.return_value = True
 
-        result = deployer.destroy()
+            deployer = RunPodDeployer(
+                deployment_name="test-deployment",
+                deployment=basic_deployment,
+                state_manager=mock_state_manager,
+            )
 
-        assert result["status"] == "success"
-        assert result["deployment_name"] == "test-deployment"
-        assert any("manually" in step for step in result["steps"])
-        assert any("console" in step for step in result["steps"])
+            result = deployer.destroy()
 
-        # Should update state
-        mock_state_manager.update_deployment_status.assert_called_once_with(
-            "test-deployment", DeploymentStatus.DESTROYED.value
-        )
+            assert result["status"] == "success"
+            assert result["deployment_name"] == "test-deployment"
+            assert any("deleted successfully" in step for step in result["steps"])
+            assert not any("manually" in step for step in result["steps"])
+
+            # Should call API
+            mock_delete.assert_called_once_with("test-deployment")
+
+            # Should update state
+            mock_state_manager.update_deployment_status.assert_called_once_with(
+                "test-deployment", DeploymentStatus.DESTROYED.value
+            )
+
+    def test_destroy_api_failure(self, basic_deployment, mock_state_manager):
+        """Test destroy when API returns false."""
+        with patch("nodetool.deploy.runpod.delete_runpod_endpoint_by_name") as mock_delete:
+            mock_delete.return_value = False
+
+            deployer = RunPodDeployer(
+                deployment_name="test-deployment",
+                deployment=basic_deployment,
+                state_manager=mock_state_manager,
+            )
+
+            with pytest.raises(Exception, match="Failed to delete"):
+                deployer.destroy()
 
     def test_destroy_failure(self, basic_deployment, mock_state_manager):
         """Test destroy with state manager failure."""
         mock_state_manager.update_deployment_status.side_effect = Exception("State update failed")
 
-        deployer = RunPodDeployer(
-            deployment_name="test-deployment",
-            deployment=basic_deployment,
-            state_manager=mock_state_manager,
-        )
+        with patch("nodetool.deploy.runpod.delete_runpod_endpoint_by_name") as mock_delete:
+            mock_delete.return_value = True
 
-        with pytest.raises(Exception, match="State update failed"):
-            deployer.destroy()
+            deployer = RunPodDeployer(
+                deployment_name="test-deployment",
+                deployment=basic_deployment,
+                state_manager=mock_state_manager,
+            )
+
+            with pytest.raises(Exception, match="State update failed"):
+                deployer.destroy()
 
 
 class TestRunPodDeployerEdgeCases:
