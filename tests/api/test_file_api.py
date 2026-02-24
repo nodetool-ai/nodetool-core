@@ -40,3 +40,44 @@ def test_upload_and_download_file(tmp_path, client: TestClient, headers: dict[st
     download = client.get(f"/api/files/download/{target}", headers=headers)
     assert download.status_code == 200
     assert download.content == content
+
+
+def test_download_hidden_file_forbidden(tmp_path, client: TestClient, headers: dict[str, str]):
+    # Create a hidden file
+    hidden_file = tmp_path / ".secret"
+    hidden_file.write_text("secret_data")
+
+    # Try to download it
+    response = client.get(f"/api/files/download/{hidden_file}", headers=headers)
+
+    # This should fail with 403 Forbidden
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Access to this path is forbidden"
+
+
+def test_download_env_file_forbidden(tmp_path, client: TestClient, headers: dict[str, str]):
+    # Create a .env file
+    env_file = tmp_path / ".env"
+    env_file.write_text("SECRET_KEY=12345")
+
+    # Try to download it
+    response = client.get(f"/api/files/download/{env_file}", headers=headers)
+
+    # This should fail with 403 Forbidden
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Access to this path is forbidden"
+
+
+def test_download_file_in_hidden_dir_forbidden(tmp_path, client: TestClient, headers: dict[str, str]):
+    # Create a hidden directory and a file inside
+    hidden_dir = tmp_path / ".hidden_dir"
+    hidden_dir.mkdir()
+    secret_file = hidden_dir / "secret.txt"
+    secret_file.write_text("secret_data")
+
+    # Try to download it
+    response = client.get(f"/api/files/download/{secret_file}", headers=headers)
+
+    # This should fail with 403 Forbidden because a path component starts with .
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Access to this path is forbidden"
