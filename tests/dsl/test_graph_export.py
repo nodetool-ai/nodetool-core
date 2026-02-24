@@ -15,7 +15,7 @@ def test_export_minimal_single_node():
     assert "from nodetool.dsl.apple.notes import ReadNotes" in code
     # Instantiation and graph assembly
     assert "read_notes_1 = ReadNotes(" in code
-    assert "workflow = graph(read_notes_1)" in code
+    assert "graph = graph(read_notes_1)" in code
 
 
 def test_export_with_connection_and_props():
@@ -39,7 +39,7 @@ def test_export_with_connection_and_props():
 
     # Connected handle and preserved literal property
     assert "create_note_1 = CreateNote(title='T', instructions=read_notes_1.output)" in code
-    assert "workflow = graph(read_notes_1, create_note_1)" in code
+    assert "graph = graph(read_notes_1, create_note_1)" in code
 
 
 def test_export_dynamic_outputs_and_properties():

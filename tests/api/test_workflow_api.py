@@ -248,7 +248,7 @@ async def test_dsl_export(client: TestClient, workflow: Workflow, headers: dict[
     # Check that the response contains valid Python DSL code
     code = response.text
     assert "from nodetool.dsl.graph import graph" in code
-    assert "workflow = graph(" in code
+    assert "graph = graph(" in code
 
 
 @pytest.mark.asyncio

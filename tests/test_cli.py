@@ -7,6 +7,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -198,6 +199,200 @@ print("SUCCESS")
         )
         if result.returncode != 0:
             pytest.fail(f"Lazy import check failed:\n{result.stdout}\n{result.stderr}")
+
+
+class TestRunDSLFiles:
+    """Tests for running DSL (.py) files with nodetool run."""
+
+    def test_run_dsl_file_success(self):
+        """Test running a valid DSL Python file."""
+        runner = CliRunner()
+
+        # Create a simple DSL file using the core Graph type directly
+        dsl_code = '''
+from nodetool.types.api_graph import Graph, Node
+
+# Create a graph object directly
+graph = Graph(
+    nodes=[
+        Node(id="1", type="nodetool.math.Add", data={"a": 5.0, "b": 3.0})
+    ],
+    edges=[]
+)
+'''
+        with runner.isolated_filesystem():
+            with open("test_workflow.py", "w") as f:
+                f.write(dsl_code)
+
+            # Mock the run_workflow to avoid actual execution
+            import nodetool.workflows.run_workflow as run_mod
+            original_run = run_mod.run_workflow
+
+            async def mock_run_workflow(*args, **kwargs):
+                from nodetool.types.job import JobUpdate
+                yield JobUpdate(type="job_update", status="completed", job_id="test123", message="Done")
+
+            run_mod.run_workflow = mock_run_workflow
+
+            try:
+                result = runner.invoke(cli, ["run", "test_workflow.py", "--show-outputs"])
+                assert result.exit_code == 0, f"Exit code: {result.exit_code}, Output: {result.output}"
+                assert "completed" in result.output or "finished" in result.output.lower()
+            finally:
+                run_mod.run_workflow = original_run
+
+    def test_run_dsl_file_missing_graph(self):
+        """Test running a DSL file without a graph object raises error."""
+        runner = CliRunner()
+
+        # Create a DSL file without a graph object
+        dsl_code = '''
+from nodetool.types.api_graph import Graph
+# No graph object defined
+x = 42
+'''
+        with runner.isolated_filesystem():
+            with open("test_workflow.py", "w") as f:
+                f.write(dsl_code)
+
+            result = runner.invoke(cli, ["run", "test_workflow.py"])
+            assert result.exit_code == 1
+            assert "must define a module-level 'graph' object" in result.output
+
+    def test_run_dsl_file_wrong_graph_type(self):
+        """Test running a DSL file where graph is not a Graph object."""
+        runner = CliRunner()
+
+        # Create a DSL file with wrong graph type
+        dsl_code = '''
+# graph is a string, not a Graph object
+graph = "not a graph"
+'''
+        with runner.isolated_filesystem():
+            with open("test_workflow.py", "w") as f:
+                f.write(dsl_code)
+
+            result = runner.invoke(cli, ["run", "test_workflow.py"])
+            assert result.exit_code == 1
+            assert "must be of type Graph" in result.output
+
+    def test_run_json_file_still_works(self):
+        """Test that running JSON workflow files still works."""
+        runner = CliRunner()
+
+        # Create a simple JSON workflow file
+        workflow_json = {
+            "graph": {
+                "nodes": [
+                    {
+                        "id": "1",
+                        "type": "nodetool.math.Add",
+                        "data": {"a": 5.0, "b": 3.0}
+                    }
+                ],
+                "edges": []
+            }
+        }
+
+        with runner.isolated_filesystem():
+            with open("test_workflow.json", "w") as f:
+                json.dump(workflow_json, f)
+
+            # Mock the run_workflow
+            import nodetool.workflows.run_workflow as run_mod
+            original_run = run_mod.run_workflow
+
+            async def mock_run_workflow(*args, **kwargs):
+                from nodetool.types.job import JobUpdate
+                yield JobUpdate(type="job_update", status="completed", job_id="test123", message="Done")
+
+            run_mod.run_workflow = mock_run_workflow
+
+            try:
+                result = runner.invoke(cli, ["run", "test_workflow.json"])
+                assert result.exit_code == 0, f"Exit code: {result.exit_code}, Output: {result.output}"
+            finally:
+                run_mod.run_workflow = original_run
+
+    def test_run_stdin_dsl_code(self):
+        """Test running DSL code from stdin."""
+        runner = CliRunner()
+
+        # DSL code to pipe via stdin
+        dsl_code = '''
+from nodetool.types.api_graph import Graph, Node
+
+# Create a graph object directly
+graph = Graph(
+    nodes=[
+        Node(id="1", type="nodetool.math.Add", data={"a": 10.0, "b": 20.0})
+    ],
+    edges=[]
+)
+'''
+
+        # Mock the run_workflow
+        import nodetool.workflows.run_workflow as run_mod
+        original_run = run_mod.run_workflow
+
+        async def mock_run_workflow(*args, **kwargs):
+            from nodetool.types.job import JobUpdate
+            yield JobUpdate(type="job_update", status="completed", job_id="test123", message="Done")
+
+        run_mod.run_workflow = mock_run_workflow
+
+        try:
+            result = runner.invoke(cli, ["run", "--stdin"], input=dsl_code)
+            assert result.exit_code == 0, f"Exit code: {result.exit_code}, Output: {result.output}"
+            assert "completed" in result.output or "finished" in result.output.lower()
+        finally:
+            run_mod.run_workflow = original_run
+
+    def test_run_stdin_json_still_works(self):
+        """Test that JSON stdin still works."""
+        runner = CliRunner()
+
+        # JSON RunJobRequest
+        json_input = '{"workflow_id":"test123","user_id":"1","auth_token":"token","params":{}}'
+
+        # Mock the run_workflow
+        import nodetool.workflows.run_workflow as run_mod
+        original_run = run_mod.run_workflow
+
+        async def mock_run_workflow(*args, **kwargs):
+            from nodetool.types.job import JobUpdate
+            yield JobUpdate(type="job_update", status="completed", job_id="test123", message="Done")
+
+        run_mod.run_workflow = mock_run_workflow
+
+        try:
+            result = runner.invoke(cli, ["run", "--stdin"], input=json_input)
+            assert result.exit_code == 0, f"Exit code: {result.exit_code}, Output: {result.output}"
+        finally:
+            run_mod.run_workflow = original_run
+
+    def test_run_stdin_dsl_missing_graph(self):
+        """Test DSL stdin without graph object raises error."""
+        runner = CliRunner()
+
+        # DSL code without graph object
+        dsl_code = '''
+from nodetool.types.api_graph import Graph
+# No graph defined
+x = 42
+'''
+
+        result = runner.invoke(cli, ["run", "--stdin"], input=dsl_code)
+        assert result.exit_code == 1
+        assert "must define a module-level 'graph' object" in result.output
+
+    def test_run_stdin_empty(self):
+        """Test empty stdin raises error."""
+        runner = CliRunner()
+
+        result = runner.invoke(cli, ["run", "--stdin"], input="")
+        assert result.exit_code == 1
+        assert "No input provided" in result.output
 
     def test_collection_tools_import_is_clean(self):
         """Test that importing CollectionTools does not trigger ChromaDB load."""

@@ -1120,7 +1120,7 @@ def _download_and_cache_ui(url: str) -> str:
 @click.option(
     "--stdin",
     is_flag=True,
-    help="Read full RunJobRequest JSON from stdin (for subprocess/automation use)",
+    help="Read workflow from stdin (auto-detects JSON or DSL Python code)",
 )
 @click.option(
     "--user-id",
@@ -1165,35 +1165,47 @@ def run(
     show_previews: bool,
     show_outputs: bool,
 ):
-    """Run a workflow by ID, file path, or RunJobRequest JSON.
+    """Run a workflow by ID, file path, DSL file, or RunJobRequest JSON.
 
     Interactive mode (default):
       Runs a workflow and displays pretty-printed status updates.
-      Specify a workflow ID or path to a workflow JSON file.
+      Specify a workflow ID, path to a workflow JSON file, or Python DSL file.
 
     JSONL mode (--jsonl):
       Outputs raw JSONL (JSON Lines) format for subprocess/automation use.
       Each line is a valid JSON object representing workflow progress.
 
     Stdin mode (--stdin):
-      Reads a complete RunJobRequest JSON from stdin.
-      Useful for programmatic workflow execution.
+      Reads workflow input from stdin. Auto-detects format:
+      - DSL Python code: Must define a module-level `graph` object
+      - JSON: RunJobRequest JSON (workflow_id or graph based)
+      Useful for programmatic workflow execution and piping.
+
+    DSL files:
+      Python DSL files (.py) must define a module-level `graph` object.
+      Use `nodetool dsl-export` to generate DSL files from existing workflows.
 
     Examples:
       # Interactive: Run workflow by ID
       nodetool run workflow_abc123
 
-      # Interactive: Run workflow from file
+      # Interactive: Run workflow from JSON file
       nodetool run workflow.json
+
+      # Interactive: Run workflow from DSL (Python) file
+      nodetool run workflow.py
 
       # JSONL: Stream workflow progress as JSONL
       nodetool run workflow_abc123 --jsonl
 
-      # Stdin: Read RunJobRequest from stdin (JSONL output)
+      # Stdin: Read RunJobRequest JSON from stdin (JSONL output)
       echo '{"workflow_id":"abc","user_id":"1","auth_token":"token","params":{}}' | nodetool run --stdin --jsonl
 
-      # Stdin: Read RunJobRequest from file
-      cat request.json | nodetool run --stdin --jsonl
+      # Stdin: Read DSL code from stdin
+      cat workflow.py | nodetool run --stdin
+
+      # Generate and run DSL in one command
+      nodetool dsl-export workflow_abc123 | nodetool run --stdin
 
       # Run workflow 5 times
       nodetool run workflow.json --repeat 5
@@ -1227,10 +1239,99 @@ def run(
 
         return str(obj)
 
+    def _is_dsl_file(path: str) -> bool:
+        """Check if the file is a Python DSL file."""
+        return path.endswith(".py") and not path.endswith(".pyc")
+
+    def _load_dsl_file(path: str) -> Graph:
+        """Load a DSL Python file and extract the graph object.
+
+        The DSL file should define a module-level `graph` object.
+        """
+        import importlib.util
+        import sys
+        from pathlib import Path
+
+        # Create a unique module name based on the file path
+        file_path = Path(path).resolve()
+        module_name = f"_nodetool_dsl_{file_path.stem}_{hash(str(file_path)) & 0xFFFFFFFF:08x}"
+
+        # Load the module
+        spec = importlib.util.spec_from_file_location(module_name, file_path)
+        if spec is None or spec.loader is None:
+            raise ValueError(f"Cannot load Python file: {path}")
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+
+        # Look for the standardized `graph` object
+        if not hasattr(module, "graph"):
+            raise ValueError(
+                f"DSL file '{path}' must define a module-level 'graph' object.\n"
+                "Example: graph = graph(node1, node2, ...)"
+            )
+
+        graph_obj = module.graph
+        if not isinstance(graph_obj, Graph):
+            raise ValueError(
+                f"DSL file 'graph' object must be of type Graph, got {type(graph_obj).__name__}"
+            )
+
+        return graph_obj
+
+    def _load_dsl_string(code: str, name: str = "<stdin>") -> Graph:
+        """Execute DSL Python code and extract the graph object.
+
+        The DSL code should define a module-level `graph` object.
+        """
+        import importlib.util
+        import sys
+        from pathlib import Path
+
+        # Create a unique module name
+        module_name = f"_nodetool_dsl_stdin_{hash(code) & 0xFFFFFFFF:08x}"
+
+        # Create a module from the code string
+        spec = importlib.util.spec_from_loader(module_name, loader=None)
+        if spec is None:
+            raise ValueError(f"Cannot create module for DSL code")
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+
+        # Execute the code in the module's namespace
+        exec(code, module.__dict__)
+
+        # Look for the standardized `graph` object
+        if not hasattr(module, "graph"):
+            raise ValueError(
+                f"DSL code must define a module-level 'graph' object.\n"
+                "Example: graph = graph(node1, node2, ...)"
+            )
+
+        graph_obj = module.graph
+        if not isinstance(graph_obj, Graph):
+            raise ValueError(
+                f"DSL 'graph' object must be of type Graph, got {type(graph_obj).__name__}"
+            )
+
+        return graph_obj
+
     def _parse_workflow_arg(value: str) -> RunJobRequest:
         """Parse workflow argument as ID, file path, or RunJobRequest JSON."""
         # Check if it's a file
         if os.path.isfile(value):
+            # Check if it's a DSL (Python) file
+            if _is_dsl_file(value):
+                graph = _load_dsl_file(value)
+                return RunJobRequest(
+                    user_id=user_id,
+                    auth_token=auth_token,
+                    graph=graph,
+                )
+
+            # Try to load as JSON
             with open(value, encoding="utf-8") as f:
                 data = json.load(f)
 
@@ -1265,12 +1366,64 @@ def run(
             auth_token=auth_token,
         )
 
+    def _is_dsl_content(data: str) -> bool:
+        """Check if the data looks like Python DSL code rather than JSON."""
+        # Strip leading whitespace/comments
+        stripped = data.strip()
+        if not stripped:
+            return False
+
+        # DSL/Python indicators
+        dsl_indicators = [
+            "import ",
+            "from ",
+            "def ",
+            "class ",
+            "= graph(",
+            "=graph(",
+            "Graph(",
+            "# ",
+            "'''",
+            '"""',
+            "graph = ",
+        ]
+
+        # Check for DSL indicators in first few lines
+        first_lines = "\n".join(stripped.split("\n")[:10])
+        for indicator in dsl_indicators:
+            if indicator in first_lines:
+                return True
+
+        # If it doesn't start with JSON characters, might be Python
+        if stripped[0] not in "[{\"':":
+            return True
+
+        return False
+
     def _read_stdin_request() -> RunJobRequest:
-        """Read RunJobRequest JSON from stdin."""
+        """Read workflow from stdin (JSON RunJobRequest or DSL Python code)."""
         stdin_data = sys.stdin.read()
         if not stdin_data.strip():
-            print("Error: No request JSON provided via stdin", file=sys.stderr)
+            print("Error: No input provided via stdin", file=sys.stderr)
             sys.exit(1)
+
+        # Try to detect if it's DSL code
+        if _is_dsl_content(stdin_data):
+            try:
+                graph = _load_dsl_string(stdin_data)
+                return RunJobRequest(
+                    user_id=user_id,
+                    auth_token=auth_token,
+                    graph=graph,
+                )
+            except SyntaxError as e:
+                print(f"Error: Invalid DSL Python code: {e}", file=sys.stderr)
+                sys.exit(1)
+            except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
+
+        # Otherwise treat as JSON
         try:
             req_dict = json.loads(stdin_data)
             if isinstance(req_dict.get("graph"), dict):

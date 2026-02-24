@@ -240,7 +240,7 @@ def graph_to_dsl_py(graph: ApiGraph) -> str:
 
     lines.append("")
     all_vars = ", ".join(var_names[node_id] for node_id in order)
-    lines.append(f"workflow = graph({all_vars})")
+    lines.append(f"graph = graph({all_vars})")
     lines.append("")
 
     return "\n".join(lines)
@@ -449,7 +449,7 @@ def graph_to_gradio_py(
     lines.append("")
     lines.append("if __name__ == '__main__':")
     lines.append("    application = create_gradio_app(")
-    lines.append("        workflow=workflow,")
+    lines.append("        workflow=graph,")
     lines.append("        input_specs=INPUT_SPECS,")
     lines.append("        output_specs=OUTPUT_SPECS,")
     lines.append("        namespace=globals(),")
