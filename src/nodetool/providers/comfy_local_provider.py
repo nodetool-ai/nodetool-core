@@ -419,28 +419,31 @@ class ComfyLocalProvider(BaseProvider):
             return []
 
         outputs = history.get(prompt_id, {}).get("outputs", {})
-        images: list[bytes] = []
 
+        async def _fetch_one(node_id: str, image_info: dict[str, Any]) -> bytes | None:
+            filename = image_info.get("filename")
+            if not filename:
+                return None
+            subfolder = image_info.get("subfolder", "")
+            image_type = image_info.get("type", "output")
+            try:
+                return await asyncio.to_thread(get_image_data, filename, subfolder, image_type)
+            except Exception as exc:
+                log.warning(
+                    "Failed to retrieve image from history (node=%s filename=%s): %s",
+                    node_id,
+                    filename,
+                    exc,
+                )
+                return None
+
+        tasks = []
         for node_id, node_output in outputs.items():
             for image_info in node_output.get("images", []):
-                filename = image_info.get("filename")
-                if not filename:
-                    continue
-                subfolder = image_info.get("subfolder", "")
-                image_type = image_info.get("type", "output")
-                try:
-                    data = await asyncio.to_thread(get_image_data, filename, subfolder, image_type)
-                except Exception as exc:
-                    log.warning(
-                        "Failed to retrieve image from history (node=%s filename=%s): %s",
-                        node_id,
-                        filename,
-                        exc,
-                    )
-                    continue
-                if data:
-                    images.append(data)
-        return images
+                tasks.append(_fetch_one(node_id, image_info))
+
+        results = await asyncio.gather(*tasks)
+        return [img for img in results if img]
 
 
 # No legacy alias; use ProviderEnum.ComfyLocal explicitly

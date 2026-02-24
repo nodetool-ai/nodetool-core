@@ -66,7 +66,7 @@ class FinishTool(Tool):
     name: str = "finish_task"
     description: str = "Finish the task by providing the final result value and metadata."
 
-    def __init__(self, output_type: str, output_schema: Any):
+    def __init__(self, output_type: str, output_schema: Any) -> None:
         super().__init__()
         self.output_type = output_type
 
@@ -106,7 +106,7 @@ class AgentExecutor:
         input_values: dict[str, Any] | None = None,
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
         output_schema: Any | None = None,
-    ):
+    ) -> None:
         self.objective = objective
         self.output_type = output_type
         self.processing_context = processing_context
@@ -272,7 +272,7 @@ Safety and privacy:
             logger.error(f"Error executing tool {tool_call.name}: {e}")
             return {"error": str(e)}
 
-    async def _handle_max_iterations(self):
+    async def _handle_max_iterations(self) -> None:
         """Handle case where max iterations is reached without completion."""
         logger.warning(f"Max iterations reached for objective: {self.objective}")
 
@@ -304,7 +304,7 @@ Safety and privacy:
         return self.metadata
 
 
-async def main():
+async def main() -> None:
     """Test scenario for the AgentExecutor."""
     import os
 

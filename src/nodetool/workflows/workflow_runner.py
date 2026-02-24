@@ -71,7 +71,6 @@ try:
         ProfilerActivity,
         profile,
         record_function,
-        schedule,
         tensorboard_trace_handler,
     )
 
