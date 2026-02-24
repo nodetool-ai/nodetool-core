@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from enum import Enum, StrEnum
 from typing import Any, ClassVar
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, FastAPI, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
@@ -806,6 +807,21 @@ def create_app(
                     await websocket.accept()
                     await websocket.close(code=1008, reason="External terminal access requires configured authentication.")
                     return
+
+                # Prevent CSWSH: Ensure Origin is localhost if present
+                origin = websocket.headers.get("origin")
+                if origin:
+                    try:
+                        parsed = urlparse(origin)
+                        # hostname can be None if scheme is missing or weird format
+                        hostname = parsed.hostname or ""
+                        if hostname not in allowed_hosts:
+                            log.warning(f"Blocking terminal access from origin {origin} because auth is not enforced.")
+                            await websocket.accept()
+                            await websocket.close(code=1008, reason="Terminal access from external origin is not allowed.")
+                            return
+                    except Exception as e:
+                        log.warning(f"Failed to parse origin {origin}: {e}")
 
                 token = None
                 user_id = "1"  # Default dev user
