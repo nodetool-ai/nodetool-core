@@ -794,6 +794,19 @@ def create_app(
 
             # Skip authentication in dev mode for convenience
             if not enforce_auth:
+                # Security check: If auth is disabled, we MUST restrict to localhost
+                # to prevent RCE from network users.
+                client_host = websocket.client.host if websocket.client else ""
+                # Allow "testclient" for internal tests (safe as it's not a valid IP)
+                allowed_hosts = {"127.0.0.1", "::1", "localhost", "testclient"}
+
+                if client_host not in allowed_hosts:
+                    log.warning(f"Blocking external terminal access from {client_host} because auth is not enforced.")
+                    # Accept then close with policy violation
+                    await websocket.accept()
+                    await websocket.close(code=1008, reason="External terminal access requires configured authentication.")
+                    return
+
                 token = None
                 user_id = "1"  # Default dev user
             else:
