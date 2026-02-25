@@ -81,3 +81,32 @@ def test_download_file_in_hidden_dir_forbidden(tmp_path, client: TestClient, hea
     # This should fail with 403 Forbidden because a path component starts with .
     assert response.status_code == 403
     assert response.json()["detail"] == "Access to this path is forbidden"
+
+
+def test_upload_to_system_dir_forbidden(client: TestClient, headers: dict[str, str]):
+    """Ensure uploading to sensitive system directories is forbidden."""
+    # We use a mocked path or a real system path that should be blocked
+    # /usr/bin/pwned.txt
+    target_file = "/usr/bin/pwned.txt"
+    content = b"hacked"
+
+    response = client.post(
+        f"/api/files/upload/{target_file}",
+        files={"file": ("pwned.txt", content, "text/plain")},
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Access to this path is forbidden"
+
+
+def test_download_from_system_dir_forbidden(client: TestClient, headers: dict[str, str]):
+    """Ensure downloading from sensitive system directories is forbidden."""
+    # We request a file that likely doesn't exist but is in a blocked path
+    # The check happens before existence check
+    target_file = "/usr/bin/secret"
+
+    response = client.get(f"/api/files/download/{target_file}", headers=headers)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Access to this path is forbidden"

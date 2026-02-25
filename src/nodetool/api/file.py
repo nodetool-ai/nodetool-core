@@ -160,16 +160,39 @@ async def get_file(path: str, __user: str = Depends(current_user)) -> FileInfo:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-SENSITIVE_PATHS = {"/etc/passwd", "/etc/shadow", "/root", "/home", "/var/log", "/proc", "/sys"}
+SENSITIVE_PATHS = {
+    "/etc",
+    "/root",
+    "/home",
+    "/var",
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib64",
+    "/opt",
+    "/boot",
+    "/dev",
+    "/proc",
+    "/sys",
+    "/run",
+    "C:\\Windows",
+    "C:\\Program Files",
+    "C:\\Program Files (x86)",
+}
 
 
-def _is_safe_download_path(path: str) -> bool:
-    """Check if the path is safe for download (not a sensitive system path and not hidden)."""
+def _is_safe_path(path: str) -> bool:
+    """Check if the path is safe for access (not a sensitive system path and not hidden)."""
     abs_path = os.path.abspath(path)
 
     # Check sensitive system paths
-    if any(abs_path == sensitive or abs_path.startswith(sensitive + os.sep) for sensitive in SENSITIVE_PATHS):
-        return False
+    # We check if the path IS the sensitive path OR if it is INSIDE the sensitive path
+    for sensitive in SENSITIVE_PATHS:
+        # Normalize sensitive path
+        sensitive_abs = os.path.abspath(sensitive)
+        if abs_path == sensitive_abs or abs_path.startswith(sensitive_abs + os.sep):
+            return False
 
     # Check for hidden files or directories (starting with .)
     parts = abs_path.split(os.sep)
@@ -188,7 +211,7 @@ async def download_file(path: str, __user: str = Depends(current_user)):
     system paths like /etc, /root, /proc, etc.
     """
     try:
-        if not _is_safe_download_path(path):
+        if not _is_safe_path(path):
             raise HTTPException(status_code=403, detail="Access to this path is forbidden")
 
         abs_path = path
@@ -222,6 +245,9 @@ async def upload_file(path: str, file: UploadFile, __user: str = Depends(current
     Upload a file to the specified path
     """
     try:
+        if not _is_safe_path(path):
+            raise HTTPException(status_code=403, detail="Access to this path is forbidden")
+
         abs_path = path
         await asyncio.to_thread(os.makedirs, os.path.dirname(abs_path), exist_ok=True)
 
