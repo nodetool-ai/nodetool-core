@@ -386,17 +386,39 @@ def _legacy_read_video_frames(
 
         step = max(1, int(video_fps / fps))
 
-        count = 0
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-            if count % step == 0:
-                # CV2 is BGR, convert to RGB
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frames.append(PIL.Image.fromarray(rgb_frame))
-            count += 1
+        # Seek only if step is large enough to justify seeking overhead
+        # Benchmark shows seeking is faster when skipping > ~20 frames
+        should_seek = total_frames > 0 and step > 20
+
+        def _process_frame(frame_data):
+            # CV2 is BGR, convert to RGB
+            rgb_frame = cv2.cvtColor(frame_data, cv2.COLOR_BGR2RGB)
+            return PIL.Image.fromarray(rgb_frame)
+
+        if should_seek:
+            current_frame = 0
+            while current_frame < total_frames:
+                # Optimized seeking for supported formats
+                cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame)
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                frames.append(_process_frame(frame))
+                current_frame += step
+        else:
+            # Fallback to sequential read
+            count = 0
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                if count % step == 0:
+                    frames.append(_process_frame(frame))
+                count += 1
 
         cap.release()
     finally:
