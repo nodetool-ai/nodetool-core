@@ -1,8 +1,11 @@
-import pytest
-from unittest.mock import MagicMock, patch, call
 import sys
 import time
+from unittest.mock import MagicMock, call, patch
+
+import pytest
+
 from nodetool.workflows import memory_utils
+
 
 class TestMemoryUtils:
 

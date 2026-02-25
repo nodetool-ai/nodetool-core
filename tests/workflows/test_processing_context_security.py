@@ -3,8 +3,10 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from nodetool.workflows.processing_context import ProcessingContext
+
 from nodetool.io.path_utils import resolve_workspace_path
+from nodetool.workflows.processing_context import ProcessingContext
+
 
 class TestProcessingContextSecurity(unittest.TestCase):
     def setUp(self):
@@ -33,10 +35,7 @@ class TestProcessingContextSecurity(unittest.TestCase):
         """Test that store_step_result prevents writing outside workspace via path traversal."""
         # Calculate relative path to target file
         rel_path = os.path.relpath(self.target_file, self.workspace_dir)
-        if rel_path.endswith(".json"):
-            key = rel_path[:-5]
-        else:
-            key = rel_path
+        key = rel_path[:-5] if rel_path.endswith(".json") else rel_path
 
         # Attempt to store result using path traversal key
         # This should fail (either raise exception or just not write to target)

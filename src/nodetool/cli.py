@@ -1295,7 +1295,7 @@ def run(
         # Create a module from the code string
         spec = importlib.util.spec_from_loader(module_name, loader=None)
         if spec is None:
-            raise ValueError(f"Cannot create module for DSL code")
+            raise ValueError("Cannot create module for DSL code")
 
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
@@ -1306,7 +1306,7 @@ def run(
         # Look for the standardized `graph` object
         if not hasattr(module, "graph"):
             raise ValueError(
-                f"DSL code must define a module-level 'graph' object.\n"
+                "DSL code must define a module-level 'graph' object.\n"
                 "Example: graph = graph(node1, node2, ...)"
             )
 
@@ -1395,10 +1395,7 @@ def run(
                 return True
 
         # If it doesn't start with JSON characters, might be Python
-        if stripped[0] not in "[{\"':":
-            return True
-
-        return False
+        return stripped[0] not in "[{\"':"
 
     def _read_stdin_request() -> RunJobRequest:
         """Read workflow from stdin (JSON RunJobRequest or DSL Python code)."""

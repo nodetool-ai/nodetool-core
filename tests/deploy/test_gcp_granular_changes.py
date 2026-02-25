@@ -3,10 +3,10 @@ from unittest.mock import MagicMock, patch
 
 from nodetool.config.deployment import (
     GCPDeployment,
+    GCPIAMConfig,
     GCPImageConfig,
     GCPResourceConfig,
     GCPStorageConfig,
-    GCPIAMConfig,
 )
 from nodetool.deploy.gcp import GCPDeployer
 from nodetool.deploy.state import StateManager
