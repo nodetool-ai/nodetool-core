@@ -442,7 +442,7 @@ class LlamaServerManager:
 
             # Start a new server
             port = _find_free_port()
-            model_args, alias = _parse_model_args(model_key)
+            model_args, alias = await asyncio.to_thread(_parse_model_args, model_key)
 
             argv = [
                 self._binary,
