@@ -1,0 +1,4 @@
+## 2025-02-23 - [Unrestricted File Access in Development APIs]
+**Vulnerability:** The `src/nodetool/api/file.py` module provided `upload` and `download` endpoints that allowed arbitrary file system access (read/write) without directory restrictions. While this module is conditionally loaded (supposedly only in non-production), it lacked internal safeguards, making it a high-risk vector if accidentally exposed or enabled.
+**Learning:** `src/nodetool/api/workspace.py` correctly implemented `ensure_within_root`, but `file.py` bypassed this pattern entirely, likely assuming "desktop mode" implies trusted local user. Security boundaries were inconsistent across modules handling file operations.
+**Prevention:** Always enforce path restrictions (allowlisting) at the API handler level, regardless of environment flags. Do not rely solely on `Environment.is_production()` to gate dangerous functionality.
