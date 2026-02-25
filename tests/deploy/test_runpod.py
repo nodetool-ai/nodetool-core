@@ -309,37 +309,46 @@ class TestRunPodDeployer:
             "pod_id": "pod-12345",
         }
 
-        deployer = RunPodDeployer(
-            deployment_name="test-deployment",
-            deployment=basic_deployment,
-            state_manager=mock_state_manager,
-        )
+        with patch("nodetool.deploy.runpod.make_runpod_api_call") as mock_api:
+            # API call returns empty list, so live status should be not_found
+            mock_api.return_value = {"endpoints": []}
 
-        status = deployer.status()
+            deployer = RunPodDeployer(
+                deployment_name="test-deployment",
+                deployment=basic_deployment,
+                state_manager=mock_state_manager,
+            )
 
-        assert status["deployment_name"] == "test-deployment"
-        assert status["type"] == "runpod"
-        assert status["status"] == "active"
-        assert status["last_deployed"] == "2024-01-15T10:30:00"
-        assert status["template_name"] == "my-template"
-        assert status["pod_id"] == "pod-12345"
+            status = deployer.status()
+
+            assert status["deployment_name"] == "test-deployment"
+            assert status["type"] == "runpod"
+            assert status["status"] == "active"
+            assert status["last_deployed"] == "2024-01-15T10:30:00"
+            assert status["template_name"] == "my-template"
+            assert status["pod_id"] == "pod-12345"
+            assert status["live_status"] == "not_found"
 
     def test_status_without_state(self, basic_deployment, mock_state_manager):
         """Test getting status without saved state."""
         mock_state_manager.read_state.return_value = None
 
-        deployer = RunPodDeployer(
-            deployment_name="test-deployment",
-            deployment=basic_deployment,
-            state_manager=mock_state_manager,
-        )
+        with patch("nodetool.deploy.runpod.make_runpod_api_call") as mock_api:
+            mock_api.return_value = {"endpoints": []}
 
-        status = deployer.status()
+            deployer = RunPodDeployer(
+                deployment_name="test-deployment",
+                deployment=basic_deployment,
+                state_manager=mock_state_manager,
+            )
 
-        assert status["deployment_name"] == "test-deployment"
-        assert status["type"] == "runpod"
-        # Should not have state fields
-        assert "status" not in status or status.get("status") is None
+            status = deployer.status()
+
+            assert status["deployment_name"] == "test-deployment"
+            assert status["type"] == "runpod"
+            # Should not have state fields
+            assert "status" not in status or status.get("status") is None
+            assert status["live_status"] == "not_found"
 
     def test_status_partial_state(self, basic_deployment, mock_state_manager):
         """Test status with partial state information."""
@@ -348,18 +357,99 @@ class TestRunPodDeployer:
             # Missing other fields
         }
 
-        deployer = RunPodDeployer(
-            deployment_name="test-deployment",
-            deployment=basic_deployment,
-            state_manager=mock_state_manager,
-        )
+        with patch("nodetool.deploy.runpod.make_runpod_api_call") as mock_api:
+            mock_api.return_value = {"endpoints": []}
 
-        status = deployer.status()
+            deployer = RunPodDeployer(
+                deployment_name="test-deployment",
+                deployment=basic_deployment,
+                state_manager=mock_state_manager,
+            )
 
-        assert status["status"] == "active"
-        assert status["last_deployed"] == "unknown"
-        assert status["template_name"] == "unknown"
-        assert status["pod_id"] == "unknown"
+            status = deployer.status()
+
+            assert status["status"] == "active"
+            assert status["last_deployed"] == "unknown"
+            assert status["template_name"] == "unknown"
+            assert status["pod_id"] == "unknown"
+
+    def test_status_with_api_success(self, basic_deployment, mock_state_manager):
+        """Test status with successful API response."""
+        mock_state_manager.read_state.return_value = {"status": "active"}
+
+        with patch("nodetool.deploy.runpod.make_runpod_api_call") as mock_api:
+            mock_api.return_value = {
+                "endpoints": [
+                    {
+                        "name": "other-deployment",
+                        "id": "other-id",
+                    },
+                    {
+                        "name": "test-deployment",
+                        "id": "ep-123",
+                        "gpuIds": "NVIDIA A40",
+                        "workersMin": 1,
+                        "workersMax": 3,
+                    },
+                ]
+            }
+
+            deployer = RunPodDeployer(
+                deployment_name="test-deployment",
+                deployment=basic_deployment,
+                state_manager=mock_state_manager,
+            )
+
+            status = deployer.status()
+
+            assert status["live_status"] == "active"
+            assert status["endpoint_id"] == "ep-123"
+            assert status["gpu_ids"] == "NVIDIA A40"
+            assert status["worker_count"] == "1-3"
+            assert "urls" in status
+            assert status["urls"]["run"] == "https://api.runpod.ai/v2/ep-123/run"
+
+    def test_status_api_not_found(self, basic_deployment, mock_state_manager):
+        """Test status when endpoint is not found in API."""
+        mock_state_manager.read_state.return_value = {"status": "active"}
+
+        with patch("nodetool.deploy.runpod.make_runpod_api_call") as mock_api:
+            mock_api.return_value = {
+                "endpoints": [
+                    {"name": "other-deployment"},
+                ]
+            }
+
+            deployer = RunPodDeployer(
+                deployment_name="test-deployment",
+                deployment=basic_deployment,
+                state_manager=mock_state_manager,
+            )
+
+            status = deployer.status()
+
+            assert status["live_status"] == "not_found"
+
+    def test_status_api_failure(self, basic_deployment, mock_state_manager):
+        """Test status when API call fails."""
+        mock_state_manager.read_state.return_value = {"status": "active"}
+
+        with patch("nodetool.deploy.runpod.make_runpod_api_call") as mock_api:
+            mock_api.side_effect = Exception("API Error")
+
+            deployer = RunPodDeployer(
+                deployment_name="test-deployment",
+                deployment=basic_deployment,
+                state_manager=mock_state_manager,
+            )
+
+            status = deployer.status()
+
+            # Should return local state but include error info
+            assert status["status"] == "active"
+            assert "live_status" not in status
+            assert "live_status_error" in status
+            assert "API Error" in status["live_status_error"]
 
     def test_logs_not_implemented(self, basic_deployment, mock_state_manager):
         """Test that logs raises NotImplementedError."""
