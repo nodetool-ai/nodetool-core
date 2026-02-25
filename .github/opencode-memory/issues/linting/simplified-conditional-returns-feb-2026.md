@@ -11,5 +11,11 @@
 **Files**:
 - `src/nodetool/agents/agent.py`
 - `src/nodetool/api/skills.py`
+- `src/nodetool/api/file.py` (2026-02-25: hidden file check)
+- `src/nodetool/cli.py` (2026-02-25: JSON character check)
 
-**Date**: 2026-02-07
+**Date**: 2026-02-07, updated 2026-02-25
+
+**Additional fixes (2026-02-25)**:
+- F541: Removed extraneous `f` prefix from static strings in `src/nodetool/cli.py`
+- SIM108: Used ternary operator in `tests/workflows/test_processing_context_security.py`

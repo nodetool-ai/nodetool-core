@@ -1,10 +1,13 @@
-import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
 from datetime import datetime
-from nodetool.workflows.job_execution import JobExecution
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from nodetool.models.job import Job
+from nodetool.workflows.job_execution import JobExecution
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
+
 
 class MockJobExecution(JobExecution):
     def is_running(self) -> bool:

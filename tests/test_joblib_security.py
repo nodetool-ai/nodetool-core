@@ -1,9 +1,12 @@
 import io
 import os
+
 import joblib
-import pytest
 import numpy as np
+import pytest
+
 from nodetool.workflows.processing_offload import _joblib_load_from_io
+
 
 def test_exploit_fails():
     """Test that loading an exploit payload raises a ValueError."""

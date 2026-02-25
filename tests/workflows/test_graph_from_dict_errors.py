@@ -1,7 +1,9 @@
 import pytest
 from pydantic import ValidationError
+
+from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode, add_node_type
 from nodetool.workflows.graph import Graph
-from nodetool.workflows.base_node import BaseNode, add_node_type, NODE_BY_TYPE
+
 
 class ValidTestNode(BaseNode):
     @classmethod

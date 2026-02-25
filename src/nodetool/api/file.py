@@ -196,10 +196,7 @@ def _is_safe_path(path: str) -> bool:
 
     # Check for hidden files or directories (starting with .)
     parts = abs_path.split(os.sep)
-    if any(part.startswith(".") for part in parts if part):
-        return False
-
-    return True
+    return not any(part.startswith(".") for part in parts if part)
 
 
 @router.get("/download/{path:path}")

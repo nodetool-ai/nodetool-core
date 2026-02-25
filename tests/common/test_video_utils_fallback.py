@@ -5,14 +5,16 @@ Tests for video utility functions with fallback scenarios.
 import os
 import tempfile
 from unittest.mock import patch
+
 import numpy as np
 import pytest
 from PIL import Image
 
 from nodetool.media.video.video_utils import (
-    extract_video_frames,
     export_to_video,
+    extract_video_frames,
 )
+
 
 class TestVideoUtilsFallback:
     """Test video utilities with mocked dependencies to force fallbacks."""
