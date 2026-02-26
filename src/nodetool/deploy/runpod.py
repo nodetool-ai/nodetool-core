@@ -18,7 +18,7 @@ from nodetool.config.deployment import (
     RunPodDeployment,
 )
 from nodetool.deploy.deploy_to_runpod import deploy_to_runpod
-from nodetool.deploy.runpod_api import make_runpod_api_call
+from nodetool.deploy.runpod_api import get_runpod_endpoint_by_name
 from nodetool.deploy.state import StateManager
 
 logger = logging.getLogger(__name__)
@@ -192,17 +192,7 @@ class RunPodDeployer:
             status_info["pod_id"] = state.get("pod_id", "unknown")
 
         try:
-            endpoints_response = make_runpod_api_call("endpoints", "GET")
-            # Handle response that could be a list or a dict with "endpoints" key
-            endpoints = (
-                endpoints_response
-                if isinstance(endpoints_response, list)
-                else endpoints_response.get("endpoints", [])
-            )
-
-            # Find our endpoint (check for exact name match)
-            # RunPod API usually returns list of all endpoints
-            live_endpoint = next((ep for ep in endpoints if ep.get("name") == self.deployment_name), None)
+            live_endpoint = get_runpod_endpoint_by_name(self.deployment_name, quiet=True)
 
             if live_endpoint:
                 status_info["live_status"] = "active"

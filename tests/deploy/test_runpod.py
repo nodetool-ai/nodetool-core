@@ -309,9 +309,9 @@ class TestRunPodDeployer:
             "pod_id": "pod-12345",
         }
 
-        with patch("nodetool.deploy.runpod.make_runpod_api_call") as mock_api:
-            # API call returns empty list, so live status should be not_found
-            mock_api.return_value = {"endpoints": []}
+        with patch("nodetool.deploy.runpod.get_runpod_endpoint_by_name") as mock_get_endpoint:
+            # Endpoint not found
+            mock_get_endpoint.return_value = None
 
             deployer = RunPodDeployer(
                 deployment_name="test-deployment",
@@ -328,13 +328,14 @@ class TestRunPodDeployer:
             assert status["template_name"] == "my-template"
             assert status["pod_id"] == "pod-12345"
             assert status["live_status"] == "not_found"
+            mock_get_endpoint.assert_called_with("test-deployment", quiet=True)
 
     def test_status_without_state(self, basic_deployment, mock_state_manager):
         """Test getting status without saved state."""
         mock_state_manager.read_state.return_value = None
 
-        with patch("nodetool.deploy.runpod.make_runpod_api_call") as mock_api:
-            mock_api.return_value = {"endpoints": []}
+        with patch("nodetool.deploy.runpod.get_runpod_endpoint_by_name") as mock_get_endpoint:
+            mock_get_endpoint.return_value = None
 
             deployer = RunPodDeployer(
                 deployment_name="test-deployment",
@@ -357,8 +358,8 @@ class TestRunPodDeployer:
             # Missing other fields
         }
 
-        with patch("nodetool.deploy.runpod.make_runpod_api_call") as mock_api:
-            mock_api.return_value = {"endpoints": []}
+        with patch("nodetool.deploy.runpod.get_runpod_endpoint_by_name") as mock_get_endpoint:
+            mock_get_endpoint.return_value = None
 
             deployer = RunPodDeployer(
                 deployment_name="test-deployment",
@@ -377,21 +378,13 @@ class TestRunPodDeployer:
         """Test status with successful API response."""
         mock_state_manager.read_state.return_value = {"status": "active"}
 
-        with patch("nodetool.deploy.runpod.make_runpod_api_call") as mock_api:
-            mock_api.return_value = {
-                "endpoints": [
-                    {
-                        "name": "other-deployment",
-                        "id": "other-id",
-                    },
-                    {
-                        "name": "test-deployment",
-                        "id": "ep-123",
-                        "gpuIds": "NVIDIA A40",
-                        "workersMin": 1,
-                        "workersMax": 3,
-                    },
-                ]
+        with patch("nodetool.deploy.runpod.get_runpod_endpoint_by_name") as mock_get_endpoint:
+            mock_get_endpoint.return_value = {
+                "name": "test-deployment",
+                "id": "ep-123",
+                "gpuIds": "NVIDIA A40",
+                "workersMin": 1,
+                "workersMax": 3,
             }
 
             deployer = RunPodDeployer(
@@ -413,12 +406,8 @@ class TestRunPodDeployer:
         """Test status when endpoint is not found in API."""
         mock_state_manager.read_state.return_value = {"status": "active"}
 
-        with patch("nodetool.deploy.runpod.make_runpod_api_call") as mock_api:
-            mock_api.return_value = {
-                "endpoints": [
-                    {"name": "other-deployment"},
-                ]
-            }
+        with patch("nodetool.deploy.runpod.get_runpod_endpoint_by_name") as mock_get_endpoint:
+            mock_get_endpoint.return_value = None
 
             deployer = RunPodDeployer(
                 deployment_name="test-deployment",
@@ -434,8 +423,8 @@ class TestRunPodDeployer:
         """Test status when API call fails."""
         mock_state_manager.read_state.return_value = {"status": "active"}
 
-        with patch("nodetool.deploy.runpod.make_runpod_api_call") as mock_api:
-            mock_api.side_effect = Exception("API Error")
+        with patch("nodetool.deploy.runpod.get_runpod_endpoint_by_name") as mock_get_endpoint:
+            mock_get_endpoint.side_effect = Exception("API Error")
 
             deployer = RunPodDeployer(
                 deployment_name="test-deployment",

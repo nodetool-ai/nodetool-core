@@ -357,24 +357,33 @@ def delete_runpod_template_by_name(template_name: str) -> bool:
         return False
 
 
-def get_runpod_endpoint_by_name(endpoint_name: str) -> dict | None:
+def get_runpod_endpoint_by_name(endpoint_name: str, quiet: bool = False) -> dict | None:
     """
     Get a RunPod endpoint by name using REST API.
 
     Args:
         endpoint_name (str): The endpoint name to find
+        quiet (bool): If True, suppress print statements
 
     Returns:
         dict | None: Endpoint data if found, None otherwise
     """
     # Get all endpoints to find the one with matching name
-    endpoints = make_runpod_api_call("endpoints", "GET")
+    endpoints_response = make_runpod_api_call("endpoints", "GET")
 
-    print(f"🔍 Looking for endpoint: '{endpoint_name}'")
-    print(f"📝 Found {len(endpoints)} total endpoints")
+    # Handle response that could be a list or a dict with "endpoints" key
+    endpoints = (
+        endpoints_response
+        if isinstance(endpoints_response, list)
+        else endpoints_response.get("endpoints", [])
+    )
+
+    if not quiet:
+        print(f"🔍 Looking for endpoint: '{endpoint_name}'")
+        print(f"📝 Found {len(endpoints)} total endpoints")
 
     # Debug: List all endpoint names
-    if endpoints:
+    if endpoints and not quiet:
         print("📋 Available endpoints:")
         for i, endpoint in enumerate(endpoints):
             name = endpoint.get("name", "<no name>")
@@ -382,12 +391,22 @@ def get_runpod_endpoint_by_name(endpoint_name: str) -> dict | None:
             print(f"  [{i + 1}] Name: '{name}' (ID: {endpoint_id})")
 
     # Find endpoint with matching name (exact match first)
-    for endpoint in endpoints:
-        if endpoint.get("name").startswith(endpoint_name):
+    live_endpoint = next((ep for ep in endpoints if ep.get("name") == endpoint_name), None)
+
+    if live_endpoint:
+        if not quiet:
             print(f"✅ Found exact match for endpoint: '{endpoint_name}'")
+        return live_endpoint
+
+    # Fallback: check for prefix match if exact match failed
+    for endpoint in endpoints:
+        if endpoint.get("name", "").startswith(endpoint_name):
+            if not quiet:
+                print(f"✅ Found prefix match for endpoint: '{endpoint_name}' -> '{endpoint.get('name')}'")
             return endpoint
 
-    print(f"❌ No endpoint found with name: '{endpoint_name}'")
+    if not quiet:
+        print(f"❌ No endpoint found with name: '{endpoint_name}'")
     return None
 
 
