@@ -2,7 +2,7 @@
 Graph utilities for node and edge operations.
 """
 
-from collections import deque
+from collections import deque, defaultdict
 from contextlib import suppress
 
 from nodetool.metadata.type_metadata import TypeMetadata
@@ -73,7 +73,12 @@ def get_downstream_subgraph(
     Returns:
         tuple[list[Edge], Graph]: A tuple containing the initial edges and the subgraph.
     """
-    initial_edges = [edge for edge in graph.edges if edge.source == node_id and edge.sourceHandle == source_handle]
+    # Pre-calculate adjacency map for O(1) edge lookup
+    outgoing_edges = defaultdict(list)
+    for edge in graph.edges:
+        outgoing_edges[edge.source].append(edge)
+
+    initial_edges = [edge for edge in outgoing_edges[node_id] if edge.sourceHandle == source_handle]
 
     included_node_ids: set[str] = set()
     included_edges = []
@@ -92,12 +97,11 @@ def get_downstream_subgraph(
     # BFS over outgoing edges to collect downstream nodes and edges
     while queue:
         current = queue.popleft()
-        for edge in graph.edges:
-            if edge.source == current:
-                included_edges.append(edge)
-                if edge.target not in included_node_ids:
-                    included_node_ids.add(edge.target)
-                    queue.append(edge.target)
+        for edge in outgoing_edges[current]:
+            included_edges.append(edge)
+            if edge.target not in included_node_ids:
+                included_node_ids.add(edge.target)
+                queue.append(edge.target)
 
     # Materialize node instances, skipping any missing nodes gracefully
     included_nodes: list[BaseNode] = []
