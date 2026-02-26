@@ -90,13 +90,22 @@ async def get_all_models(_user: str) -> list[UnifiedModel]:
     return dedupe_models(all_models)
 
 
-async def recommended_models(_user: str) -> list[UnifiedModel]:
+async def recommended_models(_user: str, check_servers: bool = False) -> list[UnifiedModel]:
     """Get recommended models."""
-    from nodetool.workflows.recommended_models import get_recommended_models
+    from nodetool.workflows.recommended_models import (
+        _server_allows_model,
+        get_recommended_models_flat,
+        get_server_availability,
+    )
 
-    models = [model for model_list in get_recommended_models().values() for model in model_list]
+    models = get_recommended_models_flat()
     models = [model for model in models if model is not None]
-    return models
+
+    if not check_servers:
+        return models
+
+    servers = await get_server_availability()
+    return [model for model in models if await _server_allows_model(model, servers)]
 
 
 async def get_language_models(user: str = "1") -> list[LanguageModel]:
@@ -191,109 +200,153 @@ async def get_providers_endpoint(
 
 @router.get("/recommended")
 async def recommended_models_endpoint(
+    check_servers: bool = Query(
+        False,
+        description="If true, only include models whose required runtime servers are currently reachable.",
+    ),
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
-    return await recommended_models(user)
+    return await recommended_models(user, check_servers=check_servers)
 
 
 @router.get("/recommended/image")
 async def recommended_image_models_endpoint(
+    check_servers: bool = Query(
+        False,
+        description="If true, only include models whose required runtime servers are currently reachable.",
+    ),
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_image_models
 
     # Determine platform on the server; do not accept client override
-    models = await get_recommended_image_models()
+    models = await get_recommended_image_models(check_servers=check_servers)
     return models
 
 
 @router.get("/recommended/image/text-to-image")
 async def recommended_text_to_image_models_endpoint(
+    check_servers: bool = Query(
+        False,
+        description="If true, only include models whose required runtime servers are currently reachable.",
+    ),
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_text_to_image_models
 
-    models = await get_recommended_text_to_image_models()
+    models = await get_recommended_text_to_image_models(check_servers=check_servers)
     return models
 
 
 @router.get("/recommended/image/image-to-image")
 async def recommended_image_to_image_models_endpoint(
+    check_servers: bool = Query(
+        False,
+        description="If true, only include models whose required runtime servers are currently reachable.",
+    ),
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_image_to_image_models
 
-    models = await get_recommended_image_to_image_models()
+    models = await get_recommended_image_to_image_models(check_servers=check_servers)
     return models
 
 
 @router.get("/recommended/language")
 async def recommended_language_models_endpoint(
+    check_servers: bool = Query(
+        False,
+        description="If true, only include models whose required runtime servers are currently reachable.",
+    ),
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_language_models
 
-    models = await get_recommended_language_models()
+    models = await get_recommended_language_models(check_servers=check_servers)
     return models
 
 
 @router.get("/recommended/language/text-generation")
 async def recommended_language_text_generation_models_endpoint(
+    check_servers: bool = Query(
+        False,
+        description="If true, only include models whose required runtime servers are currently reachable.",
+    ),
     _user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_language_text_generation_models
 
-    models = await get_recommended_language_text_generation_models()
+    models = await get_recommended_language_text_generation_models(check_servers=check_servers)
     return models
 
 
 @router.get("/recommended/language/embedding")
 async def recommended_language_embedding_models_endpoint(
+    check_servers: bool = Query(
+        False,
+        description="If true, only include models whose required runtime servers are currently reachable.",
+    ),
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_language_embedding_models
 
-    models = await get_recommended_language_embedding_models()
+    models = await get_recommended_language_embedding_models(check_servers=check_servers)
     return models
 
 
 @router.get("/recommended/asr")
 async def recommended_asr_models_endpoint(
+    check_servers: bool = Query(
+        False,
+        description="If true, only include models whose required runtime servers are currently reachable.",
+    ),
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_asr_models
 
-    models = await get_recommended_asr_models()
+    models = await get_recommended_asr_models(check_servers=check_servers)
     return models
 
 
 @router.get("/recommended/tts")
 async def recommended_tts_models_endpoint(
+    check_servers: bool = Query(
+        False,
+        description="If true, only include models whose required runtime servers are currently reachable.",
+    ),
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_tts_models
 
-    models = await get_recommended_tts_models()
+    models = await get_recommended_tts_models(check_servers=check_servers)
     return models
 
 
 @router.get("/recommended/video/text-to-video")
 async def recommended_text_to_video_models_endpoint(
+    check_servers: bool = Query(
+        False,
+        description="If true, only include models whose required runtime servers are currently reachable.",
+    ),
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_text_to_video_models
 
-    models = await get_recommended_text_to_video_models()
+    models = await get_recommended_text_to_video_models(check_servers=check_servers)
     return models
 
 
 @router.get("/recommended/video/image-to-video")
 async def recommended_image_to_video_models_endpoint(
+    check_servers: bool = Query(
+        False,
+        description="If true, only include models whose required runtime servers are currently reachable.",
+    ),
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
     from nodetool.workflows.recommended_models import get_recommended_image_to_video_models
 
-    models = await get_recommended_image_to_video_models()
+    models = await get_recommended_image_to_video_models(check_servers=check_servers)
     return models
 
 

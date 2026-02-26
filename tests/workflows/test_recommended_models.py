@@ -145,6 +145,17 @@ class TestServerAllowsModel:
         assert result is True
 
     @pytest.mark.asyncio
+    async def test_server_allows_model_hf_gguf_requires_server(self):
+        """Test that hf.gguf models require llama_server."""
+        model = make_model(type="hf.gguf")
+
+        result = await _server_allows_model(model, {"ollama": False, "llama_server": False})
+        assert result is False
+
+        result = await _server_allows_model(model, {"ollama": False, "llama_server": True})
+        assert result is True
+
+    @pytest.mark.asyncio
     async def test_server_allows_model_llama_model_requires_ollama(self):
         """Test that llama_model types require ollama server."""
         model = make_model(type="llama_model")
@@ -343,6 +354,12 @@ class TestIsLanguageModel:
         assert _is_language_model(model) is True
 
         model = make_model(type="llama_cpp")
+        assert _is_language_model(model) is True
+
+        model = make_model(type="llama_cpp_model")
+        assert _is_language_model(model) is True
+
+        model = make_model(type="hf.gguf")
         assert _is_language_model(model) is True
 
         model = make_model(type="mlx")

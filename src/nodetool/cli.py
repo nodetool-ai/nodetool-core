@@ -2336,6 +2336,214 @@ def list_cached_hf_models(downloaded_only: bool, limit: int | None, as_json: boo
     _print_model_table(models, title)
 
 
+@model.command("download-hf")
+@click.option("--repo-id", required=True, help="HuggingFace repository ID to download")
+@click.option(
+    "--cache-dir",
+    default=None,
+    help="Cache directory path (defaults to HuggingFace HF_HUB_CACHE).",
+)
+@click.option("--file-path", help="Specific file to download (optional)")
+@click.option("--allow-patterns", multiple=True, help="Patterns to allow (can specify multiple)")
+@click.option("--ignore-patterns", multiple=True, help="Patterns to ignore (can specify multiple)")
+@click.option(
+    "--user-id",
+    default=None,
+    help="Optional user ID for resolving HF credentials from configured secrets.",
+)
+def model_download_hf(
+    repo_id: str,
+    cache_dir: str | None,
+    file_path: str | None,
+    allow_patterns: tuple[str, ...],
+    ignore_patterns: tuple[str, ...],
+    user_id: str | None,
+) -> None:
+    """Download a HuggingFace model into the local cache with progress updates.
+
+    Examples:
+        # Download a full model repo to local HF cache
+        nodetool model download-hf --repo-id microsoft/DialoGPT-small
+
+        # Download only selected files
+        nodetool model download-hf --repo-id microsoft/DialoGPT-small --allow-patterns "*.json"
+
+        # Download a single file
+        nodetool model download-hf --repo-id microsoft/DialoGPT-small --file-path config.json
+    """
+    import dotenv
+
+    dotenv.load_dotenv()
+
+    resolved_cache_dir: str
+    if cache_dir:
+        resolved_cache_dir = cache_dir
+    else:
+        from huggingface_hub.constants import HF_HUB_CACHE
+
+        resolved_cache_dir = str(HF_HUB_CACHE)
+
+    async def run_download() -> None:
+        console.print("[bold cyan]📥 Starting local HuggingFace download...[/]")
+        console.print(f"Repository: {repo_id}")
+        console.print(f"Cache directory: {resolved_cache_dir}")
+        if file_path:
+            console.print(f"File: {file_path}")
+        if allow_patterns:
+            console.print(f"Allow patterns: {', '.join(allow_patterns)}")
+        if ignore_patterns:
+            console.print(f"Ignore patterns: {', '.join(ignore_patterns)}")
+        if user_id:
+            console.print(f"User ID: {user_id}")
+        console.print()
+        manager = _get_progress_manager()
+
+        try:
+            from nodetool.deploy.admin_operations import stream_hf_model_download
+
+            async for progress_update in stream_hf_model_download(
+                repo_id=repo_id,
+                cache_dir=resolved_cache_dir,
+                file_path=file_path,
+                ignore_patterns=list(ignore_patterns) if ignore_patterns else None,
+                allow_patterns=list(allow_patterns) if allow_patterns else None,
+                user_id=user_id,
+            ):
+                manager._display_progress_update(progress_update)
+        except Exception as e:
+            console.print(f"[red]❌ Failed: {e}[/]")
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
+
+    _run_async(run_download())
+
+
+@model.command("recommended")
+@click.option(
+    "--category",
+    type=click.Choice(
+        [
+            "all",
+            "image",
+            "image-text-to-image",
+            "image-image-to-image",
+            "language",
+            "language-text-generation",
+            "language-embedding",
+            "asr",
+            "tts",
+            "video-text-to-video",
+            "video-image-to-video",
+        ],
+        case_sensitive=False,
+    ),
+    default="all",
+    show_default=True,
+    help="Recommended model category to list.",
+)
+@click.option(
+    "--system",
+    type=click.Choice(["darwin", "linux", "windows"], case_sensitive=False),
+    default=None,
+    help="Optional platform override for platform-aware recommendations.",
+)
+@click.option(
+    "--limit",
+    type=int,
+    default=None,
+    help="Limit number of rows shown.",
+)
+@click.option(
+    "--check-servers/--no-check-servers",
+    default=False,
+    show_default=True,
+    help="Filter out models that need unavailable runtime servers (ollama/llama-server).",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Output JSON instead of a table.",
+)
+def list_recommended_models(
+    category: str,
+    system: str | None,
+    limit: int | None,
+    check_servers: bool,
+    as_json: bool,
+):
+    """List curated recommended models."""
+    from nodetool.workflows.recommended_models import (
+        get_recommended_asr_models,
+        get_recommended_image_models,
+        get_recommended_image_to_image_models,
+        get_recommended_image_to_video_models,
+        get_recommended_language_embedding_models,
+        get_recommended_language_models,
+        get_recommended_language_text_generation_models,
+        get_recommended_models_flat,
+        get_recommended_text_to_image_models,
+        get_recommended_text_to_video_models,
+        get_recommended_tts_models,
+    )
+
+    normalized_category = category.lower()
+    normalized_system = system.lower() if system else None
+
+    async def _load_models() -> list[UnifiedModel]:
+        if normalized_category == "all":
+            return get_recommended_models_flat()
+        if normalized_category == "image":
+            return await get_recommended_image_models(system=normalized_system, check_servers=check_servers)
+        if normalized_category == "image-text-to-image":
+            return await get_recommended_text_to_image_models(system=normalized_system, check_servers=check_servers)
+        if normalized_category == "image-image-to-image":
+            return await get_recommended_image_to_image_models(system=normalized_system, check_servers=check_servers)
+        if normalized_category == "language":
+            return await get_recommended_language_models(system=normalized_system, check_servers=check_servers)
+        if normalized_category == "language-text-generation":
+            return await get_recommended_language_text_generation_models(
+                system=normalized_system,
+                check_servers=check_servers,
+            )
+        if normalized_category == "language-embedding":
+            return await get_recommended_language_embedding_models(
+                system=normalized_system,
+                check_servers=check_servers,
+            )
+        if normalized_category == "asr":
+            return await get_recommended_asr_models(system=normalized_system, check_servers=check_servers)
+        if normalized_category == "tts":
+            return await get_recommended_tts_models(system=normalized_system, check_servers=check_servers)
+        if normalized_category == "video-text-to-video":
+            return await get_recommended_text_to_video_models(system=normalized_system, check_servers=check_servers)
+        if normalized_category == "video-image-to-video":
+            return await get_recommended_image_to_video_models(system=normalized_system, check_servers=check_servers)
+        return []
+
+    models = _run_async(_load_models())
+
+    if limit is not None:
+        models = models[:limit]
+
+    if as_json:
+        import json
+
+        click.echo(json.dumps([model.model_dump() for model in models], indent=2))
+        return
+
+    if not models:
+        console.print(f"[yellow]No recommended models found for category '{normalized_category}'.[/]")
+        return
+
+    title = f"Recommended models ({normalized_category})"
+    if normalized_system:
+        title += f" [{normalized_system}]"
+    _print_model_table(models, title)
+
+
 # Package Commands Group
 @click.group()
 def package():

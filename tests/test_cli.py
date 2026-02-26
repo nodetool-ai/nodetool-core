@@ -163,6 +163,155 @@ class TestHelpOutput:
         assert "system" in result.output.lower() or "environment" in result.output.lower()
 
 
+class TestModelDownloadHFCommand:
+    """Tests for `nodetool model download-hf`."""
+
+    def test_model_download_hf_help(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["model", "download-hf", "--help"])
+        assert result.exit_code == 0
+        assert "--repo-id" in result.output
+        assert "--cache-dir" in result.output
+        assert "--file-path" in result.output
+
+    def test_model_download_hf_streams_progress(self, monkeypatch: pytest.MonkeyPatch):
+        import nodetool.cli as cli_mod
+        import nodetool.deploy.admin_operations as admin_ops
+
+        call_args: dict[str, object] = {}
+        progress_updates: list[dict[str, object]] = []
+
+        class DummyProgressManager:
+            def _display_progress_update(self, progress_update: dict[str, object]) -> None:
+                progress_updates.append(progress_update)
+
+        async def fake_stream_hf_model_download(
+            repo_id: str,
+            cache_dir: str = "/app/.cache/huggingface/hub",
+            file_path: str | None = None,
+            ignore_patterns: list | None = None,
+            allow_patterns: list | None = None,
+            user_id: str | None = None,
+        ):
+            call_args.update(
+                {
+                    "repo_id": repo_id,
+                    "cache_dir": cache_dir,
+                    "file_path": file_path,
+                    "ignore_patterns": ignore_patterns,
+                    "allow_patterns": allow_patterns,
+                    "user_id": user_id,
+                }
+            )
+            yield {"status": "starting", "repo_id": repo_id, "message": "starting"}
+            yield {"status": "completed", "repo_id": repo_id, "message": "completed", "downloaded_files": 1}
+
+        monkeypatch.setattr(cli_mod, "_get_progress_manager", lambda: DummyProgressManager())
+        monkeypatch.setattr(admin_ops, "stream_hf_model_download", fake_stream_hf_model_download)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "model",
+                "download-hf",
+                "--repo-id",
+                "org/example-model",
+                "--cache-dir",
+                "/tmp/hf-cache",
+                "--file-path",
+                "config.json",
+                "--allow-patterns",
+                "*.json",
+                "--ignore-patterns",
+                "*.bin",
+                "--user-id",
+                "user-123",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert call_args == {
+            "repo_id": "org/example-model",
+            "cache_dir": "/tmp/hf-cache",
+            "file_path": "config.json",
+            "ignore_patterns": ["*.bin"],
+            "allow_patterns": ["*.json"],
+            "user_id": "user-123",
+        }
+        assert [update["status"] for update in progress_updates] == ["starting", "completed"]
+
+
+class TestModelRecommendedCommand:
+    """Tests for `nodetool model recommended`."""
+
+    def test_model_recommended_help(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["model", "recommended", "--help"])
+        assert result.exit_code == 0
+        assert "--category" in result.output
+        assert "--json" in result.output
+        assert "--system" in result.output
+        assert "--check-servers" in result.output
+
+    def test_model_recommended_category_json_limit(self, monkeypatch: pytest.MonkeyPatch):
+        import nodetool.workflows.recommended_models as recommended_mod
+        from nodetool.types.model import UnifiedModel
+
+        call_args: dict[str, object] = {}
+
+        async def fake_get_recommended_language_models(
+            system: str | None = None,
+            check_servers: bool = True,
+        ) -> list[UnifiedModel]:
+            call_args["system"] = system
+            call_args["check_servers"] = check_servers
+            return [
+                UnifiedModel(
+                    id="model-1",
+                    type="language_model",
+                    name="Model One",
+                    repo_id="org/model-1",
+                    downloaded=False,
+                ),
+                UnifiedModel(
+                    id="model-2",
+                    type="language_model",
+                    name="Model Two",
+                    repo_id="org/model-2",
+                    downloaded=False,
+                ),
+            ]
+
+        monkeypatch.setattr(
+            recommended_mod,
+            "get_recommended_language_models",
+            fake_get_recommended_language_models,
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "model",
+                "recommended",
+                "--category",
+                "language",
+                "--system",
+                "linux",
+                "--limit",
+                "1",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert call_args == {"system": "linux", "check_servers": False}
+        data = json.loads(result.output)
+        assert len(data) == 1
+        assert data[0]["id"] == "model-1"
+
+
 class TestLazyImports:
     """Tests for ensuring heavy dependencies are lazily imported."""
 
