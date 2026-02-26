@@ -334,9 +334,11 @@ class TestDockerAPIIntegration:
                     "nodes": [
                         {
                             "id": "input",
-                            "name": "input_value",  # Required: Input nodes must have a name
                             "type": "nodetool.workflows.test_nodes.NumberInput",
-                            "data": {"value": 5},
+                            "data": {
+                                "value": 5,
+                                "name": "input_value",  # Required: Input nodes must have a name
+                            },
                         },
                         {
                             "id": "add",
@@ -389,9 +391,11 @@ class TestDockerAPIIntegration:
                     "nodes": [
                         {
                             "id": "input",
-                            "name": "input_value",  # Required: Input nodes must have a name
                             "type": "nodetool.workflows.test_nodes.NumberInput",
-                            "data": {"value": 10},
+                            "data": {
+                                "value": 10,
+                                "name": "input_value",  # Required: Input nodes must have a name
+                            },
                         },
                         {
                             "id": "output",
@@ -545,9 +549,11 @@ class TestDockerAPIIntegration:
                     "nodes": [
                         {
                             "id": "input",
-                            "name": "input_start",  # Required: Input nodes must have a name
                             "type": "nodetool.workflows.test_nodes.NumberInput",
-                            "data": {"value": 10},
+                            "data": {
+                                "value": 10,
+                                "name": "input_start",  # Required: Input nodes must have a name
+                            },
                         },
                         {
                             "id": "mult",
