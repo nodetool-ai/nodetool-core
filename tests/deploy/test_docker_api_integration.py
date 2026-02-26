@@ -325,29 +325,29 @@ class TestDockerAPIIntegration:
             pytest.skip("nodetool:local image not found")
 
         try:
-            # Create a simple workflow that generates a list and sums it
+            # Create a simple workflow using test helper nodes
             workflow_data = {
                 "name": "test-sum-workflow",
-                "description": "Test workflow that sums a list",
+                "description": "Test workflow that sums numbers",
                 "access": "private",
                 "graph": {
                     "nodes": [
                         {
-                            "id": "list",
-                            "type": "nodetool.list.ListRange",
-                            "data": {"stop": 5},
+                            "id": "input",
+                            "type": "nodetool.workflows.test_helper.IntInput",
+                            "data": {"default": 10},
                         },
                         {
-                            "id": "sum",
-                            "type": "nodetool.list.Sum",
+                            "id": "output",
+                            "type": "nodetool.workflows.test_helper.IntOutput",
                         },
                     ],
                     "edges": [
                         {
-                            "source": "list",
-                            "target": "sum",
+                            "source": "input",
+                            "target": "output",
                             "sourceHandle": "output",
-                            "targetHandle": "values",
+                            "targetHandle": "value",
                         }
                     ],
                 },
@@ -378,7 +378,7 @@ class TestDockerAPIIntegration:
             pytest.skip("nodetool:local image not found")
 
         try:
-            # First create a workflow
+            # First create a workflow using test helper nodes
             workflow_data = {
                 "name": "test-run-workflow",
                 "description": "Test workflow execution",
@@ -386,21 +386,21 @@ class TestDockerAPIIntegration:
                 "graph": {
                     "nodes": [
                         {
-                            "id": "list",
-                            "type": "nodetool.list.ListRange",
-                            "data": {"stop": 5},
+                            "id": "input",
+                            "type": "nodetool.workflows.test_helper.IntInput",
+                            "data": {"default": 10},
                         },
                         {
-                            "id": "sum",
-                            "type": "nodetool.list.Sum",
+                            "id": "output",
+                            "type": "nodetool.workflows.test_helper.IntOutput",
                         },
                     ],
                     "edges": [
                         {
-                            "source": "list",
-                            "target": "sum",
+                            "source": "input",
+                            "target": "output",
                             "sourceHandle": "output",
-                            "targetHandle": "values",
+                            "targetHandle": "value",
                         }
                     ],
                 },
@@ -461,8 +461,7 @@ class TestDockerAPIIntegration:
             pytest.skip("nodetool:local image not found")
 
         try:
-            # Create a workflow that should produce a known result
-            # ListRange [0, 1, 2, 3, 4] -> Sum = 10
+            # Create a workflow that produces a known result
             workflow_data = {
                 "name": "test-result-workflow",
                 "description": "Test workflow result verification",
@@ -470,21 +469,21 @@ class TestDockerAPIIntegration:
                 "graph": {
                     "nodes": [
                         {
-                            "id": "list",
-                            "type": "nodetool.list.ListRange",
-                            "data": {"stop": 5},
+                            "id": "input",
+                            "type": "nodetool.workflows.test_helper.IntInput",
+                            "data": {"default": 42},
                         },
                         {
-                            "id": "sum",
-                            "type": "nodetool.list.Sum",
+                            "id": "output",
+                            "type": "nodetool.workflows.test_helper.IntOutput",
                         },
                     ],
                     "edges": [
                         {
-                            "source": "list",
-                            "target": "sum",
+                            "source": "input",
+                            "target": "output",
                             "sourceHandle": "output",
-                            "targetHandle": "values",
+                            "targetHandle": "value",
                         }
                     ],
                 },
@@ -527,7 +526,7 @@ class TestDockerAPIIntegration:
 
                             if status == "completed":
                                 # Success - the workflow ran to completion
-                                # We expect the sum to be 10, but we can't directly check output
+                                # We expect the value to be 42, but we can't directly check output
                                 # without additional API calls or checking logs
                                 return
                             elif status == "failed":
@@ -547,9 +546,9 @@ class TestDockerAPIIntegration:
 
         try:
             # Create a workflow that:
-            # 1. Generates a list [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-            # 2. Filters to [2, 4, 6, 8] (even numbers from 2 to 8)
-            # 3. Sums to 20
+            # 1. Input: 10
+            # 2. PassThrough: 10 -> "10"
+            # 3. Output: "10"
             workflow_data = {
                 "name": "test-scientific-workflow",
                 "description": "Complex workflow with multiple operations",
@@ -557,32 +556,32 @@ class TestDockerAPIIntegration:
                 "graph": {
                     "nodes": [
                         {
-                            "id": "list",
-                            "type": "nodetool.list.ListRange",
-                            "data": {"stop": 10},
+                            "id": "input",
+                            "type": "nodetool.workflows.test_helper.IntInput",
+                            "data": {"default": 10},
                         },
                         {
-                            "id": "slice",
-                            "type": "nodetool.list.Slice",
-                            "data": {"start": 2, "stop": 9, "step": 2},
+                            "id": "pass",
+                            "type": "nodetool.workflows.test_helper.PassThrough",
+                            "data": {"prefix": "test"},
                         },
                         {
-                            "id": "sum",
-                            "type": "nodetool.list.Sum",
+                            "id": "output",
+                            "type": "nodetool.workflows.test_helper.StringOutput",
                         },
                     ],
                     "edges": [
                         {
-                            "source": "list",
-                            "target": "slice",
+                            "source": "input",
+                            "target": "pass",
                             "sourceHandle": "output",
-                            "targetHandle": "values",
+                            "targetHandle": "value",
                         },
                         {
-                            "source": "slice",
-                            "target": "sum",
+                            "source": "pass",
+                            "target": "output",
                             "sourceHandle": "output",
-                            "targetHandle": "values",
+                            "targetHandle": "value",
                         },
                     ],
                 },
@@ -650,7 +649,7 @@ class TestDockerAPIIntegration:
                     "nodes": [
                         {
                             "id": "n1",
-                            "type": "nodetool.control.Reroute",
+                            "type": "nodetool.workflows.test_helper.IntInput",
                         }
                     ],
                     "edges": [],
