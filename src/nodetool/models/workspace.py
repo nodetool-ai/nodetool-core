@@ -169,7 +169,7 @@ class Workspace(DBModel):
 
         adapter = await cls.adapter()
         results, last_evaluated_key = await adapter.query(
-            columns=["*"],
+            columns=None,
             condition=ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND)),
             order_by="updated_at",
             reverse=True,
@@ -196,7 +196,7 @@ class Workspace(DBModel):
 
         adapter = await cls.adapter()
         results, _ = await adapter.query(
-            columns=["*"],
+            columns=None,
             condition=ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND)),
             limit=1,
         )

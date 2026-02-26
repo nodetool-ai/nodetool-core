@@ -118,7 +118,7 @@ class WorkflowVersion(DBModel):
 
         adapter = await cls.adapter()
         results, _ = await adapter.query(
-            columns=["*"],
+            columns=None,
             condition=ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND)),
             order_by="version",
             reverse=True,
@@ -138,7 +138,7 @@ class WorkflowVersion(DBModel):
 
         adapter = await cls.adapter()
         results, _ = await adapter.query(
-            columns=["*"],
+            columns=None,
             condition=ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND)),
             limit=1,
         )
@@ -171,7 +171,7 @@ class WorkflowVersion(DBModel):
 
         adapter = await cls.adapter()
         results, _ = await adapter.query(
-            columns=["*"],
+            columns=None,
             condition=ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND)),
             order_by="version",
             reverse=True,
@@ -197,7 +197,7 @@ class WorkflowVersion(DBModel):
 
         adapter = await cls.adapter()
         results, _ = await adapter.query(
-            columns=["*"],
+            columns=None,
             condition=ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND)),
             order_by="created_at",
             reverse=True,
@@ -217,7 +217,7 @@ class WorkflowVersion(DBModel):
 
         adapter = await cls.adapter()
         results, _ = await adapter.query(
-            columns=["*"],
+            columns=None,
             condition=ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND)),
             order_by="created_at",
             reverse=True,
