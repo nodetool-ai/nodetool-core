@@ -335,7 +335,7 @@ class TestDockerAPIIntegration:
                         {
                             "id": "input",
                             "type": "nodetool.workflows.test_helper.IntInput",
-                            "data": {"default": 10},
+                            "data": {"default": 10, "name": "input_val"},
                         },
                         {
                             "id": "output",
@@ -388,7 +388,7 @@ class TestDockerAPIIntegration:
                         {
                             "id": "input",
                             "type": "nodetool.workflows.test_helper.IntInput",
-                            "data": {"default": 10},
+                            "data": {"default": 10, "name": "input_val"},
                         },
                         {
                             "id": "output",
@@ -471,7 +471,7 @@ class TestDockerAPIIntegration:
                         {
                             "id": "input",
                             "type": "nodetool.workflows.test_helper.IntInput",
-                            "data": {"default": 42},
+                            "data": {"default": 42, "name": "input_val"},
                         },
                         {
                             "id": "output",
@@ -558,7 +558,7 @@ class TestDockerAPIIntegration:
                         {
                             "id": "input",
                             "type": "nodetool.workflows.test_helper.IntInput",
-                            "data": {"default": 10},
+                            "data": {"default": 10, "name": "input_val"},
                         },
                         {
                             "id": "pass",
@@ -650,6 +650,7 @@ class TestDockerAPIIntegration:
                         {
                             "id": "n1",
                             "type": "nodetool.workflows.test_helper.IntInput",
+                            "data": {"default": 5, "name": "input_val"},
                         }
                     ],
                     "edges": [],
