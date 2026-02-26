@@ -181,22 +181,53 @@ SENSITIVE_PATHS = {
     "C:\\Program Files (x86)",
 }
 
+# Define allowed root directories for file access
+SAFE_ROOTS = [os.getcwd()]
+try:
+    SAFE_ROOTS.append(os.path.expanduser("~"))
+except Exception:
+    pass
+
 
 def _is_safe_path(path: str) -> bool:
-    """Check if the path is safe for access (not a sensitive system path and not hidden)."""
+    """Check if the path is safe for access (must be within SAFE_ROOTS and not hidden)."""
     abs_path = os.path.abspath(path)
-
-    # Check sensitive system paths
-    # We check if the path IS the sensitive path OR if it is INSIDE the sensitive path
-    for sensitive in SENSITIVE_PATHS:
-        # Normalize sensitive path
-        sensitive_abs = os.path.abspath(sensitive)
-        if abs_path == sensitive_abs or abs_path.startswith(sensitive_abs + os.sep):
-            return False
 
     # Check for hidden files or directories (starting with .)
     parts = abs_path.split(os.sep)
-    return not any(part.startswith(".") for part in parts if part)
+    if any(part.startswith(".") for part in parts if part):
+        return False
+
+    # Check if path is within SAFE_ROOTS
+    is_allowed = False
+    for root in SAFE_ROOTS:
+        root_abs = os.path.abspath(root)
+        if abs_path == root_abs or abs_path.startswith(os.path.join(root_abs, "")):
+            is_allowed = True
+            break
+
+    if not is_allowed:
+        return False
+
+    # Check sensitive system paths (Blacklist applied on top of Whitelist)
+    # Block if matches sensitive path UNLESS explicitly allowed by a more specific SAFE_ROOT
+    for sensitive in SENSITIVE_PATHS:
+        sensitive_abs = os.path.abspath(sensitive)
+        if abs_path == sensitive_abs or abs_path.startswith(os.path.join(sensitive_abs, "")):
+            # Matches sensitive path. Check if it's explicitly allowed by a more specific root.
+            is_overridden = False
+            for root in SAFE_ROOTS:
+                root_abs = os.path.abspath(root)
+                # If Safe Root is inside Sensitive Path (e.g. /home/user inside /home)
+                # AND path is inside Safe Root (already checked above)
+                if root_abs.startswith(os.path.join(sensitive_abs, "")) or root_abs == sensitive_abs:
+                    is_overridden = True
+                    break
+
+            if not is_overridden:
+                return False
+
+    return True
 
 
 @router.get("/download/{path:path}")

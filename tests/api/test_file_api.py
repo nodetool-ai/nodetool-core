@@ -1,4 +1,5 @@
 import os
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -29,17 +30,20 @@ def test_get_file_info(tmp_path, client: TestClient, headers: dict[str, str]):
 def test_upload_and_download_file(tmp_path, client: TestClient, headers: dict[str, str]):
     target = tmp_path / "upload.txt"
     content = b"hello world"
-    response = client.post(
-        f"/api/files/upload/{target}",
-        files={"file": ("upload.txt", content, "text/plain")},
-        headers=headers,
-    )
-    assert response.status_code == 200
-    assert os.path.exists(target)
 
-    download = client.get(f"/api/files/download/{target}", headers=headers)
-    assert download.status_code == 200
-    assert download.content == content
+    # Patch SAFE_ROOTS to include tmp_path so upload/download is allowed
+    with patch("nodetool.api.file.SAFE_ROOTS", [str(tmp_path)]):
+        response = client.post(
+            f"/api/files/upload/{target}",
+            files={"file": ("upload.txt", content, "text/plain")},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        assert os.path.exists(target)
+
+        download = client.get(f"/api/files/download/{target}", headers=headers)
+        assert download.status_code == 200
+        assert download.content == content
 
 
 def test_download_hidden_file_forbidden(tmp_path, client: TestClient, headers: dict[str, str]):
@@ -47,12 +51,14 @@ def test_download_hidden_file_forbidden(tmp_path, client: TestClient, headers: d
     hidden_file = tmp_path / ".secret"
     hidden_file.write_text("secret_data")
 
-    # Try to download it
-    response = client.get(f"/api/files/download/{hidden_file}", headers=headers)
+    # Patch SAFE_ROOTS so that we verify the blocking is due to hidden file check, not whitelist check
+    with patch("nodetool.api.file.SAFE_ROOTS", [str(tmp_path)]):
+        # Try to download it
+        response = client.get(f"/api/files/download/{hidden_file}", headers=headers)
 
-    # This should fail with 403 Forbidden
-    assert response.status_code == 403
-    assert response.json()["detail"] == "Access to this path is forbidden"
+        # This should fail with 403 Forbidden
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Access to this path is forbidden"
 
 
 def test_download_env_file_forbidden(tmp_path, client: TestClient, headers: dict[str, str]):
@@ -60,12 +66,14 @@ def test_download_env_file_forbidden(tmp_path, client: TestClient, headers: dict
     env_file = tmp_path / ".env"
     env_file.write_text("SECRET_KEY=12345")
 
-    # Try to download it
-    response = client.get(f"/api/files/download/{env_file}", headers=headers)
+    # Patch SAFE_ROOTS
+    with patch("nodetool.api.file.SAFE_ROOTS", [str(tmp_path)]):
+        # Try to download it
+        response = client.get(f"/api/files/download/{env_file}", headers=headers)
 
-    # This should fail with 403 Forbidden
-    assert response.status_code == 403
-    assert response.json()["detail"] == "Access to this path is forbidden"
+        # This should fail with 403 Forbidden
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Access to this path is forbidden"
 
 
 def test_download_file_in_hidden_dir_forbidden(tmp_path, client: TestClient, headers: dict[str, str]):
@@ -75,12 +83,14 @@ def test_download_file_in_hidden_dir_forbidden(tmp_path, client: TestClient, hea
     secret_file = hidden_dir / "secret.txt"
     secret_file.write_text("secret_data")
 
-    # Try to download it
-    response = client.get(f"/api/files/download/{secret_file}", headers=headers)
+    # Patch SAFE_ROOTS
+    with patch("nodetool.api.file.SAFE_ROOTS", [str(tmp_path)]):
+        # Try to download it
+        response = client.get(f"/api/files/download/{secret_file}", headers=headers)
 
-    # This should fail with 403 Forbidden because a path component starts with .
-    assert response.status_code == 403
-    assert response.json()["detail"] == "Access to this path is forbidden"
+        # This should fail with 403 Forbidden because a path component starts with .
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Access to this path is forbidden"
 
 
 def test_upload_to_system_dir_forbidden(client: TestClient, headers: dict[str, str]):
@@ -89,6 +99,10 @@ def test_upload_to_system_dir_forbidden(client: TestClient, headers: dict[str, s
     # /usr/bin/pwned.txt
     target_file = "/usr/bin/pwned.txt"
     content = b"hacked"
+
+    # We do NOT patch SAFE_ROOTS here (unless CWD is /, which it shouldn't be).
+    # Assuming CWD is not /, /usr/bin is outside SAFE_ROOTS.
+    # So it should be blocked by whitelist.
 
     response = client.post(
         f"/api/files/upload/{target_file}",
