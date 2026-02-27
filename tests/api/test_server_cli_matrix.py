@@ -49,6 +49,9 @@ class TestServeCliMatrix:
         assert kwargs["mode"] == "public"
         assert kwargs["auth_provider"] == "supabase"
         assert kwargs["enable_terminal_ws"] is False
+        # The CLI passes 'enable_deploy_admin' which is mapped to 'include_deploy_admin_router' in run_serve
+        # but mock_create_app receives the raw kwargs from run_serve calls to create_app.
+        # Check src/nodetool/api/cli_serve.py: it passes 'include_deploy_admin_router' to create_app.
         assert kwargs["include_deploy_admin_router"] is False
         assert kwargs["enable_hf_download_ws"] is False
         assert len(uvicorn_calls) == 1
