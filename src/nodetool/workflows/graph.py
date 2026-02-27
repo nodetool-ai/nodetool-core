@@ -58,15 +58,18 @@ class Graph(BaseModel):
     nodes: Sequence[BaseNode] = Field(default_factory=list)
     edges: Sequence[Edge] = Field(default_factory=list)
     _node_index: dict[str, BaseNode] | None = None
+    _streaming_upstream_cache: set[str] | None = None
 
     def __init__(self, **data):
         super().__init__(**data)
         # Build node ID index for O(1) lookup
         self._node_index = {node._id: node for node in self.nodes} if self.nodes else {}
+        self._streaming_upstream_cache = None
 
     def model_post_init(self, __context: Any):
         # Build node ID index after model initialization
         self._node_index = {node._id: node for node in self.nodes} if self.nodes else {}
+        self._streaming_upstream_cache = None
 
     def find_node(self, node_id: str) -> BaseNode | None:
         """
@@ -532,6 +535,28 @@ class Graph(BaseModel):
 
         return validation_errors
 
+    def _compute_streaming_upstream(self):
+        """Compute the set of nodes that have a streaming upstream node."""
+        streaming_node_ids = {node.id for node in self.nodes if node.is_streaming_output()}
+
+        adj = defaultdict(list)
+        for edge in self.edges:
+            adj[edge.source].append(edge.target)
+
+        reachable = set()
+        queue = deque(streaming_node_ids)
+        processed = set(streaming_node_ids)
+
+        while queue:
+            u = queue.popleft()
+            for v in adj[u]:
+                reachable.add(v)
+                if v not in processed:
+                    processed.add(v)
+                    queue.append(v)
+
+        self._streaming_upstream_cache = reachable
+
     def has_streaming_upstream(self, node_id: str) -> bool:
         """Return True if any upstream (direct or transitive) streams outputs.
 
@@ -539,22 +564,6 @@ class Graph(BaseModel):
         streaming outputs (i.e., overrides `gen_process`). This check is used to
         influence execution/caching behavior of downstream non-streaming nodes.
         """
-        visited: set[str] = set()
-        queue = deque([node_id])
-        reverse_adj: dict[str, list[str]] = {}
-        for edge in self.edges:
-            reverse_adj.setdefault(edge.target, []).append(edge.source)
-
-        while queue:
-            current = queue.popleft()
-            for source_id in reverse_adj.get(current, []):
-                if source_id in visited:
-                    continue
-                src = self.find_node(source_id)
-                if src is None:
-                    continue
-                if src.is_streaming_output():
-                    return True
-                visited.add(source_id)
-                queue.append(source_id)
-        return False
+        if self._streaming_upstream_cache is None:
+            self._compute_streaming_upstream()
+        return node_id in self._streaming_upstream_cache
