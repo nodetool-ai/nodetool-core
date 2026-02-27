@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from nodetool.deploy.progress import ProgressManager
     from nodetool.types.api_graph import Graph as ApiGraph
     from nodetool.types.model import UnifiedModel
+    from nodetool.workflows.run_job_request import RunJobRequest
 
 
 T = TypeVar("T")
@@ -894,220 +895,387 @@ def serve(
     Use --production to run the production server with full admin routers.
     Use --mock to start with pre-filled test data for development and testing.
     """
-    if auth_provider:
-        os.environ["AUTH_PROVIDER"] = auth_provider.lower()
+    from nodetool.api.cli_serve import run_serve as _run_serve
 
-    effective_mode = mode.lower() if mode else ("private" if production else "desktop")
+    _run_serve(
+        host=host,
+        port=port,
+        static_folder=static_folder,
+        reload=reload,
+        force_fp16=force_fp16,
+        mode=mode,
+        auth_provider=auth_provider,
+        enable_default_api=enable_default_api,
+        enable_openai=enable_openai,
+        enable_deploy_admin=enable_deploy_admin,
+        enable_deploy_collections=enable_deploy_collections,
+        enable_deploy_storage=enable_deploy_storage,
+        enable_main_ws=enable_main_ws,
+        enable_terminal_ws=enable_terminal_ws,
+        enable_hf_download_ws=enable_hf_download_ws,
+        mcp=mcp,
+        apps_folder=apps_folder,
+        production=production,
+        ui_url=ui_url,
+        ui=ui,
+        verbose=verbose,
+        mock=mock,
+    )
 
-    if production:
-        from nodetool.api.run_server import run_server
 
-        if static_folder:
-            console.print("[yellow]Warning: --static-folder ignored in production mode[/]")
-        if apps_folder:
-            console.print("[yellow]Warning: --apps-folder ignored in production mode[/]")
-        if mock:
-            console.print("[yellow]Warning: --mock ignored in production mode[/]")
-
-        run_kwargs: dict[str, Any] = {
-            "host": host,
-            "port": port,
-            "reload": reload,
-        }
-        if mode:
-            run_kwargs["mode"] = effective_mode
-        else:
-            os.environ.setdefault("NODETOOL_SERVER_MODE", "private")
-        if auth_provider:
-            run_kwargs["auth_provider"] = auth_provider
-        if enable_default_api is not None:
-            run_kwargs["include_default_api_routers"] = enable_default_api
-        if enable_openai is not None:
-            run_kwargs["include_openai_router"] = enable_openai
-        if enable_deploy_admin is not None:
-            run_kwargs["include_deploy_admin_router"] = enable_deploy_admin
-        if enable_deploy_collections is not None:
-            run_kwargs["include_deploy_collection_router"] = enable_deploy_collections
-        if enable_deploy_storage is not None:
-            run_kwargs["include_deploy_storage_router"] = enable_deploy_storage
-        if enable_main_ws is not None:
-            run_kwargs["enable_main_ws"] = enable_main_ws
-        if enable_terminal_ws is not None:
-            run_kwargs["enable_terminal_ws"] = enable_terminal_ws
-        if enable_hf_download_ws is not None:
-            run_kwargs["enable_hf_download_ws"] = enable_hf_download_ws
-        if mcp:
-            run_kwargs["enable_mcp"] = mcp
-        run_server(**run_kwargs)
-        return
-
-    from nodetool.api.server import create_app, run_uvicorn_server
-
-    # Configure logging level based on verbose flag
-    if verbose:
-        from nodetool.config.logging_config import configure_logging
-
-        configure_logging(level="DEBUG")
-        os.environ["LOG_LEVEL"] = "DEBUG"
-        console.print("[cyan]🐛 Verbose logging enabled (DEBUG level)[/]")
-
-    # Configure mock mode
-    if mock:
-        console.print("[yellow]🎭 Mock mode enabled - will populate database with test data[/]")
-        os.environ["NODETOOL_MOCK_MODE"] = "1"
+def _run_json_default(obj: Any) -> Any:
+    """JSON serializer for objects not serializable by default json code."""
+    import base64
 
     try:
-        import comfy.cli_args  # type: ignore
-
-        comfy.cli_args.args.force_fp16 = force_fp16
-    except ImportError:
+        if hasattr(obj, "model_dump") and callable(obj.model_dump):
+            return obj.model_dump()
+    except Exception:
         pass
 
-    # Handle UI download if requested
-    if ui or ui_url:
-        if ui and ui_url:
-            console.print("[yellow]Warning: --ui-url overrides --ui[/]")
+    if isinstance(obj, bytes | bytearray):
+        return {
+            "__type__": "bytes",
+            "base64": base64.b64encode(bytes(obj)).decode("utf-8"),
+        }
 
-        url_to_use = ui_url
+    return str(obj)
 
-        # If --ui flag is used and no explicit URL, infer it
-        if ui and not ui_url:
-            try:
-                version = get_package_version("nodetool-core")
-                # Fix normalized version if needed (e.g., 0.6.3rc12 -> 0.6.3-rc.12)
-                if "rc" in version and "-" not in version:
-                    version = version.replace("rc", "-rc.")
 
-                url_to_use = (
-                    f"https://github.com/nodetool-ai/nodetool/releases/download/v{version}/nodetool-web-{version}.zip"
-                )
-                console.print(f"[cyan]Inferring UI URL for version {version}: {url_to_use}[/]")
-            except PackageNotFoundError:
-                console.print("[red]Could not determine package version.[/]")
-                # We will try fallback below if we can't infer or if inference fails
-                pass
+def _run_is_dsl_file(path: str) -> bool:
+    """Check if the file is a Python DSL file."""
+    return path.endswith(".py") and not path.endswith(".pyc")
 
-        if static_folder:
-            console.print("[yellow]Warning: --ui-url/--ui overrides --static-folder[/]")
+
+def _run_load_dsl_file(path: str) -> ApiGraph:
+    """Load a DSL Python file and extract the graph object.
+
+    The DSL file should define a module-level `graph` object.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    from nodetool.types.api_graph import Graph
+
+    # Create a unique module name based on the file path
+    file_path = Path(path).resolve()
+    module_name = f"_nodetool_dsl_{file_path.stem}_{hash(str(file_path)) & 0xFFFFFFFF:08x}"
+
+    # Load the module
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    if spec is None or spec.loader is None:
+        raise ValueError(f"Cannot load Python file: {path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+
+    # Look for the standardized `graph` object
+    if not hasattr(module, "graph"):
+        raise ValueError(
+            f"DSL file '{path}' must define a module-level 'graph' object.\n"
+            "Example: graph = graph(node1, node2, ...)"
+        )
+
+    graph_obj = module.graph
+    if not isinstance(graph_obj, Graph):
+        raise ValueError(f"DSL file 'graph' object must be of type Graph, got {type(graph_obj).__name__}")
+
+    return graph_obj
+
+
+def _run_load_dsl_string(code: str, name: str = "<stdin>") -> ApiGraph:
+    """Execute DSL Python code and extract the graph object.
+
+    The DSL code should define a module-level `graph` object.
+    """
+    import importlib.util
+
+    from nodetool.types.api_graph import Graph
+
+    # Create a unique module name
+    module_name = f"_nodetool_dsl_stdin_{hash(code) & 0xFFFFFFFF:08x}"
+
+    # Create a module from the code string
+    spec = importlib.util.spec_from_loader(module_name, loader=None)
+    if spec is None:
+        raise ValueError("Cannot create module for DSL code")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+
+    # Execute the code in the module's namespace
+    exec(code, module.__dict__)
+
+    # Look for the standardized `graph` object
+    if not hasattr(module, "graph"):
+        raise ValueError(
+            "DSL code must define a module-level 'graph' object.\nExample: graph = graph(node1, node2, ...)"
+        )
+
+    graph_obj = module.graph
+    if not isinstance(graph_obj, Graph):
+        raise ValueError(f"DSL 'graph' object must be of type Graph, got {type(graph_obj).__name__}")
+
+    return graph_obj
+
+
+def _run_is_dsl_content(data: str) -> bool:
+    """Check if the data looks like Python DSL code rather than JSON."""
+    # Strip leading whitespace/comments
+    stripped = data.strip()
+    if not stripped:
+        return False
+
+    # DSL/Python indicators
+    dsl_indicators = [
+        "import ",
+        "from ",
+        "def ",
+        "class ",
+        "= graph(",
+        "=graph(",
+        "Graph(",
+        "# ",
+        "'''",
+        '"""',
+        "graph = ",
+    ]
+
+    # Check for DSL indicators in first few lines
+    first_lines = "\n".join(stripped.split("\n")[:10])
+    for indicator in dsl_indicators:
+        if indicator in first_lines:
+            return True
+
+    # If it doesn't start with JSON characters, might be Python
+    return stripped[0] not in "[{\"':"
+
+
+def _run_parse_workflow_arg(value: str, user_id: str, auth_token: str) -> RunJobRequest:
+    """Parse workflow argument as ID, file path, or RunJobRequest JSON."""
+    from nodetool.types.api_graph import Graph
+    from nodetool.workflows.run_job_request import RunJobRequest
+
+    # Check if it's a file
+    if os.path.isfile(value):
+        # Check if it's a DSL (Python) file
+        if _run_is_dsl_file(value):
+            graph = _run_load_dsl_file(value)
+            return RunJobRequest(
+                user_id=user_id,
+                auth_token=auth_token,
+                graph=graph,
+            )
+
+        # Try to load as JSON
+        with open(value, encoding="utf-8") as f:
+            data = json.load(f)
+
+        # Check if it's a full RunJobRequest or just a workflow definition
+        if "graph" in data and "user_id" not in data:
+            # It's a workflow definition file
+            graph = Graph(**data["graph"])
+            return RunJobRequest(
+                user_id=user_id,
+                auth_token=auth_token,
+                graph=graph,
+            )
+        else:
+            # It's a RunJobRequest JSON file
+            if isinstance(data.get("graph"), dict):
+                data["graph"] = Graph(**data["graph"])
+            return RunJobRequest(**data)
+
+    # Try to parse as inline JSON
+    try:
+        data = json.loads(value)
+        if isinstance(data.get("graph"), dict):
+            data["graph"] = Graph(**data["graph"])
+        return RunJobRequest(**data)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Treat as workflow ID
+    return RunJobRequest(
+        workflow_id=value,
+        user_id=user_id,
+        auth_token=auth_token,
+    )
+
+
+def _run_read_stdin_request(user_id: str, auth_token: str) -> RunJobRequest:
+    """Read workflow from stdin (JSON RunJobRequest or DSL Python code)."""
+    from nodetool.types.api_graph import Graph
+    from nodetool.workflows.run_job_request import RunJobRequest
+
+    stdin_data = sys.stdin.read()
+    if not stdin_data.strip():
+        print("Error: No input provided via stdin", file=sys.stderr)
+        sys.exit(1)
+
+    # Try to detect if it's DSL code
+    if _run_is_dsl_content(stdin_data):
+        try:
+            graph = _run_load_dsl_string(stdin_data)
+            return RunJobRequest(
+                user_id=user_id,
+                auth_token=auth_token,
+                graph=graph,
+            )
+        except SyntaxError as e:
+            print(f"Error: Invalid DSL Python code: {e}", file=sys.stderr)
+            sys.exit(1)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # Otherwise treat as JSON
+    try:
+        req_dict = json.loads(stdin_data)
+        if isinstance(req_dict.get("graph"), dict):
+            req_dict["graph"] = Graph(**req_dict["graph"])
+        return RunJobRequest(**req_dict)
+    except json.JSONDecodeError as e:
+        print(f"Error: Invalid JSON from stdin: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: Invalid RunJobRequest: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+async def _run_workflow_jsonl(
+    request: RunJobRequest,
+    repeat: int,
+    show_node_updates: bool,
+    show_previews: bool,
+    show_outputs: bool,
+) -> int:
+    from nodetool.workflows.processing_context import ProcessingContext
+    from nodetool.workflows.run_job_request import RunJobRequest
+    from nodetool.workflows.run_workflow import run_workflow
+
+    for i in range(repeat):
+        if repeat > 1:
+            sys.stdout.write(json.dumps({"type": "repeat_start", "iteration": i + 1, "total": repeat}) + "\n")
+            sys.stdout.flush()
+
+        # Create fresh request and context for each iteration
+        iter_request = RunJobRequest(
+            workflow_id=request.workflow_id,
+            user_id=request.user_id,
+            auth_token=request.auth_token,
+            graph=request.graph,
+            params=request.params,
+            execution_strategy=request.execution_strategy,
+        )
+        context = ProcessingContext(
+            user_id=iter_request.user_id,
+            auth_token=iter_request.auth_token,
+            workflow_id=iter_request.workflow_id,
+            job_id=None,
+        )
 
         try:
-            if url_to_use:
-                static_folder = _download_and_cache_ui(url_to_use)
-            else:
-                raise Exception("No URL available")
+            async for msg in run_workflow(
+                iter_request,
+                context=context,
+                use_thread=False,
+                send_job_updates=True,
+                initialize_graph=True,
+                validate_graph=True,
+            ):
+                # Filter messages based on flags
+                msg_type = msg.get("type", "") if isinstance(msg, dict) else getattr(msg, "type", "")
+                if msg_type == "node_update" and not show_node_updates:
+                    continue
+                if msg_type == "preview" and not show_previews:
+                    continue
+                if msg_type == "output" and not show_outputs:
+                    continue
+
+                line = json.dumps(
+                    msg if isinstance(msg, dict) else _run_json_default(msg),
+                    default=_run_json_default,
+                )
+                sys.stdout.write(line + "\n")
+                sys.stdout.flush()
         except Exception as e:
-            if ui and not ui_url:
-                console.print(f"[yellow]Failed to download UI for current version ({e}). Trying latest release...[/]")
-                try:
-                    import httpx
+            err = {"type": "error", "error": str(e), "iteration": i + 1}
+            sys.stdout.write(json.dumps(err) + "\n")
+            sys.stdout.flush()
+            return 1
 
-                    # Find latest tag
-                    resp = httpx.get("https://github.com/nodetool-ai/nodetool/releases/latest", follow_redirects=False)
-                    location = resp.headers.get("location", "")
-                    if "/tag/" in location:
-                        tag = location.split("/")[-1]
-                        version_str = tag.lstrip("v")
-                        latest_url = f"https://github.com/nodetool-ai/nodetool/releases/download/{tag}/nodetool-web-{version_str}.zip"
-                        console.print(f"[cyan]Downloading latest UI ({tag}): {latest_url}[/]")
-                        static_folder = _download_and_cache_ui(latest_url)
-                    else:
-                        raise Exception("Could not resolve latest release tag")
-                except Exception as inner_e:
-                    console.print(f"[red]Failed to download latest UI: {inner_e}[/]")
-                    sys.exit(1)
-            else:
-                console.print(f"[red]Failed to download UI: {e}[/]")
-                sys.exit(1)
+        if repeat > 1:
+            sys.stdout.write(json.dumps({"type": "repeat_end", "iteration": i + 1, "total": repeat}) + "\n")
+            sys.stdout.flush()
 
-    if not reload:
-        app = create_app(
-            static_folder=static_folder,
-            apps_folder=apps_folder,
-            mode=effective_mode,
-            auth_provider=auth_provider,
-            include_default_api_routers=enable_default_api,
-            include_openai_router=enable_openai,
-            include_deploy_admin_router=enable_deploy_admin,
-            include_deploy_collection_router=enable_deploy_collections,
-            include_deploy_storage_router=enable_deploy_storage,
-            enable_main_ws=enable_main_ws,
-            enable_terminal_ws=enable_terminal_ws,
-            enable_hf_download_ws=enable_hf_download_ws,
-            enable_mcp=mcp,
+    return 0
+
+
+async def _run_workflow_interactive(
+    workflow_desc: str,
+    request: RunJobRequest,
+    repeat: int,
+    show_node_updates: bool,
+    show_previews: bool,
+    show_outputs: bool,
+) -> None:
+    import traceback
+
+    from nodetool.types.job import JobUpdate
+    from nodetool.workflows.run_job_request import RunJobRequest
+    from nodetool.workflows.run_workflow import run_workflow
+
+    for i in range(repeat):
+        if repeat > 1:
+            console.print(Panel.fit(f"Run {i + 1}/{repeat}: {workflow_desc}", style="blue"))
+        else:
+            console.print(Panel.fit(f"Running workflow {workflow_desc}...", style="blue"))
+
+        # Create fresh request for each iteration
+        iter_request = RunJobRequest(
+            workflow_id=request.workflow_id,
+            user_id=request.user_id,
+            auth_token=request.auth_token,
+            graph=request.graph,
+            params=request.params,
+            execution_strategy=request.execution_strategy,
         )
-        if mcp:
-            console.print("[green]MCP server enabled at /mcp (endpoints: /mcp/sse, /mcp/messages)[/]")
-    else:
-        if static_folder:
-            raise Exception("static folder and reload are exclusive options")
-        if apps_folder:
-            raise Exception("apps folder and reload are exclusive options")
-        # Pass MCP flag via environment variable for reload mode
-        if mcp:
-            os.environ["NODETOOL_ENABLE_MCP"] = "1"
-            console.print("[green]MCP server enabled at /mcp (endpoints: /mcp/sse, /mcp/messages)[/]")
-        app = "nodetool.api.app:app"
 
-    run_uvicorn_server(app=app, host=host, port=port, reload=reload)
+        try:
+            async for message in run_workflow(iter_request, use_thread=False):
+                # Pretty-print each message coming from the runner
+                if isinstance(message, JobUpdate) and message.status == "error":
+                    console.print(Panel.fit(f"Error: {message.error}", style="bold red"))
+                    sys.exit(1)
 
+                # Filter messages based on flags
+                msg_type_str = getattr(message, "type", "")
+                if msg_type_str == "node_update" and not show_node_updates:
+                    continue
+                if msg_type_str == "preview" and not show_previews:
+                    continue
+                if msg_type_str == "output" and not show_outputs:
+                    continue
 
-def _download_and_cache_ui(url: str) -> str:
-    """Download UI zip from URL and unpack to cache directory."""
-    import hashlib
-    import shutil
-    import zipfile
-    from io import BytesIO
+                msg_type = Text(message.type, style="bold cyan")
+                try:
+                    msg_json = message.model_dump_json()
+                except Exception:
+                    # Handle binary data that can't be serialized to JSON
+                    msg_dict = message.model_dump()
+                    msg_json = json.dumps(msg_dict, default=_run_json_default)
+                console.print(f"{msg_type}: {msg_json}")
+        except Exception as e:
+            console.print(Panel.fit(f"Error running workflow: {e}", style="bold red"))
+            traceback.print_exc()
+            sys.exit(1)
 
-    import httpx
+        if repeat > 1 and i < repeat - 1:
+            console.print()  # Add blank line between runs
 
-    from nodetool.config.settings import get_system_cache_path
-
-    # Generate cache key from URL
-    url_hash = hashlib.md5(url.encode()).hexdigest()
-    cache_dir = get_system_cache_path("ui_cache") / url_hash
-
-    # Check if already cached
-    if cache_dir.exists() and (cache_dir / "index.html").exists():
-        console.print(f"[green]Using cached UI from {cache_dir}[/]")
-        return str(cache_dir)
-
-    console.print(f"[cyan]Downloading UI from {url}...[/]")
-
-    # Download
-    with httpx.Client(follow_redirects=True) as client:
-        resp = client.get(url)
-        if resp.status_code == 404:
-            raise Exception("404 Not Found")
-        resp.raise_for_status()
-
-        # Unpack
-        console.print("[cyan]Unpacking UI...[/]")
-        if cache_dir.exists():
-            shutil.rmtree(cache_dir)
-        cache_dir.mkdir(parents=True, exist_ok=True)
-
-        with zipfile.ZipFile(BytesIO(resp.content)) as z:
-            z.extractall(cache_dir)
-
-        # Handle case where zip contains a single top-level folder
-        # e.g. nodetool-web-0.6.3-rc.12/index.html -> move contents up
-        items = list(cache_dir.iterdir())
-        if len(items) == 1 and items[0].is_dir():
-            subdir = items[0]
-            # Move contents to temp dir first to avoid conflicts
-            temp_dir = cache_dir.parent / f"{url_hash}_temp"
-            subdir.rename(temp_dir)
-            try:
-                shutil.rmtree(cache_dir)
-                temp_dir.rename(cache_dir)
-            except Exception:
-                # Fallback cleanup
-                if temp_dir.exists():
-                    shutil.rmtree(temp_dir)
-                raise
-
-        console.print(f"[green]UI ready at {cache_dir}[/]")
-        return str(cache_dir)
+    console.print(Panel.fit("Workflow finished successfully", style="green"))
 
 
 @cli.command()
@@ -1211,234 +1379,16 @@ def run(
       nodetool run workflow.json --repeat 5
       nodetool run workflow.json -n 5
     """
-    import base64
     import json
-    import os
     import sys
     import traceback
 
-    from nodetool.types.api_graph import Graph
-    from nodetool.types.job import JobUpdate
-    from nodetool.workflows.processing_context import ProcessingContext
-    from nodetool.workflows.run_job_request import RunJobRequest
-    from nodetool.workflows.run_workflow import run_workflow
-
-    def _default(obj: Any) -> Any:
-        """JSON serializer for objects not serializable by default json code."""
-        try:
-            if hasattr(obj, "model_dump") and callable(obj.model_dump):
-                return obj.model_dump()
-        except Exception:
-            pass
-
-        if isinstance(obj, bytes | bytearray):
-            return {
-                "__type__": "bytes",
-                "base64": base64.b64encode(bytes(obj)).decode("utf-8"),
-            }
-
-        return str(obj)
-
-    def _is_dsl_file(path: str) -> bool:
-        """Check if the file is a Python DSL file."""
-        return path.endswith(".py") and not path.endswith(".pyc")
-
-    def _load_dsl_file(path: str) -> Graph:
-        """Load a DSL Python file and extract the graph object.
-
-        The DSL file should define a module-level `graph` object.
-        """
-        import importlib.util
-        import sys
-        from pathlib import Path
-
-        # Create a unique module name based on the file path
-        file_path = Path(path).resolve()
-        module_name = f"_nodetool_dsl_{file_path.stem}_{hash(str(file_path)) & 0xFFFFFFFF:08x}"
-
-        # Load the module
-        spec = importlib.util.spec_from_file_location(module_name, file_path)
-        if spec is None or spec.loader is None:
-            raise ValueError(f"Cannot load Python file: {path}")
-
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-        spec.loader.exec_module(module)
-
-        # Look for the standardized `graph` object
-        if not hasattr(module, "graph"):
-            raise ValueError(
-                f"DSL file '{path}' must define a module-level 'graph' object.\n"
-                "Example: graph = graph(node1, node2, ...)"
-            )
-
-        graph_obj = module.graph
-        if not isinstance(graph_obj, Graph):
-            raise ValueError(
-                f"DSL file 'graph' object must be of type Graph, got {type(graph_obj).__name__}"
-            )
-
-        return graph_obj
-
-    def _load_dsl_string(code: str, name: str = "<stdin>") -> Graph:
-        """Execute DSL Python code and extract the graph object.
-
-        The DSL code should define a module-level `graph` object.
-        """
-        import importlib.util
-        import sys
-        from pathlib import Path
-
-        # Create a unique module name
-        module_name = f"_nodetool_dsl_stdin_{hash(code) & 0xFFFFFFFF:08x}"
-
-        # Create a module from the code string
-        spec = importlib.util.spec_from_loader(module_name, loader=None)
-        if spec is None:
-            raise ValueError("Cannot create module for DSL code")
-
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-
-        # Execute the code in the module's namespace
-        exec(code, module.__dict__)
-
-        # Look for the standardized `graph` object
-        if not hasattr(module, "graph"):
-            raise ValueError(
-                "DSL code must define a module-level 'graph' object.\n"
-                "Example: graph = graph(node1, node2, ...)"
-            )
-
-        graph_obj = module.graph
-        if not isinstance(graph_obj, Graph):
-            raise ValueError(
-                f"DSL 'graph' object must be of type Graph, got {type(graph_obj).__name__}"
-            )
-
-        return graph_obj
-
-    def _parse_workflow_arg(value: str) -> RunJobRequest:
-        """Parse workflow argument as ID, file path, or RunJobRequest JSON."""
-        # Check if it's a file
-        if os.path.isfile(value):
-            # Check if it's a DSL (Python) file
-            if _is_dsl_file(value):
-                graph = _load_dsl_file(value)
-                return RunJobRequest(
-                    user_id=user_id,
-                    auth_token=auth_token,
-                    graph=graph,
-                )
-
-            # Try to load as JSON
-            with open(value, encoding="utf-8") as f:
-                data = json.load(f)
-
-            # Check if it's a full RunJobRequest or just a workflow definition
-            if "graph" in data and "user_id" not in data:
-                # It's a workflow definition file
-                graph = Graph(**data["graph"])
-                return RunJobRequest(
-                    user_id=user_id,
-                    auth_token=auth_token,
-                    graph=graph,
-                )
-            else:
-                # It's a RunJobRequest JSON file
-                if isinstance(data.get("graph"), dict):
-                    data["graph"] = Graph(**data["graph"])
-                return RunJobRequest(**data)
-
-        # Try to parse as inline JSON
-        try:
-            data = json.loads(value)
-            if isinstance(data.get("graph"), dict):
-                data["graph"] = Graph(**data["graph"])
-            return RunJobRequest(**data)
-        except (json.JSONDecodeError, ValueError):
-            pass
-
-        # Treat as workflow ID
-        return RunJobRequest(
-            workflow_id=value,
-            user_id=user_id,
-            auth_token=auth_token,
-        )
-
-    def _is_dsl_content(data: str) -> bool:
-        """Check if the data looks like Python DSL code rather than JSON."""
-        # Strip leading whitespace/comments
-        stripped = data.strip()
-        if not stripped:
-            return False
-
-        # DSL/Python indicators
-        dsl_indicators = [
-            "import ",
-            "from ",
-            "def ",
-            "class ",
-            "= graph(",
-            "=graph(",
-            "Graph(",
-            "# ",
-            "'''",
-            '"""',
-            "graph = ",
-        ]
-
-        # Check for DSL indicators in first few lines
-        first_lines = "\n".join(stripped.split("\n")[:10])
-        for indicator in dsl_indicators:
-            if indicator in first_lines:
-                return True
-
-        # If it doesn't start with JSON characters, might be Python
-        return stripped[0] not in "[{\"':"
-
-    def _read_stdin_request() -> RunJobRequest:
-        """Read workflow from stdin (JSON RunJobRequest or DSL Python code)."""
-        stdin_data = sys.stdin.read()
-        if not stdin_data.strip():
-            print("Error: No input provided via stdin", file=sys.stderr)
-            sys.exit(1)
-
-        # Try to detect if it's DSL code
-        if _is_dsl_content(stdin_data):
-            try:
-                graph = _load_dsl_string(stdin_data)
-                return RunJobRequest(
-                    user_id=user_id,
-                    auth_token=auth_token,
-                    graph=graph,
-                )
-            except SyntaxError as e:
-                print(f"Error: Invalid DSL Python code: {e}", file=sys.stderr)
-                sys.exit(1)
-            except ValueError as e:
-                print(f"Error: {e}", file=sys.stderr)
-                sys.exit(1)
-
-        # Otherwise treat as JSON
-        try:
-            req_dict = json.loads(stdin_data)
-            if isinstance(req_dict.get("graph"), dict):
-                req_dict["graph"] = Graph(**req_dict["graph"])
-            return RunJobRequest(**req_dict)
-        except json.JSONDecodeError as e:
-            print(f"Error: Invalid JSON from stdin: {e}", file=sys.stderr)
-            sys.exit(1)
-        except Exception as e:
-            print(f"Error: Invalid RunJobRequest: {e}", file=sys.stderr)
-            sys.exit(1)
-
     # Determine the request source
     if stdin:
-        request = _read_stdin_request()
+        request = _run_read_stdin_request(user_id, auth_token)
     elif workflow:
         try:
-            request = _parse_workflow_arg(workflow)
+            request = _run_parse_workflow_arg(workflow, user_id, auth_token)
         except Exception as e:
             if jsonl:
                 err = {"type": "error", "error": str(e)}
@@ -1458,127 +1408,27 @@ def run(
 
     # Execute the workflow
     if jsonl:
-        # JSONL output mode (for subprocess/automation)
-        async def run_jsonl() -> int:
-            for i in range(repeat):
-                if repeat > 1:
-                    sys.stdout.write(json.dumps({"type": "repeat_start", "iteration": i + 1, "total": repeat}) + "\n")
-                    sys.stdout.flush()
-
-                # Create fresh request and context for each iteration
-                from nodetool.workflows.run_job_request import RunJobRequest
-
-                iter_request = RunJobRequest(
-                    workflow_id=request.workflow_id,
-                    user_id=request.user_id,
-                    auth_token=request.auth_token,
-                    graph=request.graph,
-                    params=request.params,
-                    execution_strategy=request.execution_strategy,
-                )
-                context = ProcessingContext(
-                    user_id=iter_request.user_id,
-                    auth_token=iter_request.auth_token,
-                    workflow_id=iter_request.workflow_id,
-                    job_id=None,
-                )
-
-                try:
-                    async for msg in run_workflow(
-                        iter_request,
-                        context=context,
-                        use_thread=False,
-                        send_job_updates=True,
-                        initialize_graph=True,
-                        validate_graph=True,
-                    ):
-                        # Filter messages based on flags
-                        msg_type = msg.get("type", "") if isinstance(msg, dict) else getattr(msg, "type", "")
-                        if msg_type == "node_update" and not show_node_updates:
-                            continue
-                        if msg_type == "preview" and not show_previews:
-                            continue
-                        if msg_type == "output" and not show_outputs:
-                            continue
-
-                        line = json.dumps(
-                            msg if isinstance(msg, dict) else _default(msg),
-                            default=_default,
-                        )
-                        sys.stdout.write(line + "\n")
-                        sys.stdout.flush()
-                except Exception as e:
-                    err = {"type": "error", "error": str(e), "iteration": i + 1}
-                    sys.stdout.write(json.dumps(err) + "\n")
-                    sys.stdout.flush()
-                    return 1
-
-                if repeat > 1:
-                    sys.stdout.write(json.dumps({"type": "repeat_end", "iteration": i + 1, "total": repeat}) + "\n")
-                    sys.stdout.flush()
-
-            return 0
-
-        exit_code = _run_async(run_jsonl())
+        exit_code = _run_async(
+            _run_workflow_jsonl(
+                request,
+                repeat=repeat,
+                show_node_updates=show_node_updates,
+                show_previews=show_previews,
+                show_outputs=show_outputs,
+            )
+        )
         sys.exit(exit_code)
     else:
-        # Interactive pretty-printed mode
-        async def run_interactive():
-            workflow_desc = workflow or "stdin"
-
-            for i in range(repeat):
-                if repeat > 1:
-                    console.print(Panel.fit(f"Run {i + 1}/{repeat}: {workflow_desc}", style="blue"))
-                else:
-                    console.print(Panel.fit(f"Running workflow {workflow_desc}...", style="blue"))
-
-                # Create fresh request for each iteration
-                from nodetool.workflows.run_job_request import RunJobRequest
-
-                iter_request = RunJobRequest(
-                    workflow_id=request.workflow_id,
-                    user_id=request.user_id,
-                    auth_token=request.auth_token,
-                    graph=request.graph,
-                    params=request.params,
-                    execution_strategy=request.execution_strategy,
-                )
-
-                try:
-                    async for message in run_workflow(iter_request, use_thread=False):
-                        # Pretty-print each message coming from the runner
-                        if isinstance(message, JobUpdate) and message.status == "error":
-                            console.print(Panel.fit(f"Error: {message.error}", style="bold red"))
-                            sys.exit(1)
-
-                        # Filter messages based on flags
-                        msg_type_str = getattr(message, "type", "")
-                        if msg_type_str == "node_update" and not show_node_updates:
-                            continue
-                        if msg_type_str == "preview" and not show_previews:
-                            continue
-                        if msg_type_str == "output" and not show_outputs:
-                            continue
-
-                        msg_type = Text(message.type, style="bold cyan")
-                        try:
-                            msg_json = message.model_dump_json()
-                        except Exception:
-                            # Handle binary data that can't be serialized to JSON
-                            msg_dict = message.model_dump()
-                            msg_json = json.dumps(msg_dict, default=_default)
-                        console.print(f"{msg_type}: {msg_json}")
-                except Exception as e:
-                    console.print(Panel.fit(f"Error running workflow: {e}", style="bold red"))
-                    traceback.print_exc()
-                    sys.exit(1)
-
-                if repeat > 1 and i < repeat - 1:
-                    console.print()  # Add blank line between runs
-
-            console.print(Panel.fit("Workflow finished successfully", style="green"))
-
-        _run_async(run_interactive())
+        _run_async(
+            _run_workflow_interactive(
+                workflow or "stdin",
+                request,
+                repeat=repeat,
+                show_node_updates=show_node_updates,
+                show_previews=show_previews,
+                show_outputs=show_outputs,
+            )
+        )
 
 
 @cli.command()
@@ -3674,14 +3524,8 @@ def deploy_init():
 @click.argument("name")
 def deploy_show(name: str):
     """Display detailed information about a specific deployment."""
-    from nodetool.config.deployment import (
-        DockerDeployment,
-        GCPDeployment,
-        LocalDeployment,
-        RunPodDeployment,
-        SSHDeployment,
-    )
     from nodetool.deploy.manager import DeploymentManager
+    from nodetool.utils.display import show_deployment_details
 
     try:
         manager = DeploymentManager()
@@ -3692,157 +3536,7 @@ def deploy_show(name: str):
         # Get current state
         state = manager.state_manager.read_state(name)
 
-        # Create rich panel with deployment details
-        from rich.panel import Panel
-
-        # Build content for the panel
-        content = []
-
-        # Header
-        content.append(f"[bold cyan]Deployment: {name}[/]")
-        content.append(f"[cyan]Type: {deployment.type}[/]")
-        content.append("")
-
-        # Type-specific configuration
-        if isinstance(deployment, DockerDeployment):
-            content.append("[bold]Docker Configuration:[/]")
-            content.append(f"  Host: {deployment.host}")
-            if deployment.ssh:
-                content.append(f"  SSH User: {deployment.ssh.user}")
-            content.append(f"  Image: {deployment.image.name}:{deployment.image.tag}")
-            content.append("")
-
-            # Container details
-            content.append("[bold]Container:[/]")
-            content.append(f"  • {deployment.container.name}")
-            content.append(f"    Port: {deployment.container.port}")
-            if deployment.container.workflows:
-                content.append(f"    Workflows: {', '.join(deployment.container.workflows)}")
-            if deployment.container.gpu:
-                content.append(f"    GPU: {deployment.container.gpu}")
-            content.append("")
-
-            # Paths
-            content.append("[bold]Paths:[/]")
-            content.append(f"  Workspace: {deployment.paths.workspace}")
-            content.append(f"  HF Cache: {deployment.paths.hf_cache}")
-
-        elif isinstance(deployment, SSHDeployment):
-            content.append("[bold]SSH Configuration:[/]")
-            content.append(f"  Host: {deployment.host}")
-            if deployment.ssh:
-                content.append(f"  SSH User: {deployment.ssh.user}")
-            content.append("")
-
-            # Service details
-            content.append("[bold]Service:[/]")
-            content.append(f"  Port: {deployment.port}")
-            if deployment.service_name:
-                content.append(f"  Systemd Service: {deployment.service_name}")
-            if deployment.workflows:
-                content.append(f"  Workflows: {', '.join(deployment.workflows)}")
-            if deployment.gpu:
-                content.append(f"  GPU: {deployment.gpu}")
-            content.append("")
-
-            # Paths
-            content.append("[bold]Paths:[/]")
-            content.append(f"  Workspace: {deployment.paths.workspace}")
-            content.append(f"  HF Cache: {deployment.paths.hf_cache}")
-        elif isinstance(deployment, LocalDeployment):
-            content.append("[bold]Local Configuration:[/]")
-            content.append(f"  Host: {deployment.host}")
-            content.append("")
-
-            content.append("[bold]Service:[/]")
-            content.append(f"  Port: {deployment.port}")
-            if deployment.service_name:
-                content.append(f"  Systemd Service: {deployment.service_name}")
-            if deployment.workflows:
-                content.append(f"  Workflows: {', '.join(deployment.workflows)}")
-            if deployment.gpu:
-                content.append(f"  GPU: {deployment.gpu}")
-            content.append("")
-
-            content.append("[bold]Paths:[/]")
-            content.append(f"  Workspace: {deployment.paths.workspace}")
-            content.append(f"  HF Cache: {deployment.paths.hf_cache}")
-
-        elif isinstance(deployment, RunPodDeployment):
-            content.append("[bold]RunPod Configuration:[/]")
-            content.append(f"  Image: {deployment.image.name}:{deployment.image.tag}")
-            content.append(f"  Template ID: {deployment.state.template_id or 'Not set'}")
-            content.append(f"  Endpoint ID: {deployment.state.endpoint_id or 'Not set'}")
-            content.append("")
-
-            if state and state.get("pod_id"):
-                content.append("[bold]RunPod State:[/]")
-                content.append(f"  Pod ID: {state['pod_id']}")
-
-        elif isinstance(deployment, GCPDeployment):
-            content.append("[bold]Google Cloud Run Configuration:[/]")
-            content.append(f"  Project: {deployment.project_id}")
-            content.append(f"  Region: {deployment.region}")
-            content.append(f"  Service: {deployment.service_name}")
-            content.append(f"  Image: {deployment.image.full_name}")
-            content.append(f"  CPU: {deployment.resources.cpu}")
-            content.append(f"  Memory: {deployment.resources.memory}")
-            content.append("")
-
-        # Current state
-        content.append("[bold]Status:[/]")
-        if state:
-            status = state.get("status", "unknown")
-            status_color = {
-                "running": "green",
-                "active": "green",
-                "stopped": "red",
-                "error": "red",
-                "unknown": "yellow",
-            }.get(status, "white")
-            content.append(f"  Status: [{status_color}]{status}[/]")
-
-            if state.get("last_deployed"):
-                content.append(f"  Last Deployed: {state['last_deployed']}")
-
-            if state.get("container_hash"):
-                content.append(f"  Container Hash: {state['container_hash'][:12]}...")
-        else:
-            content.append("  Status: [yellow]Not deployed[/]")
-
-        content.append("")
-
-        # URLs and endpoints
-        if isinstance(deployment, DockerDeployment):
-            content.append("[bold]Endpoints:[/]")
-            url = f"http://{deployment.host}:{deployment.container.port}"
-            content.append(f"  {deployment.container.name}: {url}")
-
-        elif isinstance(deployment, SSHDeployment | LocalDeployment):
-            content.append("[bold]Endpoints:[/]")
-            url = f"http://{deployment.host}:{deployment.port}"
-            content.append(f"  Service: {url}")
-
-        elif isinstance(deployment, GCPDeployment):
-            if state and state.get("service_url"):
-                content.append("[bold]Endpoint:[/]")
-                content.append(f"  {state['service_url']}")
-
-        elif isinstance(deployment, RunPodDeployment):
-            if state and state.get("endpoint_url"):
-                content.append("[bold]Endpoint:[/]")
-                content.append(f"  {state['endpoint_url']}")
-
-        # Display the panel
-        panel_content = "\n".join(content)
-        panel = Panel(
-            panel_content,
-            title="[bold]Deployment Details[/]",
-            border_style="cyan",
-            expand=False,
-        )
-
-        console.print(panel)
+        show_deployment_details(name, deployment, state)
 
     except KeyError:
         console.print(f"[red]Deployment '{name}' not found[/]")

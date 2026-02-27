@@ -387,7 +387,7 @@ class TestCliServeCommandProductionFlag:
 
         run_server_called = []
 
-        def mock_run_server(host, port, reload):
+        def mock_run_server(host, port, reload, **kwargs):
             run_server_called.append({"host": host, "port": port, "reload": reload})
 
         monkeypatch.setattr("nodetool.api.run_server.run_server", mock_run_server)
