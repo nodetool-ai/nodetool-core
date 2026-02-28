@@ -237,6 +237,35 @@ class OpenAICompat:
                 )
         return formatted_tools
 
+    def _format_tools_as_gemma_json(self, tools: Sequence[Tool]) -> str:
+        """Format tools as JSON schema definitions for Gemma function calling.
+
+        Uses the format recommended by Google for Gemma models:
+        https://ai.google.dev/gemma/docs/capabilities/function-calling
+
+        Args:
+            tools: Sequence of tools to format.
+
+        Returns:
+            String containing JSON array of tool definitions.
+        """
+        log.debug(f"Formatting {len(tools)} tools as Gemma JSON schema for emulation")
+
+        tool_defs = []
+        for tool in tools:
+            tool_param = tool.tool_param()
+            func = tool_param.get("function", {})
+            tool_def: dict[str, Any] = {
+                "name": func.get("name", "unknown"),
+                "description": func.get("description", ""),
+                "parameters": func.get("parameters", {}),
+            }
+            tool_defs.append(tool_def)
+
+        result = json.dumps(tool_defs, indent=2)
+        log.debug(f"Generated Gemma JSON tool definitions:\n{result}")
+        return result
+
     def _format_tools_as_python(self, tools: Sequence[Tool]) -> str:
         """Format tools as Python function definitions for emulation.
 
@@ -292,6 +321,9 @@ class OpenAICompat:
         """Parse Python function calls from text using AST parsing.
 
         Removes the function call lines from the text.
+        Also handles Gemma-style bracket-wrapped calls like
+        ``[func_name(param=value)]`` and
+        ``[func1(p1=v1), func2(p2=v2)]``.
 
         Args:
             text: Text potentially containing function calls.
@@ -315,6 +347,13 @@ class OpenAICompat:
             if not stripped or stripped.startswith("#") or stripped.startswith("```"):
                 cleaned_lines.append(line)
                 continue
+
+            # Handle Gemma-style bracket-wrapped function calls:
+            # [func_name(param=value)] or [func1(p1=v1), func2(p2=v2)]
+            bracket_match = re.match(r"^\[(\w+\(.*\))\]$", stripped, re.DOTALL)
+            if bracket_match:
+                stripped = bracket_match.group(1)
+                log.debug(f"Unwrapped Gemma bracket syntax: {stripped[:100]}")
 
             # Look for patterns that might be function calls
             if not re.match(r"^\w+\(", stripped):
