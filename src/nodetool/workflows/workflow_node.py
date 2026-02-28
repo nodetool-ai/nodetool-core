@@ -16,6 +16,7 @@ from nodetool.workflows.types import (
     NodeProgress,
     NodeUpdate,
     OutputUpdate,
+    PreviewUpdate,
 )
 
 
@@ -85,6 +86,8 @@ class WorkflowNode(BaseNode):
                 raise Exception(msg.message)
             if isinstance(msg, OutputUpdate):
                 yield {msg.output_name: msg.value}
+            if isinstance(msg, PreviewUpdate):
+                context.post_message(msg)
             if isinstance(msg, NodeProgress):
                 context.post_message(
                     NodeProgress(

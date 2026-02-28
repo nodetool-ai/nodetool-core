@@ -2192,8 +2192,15 @@ class Preview(BaseNode):
         """
         from nodetool.workflows.types import PreviewUpdate
 
+        yielded = False
         async for _handle, value in self.iter_any_input():
+            yielded = True
             result = await context.normalize_output_value(value)
+            context.post_message(PreviewUpdate(node_id=self.id, value=result))
+            yield {"output": result}
+
+        if not yielded and self.value is not None:
+            result = await context.normalize_output_value(self.value)
             context.post_message(PreviewUpdate(node_id=self.id, value=result))
             yield {"output": result}
 
