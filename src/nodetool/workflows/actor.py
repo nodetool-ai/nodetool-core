@@ -155,6 +155,7 @@ class NodeActor:
         self.logger = get_logger(__name__)
         self._cached_inputs_for_controlled_node: dict[str, Any] | None = None
         self._current_control_properties: dict[str, Any] | None = None
+        self._latest_execution_result: dict[str, Any] | None = None
 
     def _get_list_handles(self) -> set[str]:
         """Return handles that require multi-edge list aggregation for this node."""
@@ -327,15 +328,16 @@ class NodeActor:
         return errors
 
     def _filter_result(self, result: dict[str, Any]) -> dict[str, Any]:
-        """Filter out chunk data from the result since chunks are streamed separately.
+        """Filter out internal/transient outputs from the result payload.
 
         Args:
             result: The collected outputs dictionary.
 
         Returns:
-            A new dictionary with 'chunk' key removed.
+            A new dictionary with internal routing keys removed.
         """
-        return {k: v for k, v in result.items() if k != "chunk"}
+        filtered_keys = {"chunk", "__control__", "__control_output__"}
+        return {k: v for k, v in result.items() if k not in filtered_keys}
 
     def _inbound_handles(self) -> set[str]:
         """Return the set of inbound input handles for this node (excluding control handles)."""
@@ -655,6 +657,8 @@ class NodeActor:
         if node.__class__.auto_save_asset() and result:
             await self._auto_save_assets(node, result, context)
 
+        self._latest_execution_result = self._filter_result(result)
+
         # Record the output for telemetry (after auto_save to capture asset_id)
         if result:
             try:
@@ -851,6 +855,7 @@ class NodeActor:
     async def _send_completed_update(self, context: Any, node: Any, outputs: NodeOutputs) -> None:
         """Send the completed update with results."""
         result = self._filter_result(outputs.collected())
+        self._latest_execution_result = result
 
         # Record streaming output for telemetry
         job_id = self.runner.job_id if hasattr(self.runner, "job_id") else None
@@ -1438,7 +1443,7 @@ class NodeActor:
                 if gpu_tracer is not None:
                     gpu_tracer.start_iteration(run_event_count)
 
-                event = await self._get_next_control_event()
+                event, event_metadata = await self._get_next_control_event()
                 if event is None:
                     # All controllers have signaled EOS
                     self.logger.info(
@@ -1447,7 +1452,7 @@ class NodeActor:
                     break
 
                 if isinstance(event, RunEvent):
-                    await self._execute_run_event(event)
+                    await self._execute_run_event(event, event_metadata)
                 else:
                     self.logger.warning(
                         f"Controlled node {node.get_title()} ({node._id}) received unknown event type: {type(event)}"
@@ -1469,29 +1474,40 @@ class NodeActor:
             # Mark downstream EOS now that control loop is done
             await self._mark_downstream_eos()
 
-    async def _get_next_control_event(self) -> ControlEvent | None:
+    async def _get_next_control_event(self) -> tuple[ControlEvent | None, dict[str, Any]]:
         """Get next control event from inbox.
 
         Waits for events on the __control__ handle. Returns None when all
         controllers have signaled end-of-stream (EOS).
 
         Returns:
-            ControlEvent subclass instance, or None if all controllers are done
+            Tuple of (ControlEvent subclass instance, metadata dict),
+            or (None, {}) if all controllers are done
         """
         from nodetool.workflows.control_events import ControlEvent
 
         async for envelope in self.inbox.iter_input_with_envelope("__control__"):
             message = envelope.data
             if isinstance(message, ControlEvent):
-                self.logger.debug(f"Received {message.event_type} event from controller")
-                return message
+                metadata = envelope.metadata or {}
+                self.logger.info(
+                    "Controlled node %s (%s) received control event: event_type=%s source=%s tool_call_id=%s tool_name=%s metadata_keys=%s",
+                    self.node.get_title(),
+                    self.node._id,
+                    message.event_type,
+                    metadata.get("source"),
+                    metadata.get("tool_call_id"),
+                    metadata.get("tool_name"),
+                    sorted(metadata.keys()),
+                )
+                return message, envelope.metadata or {}
             else:
                 self.logger.warning(f"Unexpected message in __control__ inbox: {type(message)}")
 
         # All controllers have finished (EOS)
-        return None
+        return None, {}
 
-    async def _execute_run_event(self, event: RunEvent) -> None:
+    async def _execute_run_event(self, event: RunEvent, metadata: dict[str, Any] | None = None) -> None:
         """Execute node with RunEvent parameters.
 
         Properties are transient - applied for this execution only.
@@ -1499,14 +1515,31 @@ class NodeActor:
 
         Args:
             event: The RunEvent containing optional property overrides
+            metadata: Optional event metadata from inbox envelope
         """
         node = self.node
 
         await self._replay_cached_inputs()
+        self._latest_execution_result = None
 
         # Track overrides so downstream batching can honor control values over data inputs
         control_overrides = dict(event.properties or {})
         self._current_control_properties = control_overrides if control_overrides else None
+        response_future: asyncio.Future | None = None
+        if metadata:
+            maybe_future = metadata.get("response_future")
+            if isinstance(maybe_future, asyncio.Future):
+                response_future = maybe_future
+        self.logger.info(
+            "Controlled node %s (%s) executing RunEvent: properties=%s source=%s tool_call_id=%s tool_name=%s has_response_future=%s",
+            node.get_title(),
+            node._id,
+            sorted(control_overrides.keys()),
+            (metadata or {}).get("source") if metadata else None,
+            (metadata or {}).get("tool_call_id") if metadata else None,
+            (metadata or {}).get("tool_name") if metadata else None,
+            response_future is not None,
+        )
 
         # Apply control properties to node (transient)
         for prop_name, value in control_overrides.items():
@@ -1533,6 +1566,27 @@ class NodeActor:
                 await self._run_streaming_output_batched_node()
             else:
                 await self._run_buffered_node()
+
+            if response_future is not None and not response_future.done():
+                response_future.set_result(self._latest_execution_result or {})
+                self.logger.info(
+                    "Controlled node %s (%s) resolved response_future: tool_call_id=%s result_keys=%s",
+                    node.get_title(),
+                    node._id,
+                    (metadata or {}).get("tool_call_id") if metadata else None,
+                    sorted((self._latest_execution_result or {}).keys()),
+                )
+        except Exception as exc:
+            if response_future is not None and not response_future.done():
+                response_future.set_exception(exc)
+                self.logger.error(
+                    "Controlled node %s (%s) set response_future exception: tool_call_id=%s error=%s",
+                    node.get_title(),
+                    node._id,
+                    (metadata or {}).get("tool_call_id") if metadata else None,
+                    exc,
+                )
+            raise
         finally:
             # Restore original properties after each execution
             node.restore_original_properties()
