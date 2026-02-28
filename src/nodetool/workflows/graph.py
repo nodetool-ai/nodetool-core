@@ -58,18 +58,30 @@ class Graph(BaseModel):
     nodes: Sequence[BaseNode] = Field(default_factory=list)
     edges: Sequence[Edge] = Field(default_factory=list)
     _node_index: dict[str, BaseNode] | None = None
+    _outgoing_edges_cache: dict[tuple[str, str], list[Edge]] | None = None
     _streaming_upstream_cache: set[str] | None = None
 
     def __init__(self, **data):
         super().__init__(**data)
+        self._rebuild_indices()
+
+    def model_post_init(self, __context: Any):
+        self._rebuild_indices()
+
+    def _rebuild_indices(self):
         # Build node ID index for O(1) lookup
         self._node_index = {node._id: node for node in self.nodes} if self.nodes else {}
         self._streaming_upstream_cache = None
+        self._outgoing_edges_cache = {}
+        for edge in self.edges:
+            self._outgoing_edges_cache.setdefault(
+                (edge.source, edge.sourceHandle), []
+            ).append(edge)
 
-    def model_post_init(self, __context: Any):
-        # Build node ID index after model initialization
-        self._node_index = {node._id: node for node in self.nodes} if self.nodes else {}
-        self._streaming_upstream_cache = None
+    def update_edges(self, new_edges: Sequence[Edge]):
+        """Update edges and rebuild the edge cache."""
+        self.edges = new_edges
+        self._rebuild_indices()
 
     def find_node(self, node_id: str) -> BaseNode | None:
         """
@@ -79,9 +91,9 @@ class Graph(BaseModel):
 
     def find_edges(self, source: str, source_handle: str) -> list[Edge]:
         """
-        Find edges by their source and source_handle.
+        Find edges by their source and source_handle using O(1) dictionary lookup.
         """
-        return [edge for edge in self.edges if edge.source == source and edge.sourceHandle == source_handle]
+        return self._outgoing_edges_cache.get((source, source_handle), [])
 
     @classmethod
     def from_dict(
@@ -144,7 +156,9 @@ class Graph(BaseModel):
                 if node_id in properties_with_edges:
                     data = filtered_node_data.get("data", {})
                     connected_properties = properties_with_edges[node_id]
-                    filtered_data = {k: v for k, v in data.items() if k not in connected_properties}
+                    filtered_data = {
+                        k: v for k, v in data.items() if k not in connected_properties
+                    }
                     filtered_node_data["data"] = filtered_data
 
                 result = BaseNode.from_dict(
@@ -156,15 +170,23 @@ class Graph(BaseModel):
                     valid_nodes.append(result[0])
                     valid_node_ids.add(result[0].id)
                 elif skip_errors:
-                    log.warning(f"Skipping node {node_id} (type: {node_type}) - failed to instantiate")
+                    log.warning(
+                        f"Skipping node {node_id} (type: {node_type}) - failed to instantiate"
+                    )
             except ValueError as e:
                 if not skip_errors:
-                    raise ValueError(f"Failed to load node {node_id} (type: {node_type}): {str(e)}") from e
+                    raise ValueError(
+                        f"Failed to load node {node_id} (type: {node_type}): {str(e)}"
+                    ) from e
                 # If skip_errors is True, log and skip this node
-                log.warning(f"Skipping node {node_id} (type: {node_type}) due to error: {str(e)}")
+                log.warning(
+                    f"Skipping node {node_id} (type: {node_type}) due to error: {str(e)}"
+                )
             except Exception as e:
                 if not skip_errors:
-                    raise RuntimeError(f"Failed to load node {node_id} (type: {node_type}): {str(e)}") from e
+                    raise RuntimeError(
+                        f"Failed to load node {node_id} (type: {node_type}): {str(e)}"
+                    ) from e
                 # If skip_errors is True, log and skip this node
                 log.error(
                     f"Skipping node {node_id} (type: {node_type}) due to unexpected error: {str(e)}",
@@ -238,7 +260,9 @@ class Graph(BaseModel):
         """
         return {
             "type": "object",
-            "properties": {node.name: node.get_json_schema() for node in self.outputs()},
+            "properties": {
+                node.name: node.get_json_schema() for node in self.outputs()
+            },
         }
 
     def topological_sort(self, parent_id: str | None = None) -> list[list[str]]:
@@ -262,14 +286,26 @@ class Graph(BaseModel):
         - If a cycle exists, some nodes may be omitted from the result.
         """
         # child nodes of regular groups (no loops) can be executed like top level nodes
-        group_nodes = {node.id for node in self.nodes if type(node) is GroupNode} if parent_id is None else set()
+        group_nodes = (
+            {node.id for node in self.nodes if type(node) is GroupNode}
+            if parent_id is None
+            else set()
+        )
 
         # Filter nodes with given parent_id
-        nodes = [node for node in self.nodes if node.parent_id == parent_id or node.parent_id in group_nodes]
+        nodes = [
+            node
+            for node in self.nodes
+            if node.parent_id == parent_id or node.parent_id in group_nodes
+        ]
         node_ids = {node.id for node in nodes}
 
         # Filter edges to only include those connected to the filtered nodes
-        edges = [edge for edge in self.edges if edge.source in node_ids and edge.target in node_ids]
+        edges = [
+            edge
+            for edge in self.edges
+            if edge.source in node_ids and edge.target in node_ids
+        ]
 
         indegree: dict[str, int] = {node.id: 0 for node in nodes}
 
@@ -303,7 +339,11 @@ class Graph(BaseModel):
 
     def get_control_edges(self, target_id: str) -> list[Edge]:
         """Return all control edges targeting the given node."""
-        return [edge for edge in self.edges if edge.target == target_id and edge.edge_type == "control"]
+        return [
+            edge
+            for edge in self.edges
+            if edge.target == target_id and edge.edge_type == "control"
+        ]
 
     def get_controller_nodes(self, target_id: str) -> list[BaseNode]:
         """Return all nodes that control the given target node."""
@@ -317,7 +357,11 @@ class Graph(BaseModel):
 
     def get_controlled_nodes(self, source_id: str) -> list[str]:
         """Return IDs of all nodes controlled by the given source."""
-        return [edge.target for edge in self.edges if edge.source == source_id and edge.edge_type == "control"]
+        return [
+            edge.target
+            for edge in self.edges
+            if edge.source == source_id and edge.edge_type == "control"
+        ]
 
     def validate_control_edges(self) -> list[str]:
         """
@@ -341,13 +385,17 @@ class Graph(BaseModel):
             # Rule 1: Source must exist (any node type can be a controller)
             source_node = self.find_node(edge.source)
             if not source_node:
-                errors.append(f"Control edge {edge.id} has invalid source {edge.source}")
+                errors.append(
+                    f"Control edge {edge.id} has invalid source {edge.source}"
+                )
                 continue
 
             # Rule 2: Target must exist
             target_node = self.find_node(edge.target)
             if not target_node:
-                errors.append(f"Control edge {edge.id} has invalid target {edge.target}")
+                errors.append(
+                    f"Control edge {edge.id} has invalid target {edge.target}"
+                )
                 continue
 
             # Rule 3: Must use __control__ as targetHandle
@@ -378,7 +426,9 @@ class Graph(BaseModel):
                 control_graph[edge.source].append(edge.target)
 
         # DFS to detect cycles
-        def has_cycle(node: str, visited: set[str], rec_stack: set[str]) -> tuple[bool, list[str]]:
+        def has_cycle(
+            node: str, visited: set[str], rec_stack: set[str]
+        ) -> tuple[bool, list[str]]:
             visited.add(node)
             rec_stack.add(node)
 
@@ -398,7 +448,9 @@ class Graph(BaseModel):
             if node_id not in visited:
                 found, path = has_cycle(node_id, visited, set())
                 if found:
-                    errors.append(f"Circular control dependency detected: {' -> '.join(path)}")
+                    errors.append(
+                        f"Circular control dependency detected: {' -> '.join(path)}"
+                    )
 
         return errors
 
@@ -431,7 +483,9 @@ class Graph(BaseModel):
         for (target_id, handle), edges in edges_by_target_handle.items():
             target_node = self.find_node(target_id)
             if not target_node:
-                validation_errors.append(f"Target node '{target_id}' not found for edge")
+                validation_errors.append(
+                    f"Target node '{target_id}' not found for edge"
+                )
                 continue
 
             target_node_class = target_node.__class__
@@ -445,9 +499,13 @@ class Graph(BaseModel):
                     for edge in edges:
                         source_node = self.find_node(edge.source)
                         if not source_node:
-                            validation_errors.append(f"Source node '{edge.source}' not found for edge")
+                            validation_errors.append(
+                                f"Source node '{edge.source}' not found for edge"
+                            )
                             continue
-                        source_output = source_node.find_output_instance(edge.sourceHandle)
+                        source_output = source_node.find_output_instance(
+                            edge.sourceHandle
+                        )
                         if not source_output:
                             validation_errors.append(
                                 f"{edge.target}: Output '{edge.sourceHandle}' not found on source node {source_node.__class__.__name__}"
@@ -474,12 +532,18 @@ class Graph(BaseModel):
                     continue
 
                 # For list properties with multiple edges, validate each source against element type
-                element_type = target_type.type_args[0] if target_type.type_args else TypeMetadata(type="any")
+                element_type = (
+                    target_type.type_args[0]
+                    if target_type.type_args
+                    else TypeMetadata(type="any")
+                )
 
                 for edge in edges:
                     source_node = self.find_node(edge.source)
                     if not source_node:
-                        validation_errors.append(f"Source node '{edge.source}' not found for edge")
+                        validation_errors.append(
+                            f"Source node '{edge.source}' not found for edge"
+                        )
                         continue
 
                     source_output = source_node.find_output_instance(edge.sourceHandle)
@@ -509,7 +573,9 @@ class Graph(BaseModel):
                 edge = edges[0]
                 source_node = self.find_node(edge.source)
                 if not source_node:
-                    validation_errors.append(f"Source node '{edge.source}' not found for edge")
+                    validation_errors.append(
+                        f"Source node '{edge.source}' not found for edge"
+                    )
                     continue
 
                 source_output = source_node.find_output_instance(edge.sourceHandle)
@@ -537,7 +603,9 @@ class Graph(BaseModel):
 
     def _compute_streaming_upstream(self):
         """Compute the set of nodes that have a streaming upstream node."""
-        streaming_node_ids = {node.id for node in self.nodes if node.is_streaming_output()}
+        streaming_node_ids = {
+            node.id for node in self.nodes if node.is_streaming_output()
+        }
 
         adj = defaultdict(list)
         for edge in self.edges:

@@ -137,7 +137,9 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext) -> None:
     if gpu_lock.locked():
         holder_info = f" (held by: {_gpu_lock_holder})" if _gpu_lock_holder else ""
         hold_time = time.time() - _gpu_lock_holder_time if _gpu_lock_holder_time else 0
-        log.warning(f"Node {node.get_title()} is waiting for GPU lock{holder_info}, held for {hold_time:.1f}s")
+        log.warning(
+            f"Node {node.get_title()} is waiting for GPU lock{holder_info}, held for {hold_time:.1f}s"
+        )
         await node.send_update(context, status="waiting")
 
     # Acquire the threading lock without blocking the event loop.
@@ -152,9 +154,13 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext) -> None:
             # Check for cancellation before trying to acquire
             # This allows clean shutdown when workflow is cancelled
             try:
-                acquired = await loop.run_in_executor(None, lambda t=adaptive_timeout: gpu_lock.acquire(timeout=t))
+                acquired = await loop.run_in_executor(
+                    None, lambda t=adaptive_timeout: gpu_lock.acquire(timeout=t)
+                )
             except asyncio.CancelledError:
-                log.info(f"Node {node.get_title()} cancelled while waiting for GPU lock")
+                log.info(
+                    f"Node {node.get_title()} cancelled while waiting for GPU lock"
+                )
                 raise
 
             if acquired:
@@ -167,8 +173,12 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext) -> None:
 
             # Log progress every 10 seconds
             if attempts % 20 == 0:  # Fewer iterations now with adaptive timeout
-                holder_info = f" (held by: {_gpu_lock_holder})" if _gpu_lock_holder else ""
-                log.warning(f"Node {node.get_title()} still waiting for GPU lock after {elapsed:.1f}s{holder_info}")
+                holder_info = (
+                    f" (held by: {_gpu_lock_holder})" if _gpu_lock_holder else ""
+                )
+                log.warning(
+                    f"Node {node.get_title()} still waiting for GPU lock after {elapsed:.1f}s{holder_info}"
+                )
 
             # Increase timeout gradually to reduce CPU usage during long waits
             # Start at 0.5s, max out at 2.0s after 5 seconds of waiting
@@ -176,7 +186,9 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext) -> None:
 
             # Timeout after GPU_LOCK_TIMEOUT seconds
             if elapsed > GPU_LOCK_TIMEOUT:
-                holder_info = f" (held by: {_gpu_lock_holder})" if _gpu_lock_holder else ""
+                holder_info = (
+                    f" (held by: {_gpu_lock_holder})" if _gpu_lock_holder else ""
+                )
                 log.error(
                     f"GPU lock acquisition timed out after {GPU_LOCK_TIMEOUT}s for node "
                     f"{node.get_title()}{holder_info}. Force-releasing stale lock."
@@ -185,7 +197,9 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext) -> None:
                 if force_release_gpu_lock():
                     log.warning("Stale GPU lock force-released, retrying acquisition")
                     try:
-                        acquired = await loop.run_in_executor(None, lambda: gpu_lock.acquire(timeout=2.0))
+                        acquired = await loop.run_in_executor(
+                            None, lambda: gpu_lock.acquire(timeout=2.0)
+                        )
                     except asyncio.CancelledError:
                         raise
                     if acquired:
@@ -205,7 +219,9 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext) -> None:
             try:
                 await asyncio.sleep(0.05)
             except asyncio.CancelledError:
-                log.info(f"Node {node.get_title()} cancelled while waiting for GPU lock")
+                log.info(
+                    f"Node {node.get_title()} cancelled while waiting for GPU lock"
+                )
                 raise
 
     except asyncio.CancelledError:
@@ -263,7 +279,9 @@ def get_gpu_lock_status() -> dict:
         "locked": gpu_lock.locked(),
         "holder": _gpu_lock_holder,
         "held_since": _gpu_lock_holder_time,
-        "held_for_seconds": time.time() - _gpu_lock_holder_time if _gpu_lock_holder_time else 0,
+        "held_for_seconds": (
+            time.time() - _gpu_lock_holder_time if _gpu_lock_holder_time else 0
+        ),
     }
 
 
@@ -338,9 +356,12 @@ class MemoryProfiler:
         after = self.snapshots[after_label]
 
         diff = {
-            "allocated_delta_mb": after.get("allocated_mb", 0) - before.get("allocated_mb", 0),
-            "reserved_delta_mb": after.get("reserved_mb", 0) - before.get("reserved_mb", 0),
-            "max_allocated_delta_mb": after.get("max_allocated_mb", 0) - before.get("max_allocated_mb", 0),
+            "allocated_delta_mb": after.get("allocated_mb", 0)
+            - before.get("allocated_mb", 0),
+            "reserved_delta_mb": after.get("reserved_mb", 0)
+            - before.get("reserved_mb", 0),
+            "max_allocated_delta_mb": after.get("max_allocated_mb", 0)
+            - before.get("max_allocated_mb", 0),
         }
 
         log.info(f"\n[MEMORY COMPARISON] {before_label} -> {after_label}:")
@@ -348,7 +369,9 @@ class MemoryProfiler:
         log.info(f"  Reserved delta: {diff['reserved_delta_mb']:+.2f} MB")
 
         if diff["allocated_delta_mb"] > 10:  # More than 10MB growth
-            log.warning(f"  ⚠️  Potential memory leak detected! {diff['allocated_delta_mb']:.2f} MB growth")
+            log.warning(
+                f"  ⚠️  Potential memory leak detected! {diff['allocated_delta_mb']:.2f} MB growth"
+            )
 
         return diff
 
@@ -401,7 +424,9 @@ class MemoryProfiler:
             # Sort by CUDA memory usage if available
             if torch.cuda.is_available():
                 log.info("\n--- Top by CUDA Memory Usage ---")
-                stats = prof.key_averages().table(sort_by="cuda_memory_usage", row_limit=10)
+                stats = prof.key_averages().table(
+                    sort_by="cuda_memory_usage", row_limit=10
+                )
                 log.info("\n" + stats)
 
             # Sort by CPU memory usage
@@ -491,7 +516,9 @@ class WorkflowRunner:
         self.current_node: Optional[str] = None
         self.context: Optional[ProcessingContext] = None
         self.outputs: dict[str, Any] = {}
-        self.active_processing_node_ids: set[str] = set()  # Track nodes currently in an async task
+        self.active_processing_node_ids: set[str] = (
+            set()
+        )  # Track nodes currently in an async task
         self.node_inboxes: dict[str, NodeInbox] = {}
         self.disable_caching = disable_caching
         self.buffer_limit = buffer_limit
@@ -507,11 +534,15 @@ class WorkflowRunner:
             if TORCH_AVAILABLE:
                 if is_cuda_available():
                     self.device = "cuda"
-                elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                elif (
+                    hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+                ):
                     self.device = "mps"
 
             log.info(f"Workflow runs on device: {self.device}")
-            log.debug(f"WorkflowRunner initialized for job_id: {self.job_id} with device: {self.device}")
+            log.debug(
+                f"WorkflowRunner initialized for job_id: {self.job_id} with device: {self.device}"
+            )
         # Streaming input queue and dispatcher task (created during run())
         self._input_queue: asyncio.Queue | None = None
         self._input_task: asyncio.Task | None = None
@@ -534,11 +565,14 @@ class WorkflowRunner:
         # Enable by setting environment variable NODETOOL_ENABLE_MEMORY_PROFILER=1
         self.memory_profiler = MemoryProfiler(
             enabled=Environment.get("NODETOOL_ENABLE_MEMORY_PROFILER", "0") == "1",
-            export_chrome_trace=Environment.get("NODETOOL_EXPORT_CHROME_TRACE", "0") == "1",
+            export_chrome_trace=Environment.get("NODETOOL_EXPORT_CHROME_TRACE", "0")
+            == "1",
         )
 
     def _edge_key(self, edge: Edge) -> str:
-        return edge.id or (f"{edge.source}:{edge.sourceHandle}->{edge.target}:{edge.targetHandle}")
+        return edge.id or (
+            f"{edge.source}:{edge.sourceHandle}->{edge.target}:{edge.targetHandle}"
+        )
 
     def edge_streams(self, edge: Edge) -> bool:
         """Return True if the given edge is marked as streaming."""
@@ -669,7 +703,9 @@ class WorkflowRunner:
             if edge.edge_type == "control":
                 self._control_edges[edge.target].append(edge)
 
-        log.debug(f"Classified control edges: {len(self._control_edges)} nodes have controllers")
+        log.debug(
+            f"Classified control edges: {len(self._control_edges)} nodes have controllers"
+        )
         for target_id, edges in self._control_edges.items():
             log.debug(f"  Node {target_id} controlled by: {[e.source for e in edges]}")
 
@@ -772,7 +808,9 @@ class WorkflowRunner:
                 return node._id
         raise ValueError(f"Input node not found for input name: {input_name}")
 
-    def push_input_value(self, *, input_name: str, value: Any, source_handle: str | None = None) -> None:
+    def push_input_value(
+        self, *, input_name: str, value: Any, source_handle: str | None = None
+    ) -> None:
         """
         Enqueue a streaming input event to be dispatched on the runner loop.
         """
@@ -785,10 +823,14 @@ class WorkflowRunner:
             "value": value,
             "handle": source_handle or "output",
         }
-        log.debug(f"Enqueue input push: op:{event['op']}, input:{event['input']}, handle:{event['handle']}")
+        log.debug(
+            f"Enqueue input push: op:{event['op']}, input:{event['input']}, handle:{event['handle']}"
+        )
         self._enqueue_input_event(event)
 
-    def finish_input_stream(self, *, input_name: str, source_handle: str | None = None) -> None:
+    def finish_input_stream(
+        self, *, input_name: str, source_handle: str | None = None
+    ) -> None:
         """
         Signal end-of-stream for a streaming input. This marks downstream inboxes as
         done for the corresponding target handles so consumers can complete.
@@ -797,7 +839,9 @@ class WorkflowRunner:
             raise RuntimeError("Input queue is not initialized")
         # Default to the standard InputNode output handle when none is provided
         event = {"op": "end", "input": input_name, "handle": source_handle or "output"}
-        log.debug(f"Enqueue input end: op:{event['op']}, input:{event['input']}, handle:{event['handle']}")
+        log.debug(
+            f"Enqueue input end: op:{event['op']}, input:{event['input']}, handle:{event['handle']}"
+        )
         self._enqueue_input_event(event)
 
     async def _dispatch_inputs(self, context: ProcessingContext) -> None:
@@ -806,12 +850,16 @@ class WorkflowRunner:
         graph = context.graph
         try:
             loop = asyncio.get_running_loop()
-            log.debug(f"Input dispatcher started: loop_id={id(loop)} queue_id={id(self._input_queue)}")
+            log.debug(
+                f"Input dispatcher started: loop_id={id(loop)} queue_id={id(self._input_queue)}"
+            )
         except Exception:
             log.debug("Input dispatcher started (loop id unavailable)")
         while True:
             ev = await self._input_queue.get()
-            log.debug(f"Dispatch input event: op:{ev.get('op')}, input:{ev.get('input')}, handle:{ev.get('handle')}")
+            log.debug(
+                f"Dispatch input event: op:{ev.get('op')}, input:{ev.get('input')}, handle:{ev.get('handle')}"
+            )
             if ev.get("op") == "shutdown":
                 log.debug("Input dispatcher received shutdown; exiting")
                 return
@@ -820,7 +868,9 @@ class WorkflowRunner:
                 node_id = self._find_input_node_id(context, input_name)
                 node = graph.find_node(node_id)
                 if node is None:
-                    log.warning(f"Dispatch event dropped: input node not found for {input_name}")
+                    log.warning(
+                        f"Dispatch event dropped: input node not found for {input_name}"
+                    )
                     continue
                 # Determine output handle from event or InputNode defaults
                 # Default to the standard InputNode output handle when none is provided
@@ -849,7 +899,9 @@ class WorkflowRunner:
                                 )
                             )
                         else:
-                            log.debug(f"No inbox for target {edge.target} on edge {edge.id}")
+                            log.debug(
+                                f"No inbox for target {edge.target} on edge {edge.id}"
+                            )
                 elif ev.get("op") == "end":
                     for edge in graph.find_edges(node_id, handle):
                         inbox = self.node_inboxes.get(edge.target)
@@ -862,10 +914,16 @@ class WorkflowRunner:
                             )
                             inbox.mark_source_done(edge.targetHandle)
                             context.post_message(
-                                EdgeUpdate(workflow_id=context.workflow_id, edge_id=edge.id or "", status="drained")
+                                EdgeUpdate(
+                                    workflow_id=context.workflow_id,
+                                    edge_id=edge.id or "",
+                                    status="drained",
+                                )
                             )
                         else:
-                            log.debug(f"No inbox for target {edge.target} on edge {edge.id}")
+                            log.debug(
+                                f"No inbox for target {edge.target} on edge {edge.id}"
+                            )
             except Exception as e:
                 log.error(f"Error dispatching input event: {e}")
                 pass
@@ -903,7 +961,9 @@ class WorkflowRunner:
             source_node = graph.find_node(edge.source)
             target_node = graph.find_node(edge.target)
             if source_node is None or target_node is None:
-                log.warning(f"Edge {edge.id} has a source or target node that does not exist")
+                log.warning(
+                    f"Edge {edge.id} has a source or target node that does not exist"
+                )
                 removed.append(edge.id or "<unknown>")
                 continue
 
@@ -921,7 +981,10 @@ class WorkflowRunner:
                 continue
 
             # 4 - target property must exist unless node is dynamic
-            if not target_cls.is_dynamic() and target_node.find_property(edge.targetHandle) is None:
+            if (
+                not target_cls.is_dynamic()
+                and target_node.find_property(edge.targetHandle) is None
+            ):
                 log.warning(f"Edge {edge.id} has a target handle that does not exist")
                 removed.append(edge.id or "<unknown>")
                 continue
@@ -933,7 +996,7 @@ class WorkflowRunner:
         self._removed_edge_ids = removed
 
         # Replace edges in the graph with the validated list
-        graph.edges = valid_edges
+        graph.update_edges(valid_edges)
 
     async def run(
         self,
@@ -1012,8 +1075,12 @@ class WorkflowRunner:
 
         self._edge_counters.clear()
         self.status = "running"
-        log.debug("Run parameters: params=%s messages=%s", request.params, request.messages)
-        log.debug(f"WorkflowRunner.run called for job_id: {self.job_id} with req: {request}, context: {context}")
+        log.debug(
+            "Run parameters: params=%s messages=%s", request.params, request.messages
+        )
+        log.debug(
+            f"WorkflowRunner.run called for job_id: {self.job_id} with req: {request}, context: {context}"
+        )
 
         Environment.load_settings()
 
@@ -1057,7 +1124,9 @@ class WorkflowRunner:
             except Exception:
                 pass
         if invalid_inputs:
-            raise ValueError(f"All InputNode(s) must have a non-empty name. Invalid: {', '.join(invalid_inputs)}")
+            raise ValueError(
+                f"All InputNode(s) must have a non-empty name. Invalid: {', '.join(invalid_inputs)}"
+            )
 
         input_nodes = {node.name: node for node in graph.inputs()}
         duplicate_names = []
@@ -1076,7 +1145,13 @@ class WorkflowRunner:
         start_time = time.time()
         if send_job_updates:
             log.debug(f"Posting 'running' job update for job {self.job_id}")
-            context.post_message(JobUpdate(job_id=self.job_id, workflow_id=context.workflow_id, status="running"))
+            context.post_message(
+                JobUpdate(
+                    job_id=self.job_id,
+                    workflow_id=context.workflow_id,
+                    status="running",
+                )
+            )
 
         # Load/create job_model (source of truth) - creates if not exists for direct runner usage
         try:
@@ -1086,11 +1161,19 @@ class WorkflowRunner:
                     id=self.job_id,
                     workflow_id=context.workflow_id,
                     user_id=context.user_id,
-                    execution_strategy=request.execution_strategy.value if request.execution_strategy else None,
+                    execution_strategy=(
+                        request.execution_strategy.value
+                        if request.execution_strategy
+                        else None
+                    ),
                 )
-                log.info(f"Created job_model for {self.job_id} with status={self.job_model.status}")
+                log.info(
+                    f"Created job_model for {self.job_id} with status={self.job_model.status}"
+                )
             else:
-                log.info(f"Loaded job_model for {self.job_id} with status={self.job_model.status}")
+                log.info(
+                    f"Loaded job_model for {self.job_id} with status={self.job_model.status}"
+                )
         except Exception as e:
             log.error(f"Failed to load/create job_model: {e}")
             raise
@@ -1106,7 +1189,9 @@ class WorkflowRunner:
                             log.warning(f"input params {key} not found as input node")
                         else:
                             node = input_nodes[key]
-                            log.info(f"Assigning property 'value'={value} to node {node.id} ({node.name})")
+                            log.info(
+                                f"Assigning property 'value'={value} to node {node.id} ({node.name})"
+                            )
                             node.assign_property("value", value)
 
                 if validate_graph:
@@ -1142,7 +1227,9 @@ class WorkflowRunner:
                             handle_name = outputs[0].name if outputs else "output"
 
                             # push value on the node's declared output handle; end stream if not streaming
-                            log.info(f"Pushing input value for {key}: {value} handle={handle_name}")
+                            log.info(
+                                f"Pushing input value for {key}: {value} handle={handle_name}"
+                            )
                             self.push_input_value(
                                 input_name=getattr(node, "name", key),
                                 value=value,
@@ -1174,7 +1261,9 @@ class WorkflowRunner:
                     # nodes can complete (no "real input" will ever arrive for non-streaming).
                     # We use duck-typing here to support any type that implements is_empty(),
                     # such as Message, ImageRef, AudioRef, etc. from nodetool.metadata.types.
-                    if hasattr(default_value, "is_empty") and callable(default_value.is_empty):
+                    if hasattr(default_value, "is_empty") and callable(
+                        default_value.is_empty
+                    ):
                         if default_value.is_empty() and node.is_streaming_output():
                             continue
                     try:
@@ -1182,15 +1271,23 @@ class WorkflowRunner:
                         handle_name = outputs[0].name if outputs else "output"
                     except Exception:
                         handle_name = "output"
-                    log.info(f"Pushing default value for {name}: {default_value} handle={handle_name}")
-                    self.push_input_value(input_name=name, value=default_value, source_handle=handle_name)
+                    log.info(
+                        f"Pushing default value for {name}: {default_value} handle={handle_name}"
+                    )
+                    self.push_input_value(
+                        input_name=name, value=default_value, source_handle=handle_name
+                    )
                     if not node.is_streaming_output():
-                        self.finish_input_stream(input_name=name, source_handle=handle_name)
+                        self.finish_input_stream(
+                            input_name=name, source_handle=handle_name
+                        )
 
                 await self.process_graph(context, graph)
 
                 # If we reach here, no exceptions from the main processing stages
-                if self.status == "running":  # Check if it wasn't set to error by some internal logic
+                if (
+                    self.status == "running"
+                ):  # Check if it wasn't set to error by some internal logic
                     self.status = "completed"
 
                     # Update job_model (source of truth)
@@ -1230,14 +1327,20 @@ class WorkflowRunner:
 
                 if send_job_updates:
                     context.post_message(
-                        JobUpdate(job_id=self.job_id, workflow_id=context.workflow_id, status="cancelled")
+                        JobUpdate(
+                            job_id=self.job_id,
+                            workflow_id=context.workflow_id,
+                            status="cancelled",
+                        )
                     )
 
             except WorkflowSuspendedException as e:
                 # Handle workflow suspension from suspendable node
                 self.status = "suspended"
 
-                log.info(f"Workflow {self.job_id} suspended at node {e.node_id}: {e.reason}")
+                log.info(
+                    f"Workflow {self.job_id} suspended at node {e.node_id}: {e.reason}"
+                )
 
                 # Update job_model (source of truth)
                 if self.job_model:
@@ -1248,7 +1351,9 @@ class WorkflowRunner:
                             state=e.state,
                             metadata=e.metadata,
                         )
-                        log.info(f"Marked job_model as suspended for {self.job_id} at node {e.node_id}")
+                        log.info(
+                            f"Marked job_model as suspended for {self.job_id} at node {e.node_id}"
+                        )
                     except Exception as e2:
                         log.error(f"Failed to mark job_model as suspended: {e2}")
                         raise
@@ -1283,14 +1388,14 @@ class WorkflowRunner:
 
             except Exception as e:
                 error_message_for_job_update = str(e)
-                log.error(f"Error during graph execution for job {self.job_id}: {error_message_for_job_update}")
+                log.error(
+                    f"Error during graph execution for job {self.job_id}: {error_message_for_job_update}"
+                )
                 log.debug(f"Exception caught in WorkflowRunner.run: {e}", exc_info=True)
 
                 # Specific handling for OOM error message, but status is always error
                 if self._torch_support.is_cuda_oom_exception(e):
-                    error_message_for_job_update = (
-                        f"VRAM OOM error: {str(e)}. No additional VRAM available after retries."
-                    )
+                    error_message_for_job_update = f"VRAM OOM error: {str(e)}. No additional VRAM available after retries."
                     # log.error already done by generic message
 
                 self.status = "failed"
@@ -1298,7 +1403,9 @@ class WorkflowRunner:
                 # Update job_model (source of truth)
                 if self.job_model:
                     try:
-                        await self.job_model.mark_failed(error=error_message_for_job_update[:1000])
+                        await self.job_model.mark_failed(
+                            error=error_message_for_job_update[:1000]
+                        )
                         log.info(f"Marked job_model as failed for {self.job_id}")
                     except Exception as e2:
                         log.error(f"Failed to mark job_model as failed: {e2}")
@@ -1326,7 +1433,9 @@ class WorkflowRunner:
                         await self._input_task
                 except Exception as e:
                     log.debug(f"Error stopping input dispatcher: {e}")
-                if graph and graph.nodes:  # graph is the internal Graph instance from the start of run
+                if (
+                    graph and graph.nodes
+                ):  # graph is the internal Graph instance from the start of run
                     for node in graph.nodes:
                         try:
                             await node.finalize(context)
@@ -1343,7 +1452,9 @@ class WorkflowRunner:
                             try:
                                 await inbox.close_all()
                             except Exception as e:
-                                log.debug(f"Error closing inbox for node {node._id}: {e}")
+                                log.debug(
+                                    f"Error closing inbox for node {node._id}: {e}"
+                                )
                 log.debug("Nodes finalized in finally block.")
 
                 # Ensure downstream consumers mark all edges as drained as part of teardown
@@ -1357,14 +1468,19 @@ class WorkflowRunner:
                 log.info(f"Cleared {cache_cleared} items from memory URI cache")
 
                 # Run garbage collection to free unreferenced objects
-                run_gc(f"WorkflowRunner.run cleanup job_id={self.job_id}", log_before_after=True)
+                run_gc(
+                    f"WorkflowRunner.run cleanup job_id={self.job_id}",
+                    log_before_after=True,
+                )
 
                 # Log final memory state
                 log_memory_summary(f"WorkflowRunner.run END job_id={self.job_id}")
 
                 # Take final memory snapshot and compare
                 self.memory_profiler.take_snapshot(f"workflow_{self.job_id}_end")
-                self.memory_profiler.compare_snapshots(f"workflow_{self.job_id}_start", f"workflow_{self.job_id}_end")
+                self.memory_profiler.compare_snapshots(
+                    f"workflow_{self.job_id}_start", f"workflow_{self.job_id}_end"
+                )
 
                 # No legacy generator state to clear in actor mode
 
@@ -1373,7 +1489,9 @@ class WorkflowRunner:
             if self.status == "completed":
                 total_time = time.time() - start_time
                 log.info(f"Job {self.job_id} completed successfully")
-                log.info(f"Finished job {self.job_id} - Total time: {total_time:.2f} seconds")
+                log.info(
+                    f"Finished job {self.job_id} - Total time: {total_time:.2f} seconds"
+                )
 
             # If self.status became "error" and the exception was re-raised, we don't reach here.
 
@@ -1392,7 +1510,9 @@ class WorkflowRunner:
             ValueError: If the graph contains validation errors. The error message will
                         summarize the issues found.
         """
-        log.info("Validating graph - %d nodes, %d edges", len(graph.nodes), len(graph.edges))
+        log.info(
+            "Validating graph - %d nodes, %d edges", len(graph.nodes), len(graph.edges)
+        )
         is_valid = True
         all_errors = []
 
@@ -1472,7 +1592,9 @@ class WorkflowRunner:
                 log.debug(f"Initializing node: {node.get_title()} ({node.id})")
                 await node.initialize(context)
             except Exception as e:
-                log.error(f"Error initializing node {node.get_title()} ({node.id}): {str(e)}")
+                log.error(
+                    f"Error initializing node {node.get_title()} ({node.id}): {str(e)}"
+                )
                 context.post_message(
                     NodeUpdate(
                         node_id=node.id,
@@ -1514,11 +1636,15 @@ class WorkflowRunner:
             if isinstance(event, ControlEvent):
                 await self._dispatch_control_event(node._id, event, context)
             else:
-                log.warning(f"Invalid control event type from node {node._id}: {type(event)}")
+                log.warning(
+                    f"Invalid control event type from node {node._id}: {type(event)}"
+                )
 
         # Handle legacy control output routing (for backward compatibility during migration)
         controlled_node_ids = [
-            edge.target for edge in context.graph.edges if edge.source == node._id and edge.edge_type == "control"
+            edge.target
+            for edge in context.graph.edges
+            if edge.source == node._id and edge.edge_type == "control"
         ]
 
         if controlled_node_ids and "__control_output__" in result:
@@ -1529,12 +1655,16 @@ class WorkflowRunner:
             log.info(f"Node {node._id} output control params: {control_params}")
 
             if not isinstance(control_params, dict):
-                log.error(f"Node {node._id} output invalid control params: expected dict, got {type(control_params)}")
+                log.error(
+                    f"Node {node._id} output invalid control params: expected dict, got {type(control_params)}"
+                )
             else:
                 # Extract only the actual properties from control output
                 # The LLM may return metadata fields (node_id, node_type, analysis) alongside
                 # the actual properties dict - we only want to apply the properties
-                if "properties" in control_params and isinstance(control_params["properties"], dict):
+                if "properties" in control_params and isinstance(
+                    control_params["properties"], dict
+                ):
                     properties_to_apply = control_params["properties"]
                     log.debug(
                         f"Extracted properties from control output, ignoring metadata: {list(control_params.keys())}"
@@ -1617,11 +1747,15 @@ class WorkflowRunner:
 
         # Find control edges originating from this controller
         control_edges = [
-            edge for edge in context.graph.edges if edge.source == controller_id and edge.edge_type == "control"
+            edge
+            for edge in context.graph.edges
+            if edge.source == controller_id and edge.edge_type == "control"
         ]
 
         if not control_edges:
-            log.warning(f"Controller {controller_id} has no control edges, event not dispatched")
+            log.warning(
+                f"Controller {controller_id} has no control edges, event not dispatched"
+            )
             return
 
         # Dispatch to all controlled nodes
@@ -1636,7 +1770,9 @@ class WorkflowRunner:
 
             # Queue event to __control__ handle
             await inbox.put("__control__", event, {"source": controller_id})
-            log.info(f"Dispatched {event.event_type} event from {controller_id} to {target_id}")
+            log.info(
+                f"Dispatched {event.event_type} event from {controller_id} to {target_id}"
+            )
 
     def _initialize_inboxes(self, context: ProcessingContext, graph: Graph) -> None:
         """Build and attach `NodeInbox` instances for each node based on graph topology."""
@@ -1680,10 +1816,16 @@ class WorkflowRunner:
                 "Inbox attached: node=%s (%s) handles=%s",
                 node.get_title(),
                 node._id,
-                [handle for (target_id, handle), _ in upstream_counts.items() if target_id == node._id],
+                [
+                    handle
+                    for (target_id, handle), _ in upstream_counts.items()
+                    if target_id == node._id
+                ],
             )
 
-    def _mark_node_outbound_eos(self, context: ProcessingContext, node: BaseNode) -> None:
+    def _mark_node_outbound_eos(
+        self, context: ProcessingContext, node: BaseNode
+    ) -> None:
         """Mark end-of-stream for all outbound edges from a node.
 
         This is used during resumption to ensure downstream inboxes do not hang
@@ -1699,9 +1841,17 @@ class WorkflowRunner:
             if inbox is not None:
                 inbox.mark_source_done(edge.targetHandle)
             context.post_message(
-                EdgeUpdate(workflow_id=context.workflow_id, edge_id=edge.id or "", status="drained"),
+                EdgeUpdate(
+                    workflow_id=context.workflow_id,
+                    edge_id=edge.id or "",
+                    status="drained",
+                ),
             )
-        log.debug("Marked outbound EOS for completed node: %s (%s)", node.get_title(), node._id)
+        log.debug(
+            "Marked outbound EOS for completed node: %s (%s)",
+            node.get_title(),
+            node._id,
+        )
 
     def drain_active_edges(self, context: ProcessingContext, graph: Graph) -> None:
         """Post a drained update for any edge with pending or open input.
@@ -1726,13 +1876,24 @@ class WorkflowRunner:
                 inbox = self.node_inboxes.get(edge.target)
                 if inbox is None:
                     continue
-                if (inbox.has_buffered(edge.targetHandle) or inbox.is_open(edge.targetHandle)) and edge.id:
-                    context.post_message(EdgeUpdate(workflow_id=context.workflow_id, edge_id=edge.id, status="drained"))
+                if (
+                    inbox.has_buffered(edge.targetHandle)
+                    or inbox.is_open(edge.targetHandle)
+                ) and edge.id:
+                    context.post_message(
+                        EdgeUpdate(
+                            workflow_id=context.workflow_id,
+                            edge_id=edge.id,
+                            status="drained",
+                        )
+                    )
             except Exception:
                 # Best effort - ignore errors during draining
                 pass
 
-    async def process_graph(self, context: ProcessingContext, graph: Graph, parent_id: str | None = None) -> None:
+    async def process_graph(
+        self, context: ProcessingContext, graph: Graph, parent_id: str | None = None
+    ) -> None:
         """Actor-based processing: start one actor per node and await completion.
 
         OutputNodes are not driven by actors (outputs are captured in send_messages).
@@ -1768,14 +1929,18 @@ class WorkflowRunner:
                 states, _ = await RunNodeState.query(condition=condition)
                 for state in states:
                     node_states[state.node_id] = state
-                log.info(f"Loaded {len(node_states)} existing node states for resumption: {list(node_states.keys())}")
+                log.info(
+                    f"Loaded {len(node_states)} existing node states for resumption: {list(node_states.keys())}"
+                )
                 for node_id, state in node_states.items():
                     log.info(f"  Node {node_id}: status={state.status}")
             except Exception as e:
                 log.warning(f"Failed to load node states for resumption: {e}")
 
         tasks = []
-        task_to_node: dict[asyncio.Task, str] = {}  # Map tasks to node IDs for debugging
+        task_to_node: dict[asyncio.Task, str] = (
+            {}
+        )  # Map tasks to node IDs for debugging
         for node in graph.nodes:
             inbox = self.node_inboxes.get(node._id)
             assert inbox is not None, f"No inbox found for node {node._id}"
@@ -1793,14 +1958,19 @@ class WorkflowRunner:
                 f"Processing node {node._id}: type={node.get_node_type()}, state={node_state.status if node_state else 'not found'}"
             )
             if node_state and node_state.status == "completed":
-                log.info(f"Skipping already completed node: {node._id} ({node.get_node_type()})")
+                log.info(
+                    f"Skipping already completed node: {node._id} ({node.get_node_type()})"
+                )
                 # Ensure downstream inboxes observe EOS for already-completed nodes
                 self._mark_node_outbound_eos(context, node)
                 continue
 
             # Restore resuming state for suspended nodes
             if node_state and node_state.status == "suspended":
-                if hasattr(node, "_set_resuming_state") and node_state.resume_state_json:
+                if (
+                    hasattr(node, "_set_resuming_state")
+                    and node_state.resume_state_json
+                ):
                     try:
                         node._set_resuming_state(node_state.resume_state_json, 0)  # type: ignore[call-non-callable]
                         log.info(
@@ -1808,7 +1978,9 @@ class WorkflowRunner:
                             f"(state_keys={list(node_state.resume_state_json.keys())})"
                         )
                     except Exception as e:
-                        log.error(f"Failed to restore resuming state for node {node._id}: {e}")
+                        log.error(
+                            f"Failed to restore resuming state for node {node._id}: {e}"
+                        )
 
             actor = NodeActor(self, node, context, inbox)
             task = asyncio.create_task(actor.run())
@@ -1821,7 +1993,9 @@ class WorkflowRunner:
         pending = set(tasks)
         log.info(f"Starting process_graph wait loop with {len(pending)} tasks")
         while pending:
-            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_EXCEPTION)
+            done, pending = await asyncio.wait(
+                pending, return_when=asyncio.FIRST_EXCEPTION
+            )
             log.info(f"Wait loop iteration: {len(done)} done, {len(pending)} pending")
             for t in done:
                 node_id = task_to_node.get(t, "unknown")
@@ -1985,15 +2159,21 @@ class WorkflowRunner:
             )
         else:
             # This case should ideally not happen if graph is validated.
-            log.warning(f"OutputNode {node.name} ({node._id}) received no 'value' in inputs.")
+            log.warning(
+                f"OutputNode {node.name} ({node._id}) received no 'value' in inputs."
+            )
             # Still send a completed update, but with no result value for this path.
             await node.send_update(context, "completed", result={}, properties=["name"])
 
-    async def process_with_gpu(self, context: ProcessingContext, node: BaseNode, retries: int = 0):
+    async def process_with_gpu(
+        self, context: ProcessingContext, node: BaseNode, retries: int = 0
+    ):
         """
         Processes a node with GPU, with retry logic for CUDA OOM errors.
         """
-        log.debug(f"process_with_gpu called for node: {node.get_title()} ({node._id}), retries: {retries}")
+        log.debug(
+            f"process_with_gpu called for node: {node.get_title()} ({node._id}), retries: {retries}"
+        )
         return await self._torch_support.process_with_gpu(self, context, node, retries)
 
     @contextmanager
@@ -2035,7 +2215,9 @@ class WorkflowRunner:
         """
         return self.memory_profiler.take_snapshot(label)
 
-    def compare_memory_snapshots(self, before_label: str, after_label: str) -> dict[str, Any]:
+    def compare_memory_snapshots(
+        self, before_label: str, after_label: str
+    ) -> dict[str, Any]:
         """
         Compare two memory snapshots.
 
