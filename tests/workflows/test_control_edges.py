@@ -1004,6 +1004,189 @@ class TestWorkflowRunnerControlRouting:
         # Should not raise
         await runner.send_messages(agent, result, context)
 
+    @pytest.mark.asyncio
+    async def test_send_messages_routes_targeted_control_event_to_selected_target(self):
+        """Targeted __control__ payload should dispatch to exactly one controlled node."""
+        from unittest.mock import MagicMock
+
+        from nodetool.workflows.control_events import RunEvent
+        from nodetool.workflows.workflow_runner import WorkflowRunner
+
+        runner = WorkflowRunner(job_id="test-job")
+
+        agent = TestAgentNode(id="agent1")
+        target_a = TestProcessingNode(id="target_a")
+        target_b = TestProcessingNode(id="target_b")
+        edges = [
+            Edge(
+                id="e1",
+                source="agent1",
+                sourceHandle="__control__",
+                target="target_a",
+                targetHandle="__control__",
+                edge_type="control",
+            ),
+            Edge(
+                id="e2",
+                source="agent1",
+                sourceHandle="__control__",
+                target="target_b",
+                targetHandle="__control__",
+                edge_type="control",
+            ),
+        ]
+        graph = Graph(nodes=[agent, target_a, target_b], edges=edges)
+
+        context = MagicMock()
+        context.graph = graph
+        context.workflow_id = "test-workflow"
+
+        target_a_inbox = NodeInbox()
+        target_a_inbox.add_upstream("__control__", 1)
+        target_b_inbox = NodeInbox()
+        target_b_inbox.add_upstream("__control__", 1)
+        runner.node_inboxes = {"target_a": target_a_inbox, "target_b": target_b_inbox}
+
+        event = RunEvent(properties={"threshold": 0.77})
+        result = {
+            "__control__": {
+                "target_node_id": "target_b",
+                "event": event,
+            }
+        }
+
+        await runner.send_messages(agent, result, context)
+
+        target_a_inbox.mark_source_done("__control__")
+        target_b_inbox.mark_source_done("__control__")
+
+        items_a = []
+        async for item in target_a_inbox.iter_input("__control__"):
+            items_a.append(item)
+
+        items_b = []
+        async for item in target_b_inbox.iter_input("__control__"):
+            items_b.append(item)
+
+        assert items_a == []
+        assert len(items_b) == 1
+        assert isinstance(items_b[0], RunEvent)
+        assert items_b[0].properties == {"threshold": 0.77}
+
+    @pytest.mark.asyncio
+    async def test_send_messages_targeted_control_event_requires_control_edge(self):
+        """Targeted dispatch must be rejected when controller has no control edge to target."""
+        from unittest.mock import MagicMock
+
+        from nodetool.workflows.control_events import RunEvent
+        from nodetool.workflows.workflow_runner import WorkflowRunner
+
+        runner = WorkflowRunner(job_id="test-job")
+
+        agent = TestAgentNode(id="agent1")
+        allowed_target = TestProcessingNode(id="target")
+        rogue_target = TestProcessingNode(id="rogue")
+        edges = [
+            Edge(
+                id="e1",
+                source="agent1",
+                sourceHandle="__control__",
+                target="target",
+                targetHandle="__control__",
+                edge_type="control",
+            )
+        ]
+        graph = Graph(nodes=[agent, allowed_target, rogue_target], edges=edges)
+
+        context = MagicMock()
+        context.graph = graph
+        context.workflow_id = "test-workflow"
+
+        allowed_inbox = NodeInbox()
+        allowed_inbox.add_upstream("__control__", 1)
+        rogue_inbox = NodeInbox()
+        rogue_inbox.add_upstream("__control__", 1)
+        runner.node_inboxes = {"target": allowed_inbox, "rogue": rogue_inbox}
+
+        result = {
+            "__control__": {
+                "target_node_id": "rogue",
+                "event": RunEvent(properties={"threshold": 0.9}),
+            }
+        }
+
+        await runner.send_messages(agent, result, context)
+
+        allowed_inbox.mark_source_done("__control__")
+        rogue_inbox.mark_source_done("__control__")
+
+        allowed_items = []
+        async for item in allowed_inbox.iter_input("__control__"):
+            allowed_items.append(item)
+
+        rogue_items = []
+        async for item in rogue_inbox.iter_input("__control__"):
+            rogue_items.append(item)
+
+        assert allowed_items == []
+        assert rogue_items == []
+
+    @pytest.mark.asyncio
+    async def test_send_messages_targeted_control_event_preserves_response_future_metadata(
+        self,
+    ):
+        """Targeted dispatch should preserve response future metadata for the controlled actor."""
+        import asyncio
+        from unittest.mock import MagicMock
+
+        from nodetool.workflows.control_events import RunEvent
+        from nodetool.workflows.workflow_runner import WorkflowRunner
+
+        runner = WorkflowRunner(job_id="test-job")
+
+        agent = TestAgentNode(id="agent1")
+        target = TestProcessingNode(id="target")
+        edges = [
+            Edge(
+                id="e1",
+                source="agent1",
+                sourceHandle="__control__",
+                target="target",
+                targetHandle="__control__",
+                edge_type="control",
+            )
+        ]
+        graph = Graph(nodes=[agent, target], edges=edges)
+
+        context = MagicMock()
+        context.graph = graph
+        context.workflow_id = "test-workflow"
+
+        target_inbox = NodeInbox()
+        target_inbox.add_upstream("__control__", 1)
+        runner.node_inboxes = {"target": target_inbox}
+
+        response_future = asyncio.get_running_loop().create_future()
+        event = RunEvent(properties={"threshold": 0.42})
+        result = {
+            "__control__": {
+                "target_node_id": "target",
+                "event": event,
+                "response_future": response_future,
+            }
+        }
+
+        await runner.send_messages(agent, result, context)
+        target_inbox.mark_source_done("__control__")
+
+        received_envelopes = []
+        async for envelope in target_inbox.iter_input_with_envelope("__control__"):
+            received_envelopes.append(envelope)
+
+        assert len(received_envelopes) == 1
+        assert received_envelopes[0].data == event
+        assert received_envelopes[0].metadata.get("response_future") is response_future
+
 
 # ---------- Phase 7: Integration Tests ----------
 
@@ -1479,6 +1662,50 @@ class TestNewControlEdgeSystem:
         assert node.threshold == 0.5  # Back to original
 
     @pytest.mark.asyncio
+    async def test_run_event_resolves_response_future_with_result(self):
+        """RunEvent should resolve response_future metadata with controlled node result."""
+        import asyncio
+        from unittest.mock import MagicMock, patch
+
+        from nodetool.workflows.actor import NodeActor
+        from nodetool.workflows.control_events import RunEvent
+        from nodetool.workflows.workflow_runner import WorkflowRunner
+
+        node = TestProcessingNode(id="node1", threshold=0.5, mode="normal")
+        node._is_controlled = True
+
+        runner = MagicMock(spec=WorkflowRunner)
+        runner.multi_edge_list_inputs = {}
+        runner._control_edges = {"node1": []}
+        runner.disable_caching = True
+        runner.device = "cpu"
+        runner.job_id = "test-job"
+
+        context = MagicMock()
+        context.graph = Graph(nodes=[node], edges=[])
+        context.workflow_id = "test-workflow"
+
+        inbox = NodeInbox()
+        inbox.add_upstream("__control__", 1)
+
+        response_future = asyncio.get_running_loop().create_future()
+        event = RunEvent(properties={"threshold": 0.95})
+        await inbox.put("__control__", event, metadata={"response_future": response_future})
+        inbox.mark_source_done("__control__")
+
+        actor = NodeActor(runner, node, context, inbox)
+
+        async def mock_buffered():
+            actor._latest_execution_result = {"output": "fast:0.95"}
+            node._is_controlled = True
+
+        with patch.object(actor, "_run_buffered_node", mock_buffered):
+            await actor._run_controlled_node()
+
+        assert response_future.done()
+        assert response_future.result() == {"output": "fast:0.95"}
+
+    @pytest.mark.asyncio
     async def test_multiple_run_events_multiple_executions(self):
         """Multiple RunEvents should trigger multiple executions."""
         from unittest.mock import MagicMock, patch
@@ -1664,6 +1891,8 @@ class TestControllerNodeE2E:
         assert "mode" in props
         assert props["threshold"]["type"] == "number"
         assert props["mode"]["type"] == "string"
+        assert props["threshold"]["default"] == 0.5
+        assert props["mode"]["default"] == "normal"
 
     @pytest.mark.asyncio
     async def test_is_controlled_flag(self):

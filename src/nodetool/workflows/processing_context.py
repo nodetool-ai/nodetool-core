@@ -3506,7 +3506,15 @@ class ProcessingContext:
         if self.graph is None:
             return {}
 
-        controlled_edges = self.graph.get_control_edges(controller_node_id)
+        controlled_edges = [
+            edge for edge in self.graph.edges if edge.source == controller_node_id and edge.edge_type == "control"
+        ]
+        log.info(
+            "Resolved controlled nodes: controller_node_id=%s control_edge_count=%d targets=%s",
+            controller_node_id,
+            len(controlled_edges),
+            [edge.target for edge in controlled_edges],
+        )
 
         result: dict[str, dict[str, Any]] = {}
         for edge in controlled_edges:
@@ -3517,7 +3525,7 @@ class ProcessingContext:
             target_info: dict[str, Any] = {
                 "node_id": target_node.id,
                 "node_type": target_node.get_node_type(),
-                "node_title": target_node.title or target_node.id,
+                "node_title": getattr(target_node, "title", None) or target_node.id,
                 "control_actions": target_node.get_control_actions(),
                 "properties": {},
                 "upstream_data": {},
@@ -3542,6 +3550,18 @@ class ProcessingContext:
 
             result[target_node.id] = target_info
 
+        log.info(
+            "Controlled node info prepared: controller_node_id=%s controlled_nodes=%d tools=%s",
+            controller_node_id,
+            len(result),
+            [
+                {
+                    "target": target_id,
+                    "actions": sorted(list((info.get("control_actions") or {}).keys())),
+                }
+                for target_id, info in result.items()
+            ],
+        )
         return result
 
     async def cleanup(self):

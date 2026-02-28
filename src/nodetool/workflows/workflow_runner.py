@@ -1508,13 +1508,57 @@ class WorkflowRunner:
         """
         # Handle new control event system (async generator based)
         if "__control__" in result:
-            from nodetool.workflows.control_events import ControlEvent
+            from nodetool.workflows.control_events import ControlEvent, RunEvent
 
-            event = result["__control__"]
-            if isinstance(event, ControlEvent):
-                await self._dispatch_control_event(node._id, event, context)
+            control_output = result["__control__"]
+            if isinstance(control_output, ControlEvent):
+                await self._dispatch_control_event(node._id, control_output, context)
+            elif isinstance(control_output, dict):
+                # Targeted control dispatch payload:
+                # {"target_node_id": "...", "event": ControlEvent}
+                target_node_id = control_output.get("target_node_id")
+                event = control_output.get("event")
+                if isinstance(target_node_id, str) and isinstance(event, ControlEvent):
+                    dispatch_metadata: dict[str, Any] = {"source": node._id}
+                    response_future = control_output.get("response_future")
+                    if isinstance(response_future, asyncio.Future):
+                        dispatch_metadata["response_future"] = response_future
+                    for trace_key in (
+                        "tool_call_id",
+                        "tool_name",
+                        "agent_node_id",
+                        "agent_iteration",
+                    ):
+                        if trace_key in control_output:
+                            dispatch_metadata[trace_key] = control_output[trace_key]
+                    log.info(
+                        "Routing targeted control payload: controller=%s target=%s event_type=%s tool_call_id=%s tool_name=%s has_response_future=%s",
+                        node._id,
+                        target_node_id,
+                        event.event_type,
+                        dispatch_metadata.get("tool_call_id"),
+                        dispatch_metadata.get("tool_name"),
+                        isinstance(response_future, asyncio.Future),
+                    )
+                    await self._dispatch_control_event_to_target(
+                        controller_id=node._id,
+                        target_id=target_node_id,
+                        event=event,
+                        context=context,
+                        metadata=dispatch_metadata,
+                    )
+                elif "target_node_id" in control_output or "event" in control_output:
+                    log.warning(
+                        "Invalid targeted control payload from node %s: target_node_id=%s event_type=%s",
+                        node._id,
+                        type(target_node_id).__name__,
+                        type(event).__name__,
+                    )
+                else:
+                    # Legacy fallback: treat dict as RunEvent properties.
+                    await self._dispatch_control_event(node._id, RunEvent(properties=control_output), context)
             else:
-                log.warning(f"Invalid control event type from node {node._id}: {type(event)}")
+                log.warning(f"Invalid control event type from node {node._id}: {type(control_output)}")
 
         # Handle legacy control output routing (for backward compatibility during migration)
         controlled_node_ids = [
@@ -1636,7 +1680,55 @@ class WorkflowRunner:
 
             # Queue event to __control__ handle
             await inbox.put("__control__", event, {"source": controller_id})
-            log.info(f"Dispatched {event.event_type} event from {controller_id} to {target_id}")
+            log.info(
+                "Dispatched control event: event_type=%s controller=%s target=%s mode=broadcast",
+                event.event_type,
+                controller_id,
+                target_id,
+            )
+
+    async def _dispatch_control_event_to_target(
+        self,
+        controller_id: str,
+        target_id: str,
+        event: "ControlEvent",
+        context: ProcessingContext,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Queue control event to a specific target node if the control edge exists."""
+        # Ensure controller is allowed to control the requested target.
+        has_control_edge = any(
+            edge.source == controller_id and edge.target == target_id and edge.edge_type == "control"
+            for edge in context.graph.edges
+        )
+        if not has_control_edge:
+            log.warning(
+                "Controller %s attempted targeted control dispatch to %s without a control edge",
+                controller_id,
+                target_id,
+            )
+            return
+
+        inbox = self.node_inboxes.get(target_id)
+        if not inbox:
+            log.error(f"Target inbox not found for {target_id}")
+            return
+
+        event_metadata = {"source": controller_id}
+        if metadata:
+            event_metadata.update(metadata)
+
+        await inbox.put("__control__", event, event_metadata)
+        log.info(
+            "Dispatched control event: event_type=%s controller=%s target=%s mode=targeted tool_call_id=%s tool_name=%s has_response_future=%s metadata_keys=%s",
+            event.event_type,
+            controller_id,
+            target_id,
+            event_metadata.get("tool_call_id"),
+            event_metadata.get("tool_name"),
+            isinstance(event_metadata.get("response_future"), asyncio.Future),
+            sorted(event_metadata.keys()),
+        )
 
     def _initialize_inboxes(self, context: ProcessingContext, graph: Graph) -> None:
         """Build and attach `NodeInbox` instances for each node based on graph topology."""

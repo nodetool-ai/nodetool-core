@@ -287,7 +287,7 @@ class AnthropicProvider(BaseProvider):
                         {
                             "type": "tool_result",
                             "tool_use_id": message.tool_call_id,
-                            "content": str(message.content),
+                            "content": content,
                         }
                     ],
                 },
@@ -356,19 +356,29 @@ class AnthropicProvider(BaseProvider):
 
             if message.tool_calls:
                 log.debug(f"Assistant message has {len(message.tool_calls)} tool calls")
+                content_blocks: list[dict[str, Any]] = []
+                if isinstance(message.content, str) and message.content.strip():
+                    content_blocks.append({"type": "text", "text": message.content})
+                elif isinstance(message.content, list):
+                    for part in message.content:
+                        if isinstance(part, MessageTextContent) and part.text.strip():
+                            content_blocks.append({"type": "text", "text": part.text})
+                content_blocks.extend(
+                    [
+                        {
+                            "type": "tool_use",
+                            "name": tool_call.name,
+                            "id": tool_call.id,
+                            "input": tool_call.args,
+                        }
+                        for tool_call in message.tool_calls
+                    ]
+                )
                 return cast(
                     "MessageParam",
                     {
                         "role": "assistant",
-                        "content": [
-                            {
-                                "type": "tool_use",
-                                "name": tool_call.name,
-                                "id": tool_call.id,
-                                "input": tool_call.args,
-                            }
-                            for tool_call in message.tool_calls
-                        ],
+                        "content": content_blocks,
                     },
                 )
             elif isinstance(message.content, str):

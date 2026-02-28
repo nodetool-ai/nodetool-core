@@ -635,21 +635,25 @@ class BaseNode(BaseModel):
             }
         """
 
-        properties_schema = {}
-        for prop in cls.properties():
-            python_type = prop.type.get_python_type()
-            json_type = cls._python_type_to_json_schema_type(python_type, prop.type)
-            properties_schema[prop.name] = {
-                "type": json_type,
-                "description": prop.description or "",
-            }
+        properties_schema: dict[str, dict[str, Any]] = {}
+        required_properties: list[str] = []
 
-        return {
-            "run": {
-                "description": f"Execute the {cls.get_title()} node",
-                "properties": properties_schema,
-            }
+        for prop in cls.properties():
+            schema = prop.get_json_schema()
+            if prop.default is not None:
+                schema.setdefault("default", prop.default)
+            properties_schema[prop.name] = schema
+            if prop.required:
+                required_properties.append(prop.name)
+
+        run_action: dict[str, Any] = {
+            "description": f"Execute the {cls.get_title()} node",
+            "properties": properties_schema,
         }
+        if required_properties:
+            run_action["required"] = required_properties
+
+        return {"run": run_action}
 
     @staticmethod
     def _python_type_to_json_schema_type(python_type: type, type_metadata: "TypeMetadata") -> str:
@@ -2192,8 +2196,15 @@ class Preview(BaseNode):
         """
         from nodetool.workflows.types import PreviewUpdate
 
+        yielded = False
         async for _handle, value in self.iter_any_input():
+            yielded = True
             result = await context.normalize_output_value(value)
+            context.post_message(PreviewUpdate(node_id=self.id, value=result))
+            yield {"output": result}
+
+        if not yielded and self.value is not None:
+            result = await context.normalize_output_value(self.value)
             context.post_message(PreviewUpdate(node_id=self.id, value=result))
             yield {"output": result}
 

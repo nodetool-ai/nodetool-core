@@ -12,6 +12,7 @@ from nodetool.metadata.types import DataframeRef, ImageRef, OutputSlot
 from nodetool.workflows.base_node import (
     NODE_BY_TYPE,
     BaseNode,
+    Preview,
     add_node_type,
     get_node_class,
     type_metadata,
@@ -792,3 +793,83 @@ def test_node_is_assignable_single_value_to_list():
     assert node.is_assignable("int_list", "not an int") is False
     assert node.is_assignable("str_list", "hello") is True
     assert node.is_assignable("str_list", ["a", "b"]) is True
+
+
+@pytest.mark.asyncio
+async def test_preview_fallback_to_value_when_no_inbox_items():
+    """Preview.gen_process falls back to self.value when no items arrive via inbox."""
+    from nodetool.workflows.types import PreviewUpdate
+
+    context = ProcessingContext()
+
+    node = Preview(id="preview1", value="hello from value")  # type: ignore[call-arg]
+    # Attach an empty inbox with no upstreams - simulates no incoming edges
+    inbox = NodeInbox()
+    node.attach_inbox(inbox)
+    # Close the inbox immediately so iter_any terminates
+    await inbox.close_all()
+
+    results = []
+    async for item in node.gen_process(context):
+        results.append(item)
+
+    messages = []
+    while context.has_messages():
+        messages.append(await context.pop_message_async())
+
+    assert len(results) == 1, "Should yield one item from fallback"
+    assert results[0] == {"output": "hello from value"}
+
+    preview_messages = [m for m in messages if isinstance(m, PreviewUpdate)]
+    assert len(preview_messages) == 1, "Should post one PreviewUpdate from fallback"
+    assert preview_messages[0].node_id == "preview1"
+    assert preview_messages[0].value == "hello from value"
+
+
+@pytest.mark.asyncio
+async def test_preview_no_fallback_when_value_is_none():
+    """Preview.gen_process does not fallback when self.value is None and inbox is empty."""
+    context = ProcessingContext()
+
+    node = Preview(id="preview2")  # type: ignore[call-arg]
+    # Default value is None
+    inbox = NodeInbox()
+    node.attach_inbox(inbox)
+    await inbox.close_all()
+
+    results = []
+    async for item in node.gen_process(context):
+        results.append(item)
+
+    assert len(results) == 0, "Should not yield anything when value is None"
+    assert not context.has_messages(), "Should not post any messages when value is None"
+
+
+@pytest.mark.asyncio
+async def test_preview_uses_inbox_items_when_available():
+    """Preview.gen_process posts PreviewUpdate for each inbox item."""
+    from nodetool.workflows.types import PreviewUpdate
+
+    context = ProcessingContext()
+
+    node = Preview(id="preview3", value="fallback")  # type: ignore[call-arg]
+    inbox = NodeInbox()
+    inbox.add_upstream("value", 1)
+    node.attach_inbox(inbox)
+    await inbox.put("value", "streamed_value")
+    inbox.mark_source_done("value")
+
+    results = []
+    async for item in node.gen_process(context):
+        results.append(item)
+
+    messages = []
+    while context.has_messages():
+        messages.append(await context.pop_message_async())
+
+    assert len(results) == 1, "Should yield one item from inbox"
+    assert results[0] == {"output": "streamed_value"}
+
+    preview_messages = [m for m in messages if isinstance(m, PreviewUpdate)]
+    assert len(preview_messages) == 1
+    assert preview_messages[0].value == "streamed_value"
