@@ -343,12 +343,18 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         Get available Llama.cpp models.
 
         Queries the llama.cpp server's OpenAI-compatible /v1/models endpoint
-        to get the list of available models.
+        and also discovers cached GGUF models from the llama.cpp native cache
+        and the HuggingFace hub cache.
 
         Returns:
             List of LanguageModel instances for Llama.cpp
         """
         import httpx
+
+        from nodetool.integrations.huggingface.huggingface_models import (
+            get_llamacpp_language_models_from_hf_cache,
+            get_llamacpp_language_models_from_llama_cache,
+        )
 
         models: list[LanguageModel] = []
 
@@ -370,6 +376,27 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                 log.debug(f"Found {len(models)} models from llama.cpp server")
         except Exception as e:
             log.warning(f"Error querying llama.cpp server: {e}")
+
+        # Collect model IDs already known from the server
+        seen_ids: set[str] = {m.id for m in models}
+
+        # Add models from the llama.cpp native cache
+        try:
+            for m in await get_llamacpp_language_models_from_llama_cache():
+                if m.id not in seen_ids:
+                    seen_ids.add(m.id)
+                    models.append(m)
+        except Exception as e:
+            log.warning(f"Error listing llama.cpp cache models: {e}")
+
+        # Add models from the HuggingFace hub cache
+        try:
+            for m in await get_llamacpp_language_models_from_hf_cache():
+                if m.id not in seen_ids:
+                    seen_ids.add(m.id)
+                    models.append(m)
+        except Exception as e:
+            log.warning(f"Error listing HF cache models for llama.cpp: {e}")
 
         return models
 

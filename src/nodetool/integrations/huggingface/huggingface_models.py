@@ -1641,6 +1641,63 @@ async def get_llama_cpp_models_from_cache() -> list[UnifiedModel]:
     return models
 
 
+async def get_llamacpp_language_models_from_llama_cache() -> list[LanguageModel]:
+    """
+    Return LanguageModel entries for GGUF files in the llama.cpp native cache directory.
+
+    This complements ``get_llamacpp_language_models_from_hf_cache`` by also
+    discovering models downloaded directly by llama-server (``llama-server -hf``)
+    into its own flat-file cache.
+
+    Returns:
+        List[LanguageModel]: Llama.cpp-compatible models discovered in the native cache.
+    """
+    from nodetool.providers.llama_server_manager import get_llama_cpp_cache_dir
+
+    cache_dir = get_llama_cpp_cache_dir()
+    if not os.path.isdir(cache_dir):
+        return []
+
+    results: list[LanguageModel] = []
+
+    for entry in os.listdir(cache_dir):
+        if not entry.lower().endswith(".gguf"):
+            continue
+        if entry.endswith(".etag"):
+            continue
+
+        file_path = os.path.join(cache_dir, entry)
+        if not os.path.isfile(file_path):
+            continue
+
+        # Parse repo info from flat filename: org_repo_filename.gguf
+        parts = entry.rsplit("_", 2)
+        if len(parts) >= 3:
+            org = parts[0]
+            repo = parts[1]
+            filename = parts[2]
+            repo_id = f"{org}/{repo}"
+        else:
+            repo_id = ""
+            repo = ""
+            filename = entry
+
+        model_id = f"{repo_id}:{filename}" if repo_id else filename
+        display = f"{repo.replace('-', ' ').title()} • {filename}" if repo_id else filename
+
+        results.append(
+            LanguageModel(
+                id=model_id,
+                name=display,
+                path=filename,
+                provider=Provider.LlamaCpp,
+            )
+        )
+
+    results.sort(key=lambda m: (m.id.split(":", 1)[0], m.id))
+    return results
+
+
 async def get_vllm_language_models_from_hf_cache() -> list[LanguageModel]:
     """Return LanguageModel entries based on cached weight files (hub-free)."""
     seen_repos: set[str] = set()
