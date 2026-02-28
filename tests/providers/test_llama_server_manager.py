@@ -5,15 +5,12 @@ Covers _resolve_llama_cpp_cached_file and _parse_model_args integration
 with the llama.cpp native cache directory.
 """
 
-import os
-import tempfile
 from unittest.mock import patch
 
 import pytest
 
 from nodetool.providers.llama_server_manager import (
     _parse_model_args,
-    _resolve_hf_cached_file,
     _resolve_llama_cpp_cached_file,
 )
 
@@ -93,67 +90,14 @@ class TestParseModelArgsWithLlamaCppCache:
             assert args == ["-m", str(model_file)]
             assert alias == "org/repo:model-Q4.gguf"
 
-    def test_falls_back_to_hf_cache(self, tmp_path):
-        """Should fall back to HF cache when not in llama.cpp cache."""
-        # Set up empty llama.cpp cache
+    def test_raises_when_not_in_llama_cache(self, tmp_path):
+        """Should raise FileNotFoundError when not in llama.cpp cache."""
         llama_cache = tmp_path / "llama.cpp"
         llama_cache.mkdir()
-
-        # Set up HF cache with the model
-        hf_cache = tmp_path / "hf_hub"
-        snapshot_dir = hf_cache / "models--org--repo" / "snapshots" / "abc123"
-        snapshot_dir.mkdir(parents=True)
-        model_file = snapshot_dir / "model.gguf"
-        model_file.write_bytes(b"fake gguf data")
 
         with patch(
             "nodetool.providers.llama_server_manager.get_llama_cpp_cache_dir",
             return_value=str(llama_cache),
-        ), patch(
-            "nodetool.providers.llama_server_manager._hf_cache_dir",
-            return_value=str(hf_cache),
         ):
-            args, _alias = _parse_model_args("org/repo:model.gguf")
-            assert args == ["-m", str(model_file)]
-
-    def test_raises_when_not_in_any_cache(self, tmp_path):
-        """Should raise FileNotFoundError when not in either cache."""
-        llama_cache = tmp_path / "llama.cpp"
-        llama_cache.mkdir()
-        hf_cache = tmp_path / "hf_hub"
-        hf_cache.mkdir()
-
-        with patch(
-            "nodetool.providers.llama_server_manager.get_llama_cpp_cache_dir",
-            return_value=str(llama_cache),
-        ), patch(
-            "nodetool.providers.llama_server_manager._hf_cache_dir",
-            return_value=str(hf_cache),
-        ):
-            with pytest.raises(FileNotFoundError, match=r"llama\.cpp or Hugging Face"):
+            with pytest.raises(FileNotFoundError, match=r"llama\.cpp cache"):
                 _parse_model_args("org/repo:model.gguf")
-
-    def test_prefers_llama_cpp_cache_over_hf(self, tmp_path):
-        """Should prefer llama.cpp cache when file exists in both caches."""
-        # Set up llama.cpp cache
-        llama_cache = tmp_path / "llama.cpp"
-        llama_cache.mkdir()
-        llama_model = llama_cache / "org_repo_model.gguf"
-        llama_model.write_bytes(b"llama cache version")
-
-        # Set up HF cache
-        hf_cache = tmp_path / "hf_hub"
-        snapshot_dir = hf_cache / "models--org--repo" / "snapshots" / "abc123"
-        snapshot_dir.mkdir(parents=True)
-        hf_model = snapshot_dir / "model.gguf"
-        hf_model.write_bytes(b"hf cache version")
-
-        with patch(
-            "nodetool.providers.llama_server_manager.get_llama_cpp_cache_dir",
-            return_value=str(llama_cache),
-        ), patch(
-            "nodetool.providers.llama_server_manager._hf_cache_dir",
-            return_value=str(hf_cache),
-        ):
-            args, _alias = _parse_model_args("org/repo:model.gguf")
-            assert args == ["-m", str(llama_model)]

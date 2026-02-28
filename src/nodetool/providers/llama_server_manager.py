@@ -7,8 +7,8 @@ an inactivity TTL, and returns a ready base URL for OpenAI-compatible access.
 Model spec formats supported:
  - Absolute/relative path to a .gguf file → uses `-m <path>`
  - "<repo_id>:<filename>" (filename contains a dot) → resolves from the
-   llama.cpp native cache or the Hugging Face hub cache and uses
-   `-m <resolved_path>`. If not present in either cache, raises an error.
+   llama.cpp native cache and uses `-m <resolved_path>`. If not present in
+   cache, raises an error.
  - "<repo_id>:<quant_or_tag>" (no dot) → uses `-hf <repo_id>:<quant_or_tag>`
  - "<repo_id>" → uses `-hf <repo_id>` (defaults quant per server behavior)
 
@@ -24,7 +24,6 @@ Environment variables:
  - LLAMA_SERVER_TTL_SECONDS: inactivity TTL before shutdown (default 300)
  - HF_TOKEN: forwarded to process via --hf-token (and used for HF cache lookups)
  - LLAMA_API_KEY: optional API key to enforce auth on server (default none)
- - HUGGINGFACE_HUB_CACHE / HF_HOME: to locate the local HF hub cache
 """
 
 from __future__ import annotations
@@ -129,63 +128,6 @@ def _is_path_model(model: str) -> bool:
     return model.lower().endswith(".gguf") and ":" not in model
 
 
-def _hf_cache_dir() -> str:
-    """Return the local Hugging Face hub cache directory.
-
-    Order of precedence:
-    - HUGGINGFACE_HUB_CACHE (must exist)
-    - HF_HOME/hub (must exist)
-    - ~/.cache/huggingface/hub
-
-    Returns:
-        Path to the hub cache directory. The path may not exist if the cache
-        has not been created yet.
-    """
-    cache = os.environ.get("HUGGINGFACE_HUB_CACHE")
-    if cache and os.path.isdir(cache):
-        return cache
-    hf_home = os.environ.get("HF_HOME")
-    if hf_home:
-        path = os.path.join(hf_home, "hub")
-        if os.path.isdir(path):
-            return path
-    # Default
-    return os.path.expanduser(os.path.join("~", ".cache", "huggingface", "hub"))
-
-
-def _resolve_hf_cached_file(repo_id: str, filename: str) -> Optional[str]:
-    """Resolve a repo file to a local path in the Hugging Face cache.
-
-    Args:
-        repo_id: Hugging Face repo id like "org/repo".
-        filename: File name within the repo, e.g., "model.Q4_K_M.gguf".
-
-    Returns:
-        Absolute path to the file if found locally, otherwise None.
-    """
-    hub_cache = _hf_cache_dir()
-    repo_dir = f"models--{repo_id.replace('/', '--')}"
-    snapshots_dir = os.path.join(hub_cache, repo_dir, "snapshots")
-    if not os.path.isdir(snapshots_dir):
-        return None
-
-    snapshot_paths = [
-        os.path.join(snapshots_dir, d)
-        for d in os.listdir(snapshots_dir)
-        if os.path.isdir(os.path.join(snapshots_dir, d))
-    ]
-    # Sort by mtime, newest first
-    snapshot_paths.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-
-    for snap in snapshot_paths:
-        candidate = os.path.join(snap, filename)
-        if os.path.exists(candidate):
-            log.debug(f"Resolved HF file from cache snapshots: {repo_id}:{filename} -> {candidate}")
-            return candidate
-
-    return None
-
-
 def _resolve_llama_cpp_cached_file(repo_id: str, filename: str) -> Optional[str]:
     """Resolve a repo file to a local path in the llama.cpp native cache.
 
@@ -243,17 +185,14 @@ def _parse_model_args(model: str) -> tuple[list[str], str]:
     if ":" in model:
         repo_id, tail = model.split(":", 1)
         if "." in tail:
-            # looks like a file name within the repo; try llama.cpp cache first,
-            # then the HF hub cache
+            # Looks like a file name within the repo; resolve from llama.cpp cache.
             resolved = _resolve_llama_cpp_cached_file(repo_id, tail)
-            if not resolved:
-                resolved = _resolve_hf_cached_file(repo_id, tail)
             if resolved:
                 return ["-m", resolved], alias
             raise FileNotFoundError(
-                "Model file not found in llama.cpp or Hugging Face cache: "
+                "Model file not found in llama.cpp cache: "
                 f"{repo_id}:{tail}. Please download the model file locally "
-                "(e.g., via the llama.cpp download utilities or 'huggingface_hub') "
+                "(e.g., via the llama.cpp download utilities) "
                 "or provide an absolute path to the .gguf file."
             )
         else:

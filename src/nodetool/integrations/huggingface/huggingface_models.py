@@ -1734,14 +1734,17 @@ async def get_llamacpp_language_models_from_llama_cache() -> list[LanguageModel]
 
         repo_id, repo, filename = _parse_gguf_flat_filename(entry, manifest_lookup)
 
-        model_id = f"{repo_id}:{filename}" if repo_id else filename
+        # When we cannot recover a repo_id from manifest/filename, use the
+        # absolute cache path as the model id so llama-server can load it
+        # reliably via `-m <path>` regardless of current working directory.
+        model_id = f"{repo_id}:{filename}" if repo_id else file_path
         display = f"{repo.replace('-', ' ').title()} • {filename}" if repo_id else filename
 
         results.append(
             LanguageModel(
                 id=model_id,
                 name=display,
-                path=filename,
+                path=filename if repo_id else file_path,
                 provider=Provider.LlamaCpp,
             )
         )

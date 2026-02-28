@@ -220,3 +220,50 @@ class TestParseGgufFlatFilename(unittest.TestCase):
         self.assertEqual(models[0].id, "ggml-org/gemma-3-1b-it-GGUF:gemma-3-1b-it-Q4_K_M.gguf")
         self.assertEqual(models[0].repo_id, "ggml-org/gemma-3-1b-it-GGUF")
         self.assertEqual(models[0].path, "gemma-3-1b-it-Q4_K_M.gguf")
+
+    def test_get_llamacpp_language_models_from_llama_cache_standalone_uses_abs_path(self):
+        """Standalone GGUF files should use absolute path IDs so they are loadable."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gguf = Path(tmpdir) / "standalone-model.gguf"
+            gguf.write_bytes(b"\x00" * 8)
+
+            with patch(
+                "nodetool.providers.llama_server_manager.get_llama_cpp_cache_dir",
+                return_value=tmpdir,
+            ):
+                models = asyncio.run(huggingface_models.get_llamacpp_language_models_from_llama_cache())
+
+        self.assertEqual(len(models), 1)
+        self.assertEqual(models[0].id, str(gguf))
+        self.assertEqual(models[0].path, str(gguf))
+
+    def test_get_llamacpp_language_models_from_llama_cache_manifest_keeps_repo_file_id(self):
+        """Manifest-backed GGUF entries should keep repo:file model IDs."""
+        import json
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manifest = {
+                "name": "gemma-3-1b-it-GGUF",
+                "version": "latest",
+                "ggufFile": {"rfilename": "gemma-3-1b-it-Q4_K_M.gguf", "size": 100},
+                "metadata": {"author": "ggml-org", "repo_id": "ggml-org/gemma-3-1b-it-GGUF"},
+            }
+            (Path(tmpdir) / "manifest=ggml-org=gemma-3-1b-it-GGUF=latest.json").write_text(
+                json.dumps(manifest)
+            )
+            (Path(tmpdir) / "ggml-org_gemma-3-1b-it-GGUF_gemma-3-1b-it-Q4_K_M.gguf").write_bytes(
+                b"\x00" * 100
+            )
+
+            with patch(
+                "nodetool.providers.llama_server_manager.get_llama_cpp_cache_dir",
+                return_value=tmpdir,
+            ):
+                models = asyncio.run(huggingface_models.get_llamacpp_language_models_from_llama_cache())
+
+        self.assertEqual(len(models), 1)
+        self.assertEqual(models[0].id, "ggml-org/gemma-3-1b-it-GGUF:gemma-3-1b-it-Q4_K_M.gguf")
+        self.assertEqual(models[0].path, "gemma-3-1b-it-Q4_K_M.gguf")

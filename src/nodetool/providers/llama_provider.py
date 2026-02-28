@@ -23,7 +23,6 @@ from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import LanguageModel, Message, Provider, ToolCall
 from nodetool.providers.base import BaseProvider, register_provider
-from nodetool.providers.llama_server_manager import LlamaServerManager
 from nodetool.providers.openai_compat import OpenAICompat
 from nodetool.runtime.resources import require_scope
 from nodetool.security.secret_helper import get_secret_sync
@@ -70,7 +69,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         """
         super().__init__()
         self._base_url = Environment.get("LLAMA_CPP_URL", "")
-        self._server_manager = LlamaServerManager(ttl_seconds=ttl_seconds)
 
         # Get context length from settings, with fallback to 128000
         context_length_str = Environment.get("LLAMA_CPP_CONTEXT_LENGTH")
@@ -79,7 +77,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         if self._base_url:
             log.info(f"Using llama-server at: {self._base_url}")
         else:
-            log.debug("LLAMA_CPP_URL not set; llama-server will be started on demand")
+            log.warning("LLAMA_CPP_URL not set; LlamaCpp provider requires an external llama-server URL")
         # Initialize tiktoken encoding for token counting
         # Using cl100k_base which is used by gpt-4 and modern models
         try:
@@ -293,7 +291,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         Uses ResourceScope's HTTP client to ensure correct event loop binding.
 
         Args:
-            base_url: Base URL returned by ``LlamaServerManager.ensure_server``.
+            base_url: Base URL of the external llama-server.
 
         Returns:
             Configured ``openai.AsyncClient`` instance.
@@ -342,19 +340,12 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         """
         Get available Llama.cpp models.
 
-        Queries the llama.cpp server's OpenAI-compatible /v1/models endpoint
-        and also discovers cached GGUF models from the llama.cpp native cache
-        and the HuggingFace hub cache.
+        Queries the llama.cpp server's OpenAI-compatible /v1/models endpoint.
 
         Returns:
             List of LanguageModel instances for Llama.cpp
         """
         import httpx
-
-        from nodetool.integrations.huggingface.huggingface_models import (
-            get_llamacpp_language_models_from_hf_cache,
-            get_llamacpp_language_models_from_llama_cache,
-        )
 
         models: list[LanguageModel] = []
 
@@ -376,27 +367,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                 log.debug(f"Found {len(models)} models from llama.cpp server")
         except Exception as e:
             log.warning(f"Error querying llama.cpp server: {e}")
-
-        # Collect model IDs already known from the server
-        seen_ids: set[str] = {m.id for m in models}
-
-        # Add models from the llama.cpp native cache
-        try:
-            for m in await get_llamacpp_language_models_from_llama_cache():
-                if m.id not in seen_ids:
-                    seen_ids.add(m.id)
-                    models.append(m)
-        except Exception as e:
-            log.warning(f"Error listing llama.cpp cache models: {e}")
-
-        # Add models from the HuggingFace hub cache
-        try:
-            for m in await get_llamacpp_language_models_from_hf_cache():
-                if m.id not in seen_ids:
-                    seen_ids.add(m.id)
-                    models.append(m)
-        except Exception as e:
-            log.warning(f"Error listing HF cache models for llama.cpp: {e}")
 
         return models
 
@@ -428,7 +398,9 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         if use_tool_emulation:
             log.info(f"Using tool emulation for model {model}")
 
-        base_url = self._base_url or await self._server_manager.ensure_server(model)
+        if not self._base_url:
+            raise RuntimeError("LLAMA_CPP_URL is required for LlamaCpp provider")
+        base_url = self._base_url
         _kwargs: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
@@ -561,7 +533,9 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         if use_tool_emulation:
             log.info(f"Using tool emulation for model {model}")
 
-        base_url = self._base_url or await self._server_manager.ensure_server(model)
+        if not self._base_url:
+            raise RuntimeError("LLAMA_CPP_URL is required for LlamaCpp provider")
+        base_url = self._base_url
         _kwargs: dict[str, Any] = {
             "max_tokens": max_tokens,
             "stream": False,

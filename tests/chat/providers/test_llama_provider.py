@@ -110,7 +110,6 @@ from openai.types.completion_usage import CompletionUsage
 
 from nodetool.metadata.types import Message, MessageTextContent
 from nodetool.providers.llama_provider import LlamaProvider
-from nodetool.providers.llama_server_manager import LlamaServerManager
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 
 
@@ -127,11 +126,7 @@ class TestLlamaProvider(BaseProviderTest):
 
     @pytest.fixture(autouse=True)
     def _mock_llama_server_manager(self):
-        """Avoid spawning real llama-server during tests.
-
-        Automatically mock LlamaServerManager.ensure_server for all tests in this
-        suite unless explicitly overridden within a test.
-        """
+        """Ensure LLAMA_CPP_URL is set for external-only provider tests."""
         with self.mock_server_manager("http://localhost:8080"):
             yield
 
@@ -219,12 +214,8 @@ class TestLlamaProvider(BaseProviderTest):
             )
 
     def mock_server_manager(self, base_url: str = "http://localhost:8080"):
-        """Mock the LlamaServerManager to return a test server URL."""
-        return patch.object(
-            LlamaServerManager,
-            "ensure_server",
-            return_value=AsyncMock(return_value=base_url),
-        )
+        """Set LLAMA_CPP_URL for tests."""
+        return patch.dict("os.environ", {"LLAMA_CPP_URL": base_url}, clear=False)
 
     def mock_api_call(self, response_data: Dict[str, Any]):
         """Mock llama-server API call with structured response."""
@@ -276,8 +267,8 @@ class TestLlamaProvider(BaseProviderTest):
         )
 
     @pytest.mark.asyncio
-    async def test_server_manager_integration(self):
-        """Test integration with LlamaServerManager."""
+    async def test_external_server_integration(self):
+        """Test integration with an external llama-server URL."""
         provider = self.create_provider(ttl_seconds=60)
 
         with (
@@ -360,71 +351,20 @@ class TestLlamaProvider(BaseProviderTest):
         return MockTool()
 
     @pytest.mark.asyncio
-    async def test_get_available_language_models_includes_llama_cache(self, tmp_path):
-        """Test that get_available_language_models includes models from the llama.cpp cache."""
+    async def test_get_available_language_models_returns_server_models_only(self):
+        """get_available_language_models should return only /v1/models entries."""
         provider = self.create_provider()
-
-        # Create a fake llama.cpp cache directory with GGUF files
-        cache_dir = tmp_path / "llama_cache"
-        cache_dir.mkdir()
-        (cache_dir / "ggml-org_gemma-GGUF_gemma-Q4.gguf").write_bytes(b"\x00" * 10)
-        (cache_dir / "meta-llama_llama-GGUF_llama-Q8.gguf").write_bytes(b"\x00" * 20)
-        # Non-gguf files should be ignored
-        (cache_dir / "some_file.txt").write_bytes(b"nope")
-        (cache_dir / "ggml-org_gemma-GGUF_gemma-Q4.gguf.etag").write_bytes(b"etag")
-
-        with (
-            self.mock_server_manager(),
-            # Server returns no models (connection error)
-            patch("httpx.AsyncClient") as mock_client_cls,
-            patch(
-                "nodetool.providers.llama_server_manager.get_llama_cpp_cache_dir",
-                return_value=str(cache_dir),
-            ),
-            patch(
-                "nodetool.integrations.huggingface.huggingface_models.iter_cached_model_files",
-                return_value=AsyncIteratorEmpty(),
-            ),
-        ):
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
-            mock_client_cls.return_value = mock_client
-
-            models = await provider.get_available_language_models()
-
-        # Should have found 2 GGUF files from the llama.cpp cache
-        model_ids = [m.id for m in models]
-        assert "ggml-org/gemma-GGUF:gemma-Q4.gguf" in model_ids
-        assert "meta-llama/llama-GGUF:llama-Q8.gguf" in model_ids
-        assert len(models) == 2
-
-    @pytest.mark.asyncio
-    async def test_get_available_language_models_deduplicates(self, tmp_path):
-        """Test that models from server take priority and cache models are deduplicated."""
-        provider = self.create_provider()
-
-        # Create a fake llama.cpp cache with a model that also exists on the server
-        cache_dir = tmp_path / "llama_cache"
-        cache_dir.mkdir()
-        (cache_dir / "ggml-org_gemma-GGUF_gemma-Q4.gguf").write_bytes(b"\x00" * 10)
 
         server_response = {
-            "data": [{"id": "ggml-org/gemma-GGUF:gemma-Q4.gguf"}]
+            "data": [
+                {"id": "ggml-org/gemma-GGUF"},
+                {"id": "ggml-org/Qwen-GGUF"},
+            ]
         }
 
         with (
             self.mock_server_manager(),
             patch("httpx.AsyncClient") as mock_client_cls,
-            patch(
-                "nodetool.providers.llama_server_manager.get_llama_cpp_cache_dir",
-                return_value=str(cache_dir),
-            ),
-            patch(
-                "nodetool.integrations.huggingface.huggingface_models.iter_cached_model_files",
-                return_value=AsyncIteratorEmpty(),
-            ),
         ):
             mock_resp = MagicMock()
             mock_resp.json.return_value = server_response
@@ -437,40 +377,18 @@ class TestLlamaProvider(BaseProviderTest):
 
             models = await provider.get_available_language_models()
 
-        # The same model ID should appear only once (server model wins)
         model_ids = [m.id for m in models]
-        assert model_ids.count("ggml-org/gemma-GGUF:gemma-Q4.gguf") == 1
-        assert len(models) == 1
+        assert model_ids == ["ggml-org/gemma-GGUF", "ggml-org/Qwen-GGUF"]
+        assert len(models) == 2
 
     @pytest.mark.asyncio
-    async def test_get_available_language_models_includes_hf_cache(self, tmp_path):
-        """Test that get_available_language_models includes models from the HF cache."""
-        from nodetool.metadata.types import LanguageModel, Provider
-
+    async def test_get_available_language_models_when_server_unreachable(self):
+        """When /v1/models fails, return an empty list."""
         provider = self.create_provider()
-
-        hf_cache_models = [
-            LanguageModel(
-                id="org/repo:model.gguf",
-                name="repo • model.gguf",
-                path="model.gguf",
-                provider=Provider.LlamaCpp,
-            )
-        ]
 
         with (
             self.mock_server_manager(),
             patch("httpx.AsyncClient") as mock_client_cls,
-            patch(
-                "nodetool.integrations.huggingface.huggingface_models.get_llamacpp_language_models_from_llama_cache",
-                new_callable=AsyncMock,
-                return_value=[],
-            ),
-            patch(
-                "nodetool.integrations.huggingface.huggingface_models.get_llamacpp_language_models_from_hf_cache",
-                new_callable=AsyncMock,
-                return_value=hf_cache_models,
-            ),
         ):
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -480,14 +398,4 @@ class TestLlamaProvider(BaseProviderTest):
 
             models = await provider.get_available_language_models()
 
-        assert len(models) == 1
-        assert models[0].id == "org/repo:model.gguf"
-
-
-class AsyncIteratorEmpty:
-    """An empty async iterator for mocking iter_cached_model_files."""
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        raise StopAsyncIteration
+        assert models == []
