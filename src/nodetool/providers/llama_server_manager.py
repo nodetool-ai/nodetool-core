@@ -6,9 +6,9 @@ an inactivity TTL, and returns a ready base URL for OpenAI-compatible access.
 
 Model spec formats supported:
  - Absolute/relative path to a .gguf file → uses `-m <path>`
- - "<repo_id>:<filename>" (filename contains a dot) → resolves from local
-   Hugging Face hub cache and uses `-m <resolved_path>`. If not present in the
-   local cache, raises an error instructing to download it first (no fallback).
+ - "<repo_id>:<filename>" (filename contains a dot) → resolves from the
+   llama.cpp native cache or the Hugging Face hub cache and uses
+   `-m <resolved_path>`. If not present in either cache, raises an error.
  - "<repo_id>:<quant_or_tag>" (no dot) → uses `-hf <repo_id>:<quant_or_tag>`
  - "<repo_id>" → uses `-hf <repo_id>` (defaults quant per server behavior)
 
@@ -186,6 +186,38 @@ def _resolve_hf_cached_file(repo_id: str, filename: str) -> Optional[str]:
     return None
 
 
+def _resolve_llama_cpp_cached_file(repo_id: str, filename: str) -> Optional[str]:
+    """Resolve a repo file to a local path in the llama.cpp native cache.
+
+    llama.cpp stores downloaded models using a flat naming convention:
+        {org}_{repo}_{filename}.gguf
+
+    Cache locations by platform:
+    - Linux: ~/.cache/llama.cpp/
+    - macOS: ~/Library/Caches/llama.cpp/
+    - Windows: %LOCALAPPDATA%/llama.cpp/
+
+    Args:
+        repo_id: Hugging Face repo id like "org/repo".
+        filename: File name within the repo, e.g., "model-Q4_K_M.gguf".
+
+    Returns:
+        Absolute path to the file if found locally, otherwise None.
+    """
+    cache_dir = get_llama_cpp_cache_dir()
+    if not os.path.isdir(cache_dir):
+        return None
+
+    # llama.cpp flat naming: {org}_{repo}_{filename}
+    flat_name = f"{repo_id.replace('/', '_')}_{filename}"
+    candidate = os.path.join(cache_dir, flat_name)
+    if os.path.isfile(candidate):
+        log.debug(f"Resolved file from llama.cpp cache: {repo_id}:{filename} -> {candidate}")
+        return candidate
+
+    return None
+
+
 def _parse_model_args(model: str) -> tuple[list[str], str]:
     """Build llama-server model arguments from a model spec.
 
@@ -211,14 +243,17 @@ def _parse_model_args(model: str) -> tuple[list[str], str]:
     if ":" in model:
         repo_id, tail = model.split(":", 1)
         if "." in tail:
-            # looks like a file name within the repo; try local HF cache first
-            resolved = _resolve_hf_cached_file(repo_id, tail)
+            # looks like a file name within the repo; try llama.cpp cache first,
+            # then the HF hub cache
+            resolved = _resolve_llama_cpp_cached_file(repo_id, tail)
+            if not resolved:
+                resolved = _resolve_hf_cached_file(repo_id, tail)
             if resolved:
                 return ["-m", resolved], alias
             raise FileNotFoundError(
-                "Hugging Face model file not found in local cache: "
+                "Model file not found in llama.cpp or Hugging Face cache: "
                 f"{repo_id}:{tail}. Please download the model file locally "
-                "(e.g., via 'huggingface_hub' or 'git lfs') so it appears in your HF hub cache, "
+                "(e.g., via the llama.cpp download utilities or 'huggingface_hub') "
                 "or provide an absolute path to the .gguf file."
             )
         else:
