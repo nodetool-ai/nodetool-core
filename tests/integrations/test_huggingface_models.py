@@ -124,3 +124,99 @@ class TestHuggingFaceModels(unittest.TestCase):
         size, entries = huggingface_models._calculate_repo_stats(snapshot_dir, None)
         self.assertEqual(size, 0)
         self.assertEqual(entries, [])
+
+
+class TestParseGgufFlatFilename(unittest.TestCase):
+    """Tests for _parse_gguf_flat_filename and _build_manifest_lookup."""
+
+    def test_simple_filename_without_manifest(self):
+        """Simple filenames where repo and filename have no underscores."""
+        repo_id, repo, filename = huggingface_models._parse_gguf_flat_filename(
+            "ggml-org_gemma-GGUF_gemma-Q4.gguf", {}
+        )
+        self.assertEqual(repo_id, "ggml-org/gemma-GGUF")
+        self.assertEqual(repo, "gemma-GGUF")
+        self.assertEqual(filename, "gemma-Q4.gguf")
+
+    def test_filename_with_underscores_no_manifest(self):
+        """Filenames containing underscores (e.g. Q4_K_M) rely on heuristic."""
+        repo_id, repo, filename = huggingface_models._parse_gguf_flat_filename(
+            "ggml-org_gemma-3-1b-it-GGUF_gemma-3-1b-it-Q4_K_M.gguf", {}
+        )
+        self.assertEqual(repo_id, "ggml-org/gemma-3-1b-it-GGUF")
+        self.assertEqual(repo, "gemma-3-1b-it-GGUF")
+        self.assertEqual(filename, "gemma-3-1b-it-Q4_K_M.gguf")
+
+    def test_manifest_takes_priority(self):
+        """Manifest lookup takes priority over heuristic parsing."""
+        lookup = {
+            "myorg_myrepo_model_v2.gguf": ("myorg/myrepo", "model_v2.gguf"),
+        }
+        repo_id, repo, filename = huggingface_models._parse_gguf_flat_filename(
+            "myorg_myrepo_model_v2.gguf", lookup
+        )
+        self.assertEqual(repo_id, "myorg/myrepo")
+        self.assertEqual(repo, "myrepo")
+        self.assertEqual(filename, "model_v2.gguf")
+
+    def test_bare_filename_fallback(self):
+        """Filenames without underscores fall back gracefully."""
+        repo_id, repo, filename = huggingface_models._parse_gguf_flat_filename(
+            "standalone-model.gguf", {}
+        )
+        self.assertEqual(repo_id, "")
+        self.assertEqual(repo, "")
+        self.assertEqual(filename, "standalone-model.gguf")
+
+    def test_build_manifest_lookup(self):
+        """_build_manifest_lookup reads manifest JSON files."""
+        import json
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manifest = {
+                "name": "gemma-3-1b-it-GGUF",
+                "version": "latest",
+                "ggufFile": {"rfilename": "gemma-3-1b-it-Q4_K_M.gguf", "size": 12345},
+                "metadata": {"author": "ggml-org", "repo_id": "ggml-org/gemma-3-1b-it-GGUF"},
+            }
+            manifest_path = Path(tmpdir) / "manifest=ggml-org=gemma-3-1b-it-GGUF=latest.json"
+            manifest_path.write_text(json.dumps(manifest))
+
+            lookup = huggingface_models._build_manifest_lookup(tmpdir)
+
+        expected_key = "ggml-org_gemma-3-1b-it-GGUF_gemma-3-1b-it-Q4_K_M.gguf"
+        self.assertIn(expected_key, lookup)
+        self.assertEqual(lookup[expected_key], ("ggml-org/gemma-3-1b-it-GGUF", "gemma-3-1b-it-Q4_K_M.gguf"))
+
+    def test_get_llama_cpp_models_from_cache_with_manifest(self):
+        """Integration test: models discovered via manifest have correct IDs."""
+        import json
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create manifest
+            manifest = {
+                "name": "gemma-3-1b-it-GGUF",
+                "version": "latest",
+                "ggufFile": {"rfilename": "gemma-3-1b-it-Q4_K_M.gguf", "size": 100},
+                "metadata": {"author": "ggml-org", "repo_id": "ggml-org/gemma-3-1b-it-GGUF"},
+            }
+            (Path(tmpdir) / "manifest=ggml-org=gemma-3-1b-it-GGUF=latest.json").write_text(
+                json.dumps(manifest)
+            )
+            # Create GGUF file
+            (Path(tmpdir) / "ggml-org_gemma-3-1b-it-GGUF_gemma-3-1b-it-Q4_K_M.gguf").write_bytes(
+                b"\x00" * 100
+            )
+
+            with patch(
+                "nodetool.providers.llama_server_manager.get_llama_cpp_cache_dir",
+                return_value=tmpdir,
+            ):
+                models = asyncio.run(huggingface_models.get_llama_cpp_models_from_cache())
+
+        self.assertEqual(len(models), 1)
+        self.assertEqual(models[0].id, "ggml-org/gemma-3-1b-it-GGUF:gemma-3-1b-it-Q4_K_M.gguf")
+        self.assertEqual(models[0].repo_id, "ggml-org/gemma-3-1b-it-GGUF")
+        self.assertEqual(models[0].path, "gemma-3-1b-it-Q4_K_M.gguf")
