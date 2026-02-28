@@ -6,9 +6,9 @@ an inactivity TTL, and returns a ready base URL for OpenAI-compatible access.
 
 Model spec formats supported:
  - Absolute/relative path to a .gguf file → uses `-m <path>`
- - "<repo_id>:<filename>" (filename contains a dot) → resolves from local
-   Hugging Face hub cache and uses `-m <resolved_path>`. If not present in the
-   local cache, raises an error instructing to download it first (no fallback).
+ - "<repo_id>:<filename>" (filename contains a dot) → resolves from the
+   llama.cpp native cache and uses `-m <resolved_path>`. If not present in
+   cache, raises an error.
  - "<repo_id>:<quant_or_tag>" (no dot) → uses `-hf <repo_id>:<quant_or_tag>`
  - "<repo_id>" → uses `-hf <repo_id>` (defaults quant per server behavior)
 
@@ -24,7 +24,6 @@ Environment variables:
  - LLAMA_SERVER_TTL_SECONDS: inactivity TTL before shutdown (default 300)
  - HF_TOKEN: forwarded to process via --hf-token (and used for HF cache lookups)
  - LLAMA_API_KEY: optional API key to enforce auth on server (default none)
- - HUGGINGFACE_HUB_CACHE / HF_HOME: to locate the local HF hub cache
 """
 
 from __future__ import annotations
@@ -129,59 +128,34 @@ def _is_path_model(model: str) -> bool:
     return model.lower().endswith(".gguf") and ":" not in model
 
 
-def _hf_cache_dir() -> str:
-    """Return the local Hugging Face hub cache directory.
+def _resolve_llama_cpp_cached_file(repo_id: str, filename: str) -> Optional[str]:
+    """Resolve a repo file to a local path in the llama.cpp native cache.
 
-    Order of precedence:
-    - HUGGINGFACE_HUB_CACHE (must exist)
-    - HF_HOME/hub (must exist)
-    - ~/.cache/huggingface/hub
+    llama.cpp stores downloaded models using a flat naming convention:
+        {org}_{repo}_{filename}.gguf
 
-    Returns:
-        Path to the hub cache directory. The path may not exist if the cache
-        has not been created yet.
-    """
-    cache = os.environ.get("HUGGINGFACE_HUB_CACHE")
-    if cache and os.path.isdir(cache):
-        return cache
-    hf_home = os.environ.get("HF_HOME")
-    if hf_home:
-        path = os.path.join(hf_home, "hub")
-        if os.path.isdir(path):
-            return path
-    # Default
-    return os.path.expanduser(os.path.join("~", ".cache", "huggingface", "hub"))
-
-
-def _resolve_hf_cached_file(repo_id: str, filename: str) -> Optional[str]:
-    """Resolve a repo file to a local path in the Hugging Face cache.
+    Cache locations by platform:
+    - Linux: ~/.cache/llama.cpp/
+    - macOS: ~/Library/Caches/llama.cpp/
+    - Windows: %LOCALAPPDATA%/llama.cpp/
 
     Args:
         repo_id: Hugging Face repo id like "org/repo".
-        filename: File name within the repo, e.g., "model.Q4_K_M.gguf".
+        filename: File name within the repo, e.g., "model-Q4_K_M.gguf".
 
     Returns:
         Absolute path to the file if found locally, otherwise None.
     """
-    hub_cache = _hf_cache_dir()
-    repo_dir = f"models--{repo_id.replace('/', '--')}"
-    snapshots_dir = os.path.join(hub_cache, repo_dir, "snapshots")
-    if not os.path.isdir(snapshots_dir):
+    cache_dir = get_llama_cpp_cache_dir()
+    if not os.path.isdir(cache_dir):
         return None
 
-    snapshot_paths = [
-        os.path.join(snapshots_dir, d)
-        for d in os.listdir(snapshots_dir)
-        if os.path.isdir(os.path.join(snapshots_dir, d))
-    ]
-    # Sort by mtime, newest first
-    snapshot_paths.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-
-    for snap in snapshot_paths:
-        candidate = os.path.join(snap, filename)
-        if os.path.exists(candidate):
-            log.debug(f"Resolved HF file from cache snapshots: {repo_id}:{filename} -> {candidate}")
-            return candidate
+    # llama.cpp flat naming: {org}_{repo}_{filename}
+    flat_name = f"{repo_id.replace('/', '_')}_{filename}"
+    candidate = os.path.join(cache_dir, flat_name)
+    if os.path.isfile(candidate):
+        log.debug(f"Resolved file from llama.cpp cache: {repo_id}:{filename} -> {candidate}")
+        return candidate
 
     return None
 
@@ -211,14 +185,14 @@ def _parse_model_args(model: str) -> tuple[list[str], str]:
     if ":" in model:
         repo_id, tail = model.split(":", 1)
         if "." in tail:
-            # looks like a file name within the repo; try local HF cache first
-            resolved = _resolve_hf_cached_file(repo_id, tail)
+            # Looks like a file name within the repo; resolve from llama.cpp cache.
+            resolved = _resolve_llama_cpp_cached_file(repo_id, tail)
             if resolved:
                 return ["-m", resolved], alias
             raise FileNotFoundError(
-                "Hugging Face model file not found in local cache: "
+                "Model file not found in llama.cpp cache: "
                 f"{repo_id}:{tail}. Please download the model file locally "
-                "(e.g., via 'huggingface_hub' or 'git lfs') so it appears in your HF hub cache, "
+                "(e.g., via the llama.cpp download utilities) "
                 "or provide an absolute path to the .gguf file."
             )
         else:

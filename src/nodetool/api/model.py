@@ -45,15 +45,24 @@ def dedupe_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
 async def get_all_models(_user: str) -> list[UnifiedModel]:
     """Get all available models of all types."""
     from nodetool.chat.ollama_service import get_ollama_models_unified
-    from nodetool.integrations.huggingface.huggingface_models import read_cached_hf_models
+    from nodetool.integrations.huggingface.huggingface_models import (
+        get_llama_cpp_models_from_cache,
+        read_cached_hf_models,
+    )
     from nodetool.workflows.recommended_models import get_recommended_models
 
     reco_models = [model for model_list in get_recommended_models().values() for model in model_list]
 
     # Run in parallel, catching exceptions to handle them specifically
-    results = await asyncio.gather(read_cached_hf_models(), get_ollama_models_unified(), return_exceptions=True)
+    results = await asyncio.gather(
+        read_cached_hf_models(),
+        get_ollama_models_unified(),
+        get_llama_cpp_models_from_cache(),
+        return_exceptions=True,
+    )
     hf_models = results[0]
     ollama_models_unified = results[1]
+    llama_cpp_models = results[2]
 
     if isinstance(hf_models, Exception):
         raise hf_models
@@ -66,11 +75,16 @@ async def get_all_models(_user: str) -> list[UnifiedModel]:
         else:
             raise e
 
+    if isinstance(llama_cpp_models, Exception):
+        log.warning(f"Error listing llama.cpp cache models: {llama_cpp_models}")
+        llama_cpp_models = []
+
     assert isinstance(hf_models, list), "hf_models should be a list after isinstance check"
     assert isinstance(ollama_models_unified, list), "ollama_models_unified should be a list after isinstance check"
+    assert isinstance(llama_cpp_models, list), "llama_cpp_models should be a list after isinstance check"
 
     # order matters: cached models should be first to have correct downloaded status
-    all_models = hf_models + ollama_models_unified + reco_models
+    all_models = hf_models + ollama_models_unified + llama_cpp_models + reco_models
 
     # Ensure recommended models also get their status checked (in case they are downloaded but not in hf_models for some reason,
     # or if we want to be double sure)

@@ -60,13 +60,23 @@ class ControlNodeTool(Tool):
 
         # Get properties from the "run" action (default action)
         run_action = actions.get("run", {})
-        properties = run_action.get("properties", {})
+        raw_properties = run_action.get("properties", {})
+        properties: dict[str, dict[str, Any]] = {}
+        if isinstance(raw_properties, dict):
+            for name, schema in raw_properties.items():
+                if isinstance(schema, dict):
+                    properties[name] = dict(schema)
+                else:
+                    # Legacy fallback: if a property schema is malformed, coerce to a string field.
+                    properties[name] = {"type": "string", "description": str(schema)}
 
         # Build input schema
         self.input_schema = {
             "type": "object",
             "properties": properties,
-            "required": [],  # All properties are optional for control
+            # Keep control overrides optional so the agent can trigger a run
+            # with defaults/current values.
+            "required": [],
         }
 
         # Set tool name and description

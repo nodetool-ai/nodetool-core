@@ -181,22 +181,57 @@ SENSITIVE_PATHS = {
     "C:\\Program Files (x86)",
 }
 
+# Define safe roots (whitelist) where file access is permitted
+SAFE_ROOTS = [
+    os.path.abspath(os.getcwd()),  # Current working directory
+    os.path.abspath(os.path.expanduser("~")),  # User home directory
+]
+
 
 def _is_safe_path(path: str) -> bool:
-    """Check if the path is safe for access (not a sensitive system path and not hidden)."""
-    abs_path = os.path.abspath(path)
+    """
+    Check if the path is safe for access.
 
-    # Check sensitive system paths
-    # We check if the path IS the sensitive path OR if it is INSIDE the sensitive path
-    for sensitive in SENSITIVE_PATHS:
-        # Normalize sensitive path
-        sensitive_abs = os.path.abspath(sensitive)
-        if abs_path == sensitive_abs or abs_path.startswith(sensitive_abs + os.sep):
-            return False
+    Security checks:
+    1. Resolves symlinks to prevent traversal attacks.
+    2. Enforces whitelist (CWD or Home) OR ensures not in blacklist (SENSITIVE_PATHS).
+    3. Blocks hidden files.
+    """
+    try:
+        # Get absolute path and resolved path (following symlinks)
+        abs_path = os.path.abspath(path)
+        real_path = os.path.realpath(path)
 
-    # Check for hidden files or directories (starting with .)
-    parts = abs_path.split(os.sep)
-    return not any(part.startswith(".") for part in parts if part)
+        # Check all paths involved (original abs and resolved real)
+        paths_to_check = {abs_path, real_path}
+
+        is_in_safe_root = False
+        for safe_root in SAFE_ROOTS:
+            if real_path == safe_root or real_path.startswith(safe_root + os.sep):
+                is_in_safe_root = True
+                break
+
+        for p in paths_to_check:
+            # Check sensitive system paths (Blacklist)
+            for sensitive in SENSITIVE_PATHS:
+                sensitive_abs = os.path.abspath(sensitive)
+                if p == sensitive_abs or p.startswith(sensitive_abs + os.sep):
+                    # If we are inside a safe root (e.g. /home/user), ignore the broader sensitive path (e.g. /home)
+                    if is_in_safe_root:
+                         pass
+                    else:
+                        return False
+
+            # Check for hidden files or directories (starting with .)
+            parts = p.split(os.sep)
+            if any(part.startswith(".") for part in parts if part):
+                return False
+
+        return True
+
+    except Exception as e:
+        log.error(f"Error checking path safety: {e}")
+        return False
 
 
 @router.get("/download/{path:path}")

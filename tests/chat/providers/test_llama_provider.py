@@ -110,7 +110,6 @@ from openai.types.completion_usage import CompletionUsage
 
 from nodetool.metadata.types import Message, MessageTextContent
 from nodetool.providers.llama_provider import LlamaProvider
-from nodetool.providers.llama_server_manager import LlamaServerManager
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 
 
@@ -127,11 +126,7 @@ class TestLlamaProvider(BaseProviderTest):
 
     @pytest.fixture(autouse=True)
     def _mock_llama_server_manager(self):
-        """Avoid spawning real llama-server during tests.
-
-        Automatically mock LlamaServerManager.ensure_server for all tests in this
-        suite unless explicitly overridden within a test.
-        """
+        """Ensure LLAMA_CPP_URL is set for external-only provider tests."""
         with self.mock_server_manager("http://localhost:8080"):
             yield
 
@@ -219,12 +214,8 @@ class TestLlamaProvider(BaseProviderTest):
             )
 
     def mock_server_manager(self, base_url: str = "http://localhost:8080"):
-        """Mock the LlamaServerManager to return a test server URL."""
-        return patch.object(
-            LlamaServerManager,
-            "ensure_server",
-            return_value=AsyncMock(return_value=base_url),
-        )
+        """Set LLAMA_CPP_URL for tests."""
+        return patch.dict("os.environ", {"LLAMA_CPP_URL": base_url}, clear=False)
 
     def mock_api_call(self, response_data: Dict[str, Any]):
         """Mock llama-server API call with structured response."""
@@ -276,8 +267,8 @@ class TestLlamaProvider(BaseProviderTest):
         )
 
     @pytest.mark.asyncio
-    async def test_server_manager_integration(self):
-        """Test integration with LlamaServerManager."""
+    async def test_external_server_integration(self):
+        """Test integration with an external llama-server URL."""
         provider = self.create_provider(ttl_seconds=60)
 
         with (
@@ -358,3 +349,53 @@ class TestLlamaProvider(BaseProviderTest):
         from tests.chat.providers.test_base_provider import MockTool
 
         return MockTool()
+
+    @pytest.mark.asyncio
+    async def test_get_available_language_models_returns_server_models_only(self):
+        """get_available_language_models should return only /v1/models entries."""
+        provider = self.create_provider()
+
+        server_response = {
+            "data": [
+                {"id": "ggml-org/gemma-GGUF"},
+                {"id": "ggml-org/Qwen-GGUF"},
+            ]
+        }
+
+        with (
+            self.mock_server_manager(),
+            patch("httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = server_response
+            mock_resp.raise_for_status = MagicMock()
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value = mock_client
+
+            models = await provider.get_available_language_models()
+
+        model_ids = [m.id for m in models]
+        assert model_ids == ["ggml-org/gemma-GGUF", "ggml-org/Qwen-GGUF"]
+        assert len(models) == 2
+
+    @pytest.mark.asyncio
+    async def test_get_available_language_models_when_server_unreachable(self):
+        """When /v1/models fails, return an empty list."""
+        provider = self.create_provider()
+
+        with (
+            self.mock_server_manager(),
+            patch("httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
+            mock_client_cls.return_value = mock_client
+
+            models = await provider.get_available_language_models()
+
+        assert models == []

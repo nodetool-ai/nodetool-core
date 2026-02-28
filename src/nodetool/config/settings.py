@@ -106,6 +106,16 @@ register_setting(
 # Llama.cpp settings
 register_setting(
     package_name="nodetool",
+    env_var="LLAMA_CPP_URL",
+    group="LlamaCpp",
+    description=(
+        "Base URL for the llama.cpp server (e.g., http://127.0.0.1:8080). "
+        "Used by the LlamaCpp provider to connect to an externally managed llama-server. "
+        "If not set, the LlamaCpp provider will not be available."
+    ),
+)
+register_setting(
+    package_name="nodetool",
     env_var="LLAMA_CPP_CONTEXT_LENGTH",
     group="LlamaCpp",
     description=(
@@ -247,6 +257,12 @@ register_secret(
 )
 register_secret(
     package_name="nodetool", env_var="HF_TOKEN", group="HF", description="Token for HuggingFace Inference Providers"
+)
+register_secret(
+    package_name="nodetool",
+    env_var="LLAMA_API_KEY",
+    group="LlamaCpp",
+    description="API key for authenticating with llama-server. If set, the server will require this key for all requests.",
 )
 register_secret(
     package_name="nodetool",

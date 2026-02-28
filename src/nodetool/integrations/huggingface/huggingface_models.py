@@ -1566,6 +1566,80 @@ async def get_llamacpp_language_models_from_hf_cache() -> list[LanguageModel]:
     return results
 
 
+def _build_manifest_lookup(cache_dir: str) -> dict[str, tuple[str, str]]:
+    """Build a lookup from flat GGUF filename to ``(repo_id, original_filename)``
+    using the manifest JSON files that llama.cpp writes alongside cached models.
+
+    Manifest filenames follow the pattern ``manifest={org}={repo}={tag}.json``.
+    """
+    import json as _json
+
+    lookup: dict[str, tuple[str, str]] = {}
+    for entry in os.listdir(cache_dir):
+        if not entry.startswith("manifest=") or not entry.endswith(".json"):
+            continue
+        try:
+            path = os.path.join(cache_dir, entry)
+            with open(path) as f:
+                manifest = _json.load(f)
+            repo_id = manifest.get("metadata", {}).get("repo_id", "")
+            rfilename = manifest.get("ggufFile", {}).get("rfilename", "")
+            if repo_id and rfilename:
+                flat_name = f"{repo_id.replace('/', '_')}_{rfilename}"
+                lookup[flat_name] = (repo_id, rfilename)
+        except (ValueError, OSError):
+            continue
+    return lookup
+
+
+def _parse_gguf_flat_filename(
+    entry: str,
+    manifest_lookup: dict[str, tuple[str, str]],
+) -> tuple[str, str, str]:
+    """Parse a flat llama.cpp GGUF filename into ``(repo_id, repo_name, filename)``.
+
+    Resolution order:
+    1. Exact match in *manifest_lookup* (most reliable).
+    2. Heuristic split on the **first** underscore to obtain the HuggingFace org
+       (HF org names never contain underscores), then scan for the second
+       underscore that separates the repo name from the file name by computing
+       the expected flat filename and checking if it matches *entry*.
+    3. Fallback: return ``("", "", entry)`` so the file is still listed.
+    """
+    # 1. Manifest lookup (exact match)
+    if entry in manifest_lookup:
+        repo_id, filename = manifest_lookup[entry]
+        repo = repo_id.split("/", 1)[-1] if "/" in repo_id else repo_id
+        return repo_id, repo, filename
+
+    # 2. Heuristic: org is before the first underscore
+    first_us = entry.find("_")
+    if first_us < 0:
+        return "", "", entry
+
+    org = entry[:first_us]
+    rest = entry[first_us + 1 :]  # "{repo}_{filename}"
+
+    # Try each underscore position in *rest* as the repo/filename boundary.
+    # The correct boundary is the one where
+    #   f"{org}_{repo}_{filename}" == entry
+    idx = 0
+    while True:
+        us = rest.find("_", idx)
+        if us < 0:
+            break
+        repo_candidate = rest[:us]
+        filename_candidate = rest[us + 1 :]
+        expected = f"{org}_{repo_candidate}_{filename_candidate}"
+        if expected == entry and filename_candidate.lower().endswith(".gguf"):
+            repo_id = f"{org}/{repo_candidate}"
+            return repo_id, repo_candidate, filename_candidate
+        idx = us + 1
+
+    # 3. Fallback
+    return "", "", entry
+
+
 async def get_llama_cpp_models_from_cache() -> list[UnifiedModel]:
     """
     Enumerate GGUF models in the llama.cpp native cache directory.
@@ -1589,13 +1663,12 @@ async def get_llama_cpp_models_from_cache() -> list[UnifiedModel]:
     if not os.path.isdir(cache_dir):
         return []
 
+    manifest_lookup = _build_manifest_lookup(cache_dir)
     models: list[UnifiedModel] = []
 
-    # llama.cpp uses flat naming: {org}_{repo}_{filename}.gguf
     for entry in os.listdir(cache_dir):
         if not entry.lower().endswith(".gguf"):
             continue
-        # Skip etag files and other metadata
         if entry.endswith(".etag"):
             continue
 
@@ -1603,19 +1676,7 @@ async def get_llama_cpp_models_from_cache() -> list[UnifiedModel]:
         if not os.path.isfile(file_path):
             continue
 
-        # Parse repo info from flat filename: org_repo_filename.gguf
-        # Example: ggml-org_gemma-3-1b-it-GGUF_gemma-3-1b-it-Q4_K_M.gguf
-        parts = entry.rsplit("_", 2)  # Split from right: [org, repo, filename]
-        if len(parts) >= 3:
-            org = parts[0]
-            repo = parts[1]
-            filename = parts[2]
-            repo_id = f"{org}/{repo}"
-        else:
-            # Fallback for unexpected format
-            repo = ""
-            repo_id = ""
-            filename = entry
+        repo_id, repo, filename = _parse_gguf_flat_filename(entry, manifest_lookup)
 
         try:
             size = os.path.getsize(file_path)
@@ -1639,6 +1700,57 @@ async def get_llama_cpp_models_from_cache() -> list[UnifiedModel]:
     models.sort(key=lambda m: (m.repo_id or "", m.path or ""))
     log.debug(f"Found {len(models)} models in llama.cpp cache at {cache_dir}")
     return models
+
+
+async def get_llamacpp_language_models_from_llama_cache() -> list[LanguageModel]:
+    """
+    Return LanguageModel entries for GGUF files in the llama.cpp native cache directory.
+
+    This complements ``get_llamacpp_language_models_from_hf_cache`` by also
+    discovering models downloaded directly by llama-server (``llama-server -hf``)
+    into its own flat-file cache.
+
+    Returns:
+        List[LanguageModel]: Llama.cpp-compatible models discovered in the native cache.
+    """
+    from nodetool.providers.llama_server_manager import get_llama_cpp_cache_dir
+
+    cache_dir = get_llama_cpp_cache_dir()
+    if not os.path.isdir(cache_dir):
+        return []
+
+    manifest_lookup = _build_manifest_lookup(cache_dir)
+    results: list[LanguageModel] = []
+
+    for entry in os.listdir(cache_dir):
+        if not entry.lower().endswith(".gguf"):
+            continue
+        if entry.endswith(".etag"):
+            continue
+
+        file_path = os.path.join(cache_dir, entry)
+        if not os.path.isfile(file_path):
+            continue
+
+        repo_id, repo, filename = _parse_gguf_flat_filename(entry, manifest_lookup)
+
+        # When we cannot recover a repo_id from manifest/filename, use the
+        # absolute cache path as the model id so llama-server can load it
+        # reliably via `-m <path>` regardless of current working directory.
+        model_id = f"{repo_id}:{filename}" if repo_id else file_path
+        display = f"{repo.replace('-', ' ').title()} • {filename}" if repo_id else filename
+
+        results.append(
+            LanguageModel(
+                id=model_id,
+                name=display,
+                path=filename if repo_id else file_path,
+                provider=Provider.LlamaCpp,
+            )
+        )
+
+    results.sort(key=lambda m: (m.id.split(":", 1)[0], m.id))
+    return results
 
 
 async def get_vllm_language_models_from_hf_cache() -> list[LanguageModel]:
