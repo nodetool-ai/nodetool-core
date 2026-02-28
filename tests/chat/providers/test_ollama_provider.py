@@ -307,3 +307,110 @@ class TestOllamaProvider(BaseProviderTest):
 
         # Verify call was made
         mock_call.assert_called_once()
+
+    # --- Gemma function call emulation tests ---
+
+    def test_is_gemma_model(self):
+        """Test Gemma model detection from model name."""
+        provider = self.create_provider()
+        # Positive cases
+        assert provider._is_gemma_model("gemma3:4b") is True
+        assert provider._is_gemma_model("gemma:2b") is True
+        assert provider._is_gemma_model("gemma2:9b") is True
+        assert provider._is_gemma_model("Gemma3:27b") is True
+        assert provider._is_gemma_model("GEMMA:latest") is True
+        # Negative cases
+        assert provider._is_gemma_model("llama3:8b") is False
+        assert provider._is_gemma_model("mistral:7b") is False
+        assert provider._is_gemma_model("qwen:7b") is False
+
+    def test_format_tools_as_gemma_json(self):
+        """Test Gemma JSON schema tool formatting."""
+        from tests.chat.providers.test_base_provider import MockTool
+
+        provider = self.create_provider()
+        tools = [MockTool(name="search", description="Search the web")]
+        result = provider._format_tools_as_gemma_json(tools)
+
+        import json
+
+        parsed = json.loads(result)
+        assert len(parsed) == 1
+        assert parsed[0]["name"] == "search"
+        assert parsed[0]["description"] == "Search the web"
+        assert "parameters" in parsed[0]
+
+    def test_parse_gemma_bracket_function_calls(self):
+        """Test parsing Gemma-style bracket-wrapped function calls."""
+        provider = self.create_provider()
+        # Single function call in brackets
+        text = "[get_weather(city=\"London\")]"
+        calls, _cleaned = provider._parse_function_calls(text)
+        assert len(calls) == 1
+        assert calls[0].name == "get_weather"
+        assert calls[0].args == {"city": "London"}
+
+    def test_parse_gemma_multiple_bracket_calls(self):
+        """Test parsing multiple Gemma-style function calls in brackets."""
+        provider = self.create_provider()
+        text = "[get_weather(city=\"London\"), get_weather(city=\"Paris\")]"
+        calls, _cleaned = provider._parse_function_calls(text)
+        assert len(calls) == 2
+        assert calls[0].args == {"city": "London"}
+        assert calls[1].args == {"city": "Paris"}
+
+    def test_parse_plain_calls_still_work(self):
+        """Existing plain function call parsing remains unchanged."""
+        provider = self.create_provider()
+        text = "get_weather(city=\"London\")"
+        calls, _cleaned = provider._parse_function_calls(text)
+        assert len(calls) == 1
+        assert calls[0].name == "get_weather"
+
+    @pytest.mark.asyncio
+    async def test_gemma_emulation_uses_json_schema_prompt(self):
+        """When model is gemma and tool emulation is active, uses Gemma prompt."""
+        provider = self.create_provider()
+        from tests.chat.providers.test_base_provider import MockTool
+
+        tools = [MockTool()]
+
+        # Mock has_tool_support to return False so emulation is triggered
+        with patch.object(provider, "has_tool_support", return_value=False):
+            params = await provider._prepare_request_params(
+                self.create_simple_messages(),
+                "gemma3:4b",
+                tools=tools,
+            )
+
+        # The system message should contain Gemma-style instructions
+        system_msgs = [m for m in params["messages"] if m.get("role") == "system"]
+        assert len(system_msgs) == 1
+        sys_content = system_msgs[0]["content"]
+        assert "You have access to functions" in sys_content
+        assert "func_name1(params_name1=params_value1" in sys_content
+        # Should contain JSON schema definitions (not Python comments)
+        assert '"name":' in sys_content
+        # Should NOT contain the generic emulation markers
+        assert "=== AVAILABLE FUNCTIONS ===" not in sys_content
+
+    @pytest.mark.asyncio
+    async def test_non_gemma_emulation_uses_python_prompt(self):
+        """Non-gemma models use the original Python-style emulation prompt."""
+        provider = self.create_provider()
+        from tests.chat.providers.test_base_provider import MockTool
+
+        tools = [MockTool()]
+
+        with patch.object(provider, "has_tool_support", return_value=False):
+            params = await provider._prepare_request_params(
+                self.create_simple_messages(),
+                "some-other-model",
+                tools=tools,
+            )
+
+        system_msgs = [m for m in params["messages"] if m.get("role") == "system"]
+        assert len(system_msgs) == 1
+        sys_content = system_msgs[0]["content"]
+        assert "=== AVAILABLE FUNCTIONS ===" in sys_content
+        assert "You have access to functions" not in sys_content
