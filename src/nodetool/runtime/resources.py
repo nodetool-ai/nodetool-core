@@ -532,7 +532,6 @@ class ResourceScope:
             self._http_client = httpx.AsyncClient(
                 follow_redirects=True,
                 timeout=600,
-                verify=False,
                 headers=HTTP_HEADERS.copy(),
             )
             # Mark that we own this HTTP client
