@@ -387,10 +387,15 @@ register_secret(
     env_var="SERVER_AUTH_TOKEN",
     group="Deployment",
     description=(
-        "Authentication token for securing NodeTool server endpoints when deployed. "
-        "When set, all API endpoints (except /health and /ping) require this token "
-        "in the Authorization header as 'Bearer TOKEN'. Essential for Docker and "
-        "production deployments. Generate with: openssl rand -base64 32"
+        "Bearer auth token for securing NodeTool server endpoints in deployment. "
+        "Set this environment variable on the server to enable auth. "
+        "If unset, bearer auth is disabled. "
+        "When enabled, all API endpoints except /health and /ping require "
+        "Authorization: Bearer <SERVER_AUTH_TOKEN>. "
+        "On clients (curl, nodetool workflow_runner auth_token, or custom SDK), "
+        "send this header with every request. "
+        "Recommended for Docker and production deployments. "
+        "Generate with: openssl rand -base64 32"
     ),
 )
 
@@ -412,10 +417,15 @@ register_setting(
     env_var="SERVER_AUTH_TOKEN",
     group="Deployment",
     description=(
-        "Authentication token for securing NodeTool server endpoints when deployed. "
-        "When set, all API endpoints (except /health and /ping) require this token "
-        "in in Authorization header as 'Bearer TOKEN'. Essential for Docker and "
-        "production deployments. Generate with: openssl rand -base64 32"
+        "Bearer auth token for securing NodeTool server endpoints in deployment. "
+        "Set this environment variable on the server to enable auth. "
+        "If unset, bearer auth is disabled. "
+        "When enabled, all API endpoints except /health and /ping require "
+        "Authorization: Bearer <SERVER_AUTH_TOKEN>. "
+        "On clients (curl, nodetool workflow_runner auth_token, or custom SDK), "
+        "send this header with every request. "
+        "Recommended for Docker and production deployments. "
+        "Generate with: openssl rand -base64 32"
     ),
 )
 
