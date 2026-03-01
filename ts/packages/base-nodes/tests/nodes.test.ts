@@ -84,6 +84,12 @@ import {
   SplitJSONNode,
   SaveDocumentFileNode,
   LoadDocumentFileNode,
+  ImportCSVNode,
+  SelectColumnNode,
+  AggregateNode,
+  RenameNode,
+  FillNANode,
+  FilterNoneNode,
 } from "../src/index.js";
 
 describe("base node registration", () => {
@@ -102,6 +108,7 @@ describe("base node registration", () => {
     expect(registry.has("nodetool.workspace.ReadTextFile")).toBe(true);
     expect(registry.has("nodetool.document.SplitDocument")).toBe(true);
     expect(registry.has("nodetool.compare.CompareImages")).toBe(true);
+    expect(registry.has("nodetool.data.Aggregate")).toBe(true);
   });
 });
 
@@ -206,6 +213,39 @@ describe("input/output/workspace nodes", () => {
       out.push(String(chunk.chunk));
     }
     expect(out.length).toBeGreaterThan(0);
+  });
+
+  it("data nodes import/select/aggregate/rename/fill work", async () => {
+    const imported = await new ImportCSVNode().process({
+      csv_data: "team,score\nA,10\nA,20\nB,5",
+    });
+    const selected = await new SelectColumnNode().process({
+      dataframe: imported.output,
+      columns: "team,score",
+    });
+    const aggregated = await new AggregateNode().process({
+      dataframe: selected.output,
+      columns: "team",
+      aggregation: "sum",
+    });
+    const renamed = await new RenameNode().process({
+      dataframe: aggregated.output,
+      rename_map: "score:total",
+    });
+    const filled = await new FillNANode().process({
+      dataframe: renamed.output,
+      method: "value",
+      value: 0,
+    });
+
+    expect((filled.output as { rows: Array<Record<string, unknown>> }).rows.length).toBe(2);
+  });
+
+  it("FilterNoneNode omits null and forwards non-null", async () => {
+    await expect(new FilterNoneNode().process({ value: null })).resolves.toEqual({});
+    await expect(new FilterNoneNode().process({ value: "ok" })).resolves.toEqual({
+      output: "ok",
+    });
   });
 });
 
