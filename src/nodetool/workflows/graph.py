@@ -58,18 +58,30 @@ class Graph(BaseModel):
     nodes: Sequence[BaseNode] = Field(default_factory=list)
     edges: Sequence[Edge] = Field(default_factory=list)
     _node_index: dict[str, BaseNode] | None = None
+    _outgoing_edges_cache: dict[tuple[str, str], list[Edge]] | None = None
     _streaming_upstream_cache: set[str] | None = None
 
     def __init__(self, **data):
         super().__init__(**data)
-        # Build node ID index for O(1) lookup
-        self._node_index = {node._id: node for node in self.nodes} if self.nodes else {}
+        self._rebuild_indices()
         self._streaming_upstream_cache = None
 
     def model_post_init(self, __context: Any):
-        # Build node ID index after model initialization
-        self._node_index = {node._id: node for node in self.nodes} if self.nodes else {}
+        self._rebuild_indices()
         self._streaming_upstream_cache = None
+
+    def _rebuild_indices(self):
+        """
+        Rebuild internal indices for O(1) lookups.
+        """
+        # Build node ID index for O(1) lookup
+        self._node_index = {node._id: node for node in self.nodes} if self.nodes else {}
+
+        # Build outgoing edges index for O(1) lookup in find_edges
+        self._outgoing_edges_cache = {}
+        if self.edges:
+            for edge in self.edges:
+                self._outgoing_edges_cache.setdefault((edge.source, edge.sourceHandle), []).append(edge)
 
     def find_node(self, node_id: str) -> BaseNode | None:
         """
@@ -79,9 +91,20 @@ class Graph(BaseModel):
 
     def find_edges(self, source: str, source_handle: str) -> list[Edge]:
         """
-        Find edges by their source and source_handle.
+        Find edges by their source and source_handle using O(1) dictionary lookup.
         """
-        return [edge for edge in self.edges if edge.source == source and edge.sourceHandle == source_handle]
+        if self._outgoing_edges_cache is None:
+            self._rebuild_indices()
+        return self._outgoing_edges_cache.get((source, source_handle), [])
+
+    def update_edges(self, new_edges: Sequence[Edge]):
+        """
+        Safely update the graph's edges and rebuild internal caches.
+        """
+        self.edges = new_edges
+        self._rebuild_indices()
+        # Invalidate streaming cache since edges changed
+        self._streaming_upstream_cache = None
 
     @classmethod
     def from_dict(

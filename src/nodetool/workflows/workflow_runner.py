@@ -933,7 +933,7 @@ class WorkflowRunner:
         self._removed_edge_ids = removed
 
         # Replace edges in the graph with the validated list
-        graph.edges = valid_edges
+        graph.update_edges(valid_edges)
 
     async def run(
         self,
