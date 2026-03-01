@@ -91,6 +91,11 @@ import {
   FillNANode,
   FilterNoneNode,
   RunShellCommandNode,
+  WaitNode,
+  CreateSilenceNode,
+  ConcatAudioNode,
+  AudioToNumpyNode,
+  NumpyToAudioNode,
 } from "../src/index.js";
 
 describe("base node registration", () => {
@@ -111,6 +116,8 @@ describe("base node registration", () => {
     expect(registry.has("nodetool.compare.CompareImages")).toBe(true);
     expect(registry.has("nodetool.data.Aggregate")).toBe(true);
     expect(registry.has("nodetool.code.ExecuteCommand")).toBe(true);
+    expect(registry.has("nodetool.audio.TextToSpeech")).toBe(true);
+    expect(registry.has("nodetool.triggers.WaitNode")).toBe(true);
   });
 });
 
@@ -255,6 +262,29 @@ describe("input/output/workspace nodes", () => {
     const result = await node.process({ command: "echo ts-code-node" });
     expect(String(result.output)).toContain("ts-code-node");
     expect(result.exit_code).toBe(0);
+  });
+
+  it("WaitNode returns wait metadata", async () => {
+    const result = await new WaitNode().process({
+      timeout_seconds: 0.01,
+      input: { x: 1 },
+    });
+    expect(result.data).toEqual({ x: 1 });
+    expect(typeof result.resumed_at).toBe("string");
+    expect(Number(result.waited_seconds)).toBeGreaterThanOrEqual(0);
+  });
+
+  it("audio nodes can create concat and convert arrays", async () => {
+    const silenceA = await new CreateSilenceNode().process({ length: 8 });
+    const silenceB = await new CreateSilenceNode().process({ length: 4 });
+    const concat = await new ConcatAudioNode().process({
+      audio_a: silenceA.output,
+      audio_b: silenceB.output,
+    });
+    const arr = await new AudioToNumpyNode().process({ audio: concat.output });
+    const audio = await new NumpyToAudioNode().process({ values: arr.output });
+    expect(Array.isArray(arr.output)).toBe(true);
+    expect((audio.output as { data: string }).data.length).toBeGreaterThan(0);
   });
 });
 

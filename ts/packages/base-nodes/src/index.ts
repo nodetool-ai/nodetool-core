@@ -276,6 +276,35 @@ export {
   RunShellCommandNode,
   CODE_NODES,
 } from "./nodes/code.js";
+export {
+  LoadAudioAssetsNode,
+  LoadAudioFileNode,
+  LoadAudioFolderNode,
+  SaveAudioNode,
+  SaveAudioFileNode,
+  NormalizeAudioNode,
+  OverlayAudioNode,
+  RemoveSilenceNode,
+  SliceAudioNode,
+  MonoToStereoNode,
+  StereoToMonoNode,
+  ReverseAudioNode,
+  FadeInAudioNode,
+  FadeOutAudioNode,
+  RepeatAudioNode,
+  AudioMixerNode,
+  AudioToNumpyNode,
+  NumpyToAudioNode,
+  TrimAudioNode,
+  ConvertToArrayNode,
+  CreateSilenceNode,
+  ConcatAudioNode,
+  ConcatAudioListNode,
+  TextToSpeechNode,
+  ChunkToAudioNode,
+  AUDIO_NODES,
+} from "./nodes/audio.js";
+export { WaitNode, TRIGGER_NODES } from "./nodes/triggers.js";
 
 import { CONTROL_NODES } from "./nodes/control.js";
 import { BOOLEAN_NODES } from "./nodes/boolean.js";
@@ -293,6 +322,8 @@ import { COMPARE_NODES } from "./nodes/compare.js";
 import { DOCUMENT_NODES } from "./nodes/document.js";
 import { DATA_NODES } from "./nodes/data.js";
 import { CODE_NODES } from "./nodes/code.js";
+import { AUDIO_NODES } from "./nodes/audio.js";
+import { TRIGGER_NODES } from "./nodes/triggers.js";
 
 export const ALL_BASE_NODES = [
   ...CONTROL_NODES,
@@ -311,6 +342,8 @@ export const ALL_BASE_NODES = [
   ...DOCUMENT_NODES,
   ...DATA_NODES,
   ...CODE_NODES,
+  ...AUDIO_NODES,
+  ...TRIGGER_NODES,
 ] as const;
 
 export function registerBaseNodes(registry: NodeRegistry): void {
