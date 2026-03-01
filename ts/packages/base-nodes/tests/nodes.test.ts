@@ -1,0 +1,467 @@
+import { describe, it, expect } from "vitest";
+import { NodeRegistry } from "@nodetool/node-sdk";
+import {
+  registerBaseNodes,
+  IfNode,
+  ForEachNode,
+  RerouteNode,
+  ListRangeNode,
+  CompareNode,
+  LogicalOperatorNode,
+  IsNoneNode,
+  IsInNode,
+  AllNode,
+  SomeNode,
+  CollectNode,
+  SliceNode,
+  SelectElementsNode,
+  GetElementNode,
+  FlattenNode,
+  SumNode,
+  AverageNode,
+  MinimumNode,
+  MaximumNode,
+  ProductNode,
+  ToStringNode,
+  JoinTextNode,
+  ReplaceTextNode,
+  SplitTextNode,
+  ExtractTextNode,
+  ChunkTextNode,
+  RegexReplaceNode,
+  CompareTextNode,
+  ContainsTextNode,
+  TrimWhitespaceNode,
+  SlugifyNode,
+  PadTextNode,
+  LengthTextNode,
+  SurroundWithTextNode,
+  FilterStringNode,
+  FilterRegexStringNode,
+  ConstantIntegerNode,
+  ConstantDictNode,
+  FilterNumberNode,
+  FilterNumberRangeNode,
+  GetValueNode,
+  UpdateDictionaryNode,
+  RemoveDictionaryKeyNode,
+  ParseJSONNode,
+  ZipDictionaryNode,
+  CombineDictionaryNode,
+  FilterDictionaryNode,
+  ReduceDictionariesNode,
+  MakeDictionaryNode,
+  ArgMaxNode,
+  ToJSONNode,
+  FilterDictByNumberNode,
+  FilterDictByRangeNode,
+  FilterDictRegexNode,
+  FilterDictByValueNode,
+} from "../src/index.js";
+
+describe("base node registration", () => {
+  it("registers node classes in a registry", () => {
+    const registry = new NodeRegistry();
+    registerBaseNodes(registry);
+
+    expect(registry.has(IfNode.nodeType)).toBe(true);
+    expect(registry.has(ListRangeNode.nodeType)).toBe(true);
+    expect(registry.has(CompareNode.nodeType)).toBe(true);
+  });
+});
+
+describe("control nodes", () => {
+  it("IfNode routes output by condition", async () => {
+    const node = new IfNode();
+    node.assign({ condition: true, value: "x" });
+
+    await expect(node.process({})).resolves.toEqual({
+      if_true: "x",
+      if_false: null,
+    });
+
+    await expect(node.process({ condition: false, value: 42 })).resolves.toEqual({
+      if_true: null,
+      if_false: 42,
+    });
+  });
+
+  it("ForEachNode streams list items with index", async () => {
+    const node = new ForEachNode();
+    node.assign({ input_list: ["a", "b"] });
+
+    const out: Array<Record<string, unknown>> = [];
+    for await (const part of node.genProcess({})) {
+      out.push(part);
+    }
+
+    expect(out).toEqual([
+      { output: "a", index: 0 },
+      { output: "b", index: 1 },
+    ]);
+  });
+
+  it("CollectNode accumulates across invocations", async () => {
+    const node = new CollectNode();
+    await node.initialize();
+    await expect(node.process({ input_item: 1 })).resolves.toEqual({ output: [1] });
+    await expect(node.process({ input_item: 2 })).resolves.toEqual({ output: [1, 2] });
+  });
+
+  it("RerouteNode passes through input_value", async () => {
+    const node = new RerouteNode();
+    await expect(node.process({ input_value: "pass" })).resolves.toEqual({
+      output: "pass",
+    });
+  });
+});
+
+describe("boolean nodes", () => {
+  it("CompareNode supports numeric comparisons", async () => {
+    const node = new CompareNode();
+    await expect(node.process({ a: 3, b: 2, comparison: ">" })).resolves.toEqual({
+      output: true,
+    });
+  });
+
+  it("LogicalOperatorNode supports XOR", async () => {
+    const node = new LogicalOperatorNode();
+    await expect(node.process({ a: true, b: false, operation: "xor" })).resolves.toEqual({
+      output: true,
+    });
+  });
+
+  it("IsNoneNode checks null and undefined", async () => {
+    const node = new IsNoneNode();
+    await expect(node.process({ value: null })).resolves.toEqual({ output: true });
+    await expect(node.process({ value: 0 })).resolves.toEqual({ output: false });
+  });
+
+  it("IsIn/All/Some nodes compute membership/truthiness", async () => {
+    const inNode = new IsInNode();
+    await expect(inNode.process({ value: "x", options: ["a", "x"] })).resolves.toEqual({
+      output: true,
+    });
+
+    const allNode = new AllNode();
+    await expect(allNode.process({ values: [true, 1, "ok"] })).resolves.toEqual({
+      output: true,
+    });
+
+    const someNode = new SomeNode();
+    await expect(someNode.process({ values: [0, "", false, "x"] })).resolves.toEqual({
+      output: true,
+    });
+  });
+});
+
+describe("list nodes", () => {
+  it("SliceNode treats stop=0 as slice-to-end", async () => {
+    const node = new SliceNode();
+    await expect(
+      node.process({ values: [0, 1, 2, 3], start: 1, stop: 0, step: 1 })
+    ).resolves.toEqual({ output: [1, 2, 3] });
+  });
+
+  it("SelectElements/GetElement support Python-style negative indices", async () => {
+    const select = new SelectElementsNode();
+    await expect(
+      select.process({ values: ["a", "b", "c"], indices: [0, -1] })
+    ).resolves.toEqual({ output: ["a", "c"] });
+
+    const get = new GetElementNode();
+    await expect(get.process({ values: [10, 20, 30], index: -1 })).resolves.toEqual({
+      output: 30,
+    });
+  });
+
+  it("FlattenNode applies max_depth", async () => {
+    const node = new FlattenNode();
+    await expect(
+      node.process({ values: [[1, [2]], [3]], max_depth: 1 })
+    ).resolves.toEqual({
+      output: [1, [2], 3],
+    });
+  });
+
+  it("numeric aggregate list nodes validate empty lists", async () => {
+    await expect(new SumNode().process({ values: [] })).rejects.toThrow(
+      "Cannot sum empty list"
+    );
+    await expect(new AverageNode().process({ values: [] })).rejects.toThrow(
+      "Cannot average empty list"
+    );
+    await expect(new MinimumNode().process({ values: [] })).rejects.toThrow(
+      "Cannot find minimum of empty list"
+    );
+    await expect(new MaximumNode().process({ values: [] })).rejects.toThrow(
+      "Cannot find maximum of empty list"
+    );
+    await expect(new ProductNode().process({ values: [] })).rejects.toThrow(
+      "Cannot calculate product of empty list"
+    );
+  });
+});
+
+describe("text nodes", () => {
+  it("ToStringNode supports str and repr modes", async () => {
+    const node = new ToStringNode();
+    await expect(node.process({ value: 42, mode: "str" })).resolves.toEqual({
+      output: "42",
+    });
+    await expect(node.process({ value: { a: 1 }, mode: "repr" })).resolves.toEqual(
+      {
+        output: "{ a: 1 }",
+      }
+    );
+  });
+
+  it("JoinTextNode joins stringified values", async () => {
+    const node = new JoinTextNode();
+    await expect(node.process({ strings: [1, "b", true], separator: "|" })).resolves
+      .toEqual({
+        output: "1|b|true",
+      });
+  });
+
+  it("ReplaceTextNode replaces all matches", async () => {
+    const node = new ReplaceTextNode();
+    await expect(
+      node.process({ text: "a-b-a-b", old: "a", new: "x" })
+    ).resolves.toEqual({
+      output: "x-b-x-b",
+    });
+  });
+
+  it("basic text transform nodes work", async () => {
+    await expect(
+      new SplitTextNode().process({ text: "a,b,c", delimiter: "," })
+    ).resolves.toEqual({
+      output: ["a", "b", "c"],
+    });
+    await expect(
+      new ExtractTextNode().process({ text: "abcdef", start: 1, end: 4 })
+    ).resolves.toEqual({ output: "bcd" });
+    await expect(
+      new ChunkTextNode().process({ text: "a b c d", length: 2, overlap: 1, separator: " " })
+    ).resolves.toEqual({ output: ["a b", "b c", "c d", "d"] });
+  });
+
+  it("regex/text comparison helpers work", async () => {
+    await expect(
+      new RegexReplaceNode().process({
+        text: "abc-123-def",
+        pattern: "\\d+",
+        replacement: "X",
+      })
+    ).resolves.toEqual({ output: "abc-X-def" });
+
+    await expect(
+      new CompareTextNode().process({
+        text_a: "Alpha",
+        text_b: "alpha",
+        case_sensitive: false,
+      })
+    ).resolves.toEqual({ output: "equal" });
+  });
+
+  it("contains/trim/slugify/pad/length/surround helpers work", async () => {
+    await expect(
+      new ContainsTextNode().process({
+        text: "hello world",
+        search_values: ["hello", "world"],
+        match_mode: "all",
+      })
+    ).resolves.toEqual({ output: true });
+
+    await expect(
+      new TrimWhitespaceNode().process({ text: "  hi  ", trim_start: true, trim_end: false })
+    ).resolves.toEqual({ output: "hi  " });
+
+    await expect(
+      new SlugifyNode().process({ text: "Hello, World!", separator: "-", lowercase: true })
+    ).resolves.toEqual({ output: "hello-world" });
+
+    await expect(
+      new PadTextNode().process({ text: "x", length: 3, pad_character: ".", direction: "both" })
+    ).resolves.toEqual({ output: ".x." });
+
+    await expect(
+      new LengthTextNode().process({ text: "a b c", measure: "words" })
+    ).resolves.toEqual({ output: 3 });
+
+    await expect(
+      new SurroundWithTextNode().process({
+        text: "value",
+        prefix: "[",
+        suffix: "]",
+        skip_if_wrapped: true,
+      })
+    ).resolves.toEqual({ output: "[value]" });
+  });
+
+  it("stream-style text filters keep state", async () => {
+    const filter = new FilterStringNode();
+    filter.assign({ filter_type: "contains", criteria: "ok" });
+    await filter.initialize();
+    await expect(filter.process({ value: "hello" })).resolves.toEqual({});
+    await expect(filter.process({ value: "ok-now" })).resolves.toEqual({
+      output: "ok-now",
+    });
+
+    const regexFilter = new FilterRegexStringNode();
+    regexFilter.assign({ pattern: "^a.+z$", full_match: true });
+    await regexFilter.initialize();
+    await expect(regexFilter.process({ value: "abz" })).resolves.toEqual({
+      output: "abz",
+    });
+    await expect(regexFilter.process({ value: "abzx" })).resolves.toEqual({});
+  });
+});
+
+describe("constant nodes", () => {
+  it("ConstantIntegerNode emits assigned value", async () => {
+    const node = new ConstantIntegerNode();
+    node.assign({ value: 7 });
+    await expect(node.process({})).resolves.toEqual({ output: 7 });
+  });
+
+  it("ConstantDictNode supports object output", async () => {
+    const node = new ConstantDictNode();
+    await expect(node.process({ value: { ok: true } })).resolves.toEqual({
+      output: { ok: true },
+    });
+  });
+});
+
+describe("numbers filter nodes", () => {
+  it("FilterNumberNode keeps config state across on_any updates", async () => {
+    const node = new FilterNumberNode();
+    node.assign({ filter_type: "greater_than", compare_value: 2 });
+    await node.initialize();
+
+    await expect(node.process({ value: 2 })).resolves.toEqual({});
+    await expect(node.process({ value: 3 })).resolves.toEqual({ output: 3 });
+    await expect(node.process({ filter_type: "even" })).resolves.toEqual({});
+    await expect(node.process({ value: 5 })).resolves.toEqual({});
+    await expect(node.process({ value: 6 })).resolves.toEqual({ output: 6 });
+  });
+
+  it("FilterNumberRangeNode supports inclusive/exclusive bounds", async () => {
+    const node = new FilterNumberRangeNode();
+    node.assign({ min_value: 1, max_value: 3, inclusive: true });
+    await node.initialize();
+
+    await expect(node.process({ value: 1 })).resolves.toEqual({ output: 1 });
+    await expect(node.process({ inclusive: false })).resolves.toEqual({});
+    await expect(node.process({ value: 1 })).resolves.toEqual({});
+    await expect(node.process({ value: 2 })).resolves.toEqual({ output: 2 });
+  });
+});
+
+describe("dictionary nodes", () => {
+  it("Get/Update/Remove dictionary operations work", async () => {
+    await expect(
+      new GetValueNode().process({ dictionary: { a: 1 }, key: "a", default: 9 })
+    ).resolves.toEqual({ output: 1 });
+    await expect(
+      new UpdateDictionaryNode().process({ dictionary: { a: 1 }, new_pairs: { b: 2 } })
+    ).resolves.toEqual({ output: { a: 1, b: 2 } });
+    await expect(
+      new RemoveDictionaryKeyNode().process({ dictionary: { a: 1, b: 2 }, key: "a" })
+    ).resolves.toEqual({ output: { b: 2 } });
+  });
+
+  it("Parse/Zip/Combine/Filter/ToJSON basics", async () => {
+    await expect(new ParseJSONNode().process({ json_string: '{\"x\":1}' })).resolves
+      .toEqual({ output: { x: 1 } });
+    await expect(
+      new ZipDictionaryNode().process({ keys: ["a", "b"], values: [1, 2] })
+    ).resolves.toEqual({ output: { a: 1, b: 2 } });
+    await expect(
+      new CombineDictionaryNode().process({ dict_a: { a: 1 }, dict_b: { a: 9, b: 2 } })
+    ).resolves.toEqual({ output: { a: 9, b: 2 } });
+    await expect(
+      new FilterDictionaryNode().process({ dictionary: { a: 1, b: 2 }, keys: ["b"] })
+    ).resolves.toEqual({ output: { b: 2 } });
+    await expect(new ToJSONNode().process({ dictionary: { a: 1 } })).resolves.toEqual({
+      output: "{\"a\":1}",
+    });
+  });
+
+  it("ReduceDictionaries handles conflict policies", async () => {
+    const node = new ReduceDictionariesNode();
+    await expect(
+      node.process({
+        dictionaries: [
+          { id: "k", v: 1 },
+          { id: "k", v: 2 },
+        ],
+        key_field: "id",
+        value_field: "v",
+        conflict_resolution: "first",
+      })
+    ).resolves.toEqual({ output: { k: 1 } });
+
+    await expect(
+      node.process({
+        dictionaries: [
+          { id: "k", v: 1 },
+          { id: "k", v: 2 },
+        ],
+        key_field: "id",
+        value_field: "v",
+        conflict_resolution: "last",
+      })
+    ).resolves.toEqual({ output: { k: 2 } });
+  });
+
+  it("MakeDictionary and ArgMax work", async () => {
+    const make = new MakeDictionaryNode();
+    make.assign({ a: 1, b: "x" });
+    await expect(make.process({})).resolves.toEqual({ output: { a: 1, b: "x" } });
+    await expect(new ArgMaxNode().process({ scores: { a: 0.1, b: 0.9 } })).resolves
+      .toEqual({ output: "b" });
+  });
+});
+
+describe("dictionary filter stream-style nodes", () => {
+  it("FilterDictByNumber and FilterDictByRange keep state across updates", async () => {
+    const byNum = new FilterDictByNumberNode();
+    byNum.assign({ key: "score", filter_type: "greater_than", compare_value: 10 });
+    await byNum.initialize();
+    await expect(byNum.process({ value: { score: 7 } })).resolves.toEqual({});
+    await expect(byNum.process({ value: { score: 11, id: 1 } })).resolves.toEqual({
+      output: { score: 11, id: 1 },
+    });
+
+    const byRange = new FilterDictByRangeNode();
+    byRange.assign({ key: "age", min_value: 18, max_value: 30, inclusive: true });
+    await byRange.initialize();
+    await expect(byRange.process({ value: { age: 18 } })).resolves.toEqual({
+      output: { age: 18 },
+    });
+    await expect(byRange.process({ inclusive: false })).resolves.toEqual({});
+    await expect(byRange.process({ value: { age: 18 } })).resolves.toEqual({});
+  });
+
+  it("FilterDictRegex and FilterDictByValue match configured criteria", async () => {
+    const regex = new FilterDictRegexNode();
+    regex.assign({ key: "email", pattern: "^[^@]+@[^@]+\\.[^@]+$", full_match: true });
+    await regex.initialize();
+    await expect(regex.process({ value: { email: "a@b.com" } })).resolves.toEqual({
+      output: { email: "a@b.com" },
+    });
+    await expect(regex.process({ value: { email: "not-an-email" } })).resolves.toEqual(
+      {}
+    );
+
+    const byValue = new FilterDictByValueNode();
+    byValue.assign({ key: "name", filter_type: "starts_with", criteria: "Al" });
+    await byValue.initialize();
+    await expect(byValue.process({ value: { name: "Alice" } })).resolves.toEqual({
+      output: { name: "Alice" },
+    });
+    await expect(byValue.process({ value: { name: "Bob" } })).resolves.toEqual({});
+  });
+});
