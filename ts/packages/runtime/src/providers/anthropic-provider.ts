@@ -1,0 +1,624 @@
+import Anthropic from "@anthropic-ai/sdk";
+import type { Chunk } from "@nodetool/protocol";
+import { BaseProvider } from "./base-provider.js";
+import type {
+  LanguageModel,
+  Message,
+  MessageContent,
+  MessageImageContent,
+  MessageTextContent,
+  ProviderStreamItem,
+  ProviderTool,
+  ToolCall,
+} from "./types.js";
+
+interface AnthropicProviderOptions {
+  client?: Anthropic;
+  clientFactory?: (apiKey: string) => Anthropic;
+  fetchFn?: typeof fetch;
+}
+
+type StructuredOutputSetup = {
+  tools: Array<Record<string, unknown>> | undefined;
+  toolChoice: Record<string, unknown> | undefined;
+  isStructured: boolean;
+};
+
+function isTextContent(content: MessageContent): content is MessageTextContent {
+  return content.type === "text";
+}
+
+function isImageContent(content: MessageContent): content is MessageImageContent {
+  return content.type === "image";
+}
+
+function bytesToBase64(data: Uint8Array | string | undefined): string {
+  if (!data) return "";
+  if (typeof data === "string") return data;
+  return Buffer.from(data).toString("base64");
+}
+
+function parseDataUri(uri: string): { mime: string; base64: string } {
+  const idx = uri.indexOf(",");
+  if (idx < 0) {
+    throw new Error("Invalid data URI");
+  }
+
+  const header = uri.slice(5, idx);
+  const payload = uri.slice(idx + 1);
+  const isBase64 = header.includes(";base64");
+  const mime = header.split(";")[0] || "application/octet-stream";
+
+  if (isBase64) {
+    return { mime, base64: payload };
+  }
+
+  return {
+    mime,
+    base64: Buffer.from(decodeURIComponent(payload), "utf8").toString("base64"),
+  };
+}
+
+export class AnthropicProvider extends BaseProvider {
+  static requiredSecrets(): string[] {
+    return ["ANTHROPIC_API_KEY"];
+  }
+
+  readonly apiKey: string;
+  private _client: Anthropic | null;
+  private _clientFactory: (apiKey: string) => Anthropic;
+  private _fetch: typeof fetch;
+
+  constructor(secrets: { ANTHROPIC_API_KEY?: string }, options: AnthropicProviderOptions = {}) {
+    super("anthropic");
+
+    const apiKey = secrets.ANTHROPIC_API_KEY;
+    if (!apiKey || !apiKey.trim()) {
+      throw new Error("ANTHROPIC_API_KEY is not configured");
+    }
+
+    this.apiKey = apiKey;
+    this._client = options.client ?? null;
+    this._clientFactory =
+      options.clientFactory ??
+      ((key) =>
+        new Anthropic({
+          apiKey: key,
+        }));
+    this._fetch = options.fetchFn ?? globalThis.fetch.bind(globalThis);
+  }
+
+  getContainerEnv(): Record<string, string> {
+    return { ANTHROPIC_API_KEY: this.apiKey };
+  }
+
+  getClient(): Anthropic {
+    if (!this._client) {
+      this._client = this._clientFactory(this.apiKey);
+    }
+    return this._client;
+  }
+
+  hasToolSupport(_model: string): boolean {
+    return true;
+  }
+
+  async getAvailableLanguageModels(): Promise<LanguageModel[]> {
+    const response = await this._fetch("https://api.anthropic.com/v1/models", {
+      headers: {
+        "x-api-key": this.apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const payload = (await response.json()) as {
+      data?: Array<{ id?: string; name?: string }>;
+    };
+
+    return (payload.data ?? [])
+      .map((m) => m.id ?? m.name)
+      .filter((id): id is string => typeof id === "string" && id.length > 0)
+      .map((id) => ({ id, name: id, provider: "anthropic" }));
+  }
+
+  private prepareJsonSchema(schema: unknown): unknown {
+    if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+      return schema;
+    }
+
+    const obj = { ...(schema as Record<string, unknown>) };
+
+    if (obj.type === "object" && obj.additionalProperties === undefined) {
+      obj.additionalProperties = false;
+    }
+
+    if (obj.properties && typeof obj.properties === "object" && !Array.isArray(obj.properties)) {
+      obj.properties = Object.fromEntries(
+        Object.entries(obj.properties as Record<string, unknown>).map(([k, v]) => [
+          k,
+          this.prepareJsonSchema(v),
+        ])
+      );
+    }
+
+    if (obj.items && typeof obj.items === "object") {
+      obj.items = this.prepareJsonSchema(obj.items);
+    }
+
+    for (const defsKey of ["definitions", "$defs"]) {
+      const defs = obj[defsKey];
+      if (defs && typeof defs === "object" && !Array.isArray(defs)) {
+        obj[defsKey] = Object.fromEntries(
+          Object.entries(defs as Record<string, unknown>).map(([k, v]) => [
+            k,
+            this.prepareJsonSchema(v),
+          ])
+        );
+      }
+    }
+
+    const unsupported = [
+      "default",
+      "minimum",
+      "maximum",
+      "exclusiveMinimum",
+      "exclusiveMaximum",
+      "multipleOf",
+      "minLength",
+      "maxLength",
+      "minProperties",
+      "maxProperties",
+      "minItems",
+      "maxItems",
+      "uniqueItems",
+    ];
+
+    for (const key of unsupported) {
+      delete obj[key];
+    }
+
+    return obj;
+  }
+
+  async convertMessage(message: Message): Promise<Record<string, unknown> | null> {
+    if (message.role === "tool") {
+      if (!message.toolCallId) {
+        throw new Error("Tool call ID must not be None");
+      }
+
+      const contentValue =
+        typeof message.content === "string"
+          ? message.content
+          : JSON.stringify(message.content ?? null);
+
+      return {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: message.toolCallId,
+            content: contentValue,
+          },
+        ],
+      };
+    }
+
+    if (message.role === "system") {
+      return {
+        role: "assistant",
+        content: typeof message.content === "string" ? message.content : String(message.content ?? ""),
+      };
+    }
+
+    if (message.role === "user") {
+      if (typeof message.content === "string") {
+        return { role: "user", content: message.content };
+      }
+
+      const parts = message.content ?? [];
+      const content: Array<Record<string, unknown>> = [];
+
+      for (const part of parts) {
+        if (isTextContent(part)) {
+          content.push({ type: "text", text: part.text });
+          continue;
+        }
+        if (isImageContent(part)) {
+          const rawData = bytesToBase64(part.image.data);
+          const uri = part.image.uri ?? "";
+
+          let mediaType = part.image.mimeType ?? "image/png";
+          let base64: string;
+
+          if (rawData) {
+            if (rawData.startsWith("data:")) {
+              const parsed = parseDataUri(rawData);
+              base64 = parsed.base64;
+              mediaType = part.image.mimeType ?? parsed.mime;
+            } else {
+              base64 = rawData;
+            }
+          } else if (uri.startsWith("data:")) {
+            const parsed = parseDataUri(uri);
+            base64 = parsed.base64;
+            mediaType = part.image.mimeType ?? parsed.mime;
+          } else if (uri) {
+            const response = await this._fetch(uri);
+            if (!response.ok) {
+              throw new Error(`Failed to fetch URI: ${response.status}`);
+            }
+            mediaType = part.image.mimeType ?? response.headers.get("content-type") ?? "image/png";
+            base64 = Buffer.from(new Uint8Array(await response.arrayBuffer())).toString("base64");
+          } else {
+            throw new Error("Invalid image reference with no uri or data");
+          }
+
+          content.push({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: mediaType,
+              data: base64,
+            },
+          });
+        }
+      }
+
+      return {
+        role: "user",
+        content,
+      };
+    }
+
+    if (message.role !== "assistant") {
+      throw new Error(`Unknown message role ${message.role}`);
+    }
+
+    if (!message.content && (!message.toolCalls || message.toolCalls.length === 0)) {
+      return null;
+    }
+
+    if (message.toolCalls && message.toolCalls.length > 0) {
+      const contentBlocks: Array<Record<string, unknown>> = [];
+      if (typeof message.content === "string" && message.content.trim()) {
+        contentBlocks.push({ type: "text", text: message.content });
+      }
+
+      if (Array.isArray(message.content)) {
+        for (const part of message.content) {
+          if (isTextContent(part) && part.text.trim()) {
+            contentBlocks.push({ type: "text", text: part.text });
+          }
+        }
+      }
+
+      for (const tc of message.toolCalls) {
+        contentBlocks.push({
+          type: "tool_use",
+          name: tc.name,
+          id: tc.id,
+          input: tc.args,
+        });
+      }
+
+      return {
+        role: "assistant",
+        content: contentBlocks,
+      };
+    }
+
+    if (typeof message.content === "string") {
+      return { role: "assistant", content: message.content };
+    }
+
+    if (Array.isArray(message.content)) {
+      return {
+        role: "assistant",
+        content: message.content
+          .filter((part) => isTextContent(part))
+          .map((part) => ({ type: "text", text: (part as MessageTextContent).text })),
+      };
+    }
+
+    throw new Error(`Unknown message content type ${typeof message.content}`);
+  }
+
+  formatTools(tools: ProviderTool[]): Array<Record<string, unknown>> {
+    return tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description ?? "",
+      input_schema: this.prepareJsonSchema(
+        tool.inputSchema ?? { type: "object", properties: {} }
+      ),
+    }));
+  }
+
+  private setupStructuredOutput(
+    tools: ProviderTool[] | undefined,
+    responseFormat: Record<string, unknown> | undefined
+  ): StructuredOutputSetup {
+    if (!responseFormat) {
+      return {
+        tools: tools && tools.length > 0 ? this.formatTools(tools) : undefined,
+        toolChoice: undefined,
+        isStructured: false,
+      };
+    }
+
+    let schema: unknown;
+    let toolName = "json_output";
+    let description = "Output the response as a JSON object.";
+
+    if (responseFormat.type === "json_object") {
+      schema = { type: "object", additionalProperties: true };
+    } else if (responseFormat.type === "json_schema") {
+      const jsonSchemaConfig = (responseFormat.json_schema ?? {}) as Record<string, unknown>;
+      schema = jsonSchemaConfig.schema;
+      toolName = String(jsonSchemaConfig.name ?? "json_output");
+      description = String(
+        jsonSchemaConfig.description ?? "Output the response in this format."
+      );
+      if (!schema) {
+        throw new Error("json_schema must contain a schema");
+      }
+    } else {
+      throw new Error(`Unsupported response_format type: ${String(responseFormat.type)}`);
+    }
+
+    return {
+      tools: [
+        {
+          name: toolName,
+          description,
+          input_schema: this.prepareJsonSchema(schema),
+        },
+      ],
+      toolChoice: { type: "tool", name: toolName },
+      isStructured: true,
+    };
+  }
+
+  private extractSystemMessage(messages: Message[]): string {
+    const system = messages.find((m) => m.role === "system");
+    if (!system) {
+      return "You are a helpful assistant.";
+    }
+
+    if (typeof system.content === "string") {
+      return system.content;
+    }
+
+    if (Array.isArray(system.content)) {
+      return system.content
+        .filter((part) => isTextContent(part))
+        .map((part) => (part as MessageTextContent).text)
+        .join(" ");
+    }
+
+    return String(system.content ?? "You are a helpful assistant.");
+  }
+
+  async *generateMessages(args: {
+    messages: Message[];
+    model: string;
+    tools?: ProviderTool[];
+    maxTokens?: number;
+    responseFormat?: Record<string, unknown>;
+    jsonSchema?: Record<string, unknown>;
+    temperature?: number;
+    topP?: number;
+    presencePenalty?: number;
+    frequencyPenalty?: number;
+    audio?: Record<string, unknown>;
+  }): AsyncGenerator<ProviderStreamItem> {
+    if (args.jsonSchema) {
+      throw new Error("Anthropic provider expects responseFormat; jsonSchema is not supported directly");
+    }
+
+    const system = this.extractSystemMessage(args.messages);
+    const converted = await Promise.all(
+      args.messages
+        .filter((m) => m.role !== "system")
+        .map((m) => this.convertMessage(m))
+    );
+    const anthropicMessages = converted.filter(
+      (m): m is Record<string, unknown> => m !== null
+    );
+
+    const structured = this.setupStructuredOutput(args.tools, args.responseFormat);
+
+    const request: Record<string, unknown> = {
+      model: args.model,
+      messages: anthropicMessages,
+      system,
+      max_tokens: args.maxTokens ?? 8192,
+      ...(structured.tools ? { tools: structured.tools } : {}),
+      ...(structured.toolChoice ? { tool_choice: structured.toolChoice } : {}),
+      ...(args.temperature != null ? { temperature: args.temperature } : {}),
+      ...(args.topP != null ? { top_p: args.topP } : {}),
+    };
+
+    const stream = (await (this.getClient().messages as any).stream(
+      request
+    )) as AsyncIterable<any>;
+
+    for await (const event of stream) {
+      const type = String(event?.type ?? "");
+
+      if (type === "content_block_delta") {
+        const delta = event.delta;
+        if (typeof delta?.thinking === "string") {
+          const chunk: Chunk = {
+            type: "chunk",
+            content: delta.thinking,
+            done: false,
+            thinking: true,
+          };
+          yield chunk;
+          continue;
+        }
+
+        if (structured.isStructured && typeof delta?.partial_json === "string") {
+          const chunk: Chunk = {
+            type: "chunk",
+            content: delta.partial_json,
+            done: false,
+          };
+          yield chunk;
+          continue;
+        }
+
+        if (!structured.isStructured && typeof delta?.text === "string") {
+          const chunk: Chunk = {
+            type: "chunk",
+            content: delta.text,
+            done: false,
+          };
+          yield chunk;
+        }
+        continue;
+      }
+
+      if (type === "content_block_stop") {
+        const contentBlock = event?.content_block;
+        if (contentBlock?.type === "tool_use" && !structured.isStructured) {
+          const toolCall: ToolCall = {
+            id: String(contentBlock.id ?? ""),
+            name: String(contentBlock.name ?? ""),
+            args: (contentBlock.input ?? {}) as Record<string, unknown>,
+          };
+          yield toolCall;
+        }
+        continue;
+      }
+
+      if (type === "message_stop") {
+        const chunk: Chunk = {
+          type: "chunk",
+          content: "",
+          done: true,
+        };
+        yield chunk;
+      }
+    }
+  }
+
+  async generateMessage(args: {
+    messages: Message[];
+    model: string;
+    tools?: ProviderTool[];
+    maxTokens?: number;
+    responseFormat?: Record<string, unknown>;
+    jsonSchema?: Record<string, unknown>;
+    temperature?: number;
+    topP?: number;
+    presencePenalty?: number;
+    frequencyPenalty?: number;
+  }): Promise<Message> {
+    if (args.jsonSchema) {
+      throw new Error("Anthropic provider expects responseFormat; jsonSchema is not supported directly");
+    }
+
+    const system = this.extractSystemMessage(args.messages);
+    const converted = await Promise.all(
+      args.messages
+        .filter((m) => m.role !== "system")
+        .map((m) => this.convertMessage(m))
+    );
+    const anthropicMessages = converted.filter(
+      (m): m is Record<string, unknown> => m !== null
+    );
+
+    const structured = this.setupStructuredOutput(args.tools, args.responseFormat);
+
+    const request: Record<string, unknown> = {
+      model: args.model,
+      messages: anthropicMessages,
+      system,
+      max_tokens: args.maxTokens ?? 8192,
+      ...(structured.tools ? { tools: structured.tools } : {}),
+      ...(structured.toolChoice ? { tool_choice: structured.toolChoice } : {}),
+      ...(args.temperature != null ? { temperature: args.temperature } : {}),
+      ...(args.topP != null ? { top_p: args.topP } : {}),
+    };
+
+    const response = await (this.getClient().messages as any).create(request);
+
+    const textParts: string[] = [];
+    const toolCalls: ToolCall[] = [];
+
+    if (structured.isStructured) {
+      const toolName = String(structured.toolChoice?.name ?? "json_output");
+      let found = false;
+
+      for (const block of response.content ?? []) {
+        if (block.type === "tool_use" && block.name === toolName) {
+          let inputData = block.input;
+
+          if (
+            inputData &&
+            typeof inputData === "object" &&
+            !Array.isArray(inputData) &&
+            Object.keys(inputData).length === 1
+          ) {
+            const key = Object.keys(inputData)[0];
+            if (["output", "json", "response", "content"].includes(key.toLowerCase())) {
+              inputData = (inputData as Record<string, unknown>)[key];
+            }
+          }
+
+          textParts.push(JSON.stringify(inputData));
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        for (const block of response.content ?? []) {
+          if (block.type === "text") {
+            textParts.push(String(block.text ?? ""));
+          }
+        }
+      }
+    } else {
+      for (const block of response.content ?? []) {
+        if (block.type === "tool_use") {
+          toolCalls.push({
+            id: String(block.id ?? ""),
+            name: String(block.name ?? ""),
+            args: (block.input ?? {}) as Record<string, unknown>,
+          });
+          continue;
+        }
+        if (block.type === "text") {
+          textParts.push(String(block.text ?? ""));
+        }
+      }
+    }
+
+    return {
+      role: "assistant",
+      content: textParts.join("\n"),
+      toolCalls,
+    };
+  }
+
+  asHttpStatusError(error: unknown): Error {
+    return new Error(String(error));
+  }
+
+  isContextLengthError(error: unknown): boolean {
+    const msg = String(error).toLowerCase();
+    return (
+      msg.includes("context length") ||
+      msg.includes("context window") ||
+      msg.includes("token limit") ||
+      msg.includes("too long") ||
+      msg.includes("maximum context")
+    );
+  }
+}

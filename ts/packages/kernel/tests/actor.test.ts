@@ -1,0 +1,250 @@
+/**
+ * NodeActor tests – execution mode parity.
+ *
+ * Covers:
+ *  - Buffered mode (process called once per input batch)
+ *  - Streaming output via genProcess
+ *  - on_any sync mode
+ *  - zip_all sync mode with sticky semantics
+ *  - Controlled mode (control events)
+ */
+
+import { describe, it, expect } from "vitest";
+import { NodeActor, type NodeExecutor } from "../src/actor.js";
+import { NodeInbox } from "../src/inbox.js";
+import type { NodeDescriptor, NodeUpdate } from "@nodetool/protocol";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeNode(overrides: Partial<NodeDescriptor> = {}): NodeDescriptor {
+  return { id: "test_node", type: "test.Node", ...overrides };
+}
+
+function trackingExecutor(
+  processFn: (inputs: Record<string, unknown>) => Record<string, unknown>
+): {
+  executor: NodeExecutor;
+  calls: Array<Record<string, unknown>>;
+} {
+  const calls: Array<Record<string, unknown>> = [];
+  return {
+    executor: {
+      async process(inputs) {
+        calls.push(inputs);
+        return processFn(inputs);
+      },
+    },
+    calls,
+  };
+}
+
+interface SentOutput {
+  nodeId: string;
+  outputs: Record<string, unknown>;
+}
+
+function createActor(
+  node: NodeDescriptor,
+  inbox: NodeInbox,
+  executor: NodeExecutor
+): { actor: NodeActor; sentOutputs: SentOutput[]; messages: unknown[] } {
+  const sentOutputs: SentOutput[] = [];
+  const messages: unknown[] = [];
+
+  const actor = new NodeActor({
+    node,
+    inbox,
+    executor,
+    sendOutputs: async (nodeId, outputs) => {
+      sentOutputs.push({ nodeId, outputs });
+    },
+    emitMessage: (msg) => messages.push(msg),
+  });
+
+  return { actor, sentOutputs, messages };
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe("NodeActor – buffered mode", () => {
+  it("calls process once and sends outputs", async () => {
+    const node = makeNode({ sync_mode: "zip_all" });
+    const inbox = new NodeInbox();
+    inbox.addUpstream("a", 1);
+
+    const { executor, calls } = trackingExecutor((inputs) => ({
+      result: (inputs.a as number) * 2,
+    }));
+
+    const { actor, sentOutputs, messages } = createActor(node, inbox, executor);
+
+    await inbox.put("a", 5);
+    inbox.markSourceDone("a");
+
+    const result = await actor.run();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ a: 5 });
+    expect(sentOutputs).toHaveLength(1);
+    expect(sentOutputs[0].outputs).toEqual({ result: 10 });
+    expect(result.outputs).toEqual({ result: 10 });
+
+    // Should have emitted running + completed statuses
+    const statusMsgs = messages.filter(
+      (m) => (m as NodeUpdate).type === "node_update"
+    ) as NodeUpdate[];
+    expect(statusMsgs.some((m) => m.status === "running")).toBe(true);
+    expect(statusMsgs.some((m) => m.status === "completed")).toBe(true);
+  });
+});
+
+describe("NodeActor – streaming output", () => {
+  it("yields multiple outputs via genProcess", async () => {
+    const node = makeNode({ is_streaming_output: true, sync_mode: "zip_all" });
+    const inbox = new NodeInbox();
+    inbox.addUpstream("a", 1);
+
+    const executor: NodeExecutor = {
+      async process() {
+        return {};
+      },
+      async *genProcess(inputs) {
+        const val = inputs.a as number;
+        yield { chunk: val * 1 };
+        yield { chunk: val * 2 };
+        yield { chunk: val * 3 };
+      },
+    };
+
+    const { actor, sentOutputs } = createActor(node, inbox, executor);
+
+    await inbox.put("a", 10);
+    inbox.markSourceDone("a");
+
+    await actor.run();
+
+    expect(sentOutputs).toHaveLength(3);
+    expect(sentOutputs.map((s) => s.outputs)).toEqual([
+      { chunk: 10 },
+      { chunk: 20 },
+      { chunk: 30 },
+    ]);
+  });
+});
+
+describe("NodeActor – on_any sync mode", () => {
+  it("fires on each individual input arrival", async () => {
+    const node = makeNode({ sync_mode: "on_any" });
+    const inbox = new NodeInbox();
+    inbox.addUpstream("a", 1);
+    inbox.addUpstream("b", 1);
+
+    const { executor, calls } = trackingExecutor((inputs) => ({
+      result: Object.values(inputs)[0],
+    }));
+    const { actor, sentOutputs } = createActor(node, inbox, executor);
+
+    await inbox.put("a", "first");
+    await inbox.put("b", "second");
+    inbox.markSourceDone("a");
+    inbox.markSourceDone("b");
+
+    await actor.run();
+
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(sentOutputs.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("NodeActor – zip_all sync mode", () => {
+  it("waits for all handles before firing", async () => {
+    const node = makeNode({ sync_mode: "zip_all" });
+    const inbox = new NodeInbox();
+    inbox.addUpstream("a", 1);
+    inbox.addUpstream("b", 1);
+
+    const { executor, calls } = trackingExecutor((inputs) => ({
+      sum: (inputs.a as number) + (inputs.b as number),
+    }));
+    const { actor, sentOutputs } = createActor(node, inbox, executor);
+
+    await inbox.put("a", 10);
+    await inbox.put("b", 20);
+    inbox.markSourceDone("a");
+    inbox.markSourceDone("b");
+
+    await actor.run();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ a: 10, b: 20 });
+    expect(sentOutputs[0].outputs).toEqual({ sum: 30 });
+  });
+});
+
+describe("NodeActor – controlled mode", () => {
+  it("executes on run events with control properties", async () => {
+    const node = makeNode({ is_controlled: true });
+    const inbox = new NodeInbox();
+    inbox.addUpstream("__control__", 1);
+    inbox.addUpstream("x", 1);
+
+    const { executor, calls } = trackingExecutor((inputs) => ({
+      out: inputs.threshold,
+    }));
+    const { actor, sentOutputs } = createActor(node, inbox, executor);
+
+    // Send data input first (cached)
+    await inbox.put("x", 100);
+
+    // Send control events
+    await inbox.put("__control__", {
+      event_type: "run" as const,
+      properties: { threshold: 0.5 },
+    });
+    await inbox.put("__control__", {
+      event_type: "stop" as const,
+    });
+
+    inbox.markSourceDone("__control__");
+    inbox.markSourceDone("x");
+
+    await actor.run();
+
+    // Should have been called once with merged inputs
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ x: 100, threshold: 0.5 });
+    expect(sentOutputs).toHaveLength(1);
+  });
+});
+
+describe("NodeActor – error handling", () => {
+  it("captures errors and reports error status", async () => {
+    const node = makeNode();
+    const inbox = new NodeInbox();
+    inbox.addUpstream("a", 1);
+
+    const executor: NodeExecutor = {
+      async process() {
+        throw new Error("test failure");
+      },
+    };
+
+    const { actor, messages } = createActor(node, inbox, executor);
+
+    await inbox.put("a", 1);
+    inbox.markSourceDone("a");
+
+    const result = await actor.run();
+
+    expect(result.error).toBe("test failure");
+
+    const statusMsgs = messages.filter(
+      (m) => (m as NodeUpdate).type === "node_update"
+    ) as NodeUpdate[];
+    expect(statusMsgs.some((m) => m.status === "error")).toBe(true);
+  });
+});

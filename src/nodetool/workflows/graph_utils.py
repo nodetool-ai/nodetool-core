@@ -2,7 +2,7 @@
 Graph utilities for node and edge operations.
 """
 
-from collections import deque, defaultdict
+from collections import defaultdict, deque
 from contextlib import suppress
 
 from nodetool.metadata.type_metadata import TypeMetadata

@@ -203,6 +203,55 @@ def test_get_controlled_nodes_info_uses_outgoing_control_edges():
     assert target_info["upstream_data"]["mode"]["source_node_id"] == "upstream"
 
 
+def test_get_controlled_nodes_info_prefers_ui_title_for_node_title():
+    controller = DummyControllerNode(id="controller")
+    target = DummyProcessingNode(id="target", ui_properties={"title": "Shell Runner"})
+
+    graph = Graph(
+        nodes=[controller, target],
+        edges=[
+            Edge(
+                id="ctrl-1",
+                source="controller",
+                sourceHandle="__control__",
+                target="target",
+                targetHandle="__control__",
+                edge_type="control",
+            ),
+        ],
+    )
+    context = ProcessingContext(graph=graph)
+
+    info = context.get_controlled_nodes_info("controller")
+
+    assert info["target"]["node_title"] == "Shell Runner"
+
+
+def test_get_controlled_nodes_info_falls_back_to_class_title_for_node_title():
+    controller = DummyControllerNode(id="controller")
+    target = DummyProcessingNode(id="target")
+
+    graph = Graph(
+        nodes=[controller, target],
+        edges=[
+            Edge(
+                id="ctrl-1",
+                source="controller",
+                sourceHandle="__control__",
+                target="target",
+                targetHandle="__control__",
+                edge_type="control",
+            ),
+        ],
+    )
+    context = ProcessingContext(graph=graph)
+
+    info = context.get_controlled_nodes_info("controller")
+
+    assert info["target"]["node_title"] == DummyProcessingNode.get_title()
+    assert info["target"]["node_title"] != "target"
+
+
 def test_get_controlled_nodes_info_does_not_use_incoming_control_edges():
     controller = DummyControllerNode(id="controller")
     target = DummyProcessingNode(id="target")

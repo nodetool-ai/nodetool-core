@@ -108,7 +108,13 @@ from openai.types.chat.chat_completion_message_tool_call import (
 )
 from openai.types.completion_usage import CompletionUsage
 
-from nodetool.metadata.types import Message, MessageTextContent
+from nodetool.metadata.types import (
+    LanguageModel,
+    Message,
+    MessageTextContent,
+    Provider,
+    ToolCall,
+)
 from nodetool.providers.llama_provider import LlamaProvider
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 
@@ -332,6 +338,44 @@ class TestLlamaProvider(BaseProviderTest):
         assert response.tool_calls[0].name == "mock_tool"
 
     @pytest.mark.asyncio
+    async def test_generate_message_emulation_strips_prior_assistant_tool_calls(self):
+        """In emulation mode, prior assistant tool_calls should not be sent back to llama.cpp."""
+        provider = self.create_provider()
+        tools = [self.create_mock_tool()]
+        messages = [
+            Message(role="user", content="Find test info"),
+            Message(
+                role="assistant",
+                content=[MessageTextContent(text="mock_tool(query='test')")],
+                tool_calls=[
+                    ToolCall(
+                        id="call_0",
+                        name="mock_tool",
+                        args={"query": "test"},
+                    )
+                ],
+            ),
+            Message(
+                role="tool",
+                tool_call_id="call_0",
+                name="mock_tool",
+                content=json.dumps({"result": "ok"}),
+            ),
+        ]
+
+        with self.mock_api_call(ResponseFixtures.simple_text_response("Final answer")) as mock_call:
+            await provider.generate_message(
+                messages=messages,
+                model="gemma-3-4b-it",
+                tools=tools,
+            )
+
+        sent_messages = mock_call.call_args.kwargs["messages"]
+        assistant_messages = [m for m in sent_messages if m.get("role") == "assistant"]
+        assert assistant_messages, "Expected at least one assistant message in request payload"
+        assert all("tool_calls" not in m for m in assistant_messages)
+
+    @pytest.mark.asyncio
     async def test_server_unavailable_handling(self):
         """Test handling when llama-server is unavailable."""
         provider = self.create_provider()
@@ -351,19 +395,36 @@ class TestLlamaProvider(BaseProviderTest):
         return MockTool()
 
     @pytest.mark.asyncio
-    async def test_get_available_language_models_returns_server_models_only(self):
-        """get_available_language_models should return only /v1/models entries."""
+    async def test_get_available_language_models_merges_cache_and_server_models(self):
+        """get_available_language_models should merge cache-discovered and server models."""
         provider = self.create_provider()
 
         server_response = {
             "data": [
-                {"id": "ggml-org/gemma-GGUF"},
+                # Duplicate ID with cache model: should be de-duplicated.
+                {"id": "org/repo:model.gguf"},
                 {"id": "ggml-org/Qwen-GGUF"},
             ]
         }
 
         with (
             self.mock_server_manager(),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.get_llamacpp_language_models_from_hf_cache",
+                new=AsyncMock(
+                    return_value=[
+                        LanguageModel(
+                            id="org/repo:model.gguf",
+                            name="Repo • model.gguf",
+                            provider=Provider.LlamaCpp,
+                        )
+                    ]
+                ),
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.get_llamacpp_language_models_from_llama_cache",
+                new=AsyncMock(return_value=[]),
+            ),
             patch("httpx.AsyncClient") as mock_client_cls,
         ):
             mock_resp = MagicMock()
@@ -378,16 +439,32 @@ class TestLlamaProvider(BaseProviderTest):
             models = await provider.get_available_language_models()
 
         model_ids = [m.id for m in models]
-        assert model_ids == ["ggml-org/gemma-GGUF", "ggml-org/Qwen-GGUF"]
+        assert model_ids == ["org/repo:model.gguf", "ggml-org/Qwen-GGUF"]
         assert len(models) == 2
 
     @pytest.mark.asyncio
-    async def test_get_available_language_models_when_server_unreachable(self):
-        """When /v1/models fails, return an empty list."""
+    async def test_get_available_language_models_when_server_unreachable_uses_cache(self):
+        """When /v1/models fails, still return cache-discovered models."""
         provider = self.create_provider()
 
         with (
             self.mock_server_manager(),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.get_llamacpp_language_models_from_hf_cache",
+                new=AsyncMock(
+                    return_value=[
+                        LanguageModel(
+                            id="cached/repo:cached.gguf",
+                            name="cached",
+                            provider=Provider.LlamaCpp,
+                        )
+                    ]
+                ),
+            ),
+            patch(
+                "nodetool.integrations.huggingface.huggingface_models.get_llamacpp_language_models_from_llama_cache",
+                new=AsyncMock(return_value=[]),
+            ),
             patch("httpx.AsyncClient") as mock_client_cls,
         ):
             mock_client = AsyncMock()
@@ -398,4 +475,43 @@ class TestLlamaProvider(BaseProviderTest):
 
             models = await provider.get_available_language_models()
 
-        assert models == []
+        assert [m.id for m in models] == ["cached/repo:cached.gguf"]
+
+    @pytest.mark.asyncio
+    async def test_generate_message_uses_model_returned_by_server(self):
+        """If requested model is unavailable, use a model ID advertised by /v1/models."""
+        provider = self.create_provider()
+        messages = self.create_simple_messages()
+
+        with (
+            patch.object(
+                provider,
+                "_fetch_server_model_ids",
+                new=AsyncMock(return_value=["server-actual-model"]),
+            ),
+            self.mock_api_call(ResponseFixtures.simple_text_response("Resolved")) as mock_call,
+        ):
+            await provider.generate_message(messages, "requested-but-missing-model")
+
+        assert mock_call.call_args.kwargs["model"] == "server-actual-model"
+
+    @pytest.mark.asyncio
+    async def test_generate_messages_uses_model_returned_by_server(self):
+        """Streaming requests should also use model IDs returned by /v1/models."""
+        provider = self.create_provider()
+        messages = self.create_simple_messages()
+
+        with (
+            patch.object(
+                provider,
+                "_fetch_server_model_ids",
+                new=AsyncMock(return_value=["server-stream-model"]),
+            ),
+            self.mock_streaming_call(ResponseFixtures.streaming_response_chunks("Hello stream")) as mock_call,
+        ):
+            chunks = []
+            async for chunk in provider.generate_messages(messages, "missing-stream-model"):
+                chunks.append(chunk)
+
+        assert chunks
+        assert mock_call.call_args.kwargs["model"] == "server-stream-model"

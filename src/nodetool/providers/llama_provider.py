@@ -8,9 +8,12 @@ LLAMA_CPP_URL environment variable.
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 import os
+import re
+from pathlib import Path
 from typing import Any, AsyncIterator, ClassVar, Sequence
 
 import httpx
@@ -21,7 +24,13 @@ from huggingface_hub import hf_hub_download
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.metadata.types import LanguageModel, Message, Provider, ToolCall
+from nodetool.metadata.types import (
+    LanguageModel,
+    Message,
+    MessageTextContent,
+    Provider,
+    ToolCall,
+)
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_compat import OpenAICompat
 from nodetool.runtime.resources import require_scope
@@ -53,6 +62,10 @@ class LlamaProvider(BaseProvider, OpenAICompat):
 
     provider_name: str = "llama_cpp"
     _base_url: str = ""
+    _gemma_placeholder_name_re: ClassVar[re.Pattern[str]] = re.compile(
+        r"^[0-9a-f]{8}(?:[_-][0-9a-f]{4}){3}[_-][0-9a-f]{12}$",
+        re.IGNORECASE,
+    )
 
     def __init__(self, secrets: dict[str, str], ttl_seconds: int = 300):
         """Initialize the provider.
@@ -93,6 +106,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         messages: Sequence[Message],
         tools: Sequence[Tool] = [],
         use_tool_emulation: bool = False,
+        model: str | None = None,
     ) -> list[Message]:
         """Normalize messages to satisfy llama.cpp alternation constraints.
 
@@ -110,6 +124,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             messages: Original message sequence.
             tools: Optional tools for emulation.
             use_tool_emulation: Whether to use tool calling emulation.
+            model: Optional model identifier for model-specific prompt tweaks.
 
         Returns:
             A list of messages compatible with llama.cpp chat templates.
@@ -120,31 +135,76 @@ class LlamaProvider(BaseProvider, OpenAICompat):
 
         # Add tool definitions for emulation
         if use_tool_emulation and tools:
-            tool_definitions = self._format_tools_as_python(tools)
-            tool_instruction = (
-                "\n\n=== AVAILABLE FUNCTIONS ===\n"
-                "You can call these functions by writing a function call on a single line.\n"
-                "DO NOT write function definitions - only write function CALLS.\n\n"
-                f"{tool_definitions}\n\n"
-                "=== INSTRUCTIONS ===\n"
-                "When you need to use a function:\n"
-                "1. Write ONLY the function call, nothing else\n"
-                "2. Use this exact format: function_name(param='value')\n"
-                "3. Do NOT write 'def', 'return', or any other Python keywords\n"
-                "4. After calling a function, wait for the result\n"
-                "5. Once you receive a function result, use it in your final answer\n"
-                "6. Do NOT call the same function twice\n\n"
-                "Example conversation:\n"
-                "User: What is 5 + 3?\n"
-                "You: calculator(expression='5 + 3')\n"
-                "[System returns: {'result': 8}]\n"
-                "You: The answer is 8."
-            )
+            if model and self._is_gemma_model(model):
+                tool_definitions = self._format_tools_as_gemma_json(tools)
+                tool_instruction = (
+                    "\n\nYou have access to functions. If you decide to invoke any of the function(s), "
+                    "you MUST put it in the format of\n"
+                    "[func_name1(params_name1=params_value1, params_name2=params_value2...), func_name2(params)]\n\n"
+                    "You SHOULD NOT include any other text in the response if you call a function\n\n"
+                    f"{tool_definitions}"
+                )
+            else:
+                tool_definitions = self._format_tools_as_python(tools)
+                tool_instruction = (
+                    "\n\n=== AVAILABLE FUNCTIONS ===\n"
+                    "You can call these functions by writing a function call on a single line.\n"
+                    "DO NOT write function definitions - only write function CALLS.\n\n"
+                    f"{tool_definitions}\n\n"
+                    "=== INSTRUCTIONS ===\n"
+                    "When you need to use a function:\n"
+                    "1. Write ONLY the function call, nothing else\n"
+                    "2. Use this exact format: function_name(param='value')\n"
+                    "3. Do NOT write 'def', 'return', or any other Python keywords\n"
+                    "4. After calling a function, wait for the result\n"
+                    "5. Once you receive a function result, use it in your final answer\n"
+                    "6. Do NOT call the same function twice\n\n"
+                    "Example conversation:\n"
+                    "User: What is 5 + 3?\n"
+                    "You: calculator(expression='5 + 3')\n"
+                    "[System returns: {'result': 8}]\n"
+                    "You: The answer is 8."
+                )
             system_parts.append(tool_instruction)
 
         for msg in messages:
             if msg.role == "system":
                 system_parts.append(str(msg.content) if msg.content is not None else "")
+                continue
+            if msg.role == "assistant" and use_tool_emulation:
+                # In emulation mode, don't send synthetic tool_calls metadata back to llama.cpp.
+                # Keep assistant text only, with any function-call line removed when we know
+                # this turn represented a tool request.
+                if isinstance(msg.content, str):
+                    assistant_content = msg.content
+                elif isinstance(msg.content, list):
+                    text_parts = [
+                        part.text
+                        for part in msg.content
+                        if isinstance(part, MessageTextContent)
+                    ]
+                    assistant_content = "\n".join(text_parts)
+                elif msg.content is None:
+                    assistant_content = ""
+                else:
+                    assistant_content = str(msg.content)
+
+                if msg.tool_calls:
+                    _calls, cleaned_content = self._parse_function_calls(
+                        assistant_content, tools
+                    )
+                    if not _calls:
+                        _calls, cleaned_content = self._parse_non_python_function_calls(
+                            assistant_content, tools
+                        )
+                    assistant_content = cleaned_content
+
+                normalized.append(
+                    Message(
+                        role="assistant",
+                        content=assistant_content,
+                    )
+                )
                 continue
             if msg.role == "tool":
                 # Represent tool output as a user turn for alternation.
@@ -276,6 +336,140 @@ class LlamaProvider(BaseProvider, OpenAICompat):
 
         return num_tokens
 
+    def _resolve_emulated_tool_name(self, raw_name: str, args: dict[str, Any], tools: Sequence[Tool]) -> str:
+        """Resolve Gemma-emulated tool names to known tool names when possible."""
+        if not tools:
+            return raw_name
+
+        # Fast path: already valid
+        for tool in tools:
+            if tool.name == raw_name:
+                return raw_name
+
+        # Some Gemma variants emit UUID-like placeholder names for function calls.
+        # If there is only one available tool, map it directly.
+        if len(tools) == 1:
+            only_tool = tools[0].name
+            log.debug(f"Remapping unknown emulated tool '{raw_name}' -> '{only_tool}' (single tool available)")
+            return only_tool
+
+        # Fuzzy string containment can recover mild name drift.
+        lowered = raw_name.lower()
+        for tool in tools:
+            name = tool.name.lower()
+            if name in lowered or lowered in name:
+                log.debug(f"Remapping emulated tool '{raw_name}' -> '{tool.name}' (name similarity)")
+                return tool.name
+
+        # Schema-based arg matching as a tie-breaker.
+        arg_keys = set(args.keys())
+        if arg_keys:
+            best_name: str | None = None
+            best_score: tuple[int, int] = (-1, -1)
+            tie = False
+
+            for tool in tools:
+                try:
+                    params = tool.tool_param().get("function", {}).get("parameters", {})
+                    properties = params.get("properties", {}) if isinstance(params, dict) else {}
+                    tool_keys = set(properties.keys()) if isinstance(properties, dict) else set()
+                except Exception:
+                    tool_keys = set()
+
+                if not tool_keys:
+                    continue
+
+                overlap = len(arg_keys & tool_keys)
+                precision = -len(arg_keys - tool_keys)
+                score = (overlap, precision)
+
+                if score > best_score:
+                    best_name = tool.name
+                    best_score = score
+                    tie = False
+                elif score == best_score and score != (-1, -1):
+                    tie = True
+
+            if best_name and best_score[0] > 0 and not tie:
+                log.debug(f"Remapping emulated tool '{raw_name}' -> '{best_name}' (schema arg match)")
+                return best_name
+
+        # UUID-like placeholders should not be surfaced as final tool names.
+        if self._gemma_placeholder_name_re.match(raw_name):
+            log.warning(f"Could not confidently map UUID-like emulated tool name '{raw_name}' to a known tool")
+
+        return raw_name
+
+    def _parse_non_python_function_calls(
+        self, text: str, tools: Sequence[Tool] | None = None
+    ) -> tuple[list[ToolCall], str]:
+        """Parse function-call-like lines with non-Python identifiers (Gemma fallback)."""
+        tool_calls: list[ToolCall] = []
+        cleaned_lines: list[str] = []
+        lines = text.split("\n")
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or stripped.startswith("```"):
+                cleaned_lines.append(line)
+                continue
+
+            bracket_match = re.match(r"^\[(.+)\]$", stripped, re.DOTALL)
+            if bracket_match:
+                stripped = bracket_match.group(1).strip()
+
+            match = re.match(r"^([A-Za-z0-9][A-Za-z0-9_-]*)\((.*)\)$", stripped, re.DOTALL)
+            if not match:
+                cleaned_lines.append(line)
+                continue
+
+            raw_name = match.group(1)
+            args_src = match.group(2)
+
+            try:
+                tree = ast.parse(f"_f({args_src})", mode="eval")
+                if not isinstance(tree.body, ast.Call):
+                    cleaned_lines.append(line)
+                    continue
+                call = tree.body
+
+                parsed_args: dict[str, Any] = {}
+
+                # Keyword args
+                for keyword in call.keywords:
+                    if keyword.arg is None:
+                        continue
+                    parsed_args[keyword.arg] = self._ast_to_value(keyword.value)
+
+                # Positional args (best-effort param mapping when determinable)
+                param_names: list[str] = []
+                if tools:
+                    # Prefer schema from exact name; otherwise single-tool fallback.
+                    tool_for_mapping: Tool | None = next((t for t in tools if t.name == raw_name), None)
+                    if tool_for_mapping is None and len(tools) == 1:
+                        tool_for_mapping = tools[0]
+
+                    if tool_for_mapping is not None:
+                        try:
+                            params = tool_for_mapping.tool_param().get("function", {}).get("parameters", {})
+                            properties = params.get("properties", {}) if isinstance(params, dict) else {}
+                            if isinstance(properties, dict):
+                                param_names = list(properties.keys())
+                        except Exception:
+                            param_names = []
+
+                for i, arg in enumerate(call.args):
+                    arg_name = param_names[i] if i < len(param_names) else f"arg{i}"
+                    parsed_args[arg_name] = self._ast_to_value(arg)
+
+                resolved_name = self._resolve_emulated_tool_name(raw_name, parsed_args, tools or [])
+                tool_calls.append(ToolCall(id=f"call_{len(tool_calls)}", name=resolved_name, args=parsed_args))
+            except Exception as e:
+                log.debug(f"Failed fallback parse for potential function call '{stripped[:80]}': {e}")
+                cleaned_lines.append(line)
+
+        return tool_calls, "\n".join(cleaned_lines)
+
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         """Return environment variables for containerized execution.
 
@@ -336,39 +530,165 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         log.debug(f"has_tool_support called for {model}, returning False (using emulation)")
         return False
 
+    @staticmethod
+    def _is_gemma_model(model: str) -> bool:
+        """Check if the model is a Gemma model by name pattern."""
+        return model.lower().startswith("gemma")
+
+    async def _fetch_server_model_ids(self) -> list[str]:
+        """Fetch model IDs currently exposed by the configured llama-server."""
+        if not self._base_url:
+            return []
+
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(2.0, connect=0.5), verify=False) as client:
+                response = await client.get(f"{self._base_url}/v1/models")
+                response.raise_for_status()
+                payload = response.json()
+        except Exception as e:
+            log.debug(f"Could not fetch llama.cpp server models from {self._base_url}/v1/models: {e}")
+            return []
+
+        raw_models = payload.get("data")
+        if not isinstance(raw_models, list):
+            raw_models = payload.get("models")
+        if not isinstance(raw_models, list):
+            return []
+
+        model_ids: list[str] = []
+        for entry in raw_models:
+            if isinstance(entry, dict):
+                model_id = entry.get("id")
+                if isinstance(model_id, str) and model_id.strip():
+                    model_ids.append(model_id.strip())
+            elif isinstance(entry, str) and entry.strip():
+                model_ids.append(entry.strip())
+
+        return model_ids
+
+    @staticmethod
+    def _model_tokens(model_id: str) -> set[str]:
+        """Build normalized comparison tokens for a model identifier."""
+        lowered = model_id.strip().lower()
+        if not lowered:
+            return set()
+
+        tail = lowered.rsplit(":", 1)[-1]
+        basename = Path(tail).name.lower()
+        stem = Path(basename).stem.lower() if basename else ""
+        repo = lowered.split(":", 1)[0]
+
+        return {token for token in (lowered, tail, basename, stem, repo) if token}
+
+    def _choose_server_model(self, requested_model: str, server_model_ids: Sequence[str]) -> str:
+        """Resolve requested model to one currently returned by llama-server."""
+        if not server_model_ids:
+            return requested_model
+
+        requested = requested_model.strip()
+        if not requested:
+            return server_model_ids[0]
+
+        server_by_lower = {model_id.lower(): model_id for model_id in server_model_ids}
+        requested_lower = requested.lower()
+        if requested in server_model_ids:
+            return requested
+        if requested_lower in server_by_lower:
+            return server_by_lower[requested_lower]
+
+        requested_tokens = self._model_tokens(requested)
+        if requested_tokens:
+            for server_model_id in server_model_ids:
+                if requested_tokens & self._model_tokens(server_model_id):
+                    return server_model_id
+
+        # Final fallback: always use a model that the server confirms is available.
+        return server_model_ids[0]
+
+    async def _resolve_server_model(self, requested_model: str) -> str:
+        """Resolve the requested model to a model ID advertised by llama-server."""
+        server_model_ids = await self._fetch_server_model_ids()
+        if not server_model_ids:
+            return requested_model
+
+        resolved = self._choose_server_model(requested_model, server_model_ids)
+        if resolved != requested_model:
+            log.warning(
+                f"Requested llama.cpp model '{requested_model}' is not server-advertised; "
+                f"using '{resolved}' from /v1/models"
+            )
+        return resolved
+
     async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available Llama.cpp models.
 
-        Queries the llama.cpp server's OpenAI-compatible /v1/models endpoint.
+        Combines:
+        - locally cached llama.cpp-compatible GGUF models (downloaded), and
+        - models exposed by the running llama-server via /v1/models.
+
+        Cache-backed models are listed first so downloaded models are visible
+        even when the server endpoint is temporarily unavailable.
 
         Returns:
             List of LanguageModel instances for Llama.cpp
         """
         import httpx
 
-        models: list[LanguageModel] = []
+        from nodetool.integrations.huggingface.huggingface_models import (
+            get_llamacpp_language_models_from_hf_cache,
+            get_llamacpp_language_models_from_llama_cache,
+        )
 
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(f"{self._base_url}/v1/models")
-                response.raise_for_status()
-                data = response.json()
+        merged: dict[str, LanguageModel] = {}
 
+        # 1) Discover downloaded GGUF models from local caches.
+        cache_results = await asyncio.gather(
+            get_llamacpp_language_models_from_hf_cache(),
+            get_llamacpp_language_models_from_llama_cache(),
+            return_exceptions=True,
+        )
+        for source, result in (
+            ("hf cache", cache_results[0]),
+            ("llama.cpp cache", cache_results[1]),
+        ):
+            if isinstance(result, Exception):
+                log.warning(f"Error discovering {source} models: {result}")
+                continue
+            for model in result:
+                if model.id and model.id not in merged:
+                    merged[model.id] = model
+
+        # 2) Add currently exposed server models (may include aliases/non-cached specs).
+        if self._base_url:
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(f"{self._base_url}/v1/models")
+                    response.raise_for_status()
+                    data = response.json()
+
+                server_count = 0
                 for model_data in data.get("data", []):
                     model_id = model_data.get("id", "")
-                    models.append(
-                        LanguageModel(
+                    if not model_id:
+                        continue
+                    server_count += 1
+                    if model_id not in merged:
+                        merged[model_id] = LanguageModel(
                             id=model_id,
                             name=model_id,
                             provider=Provider.LlamaCpp,
                         )
-                    )
-                log.debug(f"Found {len(models)} models from llama.cpp server")
-        except Exception as e:
-            log.warning(f"Error querying llama.cpp server: {e}")
+                log.debug(
+                    f"Found {server_count} models from llama.cpp server; "
+                    f"returning {len(merged)} merged models"
+                )
+            except Exception as e:
+                log.warning(f"Error querying llama.cpp server: {e}")
+        else:
+            log.debug("LLAMA_CPP_URL not set while listing models; returning cache-discovered models only")
 
-        return models
+        return list(merged.values())
 
     async def generate_messages(  # type: ignore[override]
         self,
@@ -393,16 +713,20 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             ``Chunk`` objects for text deltas and ``ToolCall`` entries when
             the model requests tool execution.
         """
+        if not messages:
+            raise ValueError("messages must not be empty")
+
         # Determine if we need tool emulation
-        use_tool_emulation = len(tools) > 0 and not self.has_tool_support(model)
+        resolved_model = await self._resolve_server_model(model)
+        use_tool_emulation = len(tools) > 0 and not self.has_tool_support(resolved_model)
         if use_tool_emulation:
-            log.info(f"Using tool emulation for model {model}")
+            log.info(f"Using tool emulation for model {resolved_model}")
 
         if not self._base_url:
             raise RuntimeError("LLAMA_CPP_URL is required for LlamaCpp provider")
         base_url = self._base_url
         _kwargs: dict[str, Any] = {
-            "model": model,
+            "model": resolved_model,
             "max_tokens": max_tokens,
             "stream": True,
         }
@@ -413,7 +737,9 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             _kwargs["tools"] = self.format_tools(tools)
 
         # Normalize messages to satisfy llama.cpp alternation constraints
-        messages_normalized = self._normalize_messages_for_llama(messages, tools, use_tool_emulation)
+        messages_normalized = self._normalize_messages_for_llama(
+            messages, tools, use_tool_emulation, model=resolved_model
+        )
         # llama.cpp is sensitive to unsupported fields; pass only necessary ones
         openai_messages = [await self.convert_message(m) for m in messages_normalized]
 
@@ -458,6 +784,11 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                     if use_tool_emulation and accumulated_content:
                         log.debug("Parsing emulated tool calls from streaming response")
                         emulated_calls, _ = self._parse_function_calls(accumulated_content, tools)
+                        if not emulated_calls:
+                            emulated_calls, _ = self._parse_non_python_function_calls(accumulated_content, tools)
+                        else:
+                            for call in emulated_calls:
+                                call.name = self._resolve_emulated_tool_name(call.name, call.args, tools)
                         for tool_call in emulated_calls:
                             log.debug(f"Yielding emulated tool call: {tool_call.name}")
                             yield tool_call
@@ -528,15 +859,20 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         Returns:
             Final assistant ``Message`` with optional ``tool_calls``.
         """
+        if not messages:
+            raise ValueError("messages must not be empty")
+
         # Determine if we need tool emulation
-        use_tool_emulation = len(tools) > 0 and not self.has_tool_support(model)
+        resolved_model = await self._resolve_server_model(model)
+        use_tool_emulation = len(tools) > 0 and not self.has_tool_support(resolved_model)
         if use_tool_emulation:
-            log.info(f"Using tool emulation for model {model}")
+            log.info(f"Using tool emulation for model {resolved_model}")
 
         if not self._base_url:
             raise RuntimeError("LLAMA_CPP_URL is required for LlamaCpp provider")
         base_url = self._base_url
         _kwargs: dict[str, Any] = {
+            "model": resolved_model,
             "max_tokens": max_tokens,
             "stream": False,
         }
@@ -549,7 +885,9 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         if kwargs:
             _kwargs.update(kwargs)
 
-        messages_normalized = self._normalize_messages_for_llama(messages, tools, use_tool_emulation)
+        messages_normalized = self._normalize_messages_for_llama(
+            messages, tools, use_tool_emulation, model=resolved_model
+        )
         openai_messages = [await self.convert_message(m) for m in messages_normalized]
 
         # Count prompt tokens before sending
@@ -560,11 +898,11 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         # print("DEBUG: OpenAI messages:", openai_messages)
         # print("DEBUG: Tools:", len(tools) if tools else 0)
 
-        self._log_api_request("chat", messages_normalized, model=model, **_kwargs)
+        self._log_api_request("chat", messages_normalized, **_kwargs)
 
         client = self.get_client(base_url)
         try:
-            completion = await client.chat.completions.create(model=model, messages=openai_messages, **_kwargs)
+            completion = await client.chat.completions.create(messages=openai_messages, **_kwargs)
         except httpx.ConnectError as e:
             raise self._as_service_unavailable(e, base_url) from e
 
@@ -594,6 +932,11 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         elif use_tool_emulation and response_message.content:
             log.debug("Parsing emulated tool calls from response")
             emulated_calls, cleaned_content = self._parse_function_calls(response_message.content, tools)
+            if not emulated_calls:
+                emulated_calls, cleaned_content = self._parse_non_python_function_calls(response_message.content, tools)
+            else:
+                for call in emulated_calls:
+                    call.name = self._resolve_emulated_tool_name(call.name, call.args, tools)
             if emulated_calls:
                 tool_calls = emulated_calls
                 final_content = cleaned_content

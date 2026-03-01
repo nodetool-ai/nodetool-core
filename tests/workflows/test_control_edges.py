@@ -4,6 +4,9 @@ Tests for control edge support in the workflow system.
 Control edges allow Agent nodes to dynamically set parameters of other nodes.
 """
 
+import json
+from enum import Enum
+
 import pytest
 
 from nodetool.types.api_graph import Edge
@@ -52,6 +55,23 @@ class TestPlainNode(BaseNode):
 
     async def process(self, context):
         return {"output": self.value}
+
+
+class TestEnumDefaultNode(BaseNode):
+    """Node with plain Enum defaults to verify control-schema JSON serialization."""
+
+    class Mode(Enum):
+        FAST = "fast"
+        SAFE = "safe"
+
+    mode: Mode = Mode.SAFE
+
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "tests.workflows.test_control_edges.TestEnumDefaultNode"
+
+    async def process(self, context):
+        return {"output": self.mode.value}
 
 
 # ---------- Phase 1: Edge Model Tests ----------
@@ -1893,6 +1913,16 @@ class TestControllerNodeE2E:
         assert props["mode"]["type"] == "string"
         assert props["threshold"]["default"] == 0.5
         assert props["mode"]["default"] == "normal"
+
+    @pytest.mark.asyncio
+    async def test_get_control_actions_enum_default_is_json_serializable(self):
+        """Enum defaults in control schemas should serialize to JSON primitives."""
+        actions = TestEnumDefaultNode.get_control_actions()
+        props = actions["run"]["properties"]
+
+        assert props["mode"]["default"] == "safe"
+        # Regression guard for provider payload serialization.
+        json.dumps(actions)
 
     @pytest.mark.asyncio
     async def test_is_controlled_flag(self):

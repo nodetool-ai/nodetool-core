@@ -1,0 +1,21 @@
+{
+  "name": "nodetool-workflow-ts",
+  "private": true,
+  "workspaces": [
+    "packages/protocol",
+    "packages/kernel",
+    "packages/runtime",
+    "packages/node-sdk",
+    "packages/base-nodes",
+    "packages/parity-harness"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "workflow": "node ./scripts/run-workflow.mjs"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.1"
+  }
+}

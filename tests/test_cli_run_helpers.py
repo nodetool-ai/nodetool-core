@@ -1,16 +1,19 @@
 
-import pytest
-import json
 import base64
+import json
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from nodetool.cli import (
-    _run_json_default,
-    _run_is_dsl_file,
     _run_is_dsl_content,
+    _run_is_dsl_file,
+    _run_json_default,
     _run_parse_workflow_arg,
 )
 from nodetool.types.api_graph import Graph
 from nodetool.workflows.run_job_request import RunJobRequest
+
 
 class TestRunHelpers:
     """Tests for CLI run helper functions."""

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import os
 import sys
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as get_package_version
 from typing import Any
 
 from rich.console import Console
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version as get_package_version
 
 # Create console instance
 console = Console(stderr=True)

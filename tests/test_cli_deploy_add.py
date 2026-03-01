@@ -1,9 +1,12 @@
 """Tests for nodetool deploy add command."""
+import os
+
 import pytest
 import yaml
-import os
 from click.testing import CliRunner
+
 from nodetool.cli import cli
+
 
 @pytest.fixture
 def mock_config_path(tmp_path, monkeypatch):

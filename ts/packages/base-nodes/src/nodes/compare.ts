@@ -1,0 +1,56 @@
+import { BaseNode } from "@nodetool/node-sdk";
+
+type ImageLike = {
+  data?: Uint8Array | string;
+  uri?: string;
+};
+
+function toBytes(image: ImageLike | undefined): Uint8Array {
+  if (!image) return new Uint8Array();
+  if (image.data instanceof Uint8Array) return image.data;
+  if (typeof image.data === "string") {
+    return Uint8Array.from(Buffer.from(image.data, "base64"));
+  }
+  if (typeof image.uri === "string" && image.uri.startsWith("data:")) {
+    const payload = image.uri.split(",", 2)[1] ?? "";
+    return Uint8Array.from(Buffer.from(payload, "base64"));
+  }
+  return new Uint8Array();
+}
+
+export class CompareImagesNode extends BaseNode {
+  static readonly nodeType = "nodetool.compare.CompareImages";
+  static readonly title = "Compare Images";
+  static readonly description = "Compute a simple byte-level similarity score";
+
+  defaults() {
+    return { image_a: {}, image_b: {} };
+  }
+
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const a = toBytes((inputs.image_a ?? this._props.image_a ?? {}) as ImageLike);
+    const b = toBytes((inputs.image_b ?? this._props.image_b ?? {}) as ImageLike);
+
+    if (a.length === 0 && b.length === 0) {
+      return { score: 1, equal: true };
+    }
+    if (a.length === 0 || b.length === 0) {
+      return { score: 0, equal: false };
+    }
+
+    const len = Math.min(a.length, b.length);
+    let same = 0;
+    for (let i = 0; i < len; i += 1) {
+      if (a[i] === b[i]) same += 1;
+    }
+
+    const lengthPenalty = len / Math.max(a.length, b.length);
+    const score = (same / len) * lengthPenalty;
+    return {
+      score,
+      equal: score === 1,
+    };
+  }
+}
+
+export const COMPARE_NODES = [CompareImagesNode] as const;

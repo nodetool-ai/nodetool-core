@@ -1,0 +1,49 @@
+name: TS Parity Harness
+
+on:
+  pull_request:
+    paths:
+      - "ts/**"
+      - ".github/workflows/ts-parity-harness.yml"
+  workflow_dispatch:
+
+jobs:
+  parity-harness:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ts
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ts/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build TS workspaces
+        run: npm run build
+
+      - name: Run parity harness tests
+        run: npm --workspace @nodetool/parity-harness run test
+
+      - name: Generate sample shadow report
+        run: |
+          npm --workspace @nodetool/parity-harness run build
+          node packages/parity-harness/dist/cli.js \
+            --python "node -e console.log(JSON.stringify({type:'job_update',status:'running'}))" \
+            --ts "node -e console.log(JSON.stringify({type:'job_update',status:'running'}))" \
+            > parity-shadow-report.json
+
+      - name: Upload shadow report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-shadow-report
+          path: ts/parity-shadow-report.json
