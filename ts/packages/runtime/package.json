@@ -11,6 +11,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.33.1",
     "@nodetool/kernel": "*",
     "@nodetool/protocol": "*",
     "openai": "^4.104.0"
