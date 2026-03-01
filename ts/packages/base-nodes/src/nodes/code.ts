@@ -267,10 +267,50 @@ export class RunLuaCommandDockerNode extends RunCommandNode {
   static readonly runtimeArgs = ["-e"];
 }
 
+export class RunPythonCommandDockerNode extends RunCommandNode {
+  static readonly nodeType = "nodetool.code.RunPythonCommandDocker";
+  static readonly title = "Run Python Command Docker";
+  static readonly description = "Docker variant alias of RunPythonCommand";
+  static readonly runtime = "python3";
+  static readonly runtimeArgs = ["-c"];
+}
+
+export class RunJavaScriptCommandDockerNode extends RunCommandNode {
+  static readonly nodeType = "nodetool.code.RunJavaScriptCommandDocker";
+  static readonly title = "Run JavaScript Command Docker";
+  static readonly description = "Docker variant alias of RunJavaScriptCommand";
+  static readonly runtime = "node";
+  static readonly runtimeArgs = ["-e"];
+}
+
+export class RunBashCommandDockerNode extends RunCommandNode {
+  static readonly nodeType = "nodetool.code.RunBashCommandDocker";
+  static readonly title = "Run Bash Command Docker";
+  static readonly description = "Docker variant alias of RunBashCommand";
+  static readonly runtime = "bash";
+  static readonly runtimeArgs = ["-c"];
+}
+
+export class RunRubyCommandDockerNode extends RunCommandNode {
+  static readonly nodeType = "nodetool.code.RunRubyCommandDocker";
+  static readonly title = "Run Ruby Command Docker";
+  static readonly description = "Docker variant alias of RunRubyCommand";
+  static readonly runtime = "ruby";
+  static readonly runtimeArgs = ["-e"];
+}
+
 export class RunShellCommandNode extends RunCommandNode {
   static readonly nodeType = "nodetool.code.RunShellCommand";
   static readonly title = "Run Shell Command";
   static readonly description = "Run shell command with sh -c";
+  static readonly runtime = "sh";
+  static readonly runtimeArgs = ["-c"];
+}
+
+export class RunShellCommandDockerNode extends RunCommandNode {
+  static readonly nodeType = "nodetool.code.RunShellCommandDocker";
+  static readonly title = "Run Shell Command Docker";
+  static readonly description = "Docker variant alias of RunShellCommand";
   static readonly runtime = "sh";
   static readonly runtimeArgs = ["-c"];
 }
@@ -289,4 +329,9 @@ export const CODE_NODES = [
   RunLuaCommandNode,
   RunLuaCommandDockerNode,
   RunShellCommandNode,
+  RunPythonCommandDockerNode,
+  RunJavaScriptCommandDockerNode,
+  RunBashCommandDockerNode,
+  RunRubyCommandDockerNode,
+  RunShellCommandDockerNode,
 ] as const;

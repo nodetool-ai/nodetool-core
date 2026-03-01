@@ -274,6 +274,11 @@ export {
   RunLuaCommandNode,
   RunLuaCommandDockerNode,
   RunShellCommandNode,
+  RunPythonCommandDockerNode,
+  RunJavaScriptCommandDockerNode,
+  RunBashCommandDockerNode,
+  RunRubyCommandDockerNode,
+  RunShellCommandDockerNode,
   CODE_NODES,
 } from "./nodes/code.js";
 export {
@@ -304,7 +309,15 @@ export {
   ChunkToAudioNode,
   AUDIO_NODES,
 } from "./nodes/audio.js";
-export { WaitNode, TRIGGER_NODES } from "./nodes/triggers.js";
+export {
+  WaitNode,
+  WaitAliasNode,
+  ManualTriggerNode,
+  IntervalTriggerNode,
+  WebhookTriggerNode,
+  FileWatchTriggerNode,
+  TRIGGER_NODES,
+} from "./nodes/triggers.js";
 export {
   LoadImageFileNode,
   LoadImageFolderNode,
@@ -336,6 +349,7 @@ export {
   ConcatVideoNode,
   TrimVideoNode,
   ResizeVideoNode,
+  ResizeVideoAliasNode,
   RotateVideoNode,
   SetSpeedVideoNode,
   OverlayVideoNode,

@@ -285,6 +285,12 @@ export class ResizeVideoNode extends VideoTransformNode {
   static readonly description = "Resize video (placeholder)";
 }
 
+export class ResizeVideoAliasNode extends VideoTransformNode {
+  static readonly nodeType = "nodetool.video.Resize";
+  static readonly title = "Resize";
+  static readonly description = "Alias for ResizeNode";
+}
+
 export class RotateVideoNode extends VideoTransformNode {
   static readonly nodeType = "nodetool.video.Rotate";
   static readonly title = "Rotate";
@@ -467,6 +473,7 @@ export const VIDEO_NODES = [
   ConcatVideoNode,
   TrimVideoNode,
   ResizeVideoNode,
+  ResizeVideoAliasNode,
   RotateVideoNode,
   SetSpeedVideoNode,
   OverlayVideoNode,

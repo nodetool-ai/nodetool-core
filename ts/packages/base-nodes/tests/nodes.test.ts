@@ -129,7 +129,18 @@ describe("base node registration", () => {
     expect(registry.has("nodetool.code.ExecuteCommand")).toBe(true);
     expect(registry.has("nodetool.audio.TextToSpeech")).toBe(true);
     expect(registry.has("nodetool.triggers.WaitNode")).toBe(true);
+    expect(registry.has("nodetool.triggers.Wait")).toBe(true);
+    expect(registry.has("nodetool.triggers.ManualTrigger")).toBe(true);
+    expect(registry.has("nodetool.triggers.IntervalTrigger")).toBe(true);
+    expect(registry.has("nodetool.triggers.WebhookTrigger")).toBe(true);
+    expect(registry.has("nodetool.triggers.FileWatchTrigger")).toBe(true);
     expect(registry.has("nodetool.image.TextToImage")).toBe(true);
+    expect(registry.has("nodetool.video.Resize")).toBe(true);
+    expect(registry.has("nodetool.code.RunPythonCommandDocker")).toBe(true);
+    expect(registry.has("nodetool.code.RunJavaScriptCommandDocker")).toBe(true);
+    expect(registry.has("nodetool.code.RunBashCommandDocker")).toBe(true);
+    expect(registry.has("nodetool.code.RunRubyCommandDocker")).toBe(true);
+    expect(registry.has("nodetool.code.RunShellCommandDocker")).toBe(true);
   });
 });
 
