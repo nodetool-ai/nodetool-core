@@ -8,7 +8,9 @@ import {
   MemoryCache,
   InMemoryStorageAdapter,
   FileStorageAdapter,
+  S3StorageAdapter,
   resolveWorkspacePath,
+  type S3Client,
 } from "../src/context.js";
 import type { ProcessingMessage, NodeUpdate } from "@nodetool/protocol";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -205,6 +207,54 @@ describe("Storage adapters", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("S3StorageAdapter stores and returns s3 uri", async () => {
+    const store = new Map<string, Uint8Array>();
+    const client: S3Client = {
+      async putObject(input) {
+        store.set(`${input.bucket}/${input.key}`, new Uint8Array(input.body));
+      },
+      async getObject(input) {
+        return store.get(`${input.bucket}/${input.key}`) ?? null;
+      },
+      async headObject(input) {
+        return store.has(`${input.bucket}/${input.key}`);
+      },
+    };
+
+    const storage = new S3StorageAdapter({
+      bucket: "test-bucket",
+      prefix: "runs/r1",
+      client,
+    });
+    const uri = await storage.store(
+      "assets/out.bin",
+      new Uint8Array([4, 5, 6]),
+      "application/octet-stream"
+    );
+
+    expect(uri).toBe("s3://test-bucket/runs/r1/assets/out.bin");
+    expect(await storage.exists(uri)).toBe(true);
+    expect(await storage.retrieve(uri)).toEqual(new Uint8Array([4, 5, 6]));
+  });
+
+  it("S3StorageAdapter returns null/false for other buckets or invalid uri", async () => {
+    const client: S3Client = {
+      async putObject() {},
+      async getObject() {
+        return new Uint8Array([1]);
+      },
+      async headObject() {
+        return true;
+      },
+    };
+
+    const storage = new S3StorageAdapter({ bucket: "bucket-a", client });
+    expect(await storage.retrieve("s3://bucket-b/key")).toBeNull();
+    expect(await storage.exists("s3://bucket-b/key")).toBe(false);
+    expect(await storage.retrieve("file:///tmp/nope")).toBeNull();
+    expect(await storage.exists("file:///tmp/nope")).toBe(false);
   });
 });
 

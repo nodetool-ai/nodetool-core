@@ -84,6 +84,13 @@ function normalizeStorageKey(key: string): string {
   return cleaned;
 }
 
+function joinStorageKey(prefix: string | undefined, key: string): string {
+  const normalizedKey = normalizeStorageKey(key);
+  if (!prefix) return normalizedKey;
+  const normalizedPrefix = normalizeStorageKey(prefix);
+  return `${normalizedPrefix}/${normalizedKey}`;
+}
+
 /**
  * In-memory storage adapter useful for tests and single-process ephemeral runs.
  */
@@ -157,6 +164,79 @@ export class FileStorageAdapter implements StorageAdapter {
 
   async exists(uri: string): Promise<boolean> {
     return (await this.retrieve(uri)) !== null;
+  }
+}
+
+export interface S3Client {
+  putObject(input: {
+    bucket: string;
+    key: string;
+    body: Uint8Array;
+    contentType?: string;
+  }): Promise<void>;
+  getObject(input: { bucket: string; key: string }): Promise<Uint8Array | null>;
+  headObject(input: { bucket: string; key: string }): Promise<boolean>;
+}
+
+/**
+ * S3-backed storage adapter with injected client operations.
+ *
+ * This avoids hard-coupling runtime to any specific SDK while providing
+ * predictable URI behavior (`s3://bucket/key`).
+ */
+export class S3StorageAdapter implements StorageAdapter {
+  readonly bucket: string;
+  readonly prefix: string | null;
+  readonly client: S3Client;
+
+  constructor(opts: { bucket: string; client: S3Client; prefix?: string }) {
+    if (!opts.bucket) {
+      throw new Error("S3 bucket is required");
+    }
+    this.bucket = opts.bucket;
+    this.client = opts.client;
+    this.prefix = opts.prefix ? normalizeStorageKey(opts.prefix) : null;
+  }
+
+  private keyForStore(key: string): string {
+    return joinStorageKey(this.prefix ?? undefined, key);
+  }
+
+  private parseUri(uri: string): { bucket: string; key: string } | null {
+    if (!uri.startsWith("s3://")) return null;
+    const withoutScheme = uri.slice("s3://".length);
+    const slashIndex = withoutScheme.indexOf("/");
+    if (slashIndex <= 0 || slashIndex === withoutScheme.length - 1) {
+      return null;
+    }
+    const bucket = withoutScheme.slice(0, slashIndex);
+    const key = withoutScheme.slice(slashIndex + 1);
+    return { bucket, key };
+  }
+
+  async store(key: string, data: Uint8Array, contentType?: string): Promise<string> {
+    const objectKey = this.keyForStore(key);
+    await this.client.putObject({
+      bucket: this.bucket,
+      key: objectKey,
+      body: data,
+      contentType,
+    });
+    return `s3://${this.bucket}/${objectKey}`;
+  }
+
+  async retrieve(uri: string): Promise<Uint8Array | null> {
+    const parsed = this.parseUri(uri);
+    if (!parsed) return null;
+    if (parsed.bucket !== this.bucket) return null;
+    return this.client.getObject(parsed);
+  }
+
+  async exists(uri: string): Promise<boolean> {
+    const parsed = this.parseUri(uri);
+    if (!parsed) return false;
+    if (parsed.bucket !== this.bucket) return false;
+    return this.client.headObject(parsed);
   }
 }
 
