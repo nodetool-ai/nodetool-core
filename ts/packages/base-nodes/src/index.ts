@@ -216,6 +216,18 @@ export {
   SaveVideoFileNode,
   WORKSPACE_NODES,
 } from "./nodes/workspace.js";
+export { CompareImagesNode, COMPARE_NODES } from "./nodes/compare.js";
+export {
+  LoadDocumentFileNode,
+  SaveDocumentFileNode,
+  ListDocumentsNode,
+  SplitDocumentNode,
+  SplitHTMLNode,
+  SplitJSONNode,
+  SplitRecursivelyNode,
+  SplitMarkdownNode,
+  DOCUMENT_NODES,
+} from "./nodes/document.js";
 
 import { CONTROL_NODES } from "./nodes/control.js";
 import { BOOLEAN_NODES } from "./nodes/boolean.js";
@@ -229,6 +241,8 @@ import { EXTENDED_PLACEHOLDER_NODES } from "./nodes/extended-placeholders.js";
 import { INPUT_NODES } from "./nodes/input.js";
 import { OUTPUT_NODES } from "./nodes/output.js";
 import { WORKSPACE_NODES } from "./nodes/workspace.js";
+import { COMPARE_NODES } from "./nodes/compare.js";
+import { DOCUMENT_NODES } from "./nodes/document.js";
 
 export const ALL_BASE_NODES = [
   ...CONTROL_NODES,
@@ -243,6 +257,8 @@ export const ALL_BASE_NODES = [
   ...INPUT_NODES,
   ...OUTPUT_NODES,
   ...WORKSPACE_NODES,
+  ...COMPARE_NODES,
+  ...DOCUMENT_NODES,
 ] as const;
 
 export function registerBaseNodes(registry: NodeRegistry): void {

@@ -80,6 +80,10 @@ import {
   ReadTextFileNode,
   JoinWorkspacePathsNode,
   WorkspaceFileExistsNode,
+  CompareImagesNode,
+  SplitJSONNode,
+  SaveDocumentFileNode,
+  LoadDocumentFileNode,
 } from "../src/index.js";
 
 describe("base node registration", () => {
@@ -96,6 +100,8 @@ describe("base node registration", () => {
     expect(registry.has("nodetool.image.ImageToImage")).toBe(true);
     expect(registry.has("nodetool.video.TextToVideo")).toBe(true);
     expect(registry.has("nodetool.workspace.ReadTextFile")).toBe(true);
+    expect(registry.has("nodetool.document.SplitDocument")).toBe(true);
+    expect(registry.has("nodetool.compare.CompareImages")).toBe(true);
   });
 });
 
@@ -164,6 +170,42 @@ describe("input/output/workspace nodes", () => {
     await expect(
       exists.process({ workspace_dir: dir, path: "x/y.txt" })
     ).resolves.toEqual({ output: false });
+  });
+
+  it("CompareImagesNode returns perfect score for equal bytes", async () => {
+    const bytes = Uint8Array.from([1, 2, 3]);
+    const node = new CompareImagesNode();
+    await expect(
+      node.process({ image_a: { data: bytes }, image_b: { data: bytes } })
+    ).resolves.toEqual({ score: 1, equal: true });
+  });
+
+  it("document save/load and split json nodes work", async () => {
+    const file = `/tmp/nodetool-doc-${Date.now()}.json`;
+    const save = new SaveDocumentFileNode();
+    await expect(
+      save.process({
+        path: file,
+        document: {
+          text: "{\"a\":1,\"b\":2}",
+        },
+      })
+    ).resolves.toEqual({ output: file });
+
+    const load = new LoadDocumentFileNode();
+    const loaded = await load.process({ path: file });
+    expect((loaded.output as { data: string }).data).toBeTruthy();
+
+    const split = new SplitJSONNode();
+    const out: Array<string> = [];
+    for await (const chunk of split.genProcess({
+      document: { uri: `file://${file}` },
+      chunk_size: 8,
+      chunk_overlap: 2,
+    })) {
+      out.push(String(chunk.chunk));
+    }
+    expect(out.length).toBeGreaterThan(0);
   });
 });
 
