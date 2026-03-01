@@ -11,12 +11,12 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@nodetool/protocol": "*",
-    "@nodetool/kernel": "*"
+    "@nodetool/kernel": "*",
+    "@nodetool/protocol": "*"
   },
   "devDependencies": {
+    "@types/node": "^20.0.0",
     "typescript": "^5.4.0",
-    "vitest": "^1.6.0",
-    "@types/node": "^20.0.0"
+    "vitest": "^1.6.1"
   }
 }
