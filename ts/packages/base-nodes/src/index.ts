@@ -167,6 +167,7 @@ import { TEXT_EXTRA_NODES } from "./nodes/text-extra.js";
 import { CONSTANT_NODES } from "./nodes/constant.js";
 import { NUMBERS_NODES } from "./nodes/numbers.js";
 import { DICTIONARY_NODES } from "./nodes/dictionary.js";
+import { EXTENDED_PLACEHOLDER_NODES } from "./nodes/extended-placeholders.js";
 
 export const ALL_BASE_NODES = [
   ...CONTROL_NODES,
@@ -177,6 +178,7 @@ export const ALL_BASE_NODES = [
   ...CONSTANT_NODES,
   ...NUMBERS_NODES,
   ...DICTIONARY_NODES,
+  ...EXTENDED_PLACEHOLDER_NODES,
 ] as const;
 
 export function registerBaseNodes(registry: NodeRegistry): void {

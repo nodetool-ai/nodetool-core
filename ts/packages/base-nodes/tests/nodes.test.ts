@@ -83,6 +83,11 @@ describe("base node registration", () => {
     expect(registry.has(IfNode.nodeType)).toBe(true);
     expect(registry.has(ListRangeNode.nodeType)).toBe(true);
     expect(registry.has(CompareNode.nodeType)).toBe(true);
+    expect(registry.has("nodetool.input.StringInput")).toBe(true);
+    expect(registry.has("nodetool.output.Output")).toBe(true);
+    expect(registry.has("nodetool.audio.TextToSpeech")).toBe(true);
+    expect(registry.has("nodetool.image.ImageToImage")).toBe(true);
+    expect(registry.has("nodetool.video.TextToVideo")).toBe(true);
   });
 });
 
