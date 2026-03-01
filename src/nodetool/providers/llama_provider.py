@@ -24,7 +24,13 @@ from huggingface_hub import hf_hub_download
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.metadata.types import LanguageModel, Message, Provider, ToolCall
+from nodetool.metadata.types import (
+    LanguageModel,
+    Message,
+    MessageTextContent,
+    Provider,
+    ToolCall,
+)
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_compat import OpenAICompat
 from nodetool.runtime.resources import require_scope
@@ -164,6 +170,41 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         for msg in messages:
             if msg.role == "system":
                 system_parts.append(str(msg.content) if msg.content is not None else "")
+                continue
+            if msg.role == "assistant" and use_tool_emulation:
+                # In emulation mode, don't send synthetic tool_calls metadata back to llama.cpp.
+                # Keep assistant text only, with any function-call line removed when we know
+                # this turn represented a tool request.
+                if isinstance(msg.content, str):
+                    assistant_content = msg.content
+                elif isinstance(msg.content, list):
+                    text_parts = [
+                        part.text
+                        for part in msg.content
+                        if isinstance(part, MessageTextContent)
+                    ]
+                    assistant_content = "\n".join(text_parts)
+                elif msg.content is None:
+                    assistant_content = ""
+                else:
+                    assistant_content = str(msg.content)
+
+                if msg.tool_calls:
+                    _calls, cleaned_content = self._parse_function_calls(
+                        assistant_content, tools
+                    )
+                    if not _calls:
+                        _calls, cleaned_content = self._parse_non_python_function_calls(
+                            assistant_content, tools
+                        )
+                    assistant_content = cleaned_content
+
+                normalized.append(
+                    Message(
+                        role="assistant",
+                        content=assistant_content,
+                    )
+                )
                 continue
             if msg.role == "tool":
                 # Represent tool output as a user turn for alternation.

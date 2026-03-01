@@ -1,6 +1,6 @@
 import type { NodeDescriptor } from "@nodetool/protocol";
 import type { NodeExecutor } from "@nodetool/kernel";
-import { BaseNode, type NodeClass } from "./base-node.js";
+import type { NodeClass } from "./base-node.js";
 
 export class NodeRegistry {
   private _classes = new Map<string, NodeClass>();

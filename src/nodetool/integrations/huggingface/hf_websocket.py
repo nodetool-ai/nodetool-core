@@ -12,6 +12,8 @@ from nodetool.integrations.huggingface.hf_download import DownloadManager, get_d
 
 log = get_logger(__name__)
 
+LLAMA_CPP_MODEL_TYPES = {"llama_cpp_model", "llama_cpp", "hf.gguf"}
+
 
 async def huggingface_download_endpoint(websocket: WebSocket):
     """WebSocket endpoint for HuggingFace model downloads with authentication."""
@@ -106,7 +108,7 @@ async def huggingface_download_endpoint(websocket: WebSocket):
                     # Determine cache_dir based on model_type
                     model_type = data.get("model_type")
                     cache_dir = None
-                    if model_type == "llama_cpp_model":
+                    if model_type in LLAMA_CPP_MODEL_TYPES:
                         from nodetool.providers.llama_server_manager import get_llama_cpp_cache_dir
 
                         cache_dir = get_llama_cpp_cache_dir()
@@ -121,6 +123,7 @@ async def huggingface_download_endpoint(websocket: WebSocket):
                             ignore_patterns=ignore_patterns,
                             user_id=user_id,
                             cache_dir=cache_dir,
+                            model_type=model_type,
                         )
                         log.info(f"huggingface_download_endpoint: Download started successfully for {repo_id}/{path}")
                     except Exception as e:

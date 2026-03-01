@@ -738,6 +738,7 @@ class HFCacheCheckResponse(BaseModel):
 class HFFastCacheStatusRequest(BaseModel):
     key: str
     repo_id: str
+    model_type: str | None = None
     path: str | None = None
     allow_patterns: str | list[str] | None = None
     ignore_patterns: str | list[str] | None = None
@@ -746,6 +747,9 @@ class HFFastCacheStatusRequest(BaseModel):
 class HFFastCacheStatusResponse(BaseModel):
     key: str
     downloaded: bool
+
+
+LLAMA_CPP_MODEL_TYPES = {"llama_cpp_model", "llama_cpp", "hf.gguf"}
 
 
 def _normalize_patterns(patterns: str | list[str] | None) -> list[str] | None:
@@ -826,10 +830,24 @@ async def check_huggingface_cache_status(
     body: list[HFFastCacheStatusRequest], _user: str = Depends(current_user)
 ) -> list[HFFastCacheStatusResponse]:
     from nodetool.integrations.huggingface.huggingface_models import HF_FAST_CACHE
+    from nodetool.integrations.huggingface.llama_cpp_download import (
+        is_llama_cpp_model_cached,
+    )
 
     async def resolve_item(item: HFFastCacheStatusRequest) -> HFFastCacheStatusResponse:
         allow_patterns = _normalize_patterns(item.allow_patterns)
         ignore_patterns = _normalize_patterns(item.ignore_patterns)
+
+        if item.model_type in LLAMA_CPP_MODEL_TYPES:
+            if item.path:
+                downloaded = await asyncio.to_thread(
+                    is_llama_cpp_model_cached, item.repo_id, item.path
+                )
+                return HFFastCacheStatusResponse(key=item.key, downloaded=downloaded)
+
+            # llama_cpp models should generally specify a GGUF path. If absent,
+            # conservatively report not downloaded for this fast-path endpoint.
+            return HFFastCacheStatusResponse(key=item.key, downloaded=False)
 
         if item.path:
             downloaded = await HF_FAST_CACHE.exists(item.repo_id, item.path)

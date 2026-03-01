@@ -46,6 +46,8 @@ class DownloadState:
     """Tracks the state of an individual download."""
 
     repo_id: str
+    path: str | None = None
+    model_type: str | None = None
     task: asyncio.Task | None = None
     monitor_task: asyncio.Task | None = None
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
@@ -109,7 +111,7 @@ class DownloadManager:
     async def sync_state(self, websocket: WebSocket):
         """Send current state of all downloads to a specific WebSocket."""
         for _repo_id, state in self.downloads.items():
-            await self.send_update(state.repo_id, None, specific_websocket=websocket)
+            await self.send_update(state.repo_id, state.path, specific_websocket=websocket)
 
     async def start_download(
         self,
@@ -119,6 +121,7 @@ class DownloadManager:
         ignore_patterns: list[str] | None = None,
         user_id: str | None = None,
         cache_dir: str | None = None,
+        model_type: str | None = None,
     ):
         id = repo_id if path is None else f"{repo_id}/{path}"
 
@@ -133,7 +136,7 @@ class DownloadManager:
                 return
 
         self.logger.info(f"Starting download task for: {id}")
-        download_state = DownloadState(repo_id=repo_id)
+        download_state = DownloadState(repo_id=repo_id, path=path, model_type=model_type)
         self.downloads[id] = download_state
 
         # Create background task for the download
@@ -196,7 +199,7 @@ class DownloadManager:
         self.downloads[id].cancel.set()
         self.logger.debug(f"Set cancel event for {id}")
         self.downloads[id].status = "cancelled"
-        await self.send_update(self.downloads[id].repo_id, None)  # Force update
+        await self.send_update(self.downloads[id].repo_id, self.downloads[id].path)  # Force update
 
     async def monitor_progress(self, repo_id: str, path: str | None):
         """Monitor progress and send updates periodically."""
@@ -218,15 +221,23 @@ class DownloadManager:
     async def send_update(self, repo_id: str, path: str | None = None, specific_websocket: WebSocket | None = None):
         """Send an update to WebSocket clients."""
         id = repo_id if path is None else f"{repo_id}/{path}"
-        if id not in self.downloads:
+        state = self.downloads.get(id)
+        if state is None and path is None:
+            # Fallback: resolve by repo_id when caller did not include path.
+            matches = [(key, value) for key, value in self.downloads.items() if value.repo_id == repo_id]
+            if len(matches) == 1:
+                id, state = matches[0]
+            else:
+                return
+        if state is None:
             return
-        state = self.downloads[id]
 
         # Create update dict
         update = {
             "status": state.status,
             "repo_id": state.repo_id,
-            "path": path,
+            "path": state.path if path is None else path,
+            "model_type": state.model_type,
             "downloaded_bytes": state.downloaded_bytes,
             "total_bytes": state.total_bytes,
             "downloaded_files": len(state.downloaded_files),

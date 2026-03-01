@@ -3522,10 +3522,34 @@ class ProcessingContext:
             if target_node is None:
                 continue
 
+            # Resolve a human-readable title for controlled-node tool naming.
+            node_title: str | None = None
+            try:
+                ui_props = target_node.ui_properties() if callable(getattr(target_node, "ui_properties", None)) else {}
+                if isinstance(ui_props, dict):
+                    for key in ("title", "label", "name"):
+                        value = ui_props.get(key)
+                        if isinstance(value, str) and value.strip():
+                            node_title = value.strip()
+                            break
+            except Exception:
+                node_title = None
+
+            if not node_title:
+                try:
+                    class_title = target_node.get_title() if callable(getattr(target_node, "get_title", None)) else ""
+                    if isinstance(class_title, str) and class_title.strip():
+                        node_title = class_title.strip()
+                except Exception:
+                    node_title = None
+
+            if not node_title:
+                node_title = target_node.id
+
             target_info: dict[str, Any] = {
                 "node_id": target_node.id,
                 "node_type": target_node.get_node_type(),
-                "node_title": getattr(target_node, "title", None) or target_node.id,
+                "node_title": node_title,
                 "node_description": target_node.get_description(),
                 "control_actions": target_node.get_control_actions(),
                 "properties": {},
