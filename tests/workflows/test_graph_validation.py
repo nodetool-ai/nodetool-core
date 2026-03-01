@@ -4,9 +4,10 @@ Tests for graph validation logic in workflows/graph.py.
 from typing import List
 
 import pytest
+
+from nodetool.types.api_graph import Edge
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.graph import Graph
-from nodetool.types.api_graph import Edge
 
 # Define nodes with specific types for testing validation
 
@@ -52,7 +53,7 @@ class IntConsumerNode(BaseNode):
 
 class ListStringConsumerNode(BaseNode):
     """Node that consumes a list of strings."""
-    input_list: List[str] = []
+    input_list: List[str] = []  # noqa: RUF012
 
     @classmethod
     def get_node_type(cls) -> str:

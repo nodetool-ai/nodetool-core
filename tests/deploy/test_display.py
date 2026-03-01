@@ -3,9 +3,12 @@ Tests for deployment display utility.
 """
 
 from unittest.mock import Mock, patch
+
 import pytest
-from nodetool.config.deployment import DockerDeployment, ImageConfig, ContainerConfig
+
+from nodetool.config.deployment import ContainerConfig, DockerDeployment, ImageConfig
 from nodetool.utils.display import show_deployment_details
+
 
 @patch("nodetool.utils.display.console")
 def test_show_deployment_details_executes_without_error(mock_console):

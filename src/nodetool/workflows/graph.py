@@ -566,4 +566,4 @@ class Graph(BaseModel):
         """
         if self._streaming_upstream_cache is None:
             self._compute_streaming_upstream()
-        return node_id in self._streaming_upstream_cache
+        return self._streaming_upstream_cache is not None and node_id in self._streaming_upstream_cache
