@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@nodetool/kernel": "*",
-    "@nodetool/protocol": "*"
+    "@nodetool/protocol": "*",
+    "openai": "^4.104.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
