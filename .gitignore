@@ -144,4 +144,8 @@ tmp/
 *.old
 
 # Agent
-__plans__/node_modules/
+__plans__/
+
+# Node.js / TypeScript
+node_modules/
+ts/packages/*/dist/

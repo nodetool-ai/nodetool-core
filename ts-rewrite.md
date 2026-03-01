@@ -1,6 +1,42 @@
 **Rewrite Objective**
 Full TypeScript rewrite of the workflow runtime so that scheduling, execution, control edges, streaming, state/recovery, and job lifecycle no longer depend on Python runtime code.
 
+---
+
+**Implementation Progress**
+
+Status legend: ✅ Done | 🚧 Partial | ⬜ Not started
+
+| Phase | Description | Status | Notes |
+|-------|-------------|--------|-------|
+| 0 | Spec Freeze & Parity Definition | 🚧 | Spec derived from Python source; golden traces deferred |
+| 1 | TS Foundations & Protocol Package | ✅ | Workspace, protocol types (18 message types), contract tests (15 passing) |
+| 2 | Graph & Inbox Kernel | ✅ | Graph model, validation, topological sort, NodeInbox with backpressure (33 tests) |
+| 3 | Actor Runtime Core | ✅ | Buffered, streaming-output, controlled modes; on_any & zip_all sync modes (6 tests) |
+| 4 | WorkflowRunner Orchestration | ✅ | Graph init, inbox setup, input dispatch, actor spawn, EOS routing, edge counters (7 tests) |
+| 5 | Node SDK & Registry | 🚧 | NodeExecutor interface defined; full BaseNode equivalent & registry deferred |
+| 6 | Processing Context, Assets, Caching | 🚧 | ProcessingContext, MemoryCache, sanitizeForClient (13 tests); storage adapters stubbed |
+| 7 | Job Execution + State/Recovery | ⬜ | |
+| 8 | Dual-Run Shadow & Diff Harness | ⬜ | |
+| 9 | Canary & Cutover | ⬜ | |
+| 10 | Python Decommission | ⬜ | |
+
+**Test Summary**: 74 tests across 7 test files, all passing.
+
+**Packages implemented** (under `ts/`):
+- `@nodetool/protocol` – Message types, graph types, control events
+- `@nodetool/kernel` – Graph, NodeInbox, NodeActor, WorkflowRunner
+- `@nodetool/runtime` – ProcessingContext, MemoryCache, output sanitization
+
+**Remaining work for completed phases**:
+- Phase 2: MessagePack serialization compatibility tests (deferred)
+- Phase 3: GPU lock / memory cleanup (not applicable in TS; defer to job-exec)
+- Phase 4: Sub-graph / GroupNode execution (deferred)
+- Phase 5: Full BaseNode port with property metadata, typed validation, lifecycle hooks
+- Phase 6: S3/file storage adapters, asset normalization, workspace resolution
+
+---
+
 **Baseline To Replace**
 Current Python components to mirror behavior from:
 - [workflow_runner.py](/Users/mg/workspace/nodetool-core/src/nodetool/workflows/workflow_runner.py)
