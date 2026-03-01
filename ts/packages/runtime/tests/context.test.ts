@@ -3,8 +3,16 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { ProcessingContext, MemoryCache } from "../src/context.js";
+import {
+  ProcessingContext,
+  MemoryCache,
+  InMemoryStorageAdapter,
+  FileStorageAdapter,
+} from "../src/context.js";
 import type { ProcessingMessage, NodeUpdate } from "@nodetool/protocol";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 describe("ProcessingContext – message queue", () => {
   it("collects emitted messages", () => {
@@ -117,5 +125,54 @@ describe("ProcessingContext.sanitizeForClient", () => {
     expect(ProcessingContext.sanitizeForClient(42)).toBe(42);
     expect(ProcessingContext.sanitizeForClient(null)).toBe(null);
     expect(ProcessingContext.sanitizeForClient(true)).toBe(true);
+  });
+});
+
+describe("Storage adapters", () => {
+  it("InMemoryStorageAdapter stores and retrieves bytes", async () => {
+    const storage = new InMemoryStorageAdapter();
+    const uri = await storage.store("assets/test.txt", new Uint8Array([1, 2, 3]));
+
+    expect(uri).toBe("memory://assets/test.txt");
+    expect(await storage.exists(uri)).toBe(true);
+    expect(await storage.retrieve(uri)).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("InMemoryStorageAdapter returns null/false for unknown URIs", async () => {
+    const storage = new InMemoryStorageAdapter();
+    expect(await storage.retrieve("memory://missing.bin")).toBeNull();
+    expect(await storage.exists("memory://missing.bin")).toBe(false);
+    expect(await storage.retrieve("file:///tmp/not-memory")).toBeNull();
+  });
+
+  it("FileStorageAdapter stores and retrieves bytes under root", async () => {
+    const root = await mkdtemp(join(tmpdir(), "nodetool-ts-runtime-"));
+    try {
+      const storage = new FileStorageAdapter(root);
+      const uri = await storage.store(
+        "assets/out.bin",
+        new Uint8Array([9, 8, 7, 6])
+      );
+
+      expect(uri.startsWith("file://")).toBe(true);
+      expect(await storage.exists(uri)).toBe(true);
+      const bytes = await storage.retrieve(uri);
+      expect(bytes).not.toBeNull();
+      expect(Array.from(bytes ?? [])).toEqual([9, 8, 7, 6]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("FileStorageAdapter rejects traversal keys", async () => {
+    const root = await mkdtemp(join(tmpdir(), "nodetool-ts-runtime-"));
+    try {
+      const storage = new FileStorageAdapter(root);
+      await expect(storage.store("../escape.txt", new Uint8Array([1]))).rejects.toThrow(
+        "Invalid storage key"
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

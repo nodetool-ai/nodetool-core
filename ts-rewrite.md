@@ -15,18 +15,18 @@ Status legend: ✅ Done | 🚧 Partial | ⬜ Not started
 | 3 | Actor Runtime Core | ✅ | Buffered, streaming-output, controlled modes; on_any & zip_all sync modes (6 tests) |
 | 4 | WorkflowRunner Orchestration | ✅ | Graph init, inbox setup, input dispatch, actor spawn, EOS routing, edge counters (7 tests) |
 | 5 | Node SDK & Registry | ✅ | BaseNode with lifecycle hooks & streaming; NodeRegistry; 11 example nodes; 34 tests |
-| 6 | Processing Context, Assets, Caching | 🚧 | ProcessingContext, MemoryCache, sanitizeForClient (13 tests); storage adapters stubbed |
+| 6 | Processing Context, Assets, Caching | 🚧 | ProcessingContext, MemoryCache, sanitizeForClient, in-memory + file storage adapters (17 tests); workspace resolution pending |
 | 7 | Job Execution + State/Recovery | ⬜ | Deferred (out of scope – pure execution engine goal) |
 | 8 | Dual-Run Shadow & Diff Harness | ⬜ | |
 | 9 | Canary & Cutover | ⬜ | |
 | 10 | Python Decommission | ⬜ | |
 
-**Test Summary**: 108 tests across 11 test files, all passing.
+**Test Summary**: 112 tests across 11 test files, all passing.
 
 **Packages implemented** (under `ts/`):
 - `@nodetool/protocol` – Message types, graph types, control events
 - `@nodetool/kernel` – Graph, NodeInbox, NodeActor, WorkflowRunner
-- `@nodetool/runtime` – ProcessingContext, MemoryCache, output sanitization
+- `@nodetool/runtime` – ProcessingContext, MemoryCache, output sanitization, storage adapters
 - `@nodetool/node-sdk` – BaseNode, NodeRegistry, 11 example/test nodes
 
 **Remaining work for completed phases**:
@@ -34,7 +34,7 @@ Status legend: ✅ Done | 🚧 Partial | ⬜ Not started
 - Phase 3: GPU lock / memory cleanup (not applicable in TS; defer to job-exec)
 - Phase 4: Sub-graph / GroupNode execution (deferred)
 - Phase 5: Typed property validation, more node ports from Python ecosystem
-- Phase 6: S3/file storage adapters, asset normalization, workspace resolution
+- Phase 6: S3 storage adapter, asset normalization, workspace resolution
 
 ---
 

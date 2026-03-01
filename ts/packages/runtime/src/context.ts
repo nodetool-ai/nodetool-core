@@ -7,10 +7,13 @@
  *   - Message queue for emitting ProcessingMessages.
  *   - Cache get/set interface.
  *   - Output normalization (sanitize memory URIs, etc.).
- *   - Asset handling stubs (to be implemented with storage adapters).
+ *   - Asset handling with pluggable storage adapters.
  */
 
 import type { ProcessingMessage } from "@nodetool/protocol";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join, normalize, resolve, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // ---------------------------------------------------------------------------
 // Cache interface
@@ -54,7 +57,7 @@ export class MemoryCache implements CacheAdapter {
 }
 
 // ---------------------------------------------------------------------------
-// Storage adapter interface (stub for Phase 6)
+// Storage adapter interface
 // ---------------------------------------------------------------------------
 
 export interface StorageAdapter {
@@ -66,6 +69,92 @@ export interface StorageAdapter {
 
   /** Check if an asset exists. */
   exists(uri: string): Promise<boolean>;
+}
+
+function normalizeStorageKey(key: string): string {
+  const cleaned = normalize(key.replaceAll("\\", "/")).replace(/^\/+/, "");
+  if (!cleaned || cleaned === "." || cleaned.startsWith("..") || cleaned.includes(`..${sep}`)) {
+    throw new Error(`Invalid storage key: ${key}`);
+  }
+  return cleaned;
+}
+
+/**
+ * In-memory storage adapter useful for tests and single-process ephemeral runs.
+ */
+export class InMemoryStorageAdapter implements StorageAdapter {
+  private _store = new Map<string, Uint8Array>();
+
+  async store(key: string, data: Uint8Array, _contentType?: string): Promise<string> {
+    const normalized = normalizeStorageKey(key);
+    this._store.set(normalized, new Uint8Array(data));
+    return `memory://${normalized}`;
+  }
+
+  async retrieve(uri: string): Promise<Uint8Array | null> {
+    if (!uri.startsWith("memory://")) return null;
+    const key = uri.slice("memory://".length);
+    const value = this._store.get(key);
+    return value ? new Uint8Array(value) : null;
+  }
+
+  async exists(uri: string): Promise<boolean> {
+    if (!uri.startsWith("memory://")) return false;
+    const key = uri.slice("memory://".length);
+    return this._store.has(key);
+  }
+}
+
+/**
+ * File-system storage adapter rooted to a single base directory.
+ */
+export class FileStorageAdapter implements StorageAdapter {
+  readonly rootDir: string;
+
+  constructor(rootDir: string) {
+    this.rootDir = resolve(rootDir);
+  }
+
+  private resolvePathFromKey(key: string): string {
+    const normalized = normalizeStorageKey(key);
+    const absolute = resolve(join(this.rootDir, normalized));
+    const prefix = `${this.rootDir}${sep}`;
+    if (absolute !== this.rootDir && !absolute.startsWith(prefix)) {
+      throw new Error(`Storage key escapes root: ${key}`);
+    }
+    return absolute;
+  }
+
+  private resolvePathFromUri(uri: string): string | null {
+    if (!uri.startsWith("file://")) return null;
+    const absolute = resolve(fileURLToPath(uri));
+    const prefix = `${this.rootDir}${sep}`;
+    if (absolute !== this.rootDir && !absolute.startsWith(prefix)) {
+      return null;
+    }
+    return absolute;
+  }
+
+  async store(key: string, data: Uint8Array, _contentType?: string): Promise<string> {
+    const absolutePath = this.resolvePathFromKey(key);
+    await mkdir(dirname(absolutePath), { recursive: true });
+    await writeFile(absolutePath, data);
+    return pathToFileURL(absolutePath).toString();
+  }
+
+  async retrieve(uri: string): Promise<Uint8Array | null> {
+    const absolutePath = this.resolvePathFromUri(uri);
+    if (!absolutePath) return null;
+    try {
+      return await readFile(absolutePath);
+    } catch {
+      return null;
+    }
+  }
+
+  async exists(uri: string): Promise<boolean> {
+    return (await this.retrieve(uri)) !== null;
+  }
 }
 
 // ---------------------------------------------------------------------------
