@@ -14,25 +14,26 @@ Status legend: ✅ Done | 🚧 Partial | ⬜ Not started
 | 2 | Graph & Inbox Kernel | ✅ | Graph model, validation, topological sort, NodeInbox with backpressure (33 tests) |
 | 3 | Actor Runtime Core | ✅ | Buffered, streaming-output, controlled modes; on_any & zip_all sync modes (6 tests) |
 | 4 | WorkflowRunner Orchestration | ✅ | Graph init, inbox setup, input dispatch, actor spawn, EOS routing, edge counters (7 tests) |
-| 5 | Node SDK & Registry | 🚧 | NodeExecutor interface defined; full BaseNode equivalent & registry deferred |
+| 5 | Node SDK & Registry | ✅ | BaseNode with lifecycle hooks & streaming; NodeRegistry; 11 example nodes; 34 tests |
 | 6 | Processing Context, Assets, Caching | 🚧 | ProcessingContext, MemoryCache, sanitizeForClient (13 tests); storage adapters stubbed |
-| 7 | Job Execution + State/Recovery | ⬜ | |
+| 7 | Job Execution + State/Recovery | ⬜ | Deferred (out of scope – pure execution engine goal) |
 | 8 | Dual-Run Shadow & Diff Harness | ⬜ | |
 | 9 | Canary & Cutover | ⬜ | |
 | 10 | Python Decommission | ⬜ | |
 
-**Test Summary**: 74 tests across 7 test files, all passing.
+**Test Summary**: 108 tests across 11 test files, all passing.
 
 **Packages implemented** (under `ts/`):
 - `@nodetool/protocol` – Message types, graph types, control events
 - `@nodetool/kernel` – Graph, NodeInbox, NodeActor, WorkflowRunner
 - `@nodetool/runtime` – ProcessingContext, MemoryCache, output sanitization
+- `@nodetool/node-sdk` – BaseNode, NodeRegistry, 11 example/test nodes
 
 **Remaining work for completed phases**:
 - Phase 2: MessagePack serialization compatibility tests (deferred)
 - Phase 3: GPU lock / memory cleanup (not applicable in TS; defer to job-exec)
 - Phase 4: Sub-graph / GroupNode execution (deferred)
-- Phase 5: Full BaseNode port with property metadata, typed validation, lifecycle hooks
+- Phase 5: Typed property validation, more node ports from Python ecosystem
 - Phase 6: S3/file storage adapters, asset normalization, workspace resolution
 
 ---
@@ -249,20 +250,12 @@ Current Python components to mirror behavior from:
 - Exit criteria:
   - Output payloads match expected contract and client behavior.
 
-8. Phase 7: Job Execution + State/Recovery (5 weeks)
-- Implement job execution manager in TS:
-  - in-process
-  - worker-thread
-  - subprocess
-  - docker mode
-- Port status persistence logic and node-state updates.
-- Implement run lease/heartbeat and recovery flow.
-- Port suspension/resumption semantics.
-- Deliverables:
-  - TS job manager and execution strategies
-  - TS state manager and recovery service
-- Exit criteria:
-  - Recovery and suspension tests pass in TS integration environment.
+8. Phase 7: Job Execution + State/Recovery (deferred – pure execution engine goal)
+- This phase is intentionally out of scope for the pure execution engine.
+- State persistence, recovery, and lease/heartbeat logic belong in a separate
+  infrastructure layer and are decoupled from the core runtime.
+- The pure TS execution engine (Phases 1–6) can run standalone without any
+  job-state backing store.
 
 9. Phase 8: Dual-Run Shadow and Diff Harness (3 weeks)
 - Run TS and Python engines side by side for selected workloads.
