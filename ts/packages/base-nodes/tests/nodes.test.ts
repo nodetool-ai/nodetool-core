@@ -90,6 +90,7 @@ import {
   RenameNode,
   FillNANode,
   FilterNoneNode,
+  RunShellCommandNode,
 } from "../src/index.js";
 
 describe("base node registration", () => {
@@ -109,6 +110,7 @@ describe("base node registration", () => {
     expect(registry.has("nodetool.document.SplitDocument")).toBe(true);
     expect(registry.has("nodetool.compare.CompareImages")).toBe(true);
     expect(registry.has("nodetool.data.Aggregate")).toBe(true);
+    expect(registry.has("nodetool.code.ExecuteCommand")).toBe(true);
   });
 });
 
@@ -246,6 +248,13 @@ describe("input/output/workspace nodes", () => {
     await expect(new FilterNoneNode().process({ value: "ok" })).resolves.toEqual({
       output: "ok",
     });
+  });
+
+  it("RunShellCommandNode executes shell command", async () => {
+    const node = new RunShellCommandNode();
+    const result = await node.process({ command: "echo ts-code-node" });
+    expect(String(result.output)).toContain("ts-code-node");
+    expect(result.exit_code).toBe(0);
   });
 });
 
