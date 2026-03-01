@@ -6,17 +6,24 @@ import { pathToFileURL } from "node:url";
 function usage() {
   process.stdout.write(
     [
-      "Usage: npm run workflow -- <workflow.json> [--json] [--show-messages]",
+      "Usage: npm run workflow -- <workflow.json> [--input key=value ...] [--inputs-json '{...}'] [--params-file file.json] [--json] [--show-messages]",
       "",
       "Accepted file shapes:",
       "  1) { \"nodes\": [...], \"edges\": [...] }",
       "  2) { \"graph\": { \"nodes\": [...], \"edges\": [...] }, \"params\": {...} }",
       "  3) RunJobRequest-like object with top-level \"graph\" and optional \"params\"",
       "",
+      "Input sources (merged in this order):",
+      "  file params < --params-file < --inputs-json < --input key=value",
+      "",
       "Examples:",
       "  npm run build",
       "  npm run workflow -- ./workflow.json",
-      "  npm run workflow -- ./request.json --show-messages",
+      "  npm run workflow -- ./workflow.json --input text='hello'",
+      "  npm run workflow -- ./workflow.json --input condition=true --input payload='{\"x\":1}'",
+      "  npm run workflow -- ./workflow.json --inputs-json '{\"a\":1,\"b\":2}'",
+      "  npm run workflow -- ./workflow.json --params-file ./params.json --show-messages",
+      "  npm run workflow -- ./request.json --json",
     ].join("\n") + "\n"
   );
 }
@@ -27,6 +34,9 @@ function parseArgs(argv) {
     workflowPath: "",
     showMessages: false,
     jsonOnly: false,
+    inputPairs: [],
+    inputsJson: null,
+    paramsFile: null,
   };
 
   while (args.length > 0) {
@@ -45,6 +55,30 @@ function parseArgs(argv) {
       result.jsonOnly = true;
       continue;
     }
+    if (token === "--input" || token === "--set") {
+      const raw = args.shift();
+      if (!raw || raw.startsWith("-")) {
+        throw new Error(`${token} requires key=value`);
+      }
+      result.inputPairs.push(raw);
+      continue;
+    }
+    if (token === "--inputs-json") {
+      const raw = args.shift();
+      if (!raw || raw.startsWith("-")) {
+        throw new Error("--inputs-json requires a JSON object");
+      }
+      result.inputsJson = raw;
+      continue;
+    }
+    if (token === "--params-file") {
+      const raw = args.shift();
+      if (!raw || raw.startsWith("-")) {
+        throw new Error("--params-file requires a file path");
+      }
+      result.paramsFile = raw;
+      continue;
+    }
     if (token.startsWith("-")) {
       throw new Error(`Unknown option: ${token}`);
     }
@@ -57,6 +91,77 @@ function parseArgs(argv) {
   }
 
   return result;
+}
+
+function parseValue(raw) {
+  const trimmed = String(raw).trim();
+  if (trimmed.length === 0) return "";
+
+  if (trimmed === "true") return true;
+  if (trimmed === "false") return false;
+  if (trimmed === "null") return null;
+
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+    return Number(trimmed);
+  }
+
+  if (
+    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+    (trimmed.startsWith("\"") && trimmed.endsWith("\""))
+  ) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return trimmed;
+    }
+  }
+
+  return trimmed;
+}
+
+function setByPath(target, dottedKey, value) {
+  const parts = dottedKey.split(".").map((s) => s.trim()).filter(Boolean);
+  if (parts.length === 0) {
+    throw new Error(`Invalid input key: '${dottedKey}'`);
+  }
+
+  let ref = target;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    const key = parts[i];
+    const next = ref[key];
+    if (!next || typeof next !== "object" || Array.isArray(next)) {
+      ref[key] = {};
+    }
+    ref = ref[key];
+  }
+  ref[parts[parts.length - 1]] = value;
+}
+
+function parsePairs(pairs) {
+  const out = {};
+  for (const pair of pairs) {
+    const eq = pair.indexOf("=");
+    if (eq <= 0) {
+      throw new Error(`Invalid --input value '${pair}', expected key=value`);
+    }
+    const key = pair.slice(0, eq).trim();
+    const raw = pair.slice(eq + 1);
+    setByPath(out, key, parseValue(raw));
+  }
+  return out;
+}
+
+function readJsonObjectFile(filePath, label) {
+  const abs = path.resolve(filePath);
+  if (!fs.existsSync(abs)) {
+    throw new Error(`${label} not found: ${abs}`);
+  }
+  const parsed = JSON.parse(fs.readFileSync(abs, "utf8"));
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${label} must be a JSON object`);
+  }
+  return parsed;
 }
 
 function loadWorkflowFile(filePath) {
@@ -95,6 +200,25 @@ async function main() {
   }
 
   const { graph, params, workflowPath, workflowId } = loadWorkflowFile(parsed.workflowPath);
+  const extraFromFile = parsed.paramsFile
+    ? readJsonObjectFile(parsed.paramsFile, "Params file")
+    : {};
+  const extraFromJson = parsed.inputsJson
+    ? (() => {
+        const obj = JSON.parse(parsed.inputsJson);
+        if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+          throw new Error("--inputs-json must be a JSON object");
+        }
+        return obj;
+      })()
+    : {};
+  const extraFromPairs = parsePairs(parsed.inputPairs);
+  const resolvedParams = {
+    ...params,
+    ...extraFromFile,
+    ...extraFromJson,
+    ...extraFromPairs,
+  };
 
   let WorkflowRunner;
   let NodeRegistry;
@@ -139,7 +263,7 @@ async function main() {
     {
       job_id: jobId,
       workflow_id: workflowId,
-      params,
+      params: resolvedParams,
     },
     {
       nodes: graph.nodes,
@@ -153,6 +277,8 @@ async function main() {
     const summary = {
       workflowPath,
       status: result.status,
+      params: resolvedParams,
+      outputs: result.outputs,
       outputKeys: Object.keys(result.outputs),
       outputCounts: Object.fromEntries(
         Object.entries(result.outputs).map(([k, v]) => [k, Array.isArray(v) ? v.length : 0])
