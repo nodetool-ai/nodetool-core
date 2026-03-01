@@ -3,10 +3,13 @@ Tests for `nodetool deploy show` command.
 """
 
 from unittest.mock import MagicMock, patch
+
 import pytest
 from click.testing import CliRunner
+
 from nodetool.cli import cli
-from nodetool.config.deployment import DockerDeployment, ImageConfig, ContainerConfig
+from nodetool.config.deployment import ContainerConfig, DockerDeployment, ImageConfig
+
 
 @pytest.fixture
 def mock_deployment_manager():

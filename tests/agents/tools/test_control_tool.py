@@ -45,7 +45,7 @@ def test_control_tool_uses_node_title_as_name() -> None:
             },
         },
     )
-    
+
     assert tool.name == "image_enhancer"
 
 
@@ -65,7 +65,7 @@ def test_control_tool_uses_node_description() -> None:
             },
         },
     )
-    
+
     assert tool.description == "This tool enhances image quality using AI."
 
 
@@ -85,7 +85,7 @@ def test_control_tool_fallback_description() -> None:
             },
         },
     )
-    
+
     assert "Control Enhancer" in tool.description
 
 

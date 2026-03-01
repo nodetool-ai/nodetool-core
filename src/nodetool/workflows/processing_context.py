@@ -2241,10 +2241,10 @@ class ProcessingContext:
                     if hasattr(io, "seek"):
                         io.seek(0)
                     return await _in_thread(pd.read_json, io)
-                except Exception:
+                except Exception as err:
                     raise ValueError(
                         "Could not load dataframe from asset. Only JSON format is supported for external assets."
-                    )
+                    ) from err
 
     async def dataframe_from_pandas(
         self, data: pd.DataFrame, name: str | None = None, parent_id: str | None = None
@@ -3558,7 +3558,7 @@ class ProcessingContext:
             [
                 {
                     "target": target_id,
-                    "actions": sorted(list((info.get("control_actions") or {}).keys())),
+                    "actions": sorted((info.get("control_actions") or {}).keys()),
                 }
                 for target_id, info in result.items()
             ],

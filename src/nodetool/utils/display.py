@@ -1,3 +1,6 @@
+from rich.console import Console
+from rich.panel import Panel
+
 from nodetool.config.deployment import (
     DockerDeployment,
     GCPDeployment,
@@ -5,8 +8,6 @@ from nodetool.config.deployment import (
     RunPodDeployment,
     SSHDeployment,
 )
-from rich.panel import Panel
-from rich.console import Console
 
 console = Console()
 
