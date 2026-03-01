@@ -8,6 +8,8 @@ import zipfile
 from io import BytesIO
 from typing import Optional
 
+from PIL import UnidentifiedImageError as PIL_UnidentifiedImageError
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
@@ -476,6 +478,14 @@ async def _generate_and_upload_thumbnail(
         else:
             log.warning(f"Unsupported content type for thumbnail: {asset.content_type}")
             return None
+    except (ValueError, PIL_UnidentifiedImageError) as e:
+        log.warning(
+            "Cannot create thumbnail for asset %s (%s): %s",
+            asset.id,
+            asset.content_type,
+            e,
+        )
+        return None
     except Exception as e:
         log.exception(f"Error generating thumbnail for asset {asset.id}: {e}")
         return None

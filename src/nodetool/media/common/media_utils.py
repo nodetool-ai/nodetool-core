@@ -75,22 +75,29 @@ async def create_image_thumbnail(input_io: IO, width: int, height: int) -> Bytes
     Generate a thumbnail image from an image using PIL.
     """
     import PIL.Image
+    from PIL import UnidentifiedImageError
 
-    # Read the image from the input BytesIO object
-    with PIL.Image.open(input_io) as image:
-        input_io.seek(0)
+    input_io.seek(0)
+    header = input_io.read(32)
+    input_io.seek(0)
 
-        # Resize the image to the specified width and height
-        image.thumbnail((width, height))
+    if len(header) == 0:
+        raise ValueError("Empty image data, cannot create thumbnail")
 
-        # Create a new BytesIO object to store the thumbnail image
-        output_io = BytesIO()
-        image.convert("RGB").save(output_io, format="JPEG")
-
-        # Reset the BytesIO object to the beginning
-        output_io.seek(0)
-
-        return output_io
+    try:
+        with PIL.Image.open(input_io) as image:
+            input_io.seek(0)
+            image.thumbnail((width, height))
+            output_io = BytesIO()
+            image.convert("RGB").save(output_io, format="JPEG")
+            output_io.seek(0)
+            return output_io
+    except UnidentifiedImageError:
+        log.warning(
+            "PIL cannot identify image (first 16 bytes: %s)",
+            header[:16].hex(),
+        )
+        raise
 
 
 async def create_video_thumbnail(input_io: IO, width: int, height: int) -> BytesIO:
