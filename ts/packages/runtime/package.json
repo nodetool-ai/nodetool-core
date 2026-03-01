@@ -1,0 +1,22 @@
+{
+  "name": "@nodetool/runtime",
+  "version": "0.1.0",
+  "description": "Processing context, message queue, and output normalization",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@nodetool/kernel": "*",
+    "@nodetool/protocol": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.1"
+  }
+}

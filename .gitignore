@@ -145,3 +145,7 @@ tmp/
 
 # Agent
 __plans__/
+
+# Node.js / TypeScript
+node_modules/
+ts/packages/*/dist/

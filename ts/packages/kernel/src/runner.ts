@@ -1,0 +1,452 @@
+/**
+ * WorkflowRunner – DAG orchestration.
+ *
+ * Port of src/nodetool/workflows/workflow_runner.py.
+ *
+ * Responsibilities:
+ *   - Graph validation and initialization.
+ *   - Inbox creation with upstream counts.
+ *   - Input value dispatch to input nodes.
+ *   - Actor spawning with concurrent execution.
+ *   - Output routing via send_messages.
+ *   - Edge counter tracking for EOS propagation.
+ *   - Control event dispatch.
+ *   - Completion detection.
+ */
+
+import type {
+  NodeDescriptor,
+  Edge,
+  ProcessingMessage,
+  ControlEvent,
+} from "@nodetool/protocol";
+import { isControlEdge, isDataEdge } from "@nodetool/protocol";
+import { Graph } from "./graph.js";
+import { NodeInbox } from "./inbox.js";
+import { NodeActor, type NodeExecutor } from "./actor.js";
+
+// ---------------------------------------------------------------------------
+// Runner options
+// ---------------------------------------------------------------------------
+
+export interface RunJobRequest {
+  /** Unique job identifier. */
+  job_id: string;
+
+  /** Workflow / graph identifier. */
+  workflow_id?: string;
+
+  /** Input parameters keyed by input-node name. */
+  params?: Record<string, unknown>;
+
+  /** Optional parent workflow ID for sub-graph execution. */
+  parent_id?: string;
+}
+
+export interface WorkflowRunnerOptions {
+  /**
+   * Factory that resolves a NodeDescriptor to a NodeExecutor.
+   * This is the integration point for actual node implementations.
+   */
+  resolveExecutor: (node: NodeDescriptor) => NodeExecutor;
+
+  /** Optional per-inbox buffer limit. */
+  bufferLimit?: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Runner result
+// ---------------------------------------------------------------------------
+
+export interface RunResult {
+  /** Outputs collected from output nodes, keyed by node name/id. */
+  outputs: Record<string, unknown[]>;
+
+  /** All processing messages emitted during the run. */
+  messages: ProcessingMessage[];
+
+  /** Final job status. */
+  status: "completed" | "failed" | "cancelled";
+
+  /** Error message if status is 'failed'. */
+  error?: string;
+}
+
+// ---------------------------------------------------------------------------
+// WorkflowRunner
+// ---------------------------------------------------------------------------
+
+export class WorkflowRunner {
+  readonly jobId: string;
+  private _graph!: Graph;
+  private _options: WorkflowRunnerOptions;
+
+  /** Per-node inboxes. */
+  private _inboxes = new Map<string, NodeInbox>();
+
+  /** Per-edge message counters (for EdgeUpdate tracking). */
+  private _edgeCounters = new Map<string, number>();
+
+  /**
+   * Multi-edge list inputs: nodeId → set of handles that aggregate
+   * multiple edges into a list.
+   */
+  private _multiEdgeListInputs = new Map<string, Set<string>>();
+
+  /** Collected outputs from output nodes. */
+  private _outputs = new Map<string, unknown[]>();
+
+  /** All emitted messages. */
+  private _messages: ProcessingMessage[] = [];
+
+  /** Cancellation flag. */
+  private _cancelled = false;
+
+  constructor(jobId: string, options: WorkflowRunnerOptions) {
+    this.jobId = jobId;
+    this._options = options;
+  }
+
+  // -----------------------------------------------------------------------
+  // Public API
+  // -----------------------------------------------------------------------
+
+  /**
+   * Execute a workflow graph.
+   */
+  async run(request: RunJobRequest, graphData: { nodes: NodeDescriptor[]; edges: Edge[] }): Promise<RunResult> {
+    try {
+      this._graph = new Graph(graphData);
+
+      // Validate
+      this._graph.validate();
+
+      // Emit job_update: running
+      this._emit({
+        type: "job_update",
+        status: "running",
+        job_id: request.job_id,
+        workflow_id: request.workflow_id ?? null,
+      });
+
+      // Detect multi-edge list inputs
+      this._detectMultiEdgeListInputs();
+
+      // Initialize inboxes
+      this._initializeInboxes();
+
+      // Dispatch input parameters
+      await this._dispatchInputs(request.params ?? {});
+
+      // Process graph (spawn actors)
+      await this._processGraph();
+
+      const status = this._cancelled ? "cancelled" : "completed";
+
+      this._emit({
+        type: "job_update",
+        status,
+        job_id: request.job_id,
+        workflow_id: request.workflow_id ?? null,
+      });
+
+      return {
+        outputs: Object.fromEntries(this._outputs),
+        messages: this._messages,
+        status,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this._emit({
+        type: "job_update",
+        status: "failed",
+        job_id: request.job_id,
+        workflow_id: request.workflow_id ?? null,
+        error: message,
+      });
+      return {
+        outputs: Object.fromEntries(this._outputs),
+        messages: this._messages,
+        status: "failed",
+        error: message,
+      };
+    }
+  }
+
+  /**
+   * Cancel the running workflow.
+   */
+  cancel(): void {
+    this._cancelled = true;
+    // Close all inboxes to unblock waiting actors
+    for (const inbox of this._inboxes.values()) {
+      inbox.closeAll();
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Inbox initialization
+  // -----------------------------------------------------------------------
+
+  private _initializeInboxes(): void {
+    for (const node of this._graph.nodes) {
+      const inbox = new NodeInbox(this._options.bufferLimit ?? null);
+
+      // Count upstream sources per handle from data edges
+      const incomingData = this._graph.findDataEdges(node.id);
+      const handleCounts = new Map<string, number>();
+      for (const edge of incomingData) {
+        const cur = handleCounts.get(edge.targetHandle) ?? 0;
+        handleCounts.set(edge.targetHandle, cur + 1);
+      }
+
+      // Also count control edges
+      const incomingControl = this._graph
+        .findIncomingEdges(node.id)
+        .filter(isControlEdge);
+      if (incomingControl.length > 0) {
+        handleCounts.set(
+          "__control__",
+          (handleCounts.get("__control__") ?? 0) + incomingControl.length
+        );
+      }
+
+      for (const [handle, count] of handleCounts) {
+        inbox.addUpstream(handle, count);
+      }
+
+      this._inboxes.set(node.id, inbox);
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Multi-edge list detection
+  // -----------------------------------------------------------------------
+
+  private _detectMultiEdgeListInputs(): void {
+    // Find handles that receive more than one edge (list aggregation)
+    const handleEdgeCounts = new Map<string, number>(); // key = nodeId:handle
+    for (const edge of this._graph.edges) {
+      if (isControlEdge(edge)) continue;
+      const key = `${edge.target}:${edge.targetHandle}`;
+      handleEdgeCounts.set(key, (handleEdgeCounts.get(key) ?? 0) + 1);
+    }
+
+    for (const [key, count] of handleEdgeCounts) {
+      if (count > 1) {
+        const [nodeId, handle] = key.split(":");
+        if (!this._multiEdgeListInputs.has(nodeId)) {
+          this._multiEdgeListInputs.set(nodeId, new Set());
+        }
+        this._multiEdgeListInputs.get(nodeId)!.add(handle);
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Input dispatch
+  // -----------------------------------------------------------------------
+
+  /**
+   * Deliver input parameters to input nodes (nodes with no incoming data edges).
+   * After delivery, mark them as done (EOS) since input nodes produce exactly
+   * one value.
+   */
+  private async _dispatchInputs(
+    params: Record<string, unknown>
+  ): Promise<void> {
+    for (const node of this._graph.nodes) {
+      const incoming = this._graph.findDataEdges(node.id);
+      if (incoming.length > 0) continue; // not an input node
+
+      // Check if we have a param for this node
+      const paramValue = params[node.name ?? node.id];
+      if (paramValue !== undefined) {
+        // Deliver the value on outgoing edges
+        const outgoing = this._graph.findOutgoingEdges(node.id).filter(isDataEdge);
+        for (const edge of outgoing) {
+          const targetInbox = this._inboxes.get(edge.target);
+          if (targetInbox) {
+            await targetInbox.put(edge.targetHandle, paramValue);
+          }
+          this._incrementEdgeCounter(edge);
+        }
+        // Mark all downstream as source done
+        for (const edge of outgoing) {
+          const targetInbox = this._inboxes.get(edge.target);
+          if (targetInbox) {
+            targetInbox.markSourceDone(edge.targetHandle);
+          }
+        }
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Graph processing
+  // -----------------------------------------------------------------------
+
+  /**
+   * Spawn one NodeActor per node and run them concurrently.
+   * Actors that depend on inputs will block on their inboxes until
+   * upstream actors produce data.
+   */
+  private async _processGraph(): Promise<void> {
+    const actorPromises: Array<Promise<void>> = [];
+
+    for (const node of this._graph.nodes) {
+      // Skip input-only nodes that have no incoming edges
+      // (they were already handled in _dispatchInputs)
+      const incoming = this._graph.findDataEdges(node.id);
+      const incomingControl = this._graph
+        .findIncomingEdges(node.id)
+        .filter(isControlEdge);
+
+      if (incoming.length === 0 && incomingControl.length === 0) {
+        continue; // pure input node, already dispatched
+      }
+
+      const inbox = this._inboxes.get(node.id)!;
+      const executor = this._options.resolveExecutor(node);
+
+      const actor = new NodeActor({
+        node,
+        inbox,
+        executor,
+        sendOutputs: async (nodeId, outputs) => {
+          await this._sendMessages(nodeId, outputs);
+        },
+        emitMessage: (msg) => {
+          this._emit(msg as ProcessingMessage);
+        },
+      });
+
+      actorPromises.push(
+        actor.run().then(async (result) => {
+          // After actor completes, send EOS to all downstream inboxes
+          await this._sendEOS(node.id);
+
+          // If this is an output node, collect the result
+          if (this._isOutputNode(node)) {
+            const name = node.name ?? node.id;
+            if (!this._outputs.has(name)) {
+              this._outputs.set(name, []);
+            }
+            if (result.outputs) {
+              for (const val of Object.values(result.outputs)) {
+                this._outputs.get(name)!.push(val);
+              }
+            }
+          }
+        })
+      );
+    }
+
+    // Wait for all actors to complete
+    await Promise.all(actorPromises);
+  }
+
+  // -----------------------------------------------------------------------
+  // Output routing (send_messages equivalent)
+  // -----------------------------------------------------------------------
+
+  /**
+   * Route output values from a node to downstream inboxes.
+   */
+  private async _sendMessages(
+    sourceNodeId: string,
+    outputs: Record<string, unknown>
+  ): Promise<void> {
+    if (this._cancelled) return;
+
+    const outgoing = this._graph.findOutgoingEdges(sourceNodeId);
+
+    for (const edge of outgoing) {
+      if (isControlEdge(edge)) continue;
+
+      const value = outputs[edge.sourceHandle];
+      if (value === undefined) continue;
+
+      const targetInbox = this._inboxes.get(edge.target);
+      if (!targetInbox) continue;
+
+      await targetInbox.put(edge.targetHandle, value);
+      this._incrementEdgeCounter(edge);
+    }
+  }
+
+  /**
+   * Signal EOS on all outgoing data edges of a completed node.
+   */
+  private async _sendEOS(nodeId: string): Promise<void> {
+    const outgoing = this._graph.findOutgoingEdges(nodeId);
+    for (const edge of outgoing) {
+      if (isControlEdge(edge)) continue;
+      const targetInbox = this._inboxes.get(edge.target);
+      if (targetInbox) {
+        targetInbox.markSourceDone(edge.targetHandle);
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Control event dispatch
+  // -----------------------------------------------------------------------
+
+  /**
+   * Broadcast a control event to all controlled nodes.
+   */
+  async dispatchControlEvent(event: ControlEvent): Promise<void> {
+    for (const node of this._graph.getControlledNodes()) {
+      const inbox = this._inboxes.get(node.id);
+      if (inbox) {
+        await inbox.put("__control__", event);
+      }
+    }
+  }
+
+  /**
+   * Send a control event to a specific target node.
+   */
+  async dispatchControlEventToTarget(
+    event: ControlEvent,
+    targetNodeId: string
+  ): Promise<void> {
+    const inbox = this._inboxes.get(targetNodeId);
+    if (inbox) {
+      await inbox.put("__control__", event);
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Edge counters
+  // -----------------------------------------------------------------------
+
+  private _incrementEdgeCounter(edge: Edge): void {
+    const id = edge.id ?? `${edge.source}:${edge.sourceHandle}->${edge.target}:${edge.targetHandle}`;
+    const counter = (this._edgeCounters.get(id) ?? 0) + 1;
+    this._edgeCounters.set(id, counter);
+
+    this._emit({
+      type: "edge_update",
+      workflow_id: this.jobId,
+      edge_id: id,
+      status: "active",
+      counter,
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // Helpers
+  // -----------------------------------------------------------------------
+
+  private _isOutputNode(node: NodeDescriptor): boolean {
+    // An output node has no outgoing data edges
+    const outgoing = this._graph.findOutgoingEdges(node.id).filter(isDataEdge);
+    return outgoing.length === 0;
+  }
+
+  private _emit(msg: ProcessingMessage): void {
+    this._messages.push(msg);
+  }
+}
