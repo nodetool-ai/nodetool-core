@@ -23,14 +23,18 @@ import { NodeInbox } from "./inbox.js";
 
 export interface NodeExecutor {
   /** One-shot processing (buffered mode). */
-  process(inputs: Record<string, unknown>): Promise<Record<string, unknown>>;
+  process(
+    inputs: Record<string, unknown>,
+    context?: unknown
+  ): Promise<Record<string, unknown>>;
 
   /**
    * Generator processing (streaming output mode).
    * Each yielded record is a partial output batch.
    */
   genProcess?(
-    inputs: Record<string, unknown>
+    inputs: Record<string, unknown>,
+    context?: unknown
   ): AsyncGenerator<Record<string, unknown>>;
 
   /** Called before process/genProcess. */
@@ -78,6 +82,8 @@ export class NodeActor {
 
   /** Callback to emit processing messages (NodeUpdate, etc.). */
   private _emitMessage: (msg: unknown) => void;
+  /** Optional execution context passed into node executors. */
+  private _executionContext: unknown;
 
   constructor(opts: {
     node: NodeDescriptor;
@@ -88,12 +94,14 @@ export class NodeActor {
       outputs: Record<string, unknown>
     ) => Promise<void>;
     emitMessage: (msg: unknown) => void;
+    executionContext?: unknown;
   }) {
     this.node = opts.node;
     this.inbox = opts.inbox;
     this._executor = opts.executor;
     this._sendOutputs = opts.sendOutputs;
     this._emitMessage = opts.emitMessage;
+    this._executionContext = opts.executionContext;
   }
 
   // -----------------------------------------------------------------------
@@ -117,7 +125,7 @@ export class NodeActor {
         // Streaming input mode: the node itself drains the inbox.
         // We just call process() once with an empty input map;
         // the node uses iter_input / iter_any internally.
-        const outputs = await this._executor.process({});
+        const outputs = await this._executor.process({}, this._executionContext);
         this._latestResult = outputs;
         await this._sendOutputs(this.node.id, outputs);
       } else if (this.node.is_controlled) {
@@ -159,13 +167,19 @@ export class NodeActor {
 
       if (this.node.is_streaming_output && this._executor.genProcess) {
         // Streaming output: yield items
-        for await (const partial of this._executor.genProcess(inputs)) {
+        for await (const partial of this._executor.genProcess(
+          inputs,
+          this._executionContext
+        )) {
           this._latestResult = partial;
           await this._sendOutputs(this.node.id, partial);
         }
       } else {
         // Buffered: single process call
-        const outputs = await this._executor.process(inputs);
+        const outputs = await this._executor.process(
+          inputs,
+          this._executionContext
+        );
         this._latestResult = outputs;
         await this._sendOutputs(this.node.id, outputs);
       }
@@ -191,7 +205,10 @@ export class NodeActor {
           // Apply control properties as inputs override
           const inputs = this._cachedInputs ?? {};
           const merged = { ...inputs, ...this._currentControlProperties };
-          const outputs = await this._executor.process(merged);
+          const outputs = await this._executor.process(
+            merged,
+            this._executionContext
+          );
           this._latestResult = outputs;
           await this._sendOutputs(this.node.id, outputs);
         }

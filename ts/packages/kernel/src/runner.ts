@@ -52,6 +52,9 @@ export interface WorkflowRunnerOptions {
 
   /** Optional per-inbox buffer limit. */
   bufferLimit?: number | null;
+
+  /** Optional execution context passed to each node executor call. */
+  executionContext?: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -319,6 +322,7 @@ export class WorkflowRunner {
         emitMessage: (msg) => {
           this._emit(msg as ProcessingMessage);
         },
+        executionContext: this._options.executionContext,
       });
 
       actorPromises.push(

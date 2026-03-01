@@ -103,6 +103,7 @@ import {
   GetVideoInfoNode,
   CreateThreadNode,
   ClassifierNode,
+  AgentNode,
   StructuredOutputGeneratorNode,
   ListGeneratorNode,
   TextTo3DNode,
@@ -341,6 +342,26 @@ describe("input/output/workspace nodes", () => {
       categories: ["billing", "sales", "support"],
     });
     expect(classified.category).toBe("billing");
+  });
+
+  it("AgentNode uses runtime provider when model is connected", async () => {
+    const agent = new AgentNode();
+    const context = {
+      getProvider: async () => ({
+        generateMessage: async () => ({
+          content: "provider-response",
+        }),
+      }),
+    };
+    const result = await agent.process(
+      {
+        system: "You are helpful",
+        prompt: "Say hello",
+        model: { provider: "openai", id: "gpt-4o" },
+      },
+      context
+    );
+    expect(result.text).toBe("provider-response");
   });
 
   it("generator nodes return structured/list outputs", async () => {

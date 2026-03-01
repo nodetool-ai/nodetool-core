@@ -1,6 +1,10 @@
 import { BaseNode } from "@nodetool/node-sdk";
 
 type MessagePart = { type?: string; text?: string };
+type ProviderMessage = {
+  role: "system" | "user" | "assistant" | "tool";
+  content?: string | null;
+};
 type MessageLike = {
   id?: string;
   thread_id?: string;
@@ -9,6 +13,17 @@ type MessageLike = {
 };
 
 type ThreadLike = { id: string; title: string; messages: MessageLike[] };
+type LanguageModelLike = { provider?: string; id?: string; name?: string };
+type ProviderLike = {
+  generateMessage(args: {
+    messages: ProviderMessage[];
+    model: string;
+    maxTokens?: number;
+  }): Promise<{ content?: string | null }>;
+};
+type RuntimeContextLike = {
+  getProvider?: (providerId: string) => Promise<ProviderLike>;
+};
 
 const THREAD_STORE = new Map<string, ThreadLike>();
 
@@ -194,24 +209,66 @@ export class AgentNode extends BaseNode {
     };
   }
 
-  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async process(
+    inputs: Record<string, unknown>,
+    runtimeContext?: unknown
+  ): Promise<Record<string, unknown>> {
     const prompt = asText(inputs.prompt ?? this._props.prompt ?? "");
     const system = asText(inputs.system ?? this._props.system ?? "");
     const history = Array.isArray(inputs.history ?? this._props.history)
       ? (inputs.history ?? this._props.history) as unknown[]
       : [];
-    const prior = history
-      .map((h) => asText(h))
-      .filter((v) => v.length > 0)
-      .join("\n");
+    const model = ((inputs.model ?? this._props.model ?? {}) as LanguageModelLike) ?? {};
+    const providerId = typeof model.provider === "string" ? model.provider : "";
+    const modelId = typeof model.id === "string" ? model.id : "";
 
-    const text = [system, prior, prompt]
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0)
-      .join("\n")
-      .trim();
+    let response = "";
+    const context = (runtimeContext ?? null) as RuntimeContextLike | null;
+    const providerSupported =
+      !!context && typeof context.getProvider === "function" && providerId && modelId;
 
-    const response = text.length > 0 ? text : "No prompt provided.";
+    if (providerSupported) {
+      const provider = await context.getProvider!(providerId);
+      const messages: ProviderMessage[] = [];
+
+      if (system.trim().length > 0) {
+        messages.push({ role: "system", content: system });
+      }
+      for (const item of history) {
+        const msg = item as { role?: unknown; content?: unknown };
+        const role =
+          msg && typeof msg === "object" && typeof msg.role === "string"
+            ? msg.role
+            : "user";
+        if (!["system", "user", "assistant", "tool"].includes(role)) {
+          continue;
+        }
+        messages.push({
+          role: role as ProviderMessage["role"],
+          content: asText(msg.content),
+        });
+      }
+      messages.push({ role: "user", content: prompt });
+
+      const generated = await provider.generateMessage({
+        model: modelId,
+        messages,
+        maxTokens: Number(inputs.max_tokens ?? this._props.max_tokens ?? 1024),
+      });
+      response = asText(generated.content ?? "");
+    } else {
+      const prior = history
+        .map((h) => asText(h))
+        .filter((v) => v.length > 0)
+        .join("\n");
+      const text = [system, prior, prompt]
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+        .join("\n")
+        .trim();
+      response = text.length > 0 ? text : "No prompt provided.";
+    }
+
     const threadId = String(inputs.thread_id ?? this._props.thread_id ?? "").trim();
     if (threadId) {
       const thread = THREAD_STORE.get(threadId) ?? {

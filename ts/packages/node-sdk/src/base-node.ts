@@ -41,23 +41,25 @@ export abstract class BaseNode {
   async finalize(): Promise<void> {}
 
   abstract process(
-    inputs: Record<string, unknown>
+    inputs: Record<string, unknown>,
+    context?: unknown
   ): Promise<Record<string, unknown>>;
 
   async *genProcess(
-    inputs: Record<string, unknown>
+    inputs: Record<string, unknown>,
+    context?: unknown
   ): AsyncGenerator<Record<string, unknown>> {
-    yield await this.process(inputs);
+    yield await this.process(inputs, context);
   }
 
   toExecutor(): NodeExecutor {
     const self = this;
     return {
-      async process(inputs: Record<string, unknown>) {
-        return self.process(inputs);
+      async process(inputs: Record<string, unknown>, context?: unknown) {
+        return self.process(inputs, context);
       },
-      async *genProcess(inputs: Record<string, unknown>) {
-        yield* self.genProcess(inputs);
+      async *genProcess(inputs: Record<string, unknown>, context?: unknown) {
+        yield* self.genProcess(inputs, context);
       },
       async preProcess() {
         return self.preProcess();

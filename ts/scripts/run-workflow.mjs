@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const tsRoot = path.resolve(scriptDir, "..");
 
 function usage() {
   process.stdout.write(
@@ -223,32 +226,72 @@ async function main() {
   let WorkflowRunner;
   let NodeRegistry;
   let registerBaseNodes;
+  let ProcessingContext;
+  let OpenAIProvider;
+  let AnthropicProvider;
+  let OllamaProvider;
+  let LlamaProvider;
   try {
-    const kernelPath = path.resolve(
-      process.cwd(),
-      "packages/kernel/dist/index.js"
-    );
-    const nodeSdkPath = path.resolve(
-      process.cwd(),
-      "packages/node-sdk/dist/index.js"
-    );
-    const baseNodesPath = path.resolve(
-      process.cwd(),
-      "packages/base-nodes/dist/index.js"
-    );
+    const kernelPath = path.resolve(tsRoot, "packages/kernel/dist/index.js");
+    const nodeSdkPath = path.resolve(tsRoot, "packages/node-sdk/dist/index.js");
+    const baseNodesPath = path.resolve(tsRoot, "packages/base-nodes/dist/index.js");
+    const runtimePath = path.resolve(tsRoot, "packages/runtime/dist/index.js");
 
     ({ WorkflowRunner } = await import(pathToFileURL(kernelPath).href));
     ({ NodeRegistry } = await import(pathToFileURL(nodeSdkPath).href));
     ({ registerBaseNodes } = await import(pathToFileURL(baseNodesPath).href));
+    ({
+      ProcessingContext,
+      OpenAIProvider,
+      AnthropicProvider,
+      OllamaProvider,
+      LlamaProvider,
+    } = await import(pathToFileURL(runtimePath).href));
   } catch (err) {
     throw new Error(
-      `Failed to load TS packages. Run 'npm run build' in /Users/mg/workspace/nodetool-core/ts first.\n${String(err)}`
+      `Failed to load TS packages. Run 'npm run build' in ${tsRoot} first.\n${String(err)}`
     );
   }
 
   const jobId = `job-${Date.now()}`;
   const registry = new NodeRegistry();
   registerBaseNodes(registry);
+
+  const context = new ProcessingContext({
+    jobId,
+    workflowId: workflowId ?? null,
+  });
+
+  const providerCache = new Map();
+  context.setProviderResolver(async (providerId) => {
+    if (providerCache.has(providerId)) {
+      return providerCache.get(providerId);
+    }
+
+    let provider;
+    if (providerId === "openai") {
+      provider = new OpenAIProvider({
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+      });
+    } else if (providerId === "anthropic") {
+      provider = new AnthropicProvider({
+        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+      });
+    } else if (providerId === "ollama") {
+      provider = new OllamaProvider({
+        OLLAMA_API_URL: process.env.OLLAMA_API_URL,
+      });
+    } else if (providerId === "llama_cpp") {
+      provider = new LlamaProvider({
+        LLAMA_CPP_URL: process.env.LLAMA_CPP_URL,
+      });
+    } else {
+      throw new Error(`Unsupported provider '${providerId}'`);
+    }
+
+    providerCache.set(providerId, provider);
+    return provider;
+  });
 
   const runner = new WorkflowRunner(jobId, {
     resolveExecutor: (node) => {
@@ -257,6 +300,7 @@ async function main() {
       }
       return registry.resolve(node);
     },
+    executionContext: context,
   });
 
   const result = await runner.run(

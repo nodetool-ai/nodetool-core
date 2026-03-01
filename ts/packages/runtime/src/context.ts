@@ -15,6 +15,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import type { BaseProvider } from "./providers/base-provider.js";
 
 // ---------------------------------------------------------------------------
 // Cache interface
@@ -309,6 +310,12 @@ export class ProcessingContext {
 
   /** Storage adapter (optional, for asset handling). */
   readonly storage: StorageAdapter | null;
+  /** Optional async provider resolver by provider id. */
+  private _providerResolver:
+    | ((providerId: string) => Promise<BaseProvider> | BaseProvider)
+    | null = null;
+  /** Provider cache keyed by provider id. */
+  private _providers = new Map<string, BaseProvider>();
 
   constructor(opts: {
     jobId: string;
@@ -328,6 +335,37 @@ export class ProcessingContext {
     this.cache = opts.cache ?? new MemoryCache();
     this.storage = opts.storage ?? null;
     this._onMessage = opts.onMessage ?? null;
+  }
+
+  // -----------------------------------------------------------------------
+  // Provider resolution
+  // -----------------------------------------------------------------------
+
+  setProviderResolver(
+    resolver: (providerId: string) => Promise<BaseProvider> | BaseProvider
+  ): void {
+    this._providerResolver = resolver;
+  }
+
+  registerProvider(providerId: string, provider: BaseProvider): void {
+    this._providers.set(providerId, provider);
+  }
+
+  async getProvider(providerId: string): Promise<BaseProvider> {
+    if (!providerId || providerId.trim() === "") {
+      throw new Error("providerId is required");
+    }
+
+    const cached = this._providers.get(providerId);
+    if (cached) return cached;
+
+    if (!this._providerResolver) {
+      throw new Error(`No provider registered for '${providerId}' and no resolver configured`);
+    }
+
+    const resolved = await this._providerResolver(providerId);
+    this._providers.set(providerId, resolved);
+    return resolved;
   }
 
   // -----------------------------------------------------------------------
