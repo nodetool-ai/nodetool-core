@@ -12,7 +12,8 @@
   "scripts": {
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
-    "lint": "npm run lint --workspaces"
+    "lint": "npm run lint --workspaces",
+    "workflow": "node ./scripts/run-workflow.mjs"
   },
   "devDependencies": {
     "vitest": "^1.6.1"
