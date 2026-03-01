@@ -73,6 +73,13 @@ import {
   FilterDictByRangeNode,
   FilterDictRegexNode,
   FilterDictByValueNode,
+  StringInputNode,
+  MessageDeconstructorNode,
+  OutputNode,
+  WriteTextFileNode,
+  ReadTextFileNode,
+  JoinWorkspacePathsNode,
+  WorkspaceFileExistsNode,
 } from "../src/index.js";
 
 describe("base node registration", () => {
@@ -88,6 +95,75 @@ describe("base node registration", () => {
     expect(registry.has("nodetool.audio.TextToSpeech")).toBe(true);
     expect(registry.has("nodetool.image.ImageToImage")).toBe(true);
     expect(registry.has("nodetool.video.TextToVideo")).toBe(true);
+    expect(registry.has("nodetool.workspace.ReadTextFile")).toBe(true);
+  });
+});
+
+describe("input/output/workspace nodes", () => {
+  it("StringInputNode enforces max length", async () => {
+    const node = new StringInputNode();
+    node.assign({ value: "abcdef", max_length: 3 });
+    await expect(node.process({})).resolves.toEqual({ value: "abc" });
+  });
+
+  it("MessageDeconstructorNode extracts text and metadata", async () => {
+    const node = new MessageDeconstructorNode();
+    node.assign({
+      value: {
+        id: "m1",
+        thread_id: "t1",
+        role: "assistant",
+        provider: "openai",
+        model: "gpt-4o",
+        content: [{ type: "text", text: "hello" }],
+      },
+    });
+    await expect(node.process({})).resolves.toEqual({
+      id: "m1",
+      thread_id: "t1",
+      role: "assistant",
+      text: "hello",
+      image: null,
+      audio: null,
+      model: { provider: "openai", id: "gpt-4o" },
+    });
+  });
+
+  it("OutputNode forwards a value handle", async () => {
+    await expect(new OutputNode().process({ value: 5 })).resolves.toEqual({
+      output: 5,
+    });
+  });
+
+  it("workspace text file nodes read and write", async () => {
+    const dir = `/tmp/nodetool-ws-${Date.now()}`;
+    const write = new WriteTextFileNode();
+    const read = new ReadTextFileNode();
+    await expect(
+      write.process({
+        workspace_dir: dir,
+        path: "notes/a.txt",
+        content: "hello",
+      })
+    ).resolves.toEqual({ output: "notes/a.txt" });
+    await expect(
+      read.process({
+        workspace_dir: dir,
+        path: "notes/a.txt",
+      })
+    ).resolves.toEqual({ output: "hello" });
+  });
+
+  it("workspace helpers validate and inspect paths", async () => {
+    const dir = `/tmp/nodetool-ws-${Date.now()}-2`;
+    const joined = new JoinWorkspacePathsNode();
+    const exists = new WorkspaceFileExistsNode();
+    await expect(
+      joined.process({ workspace_dir: dir, paths: ["x", "y.txt"] })
+    ).resolves.toEqual({ output: "x/y.txt" });
+    await expect(
+      exists.process({ workspace_dir: dir, path: "x/y.txt" })
+    ).resolves.toEqual({ output: false });
   });
 });
 

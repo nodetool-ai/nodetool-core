@@ -158,6 +158,64 @@ export {
   FilterDictByValueNode,
   DICTIONARY_NODES,
 } from "./nodes/dictionary.js";
+export {
+  FloatInputNode,
+  BooleanInputNode,
+  IntegerInputNode,
+  StringInputNode,
+  SelectInputNode,
+  StringListInputNode,
+  FolderPathInputNode,
+  HuggingFaceModelInputNode,
+  ColorInputNode,
+  ImageSizeInputNode,
+  LanguageModelInputNode,
+  ImageModelInputNode,
+  VideoModelInputNode,
+  TTSModelInputNode,
+  ASRModelInputNode,
+  EmbeddingModelInputNode,
+  DataframeInputNode,
+  DocumentInputNode,
+  ImageInputNode,
+  ImageListInputNode,
+  VideoListInputNode,
+  AudioListInputNode,
+  TextListInputNode,
+  VideoInputNode,
+  AudioInputNode,
+  Model3DInputNode,
+  RealtimeAudioInputNode,
+  AssetFolderInputNode,
+  FilePathInputNode,
+  DocumentFileInputNode,
+  MessageInputNode,
+  MessageListInputNode,
+  MessageDeconstructorNode,
+  INPUT_NODES,
+} from "./nodes/input.js";
+export { OutputNode, OUTPUT_NODES } from "./nodes/output.js";
+export {
+  GetWorkspaceDirNode,
+  ListWorkspaceFilesNode,
+  ReadTextFileNode,
+  WriteTextFileNode,
+  ReadBinaryFileNode,
+  WriteBinaryFileNode,
+  DeleteWorkspaceFileNode,
+  CreateWorkspaceDirectoryNode,
+  WorkspaceFileExistsNode,
+  GetWorkspaceFileInfoNode,
+  CopyWorkspaceFileNode,
+  MoveWorkspaceFileNode,
+  GetWorkspaceFileSizeNode,
+  IsWorkspaceFileNode,
+  IsWorkspaceDirectoryNode,
+  JoinWorkspacePathsNode,
+  SaveImageFileNode,
+  SaveVideoFileNode,
+  WORKSPACE_NODES,
+} from "./nodes/workspace.js";
 
 import { CONTROL_NODES } from "./nodes/control.js";
 import { BOOLEAN_NODES } from "./nodes/boolean.js";
@@ -168,6 +226,9 @@ import { CONSTANT_NODES } from "./nodes/constant.js";
 import { NUMBERS_NODES } from "./nodes/numbers.js";
 import { DICTIONARY_NODES } from "./nodes/dictionary.js";
 import { EXTENDED_PLACEHOLDER_NODES } from "./nodes/extended-placeholders.js";
+import { INPUT_NODES } from "./nodes/input.js";
+import { OUTPUT_NODES } from "./nodes/output.js";
+import { WORKSPACE_NODES } from "./nodes/workspace.js";
 
 export const ALL_BASE_NODES = [
   ...CONTROL_NODES,
@@ -179,6 +240,9 @@ export const ALL_BASE_NODES = [
   ...NUMBERS_NODES,
   ...DICTIONARY_NODES,
   ...EXTENDED_PLACEHOLDER_NODES,
+  ...INPUT_NODES,
+  ...OUTPUT_NODES,
+  ...WORKSPACE_NODES,
 ] as const;
 
 export function registerBaseNodes(registry: NodeRegistry): void {
