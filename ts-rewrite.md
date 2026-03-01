@@ -17,7 +17,7 @@ Status legend: ✅ Done | 🚧 Partial | ⬜ Not started
 | 5 | Node SDK & Registry | ✅ | BaseNode with lifecycle hooks & streaming; NodeRegistry; 11 example nodes; 34 tests |
 | 6 | Processing Context, Assets, Caching | ✅ | ProcessingContext, MemoryCache, asset-safe sanitizeForClient, in-memory + file + S3 storage adapters, workspace path resolution, normalization modes (`python/raw/data_uri/storage_url/workspace`) (28 tests) |
 | 7 | Job Execution + State/Recovery | ⬜ | Deferred (out of scope – pure execution engine goal) |
-| 8 | Dual-Run Shadow & Diff Harness | 🚧 | `@nodetool/parity-harness` with message diff categories, side-by-side command runner, and CLI report entrypoint (7 tests) |
+| 8 | Dual-Run Shadow & Diff Harness | 🚧 | `@nodetool/parity-harness` with message diff categories, side-by-side command runner, CLI report entrypoint, and CI workflow artifact wiring (7 tests) |
 | 9 | Canary & Cutover | 🚧 | Cutover/rollback runbooks + canary gate evaluator primitives added; production feature-flag wiring still pending |
 | 10 | Python Decommission | 🚧 | Decommission plan doc added; codepath removal pending |
 
@@ -35,7 +35,7 @@ Status legend: ✅ Done | 🚧 Partial | ⬜ Not started
 - Phase 3: GPU lock / memory cleanup (not applicable in TS; defer to job-exec)
 - Phase 4: Sub-graph / GroupNode execution (deferred)
 - Phase 5: Typed property validation, more node ports from Python ecosystem
-- Phase 8: CI wiring for automated shadow runs and persisted diff reports
+- Phase 8: production shadow inputs and thresholded CI failure policy
 - Phase 9: production feature-flag wiring and canary gate automation
 - Phase 10: remove Python runtime default paths and migration shims
 
