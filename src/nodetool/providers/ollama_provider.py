@@ -568,17 +568,26 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                 # Accumulate content for emulation parsing
                 if use_tool_emulation:
                     accumulated_content += content
-
-                yield Chunk(
-                    content=content,
-                    done=response.done or False,
-                )
+                    # Don't yield content chunks during emulation - wait for cleaned content at the end
+                else:
+                    # Yield content immediately when not using emulation
+                    yield Chunk(
+                        content=content,
+                        done=response.done or False,
+                    )
 
                 if response.done:
                     # Parse emulated tool calls from accumulated content
                     if use_tool_emulation and accumulated_content:
                         log.debug("Parsing emulated tool calls from response")
-                        emulated_calls, _ = self._parse_function_calls(accumulated_content, tools)
+                        emulated_calls, cleaned_content = self._parse_function_calls(accumulated_content, tools)
+                        # Yield cleaned content with function calls removed
+                        if cleaned_content:
+                            yield Chunk(
+                                content=cleaned_content,
+                                done=True,
+                            )
+                        # Yield tool calls after the content
                         for tool_call in emulated_calls:
                             tool_call_count += 1
                             log.debug(f"Yielding emulated tool call: {tool_call.name}")

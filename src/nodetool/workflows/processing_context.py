@@ -3526,6 +3526,7 @@ class ProcessingContext:
                 "node_id": target_node.id,
                 "node_type": target_node.get_node_type(),
                 "node_title": getattr(target_node, "title", None) or target_node.id,
+                "node_description": target_node.get_description(),
                 "control_actions": target_node.get_control_actions(),
                 "properties": {},
                 "upstream_data": {},

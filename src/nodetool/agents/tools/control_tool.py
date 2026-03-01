@@ -9,6 +9,7 @@ automatically added to its tool list. When the agent calls a control tool,
 it emits a RunEvent that triggers the controlled node's execution.
 """
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from nodetool.agents.tools.base import Tool
@@ -19,6 +20,51 @@ if TYPE_CHECKING:
     from nodetool.workflows.processing_context import ProcessingContext
 
 log = get_logger(__name__)
+
+
+def _sanitize_tool_name(name: str) -> str:
+    """
+    Convert a node title to a valid tool name.
+
+    Converts to snake_case and removes invalid characters.
+    Examples:
+        "Image Enhancer" -> "image_enhancer"
+        "My-Node 123" -> "my_node_123"
+        "ControlNode" -> "control_node"
+
+    Args:
+        name: The node title string.
+
+    Returns:
+        The sanitized tool name in snake_case.
+    """
+    if not isinstance(name, str):
+        return "control_node"
+
+    # Replace non-alphanumeric characters with underscores
+    sanitized = re.sub(r"[^a-zA-Z0-9]", "_", name)
+
+    # Convert camelCase to snake_case
+    sanitized = re.sub(r"([a-z])([A-Z])", r"\1_\2", sanitized)
+
+    # Convert to lowercase
+    sanitized = sanitized.lower()
+
+    # Remove consecutive underscores
+    sanitized = re.sub(r"_+", "_", sanitized)
+
+    # Strip leading/trailing underscores
+    sanitized = sanitized.strip("_")
+
+    # Ensure it's not empty
+    if not sanitized:
+        return "control_node"
+
+    # Truncate if necessary (max 64 chars for tool names)
+    if len(sanitized) > 64:
+        sanitized = sanitized[:64]
+
+    return sanitized
 
 
 class ControlNodeTool(Tool):
@@ -46,6 +92,7 @@ class ControlNodeTool(Tool):
                 - node_id: str
                 - node_type: str
                 - node_title: str
+                - node_description: str
                 - control_actions: dict
                 - properties: dict
                 - upstream_data: dict
@@ -79,15 +126,19 @@ class ControlNodeTool(Tool):
             "required": [],
         }
 
-        # Set tool name and description
-        self.name = f"control_{self.target_node_id[:8]}"
-
+        # Set tool name from normalized node title
         node_title = self.node_info.get("node_title", self.target_node_id)
-        self.description = f"Control {node_title}: trigger execution with optional property overrides"
+        self.name = _sanitize_tool_name(node_title)
 
-        if properties:
-            prop_list = ", ".join(properties.keys())
-            self.description += f". Available properties: {prop_list}"
+        # Set tool description from node description (fallback to generated description)
+        node_description = self.node_info.get("node_description", "")
+        if node_description:
+            self.description = node_description
+        else:
+            self.description = f"Control {node_title}: trigger execution with optional property overrides"
+            if properties:
+                prop_list = ", ".join(properties.keys())
+                self.description += f". Available properties: {prop_list}"
 
     def user_message(self, params: dict[str, Any]) -> str:
         """Return a user-friendly message about the control action."""
