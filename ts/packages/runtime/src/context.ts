@@ -12,7 +12,7 @@
 
 import type { ProcessingMessage } from "@nodetool/protocol";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, normalize, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 // ---------------------------------------------------------------------------
@@ -71,6 +71,11 @@ export interface StorageAdapter {
   exists(uri: string): Promise<boolean>;
 }
 
+function isWithinRoot(root: string, target: string): boolean {
+  const rel = relative(root, target);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
 function normalizeStorageKey(key: string): string {
   const cleaned = normalize(key.replaceAll("\\", "/")).replace(/^\/+/, "");
   if (!cleaned || cleaned === "." || cleaned.startsWith("..") || cleaned.includes(`..${sep}`)) {
@@ -118,8 +123,7 @@ export class FileStorageAdapter implements StorageAdapter {
   private resolvePathFromKey(key: string): string {
     const normalized = normalizeStorageKey(key);
     const absolute = resolve(join(this.rootDir, normalized));
-    const prefix = `${this.rootDir}${sep}`;
-    if (absolute !== this.rootDir && !absolute.startsWith(prefix)) {
+    if (!isWithinRoot(this.rootDir, absolute)) {
       throw new Error(`Storage key escapes root: ${key}`);
     }
     return absolute;
@@ -128,8 +132,7 @@ export class FileStorageAdapter implements StorageAdapter {
   private resolvePathFromUri(uri: string): string | null {
     if (!uri.startsWith("file://")) return null;
     const absolute = resolve(fileURLToPath(uri));
-    const prefix = `${this.rootDir}${sep}`;
-    if (absolute !== this.rootDir && !absolute.startsWith(prefix)) {
+    if (!isWithinRoot(this.rootDir, absolute)) {
       return null;
     }
     return absolute;
@@ -157,6 +160,50 @@ export class FileStorageAdapter implements StorageAdapter {
   }
 }
 
+/**
+ * Resolve paths relative to a configured workspace root.
+ *
+ * Supported path forms:
+ * - /workspace/foo/bar.txt
+ * - workspace/foo/bar.txt
+ * - absolute paths (treated as workspace-relative)
+ * - relative paths
+ */
+export function resolveWorkspacePath(workspaceDir: string | null | undefined, path: string): string {
+  if (workspaceDir == null) {
+    throw new Error(
+      "No workspace is assigned. File operations require a user-defined workspace. Please configure a workspace before performing disk I/O operations."
+    );
+  }
+  if (workspaceDir === "") {
+    throw new Error("Workspace directory is required");
+  }
+
+  const workspaceRoot = resolve(workspaceDir);
+  const normalizedPath = path.replaceAll("\\", "/");
+
+  let relativePath: string;
+  if (normalizedPath.startsWith("/workspace/")) {
+    relativePath = normalizedPath.slice("/workspace/".length);
+  } else if (normalizedPath.startsWith("workspace/")) {
+    relativePath = normalizedPath.slice("workspace/".length);
+  } else if (isAbsolute(normalizedPath) || /^[A-Za-z]:\//.test(normalizedPath)) {
+    if (normalizedPath.startsWith("/")) {
+      relativePath = normalizedPath.slice(1);
+    } else {
+      relativePath = normalizedPath.replace(/^[A-Za-z]:\//, "");
+    }
+  } else {
+    relativePath = normalizedPath;
+  }
+
+  const absPath = resolve(join(workspaceRoot, relativePath));
+  if (!isWithinRoot(workspaceRoot, absPath)) {
+    throw new Error(`Resolved path '${absPath}' is outside the workspace directory.`);
+  }
+  return absPath;
+}
+
 // ---------------------------------------------------------------------------
 // ProcessingContext
 // ---------------------------------------------------------------------------
@@ -165,6 +212,7 @@ export class ProcessingContext {
   readonly jobId: string;
   readonly workflowId: string | null;
   readonly userId: string;
+  readonly workspaceDir: string | null;
 
   /** Message queue: all emitted processing messages. */
   private _messages: ProcessingMessage[] = [];
@@ -182,6 +230,7 @@ export class ProcessingContext {
     jobId: string;
     workflowId?: string | null;
     userId?: string;
+    workspaceDir?: string | null;
     cache?: CacheAdapter;
     storage?: StorageAdapter | null;
     onMessage?: (msg: ProcessingMessage) => void;
@@ -189,6 +238,7 @@ export class ProcessingContext {
     this.jobId = opts.jobId;
     this.workflowId = opts.workflowId ?? null;
     this.userId = opts.userId ?? "default";
+    this.workspaceDir = opts.workspaceDir ?? null;
     this.cache = opts.cache ?? new MemoryCache();
     this.storage = opts.storage ?? null;
     this._onMessage = opts.onMessage ?? null;
@@ -230,22 +280,48 @@ export class ProcessingContext {
    * Port of sanitize_memory_uris_for_client() from types.py.
    */
   static sanitizeForClient(value: unknown): unknown {
-    if (typeof value === "string") {
-      if (value.startsWith("memory://")) {
-        return "[memory reference]";
-      }
-      return value;
-    }
+    if (value === null || value === undefined) return value;
     if (Array.isArray(value)) {
       return value.map((v) => ProcessingContext.sanitizeForClient(v));
     }
-    if (value !== null && typeof value === "object") {
+    if (typeof value !== "object") return value;
+
+    const obj = value as Record<string, unknown>;
+    const uri = obj.uri;
+    const isAssetLike = "type" in obj && typeof uri === "string";
+
+    if (isAssetLike && uri.startsWith("memory://")) {
+      const sanitized: Record<string, unknown> = { ...obj };
+      if (sanitized.data !== undefined && sanitized.data !== null) {
+        sanitized.uri = "";
+      } else if (sanitized.asset_id) {
+        sanitized.uri = `asset://${String(sanitized.asset_id)}`;
+      } else {
+        sanitized.uri = "";
+      }
+
       const result: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-        result[k] = ProcessingContext.sanitizeForClient(v);
+      for (const [k, v] of Object.entries(sanitized)) {
+        if (k === "uri" || k === "data" || k === "asset_id") {
+          result[k] = v;
+        } else {
+          result[k] = ProcessingContext.sanitizeForClient(v);
+        }
       }
       return result;
     }
-    return value;
+
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      result[k] = ProcessingContext.sanitizeForClient(v);
+    }
+    return result;
+  }
+
+  /**
+   * Resolve a file path against the configured workspace root.
+   */
+  resolveWorkspacePath(path: string): string {
+    return resolveWorkspacePath(this.workspaceDir, path);
   }
 }

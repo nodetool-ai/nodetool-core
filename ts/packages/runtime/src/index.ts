@@ -7,6 +7,7 @@ export {
   MemoryCache,
   InMemoryStorageAdapter,
   FileStorageAdapter,
+  resolveWorkspacePath,
   type CacheAdapter,
   type StorageAdapter,
 } from "./context.js";

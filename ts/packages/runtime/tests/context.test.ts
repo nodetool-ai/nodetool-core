@@ -8,6 +8,7 @@ import {
   MemoryCache,
   InMemoryStorageAdapter,
   FileStorageAdapter,
+  resolveWorkspacePath,
 } from "../src/context.js";
 import type { ProcessingMessage, NodeUpdate } from "@nodetool/protocol";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -92,10 +93,8 @@ describe("MemoryCache", () => {
 });
 
 describe("ProcessingContext.sanitizeForClient", () => {
-  it("replaces memory:// URIs", () => {
-    expect(ProcessingContext.sanitizeForClient("memory://abc")).toBe(
-      "[memory reference]"
-    );
+  it("does not rewrite plain memory:// strings", () => {
+    expect(ProcessingContext.sanitizeForClient("memory://abc")).toBe("memory://abc");
   });
 
   it("preserves normal strings", () => {
@@ -108,7 +107,7 @@ describe("ProcessingContext.sanitizeForClient", () => {
       name: "test",
     });
     expect(result).toEqual({
-      url: "[memory reference]",
+      url: "memory://img1",
       name: "test",
     });
   });
@@ -118,13 +117,45 @@ describe("ProcessingContext.sanitizeForClient", () => {
       "memory://a",
       "safe",
     ]);
-    expect(result).toEqual(["[memory reference]", "safe"]);
+    expect(result).toEqual(["memory://a", "safe"]);
   });
 
   it("passes through non-string primitives", () => {
     expect(ProcessingContext.sanitizeForClient(42)).toBe(42);
     expect(ProcessingContext.sanitizeForClient(null)).toBe(null);
     expect(ProcessingContext.sanitizeForClient(true)).toBe(true);
+  });
+
+  it("sanitizes memory uri in serialized asset refs with inline data", () => {
+    const value = {
+      type: "ImageRef",
+      uri: "memory://img-1",
+      data: "base64-data",
+      meta: { nested: { type: "TextRef", uri: "memory://txt-1", data: "x" } },
+    };
+    const result = ProcessingContext.sanitizeForClient(value);
+    expect(result).toEqual({
+      type: "ImageRef",
+      uri: "",
+      data: "base64-data",
+      meta: { nested: { type: "TextRef", uri: "", data: "x" } },
+    });
+  });
+
+  it("sanitizes memory uri in serialized asset refs with asset_id", () => {
+    const value = {
+      type: "ImageRef",
+      uri: "memory://img-1",
+      data: null,
+      asset_id: "a123",
+    };
+    const result = ProcessingContext.sanitizeForClient(value);
+    expect(result).toEqual({
+      type: "ImageRef",
+      uri: "asset://a123",
+      data: null,
+      asset_id: "a123",
+    });
   });
 });
 
@@ -174,5 +205,38 @@ describe("Storage adapters", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("workspace path resolution", () => {
+  it("resolves /workspace/ prefix", () => {
+    const root = "/tmp/nodetool-workspace";
+    expect(resolveWorkspacePath(root, "/workspace/out/a.txt")).toBe(
+      "/tmp/nodetool-workspace/out/a.txt"
+    );
+  });
+
+  it("resolves relative path", () => {
+    const root = "/tmp/nodetool-workspace";
+    expect(resolveWorkspacePath(root, "out/a.txt")).toBe(
+      "/tmp/nodetool-workspace/out/a.txt"
+    );
+  });
+
+  it("rejects traversal outside workspace", () => {
+    const root = "/tmp/nodetool-workspace";
+    expect(() => resolveWorkspacePath(root, "../etc/passwd")).toThrow(
+      "outside the workspace directory"
+    );
+  });
+
+  it("context.resolveWorkspacePath delegates to helper", () => {
+    const ctx = new ProcessingContext({
+      jobId: "j1",
+      workspaceDir: "/tmp/nodetool-workspace",
+    });
+    expect(ctx.resolveWorkspacePath("workspace/out.json")).toBe(
+      "/tmp/nodetool-workspace/out.json"
+    );
   });
 });
