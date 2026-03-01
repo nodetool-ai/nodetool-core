@@ -9,6 +9,7 @@ export {
   FileStorageAdapter,
   S3StorageAdapter,
   resolveWorkspacePath,
+  type AssetOutputMode,
   type CacheAdapter,
   type S3Client,
   type StorageAdapter,

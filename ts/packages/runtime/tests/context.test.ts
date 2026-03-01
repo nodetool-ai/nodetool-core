@@ -13,9 +13,10 @@ import {
   type S3Client,
 } from "../src/context.js";
 import type { ProcessingMessage, NodeUpdate } from "@nodetool/protocol";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
 describe("ProcessingContext – message queue", () => {
   it("collects emitted messages", () => {
@@ -288,5 +289,74 @@ describe("workspace path resolution", () => {
     expect(ctx.resolveWorkspacePath("workspace/out.json")).toBe(
       "/tmp/nodetool-workspace/out.json"
     );
+  });
+});
+
+describe("output normalization", () => {
+  it("materializes asset refs as data URIs", async () => {
+    const ctx = new ProcessingContext({ jobId: "j1", assetOutputMode: "data_uri" });
+    const value = {
+      image: {
+        type: "ImageRef",
+        uri: "memory://img",
+        data: Buffer.from("hello").toString("base64"),
+      },
+    };
+
+    const normalized = (await ctx.normalizeOutputValue(value)) as {
+      image: { uri: string };
+    };
+    expect(normalized.image.uri.startsWith("data:image/png;base64,")).toBe(true);
+  });
+
+  it("materializes asset refs to storage URLs via adapter", async () => {
+    const storage = new InMemoryStorageAdapter();
+    const ctx = new ProcessingContext({
+      jobId: "j1",
+      assetOutputMode: "storage_url",
+      storage,
+    });
+    const value = {
+      image: {
+        type: "ImageRef",
+        uri: "memory://img",
+        data: Buffer.from("hello").toString("base64"),
+      },
+    };
+
+    const normalized = (await ctx.normalizeOutputValue(value)) as {
+      image: { uri: string; data?: unknown };
+    };
+    expect(normalized.image.uri.startsWith("memory://assets/")).toBe(true);
+    expect(normalized.image.data).toBeUndefined();
+    expect(await storage.exists(normalized.image.uri)).toBe(true);
+  });
+
+  it("materializes asset refs into workspace files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "nodetool-ts-workspace-"));
+    try {
+      const ctx = new ProcessingContext({
+        jobId: "j1",
+        assetOutputMode: "workspace",
+        workspaceDir: root,
+      });
+      const value = {
+        image: {
+          type: "ImageRef",
+          uri: "memory://img",
+          data: Buffer.from("hello").toString("base64"),
+        },
+      };
+
+      const normalized = (await ctx.normalizeOutputValue(value)) as {
+        image: { uri: string; data?: unknown };
+      };
+      expect(normalized.image.uri.startsWith("file://")).toBe(true);
+      const bytes = await readFile(fileURLToPath(normalized.image.uri));
+      expect(bytes.toString("utf8")).toBe("hello");
+      expect(normalized.image.data).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

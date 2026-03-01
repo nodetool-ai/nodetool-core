@@ -11,6 +11,7 @@
  */
 
 import type { ProcessingMessage } from "@nodetool/protocol";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -70,6 +71,8 @@ export interface StorageAdapter {
   /** Check if an asset exists. */
   exists(uri: string): Promise<boolean>;
 }
+
+export type AssetOutputMode = "python" | "data_uri" | "storage_url" | "workspace" | "raw";
 
 function isWithinRoot(root: string, target: string): boolean {
   const rel = relative(root, target);
@@ -293,6 +296,7 @@ export class ProcessingContext {
   readonly workflowId: string | null;
   readonly userId: string;
   readonly workspaceDir: string | null;
+  readonly assetOutputMode: AssetOutputMode;
 
   /** Message queue: all emitted processing messages. */
   private _messages: ProcessingMessage[] = [];
@@ -311,6 +315,7 @@ export class ProcessingContext {
     workflowId?: string | null;
     userId?: string;
     workspaceDir?: string | null;
+    assetOutputMode?: AssetOutputMode;
     cache?: CacheAdapter;
     storage?: StorageAdapter | null;
     onMessage?: (msg: ProcessingMessage) => void;
@@ -319,6 +324,7 @@ export class ProcessingContext {
     this.workflowId = opts.workflowId ?? null;
     this.userId = opts.userId ?? "default";
     this.workspaceDir = opts.workspaceDir ?? null;
+    this.assetOutputMode = opts.assetOutputMode ?? "python";
     this.cache = opts.cache ?? new MemoryCache();
     this.storage = opts.storage ?? null;
     this._onMessage = opts.onMessage ?? null;
@@ -403,5 +409,135 @@ export class ProcessingContext {
    */
   resolveWorkspacePath(path: string): string {
     return resolveWorkspacePath(this.workspaceDir, path);
+  }
+
+  private static isAssetLike(value: unknown): value is Record<string, unknown> {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const v = value as Record<string, unknown>;
+    return "type" in v && ("uri" in v || "data" in v || "asset_id" in v);
+  }
+
+  private static guessAssetMime(asset: Record<string, unknown>): string {
+    const explicit = asset.mime_type ?? asset.content_type;
+    if (typeof explicit === "string" && explicit) return explicit;
+
+    const type = String(asset.type ?? "").toLowerCase();
+    if (type.includes("image")) return "image/png";
+    if (type.includes("audio")) return "audio/wav";
+    if (type.includes("video")) return "video/mp4";
+    if (type.includes("text")) return "text/plain";
+    if (type.includes("model3d")) return "model/gltf-binary";
+    return "application/octet-stream";
+  }
+
+  private static extForMime(mime: string): string {
+    const map: Record<string, string> = {
+      "image/png": "png",
+      "image/jpeg": "jpg",
+      "image/webp": "webp",
+      "audio/wav": "wav",
+      "audio/mpeg": "mp3",
+      "video/mp4": "mp4",
+      "text/plain": "txt",
+      "application/json": "json",
+      "model/gltf-binary": "glb",
+    };
+    return map[mime] ?? "bin";
+  }
+
+  private static decodeAssetData(data: unknown): Uint8Array | null {
+    if (data === null || data === undefined) return null;
+    if (data instanceof Uint8Array) return data;
+    if (Array.isArray(data) && data.every((v) => Number.isInteger(v))) {
+      return new Uint8Array(data as number[]);
+    }
+    if (typeof data === "string") {
+      return Uint8Array.from(Buffer.from(data, "base64"));
+    }
+    return null;
+  }
+
+  private async getAssetBytes(asset: Record<string, unknown>): Promise<Uint8Array | null> {
+    const decoded = ProcessingContext.decodeAssetData(asset.data);
+    if (decoded) return decoded;
+
+    const uri = asset.uri;
+    if (typeof uri !== "string" || !this.storage) return null;
+    return this.storage.retrieve(uri);
+  }
+
+  private async materializeAsset(
+    asset: Record<string, unknown>,
+    mode: AssetOutputMode
+  ): Promise<Record<string, unknown>> {
+    if (mode === "python" || mode === "raw") {
+      return asset;
+    }
+
+    const bytes = await this.getAssetBytes(asset);
+    if (!bytes) return asset;
+
+    const mime = ProcessingContext.guessAssetMime(asset);
+
+    if (mode === "data_uri") {
+      const encoded = Buffer.from(bytes).toString("base64");
+      return {
+        ...asset,
+        uri: `data:${mime};base64,${encoded}`,
+      };
+    }
+
+    if (mode === "storage_url") {
+      if (!this.storage) return asset;
+      const key = `assets/${randomUUID()}.${ProcessingContext.extForMime(mime)}`;
+      const uri = await this.storage.store(key, bytes, mime);
+      return {
+        ...asset,
+        uri,
+        data: undefined,
+      };
+    }
+
+    if (mode === "workspace") {
+      if (!this.workspaceDir) {
+        throw new Error("workspace_dir is required for workspace asset output");
+      }
+      const workspaceAssets = new FileStorageAdapter(resolveWorkspacePath(this.workspaceDir, "assets"));
+      const key = `${randomUUID()}.${ProcessingContext.extForMime(mime)}`;
+      const uri = await workspaceAssets.store(key, bytes, mime);
+      return {
+        ...asset,
+        uri,
+        data: undefined,
+      };
+    }
+
+    return asset;
+  }
+
+  /**
+   * Recursively normalize workflow outputs, materializing asset-like values
+   * according to the selected output mode.
+   */
+  async normalizeOutputValue(value: unknown, mode: AssetOutputMode = this.assetOutputMode): Promise<unknown> {
+    if (value === null || value === undefined) return value;
+
+    if (Array.isArray(value)) {
+      return Promise.all(value.map((item) => this.normalizeOutputValue(item, mode)));
+    }
+
+    if (ProcessingContext.isAssetLike(value)) {
+      return this.materializeAsset(value, mode);
+    }
+
+    if (typeof value === "object") {
+      const entries = Object.entries(value as Record<string, unknown>);
+      const normalized = await Promise.all(
+        entries.map(async ([k, v]) => [k, await this.normalizeOutputValue(v, mode)] as const)
+      );
+      return Object.fromEntries(normalized);
+    }
+
+    return value;
   }
 }

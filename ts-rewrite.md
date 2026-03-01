@@ -17,17 +17,18 @@ Status legend: ✅ Done | 🚧 Partial | ⬜ Not started
 | 5 | Node SDK & Registry | ✅ | BaseNode with lifecycle hooks & streaming; NodeRegistry; 11 example nodes; 34 tests |
 | 6 | Processing Context, Assets, Caching | 🚧 | ProcessingContext, MemoryCache, asset-safe sanitizeForClient, in-memory + file + S3 storage adapters, workspace path resolution (25 tests); full asset normalization/materialization modes pending |
 | 7 | Job Execution + State/Recovery | ⬜ | Deferred (out of scope – pure execution engine goal) |
-| 8 | Dual-Run Shadow & Diff Harness | ⬜ | |
-| 9 | Canary & Cutover | ⬜ | |
-| 10 | Python Decommission | ⬜ | |
+| 8 | Dual-Run Shadow & Diff Harness | 🚧 | `@nodetool/parity-harness` with message diff categories + side-by-side command runner (5 tests) |
+| 9 | Canary & Cutover | 🚧 | Cutover/rollback runbooks added; feature-flag integration still pending |
+| 10 | Python Decommission | 🚧 | Decommission plan doc added; codepath removal pending |
 
-**Test Summary**: 120 tests across 11 test files, all passing.
+**Test Summary**: 125 tests across 13 test files, all passing.
 
 **Packages implemented** (under `ts/`):
 - `@nodetool/protocol` – Message types, graph types, control events
 - `@nodetool/kernel` – Graph, NodeInbox, NodeActor, WorkflowRunner
 - `@nodetool/runtime` – ProcessingContext, MemoryCache, output sanitization, storage adapters
 - `@nodetool/node-sdk` – BaseNode, NodeRegistry, 11 example/test nodes
+- `@nodetool/parity-harness` – Shadow runner and drift categorization/diff utilities
 
 **Remaining work for completed phases**:
 - Phase 2: MessagePack serialization compatibility tests (deferred)
@@ -35,6 +36,9 @@ Status legend: ✅ Done | 🚧 Partial | ⬜ Not started
 - Phase 4: Sub-graph / GroupNode execution (deferred)
 - Phase 5: Typed property validation, more node ports from Python ecosystem
 - Phase 6: full asset normalization/materialization modes
+- Phase 8: CI wiring for automated shadow runs and persisted diff reports
+- Phase 9: production feature-flag wiring and canary gate automation
+- Phase 10: remove Python runtime default paths and migration shims
 
 ---
 

@@ -5,7 +5,8 @@
     "packages/protocol",
     "packages/kernel",
     "packages/runtime",
-    "packages/node-sdk"
+    "packages/node-sdk",
+    "packages/parity-harness"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
