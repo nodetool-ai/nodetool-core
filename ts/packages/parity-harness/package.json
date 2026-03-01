@@ -4,6 +4,9 @@
   "description": "Dual-run shadow and diff harness for workflow parity",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "nodetool-shadow-report": "dist/cli.js"
+  },
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
