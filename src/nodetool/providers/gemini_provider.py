@@ -1,5 +1,7 @@
 import asyncio
 import mimetypes
+import re
+from enum import Enum
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Sequence, cast
 from weakref import WeakKeyDictionary
@@ -210,7 +212,11 @@ class GeminiProvider(BaseProvider):
         log.debug(f"Resolved mime type {mime_type}, bytes: {len(data)}")
         return Blob(mime_type=mime_type, data=data)
 
-    async def _prepare_message_content(self, message: Message) -> list[Part]:
+    async def _prepare_message_content(
+        self,
+        message: Message,
+        tool_name_map: dict[str, str] | None = None,
+    ) -> list[Part]:
         """Convert Message content to a format compatible with Gemini API."""
         log.debug(f"Preparing message content for role: {message.role}")
         result: list[Part] = []
@@ -242,18 +248,21 @@ class GeminiProvider(BaseProvider):
             if message.tool_calls:
                 log.debug(f"Processing {len(message.tool_calls)} tool calls")
                 for tool_call in message.tool_calls:
+                    tool_name = tool_call.name
+                    if tool_name_map and tool_name in tool_name_map:
+                        tool_name = tool_name_map[tool_name]
                     if tool_call.result:
                         log.debug(f"Adding function response for tool: {tool_call.name}")
                         part = Part(
                             function_response=FunctionResponse(
                                 id=tool_call.id,
-                                name=tool_call.name,
+                                name=tool_name,
                                 response=tool_call.result,
                             )
                         )
                     else:
                         log.debug(f"Adding function call for tool: {tool_call.name}")
-                        part = Part(function_call=FunctionCall(name=tool_call.name, args=tool_call.args))
+                        part = Part(function_call=FunctionCall(name=tool_name, args=tool_call.args))
                     result.append(part)
             elif isinstance(content, str):
                 log.debug(f"Adding text content: {content[:50]}...")
@@ -325,14 +334,18 @@ class GeminiProvider(BaseProvider):
 
         return result
 
-    async def _prepare_messages(self, messages: Sequence[Message]) -> ContentListUnion:
+    async def _prepare_messages(
+        self,
+        messages: Sequence[Message],
+        tool_name_map: dict[str, str] | None = None,
+    ) -> ContentListUnion:
         """Convert messages to Gemini-compatible format."""
         log.debug(f"Preparing {len(messages)} messages for Gemini API")
         history = []
 
         for i, message in enumerate(messages):
             log.debug(f"Processing message {i + 1}/{len(messages)} with role: {message.role}")
-            parts = await self._prepare_message_content(message)
+            parts = await self._prepare_message_content(message, tool_name_map=tool_name_map)
             # Keep messages that have any parts (text or non-text like images)
             if not parts:
                 log.debug(f"Skipping message {i + 1} - no valid parts")
@@ -346,21 +359,93 @@ class GeminiProvider(BaseProvider):
         log.debug(f"Prepared {len(history)} messages for API call")
         return history
 
-    def _format_tools(self, tools: Sequence[Any]) -> ToolListUnion:
-        """Convert NodeTool objects to Gemini Tool format."""
+    @staticmethod
+    def _to_json_compatible(value: Any) -> Any:
+        """Convert values to JSON-compatible primitives for Gemini request payloads."""
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+
+        if isinstance(value, Enum):
+            return GeminiProvider._to_json_compatible(value.value)
+
+        if isinstance(value, BaseModel):
+            return GeminiProvider._to_json_compatible(value.model_dump())
+
+        if isinstance(value, dict):
+            return {str(key): GeminiProvider._to_json_compatible(item) for key, item in value.items()}
+
+        if isinstance(value, (list, tuple, set)):
+            return [GeminiProvider._to_json_compatible(item) for item in value]
+
+        if isinstance(value, bytes):
+            try:
+                return value.decode("utf-8")
+            except Exception:
+                return value.hex()
+
+        return str(value)
+
+    @staticmethod
+    def _sanitize_tool_name_for_gemini(name: str) -> str:
+        """Normalize a tool name to Gemini function-name constraints."""
+        sanitized = name.strip() if isinstance(name, str) else ""
+        sanitized = re.sub(r"[^a-zA-Z0-9_.:-]", "_", sanitized)
+        sanitized = re.sub(r"_+", "_", sanitized)
+
+        if not sanitized:
+            sanitized = "_tool"
+
+        if not re.match(r"^[a-zA-Z_]", sanitized):
+            sanitized = f"_{sanitized}"
+
+        if len(sanitized) > 64:
+            sanitized = sanitized[:64]
+
+        # Truncation can theoretically produce an empty value.
+        if not sanitized:
+            sanitized = "_tool"
+
+        return sanitized
+
+    def _format_tools(self, tools: Sequence[Any]) -> tuple[ToolListUnion, dict[str, str], dict[str, str]]:
+        """Convert NodeTool objects to Gemini Tool format and return name mappings."""
         log.debug(f"Formatting {len(tools)} tools for Gemini API")
         result = []
+        tool_name_map: dict[str, str] = {}
+        reverse_tool_name_map: dict[str, str] = {}
+        used_names: set[str] = set()
 
         for tool in tools:
-            log.debug(f"Converting tool: {tool.name}")
+            original_name = str(getattr(tool, "name", "") or "")
+            normalized_name = self._sanitize_tool_name_for_gemini(original_name)
+
+            unique_name = normalized_name
+            suffix_index = 2
+            while unique_name in used_names:
+                suffix = f"_{suffix_index}"
+                unique_name = f"{normalized_name[: 64 - len(suffix)]}{suffix}"
+                suffix_index += 1
+
+            used_names.add(unique_name)
+            tool_name_map[original_name] = unique_name
+            reverse_tool_name_map[unique_name] = original_name
+
+            if unique_name != original_name:
+                log.warning(
+                    "Normalized Gemini tool name from %r to %r to satisfy Gemini function naming constraints.",
+                    original_name,
+                    unique_name,
+                )
+
+            log.debug(f"Converting tool: {original_name} (gemini_name={unique_name})")
             function_declaration = FunctionDeclaration(
-                name=tool.name,
+                name=unique_name,
                 description=tool.description,
-                parameters_json_schema=tool.input_schema,
+                parameters_json_schema=self._to_json_compatible(tool.input_schema),
             )
             result.append(Tool(function_declarations=[function_declaration]))
         log.debug(f"Formatted {len(result)} tools")
-        return result
+        return result, tool_name_map, reverse_tool_name_map
 
     def _default_serializer(self, obj: Any) -> dict:
         """Serialize Pydantic models to dict."""
@@ -369,7 +454,9 @@ class GeminiProvider(BaseProvider):
         raise TypeError("Type not serializable")
 
     def _extract_content_from_parts(
-        self, content_parts: list[Part]
+        self,
+        content_parts: list[Part],
+        reverse_tool_name_map: dict[str, str] | None = None,
     ) -> tuple[list[MessageContent] | str, list[ToolCall], list[MessageFile]]:
         """Extract content, tool calls, and output files from response parts.
 
@@ -405,11 +492,17 @@ class GeminiProvider(BaseProvider):
                     content.append(MessageTextContent(text=part.text))
                 elif part.function_call:
                     function_call = part.function_call
-                    log.debug(f"Found function call: {function_call.name}")
+                    function_name = function_call.name or ""
+                    mapped_function_name = (
+                        reverse_tool_name_map.get(function_name, function_name)
+                        if reverse_tool_name_map
+                        else function_name
+                    )
+                    log.debug(f"Found function call: {function_name} (mapped={mapped_function_name})")
                     # Convert Gemini function call to our ToolCall format
                     tool_calls.append(
                         ToolCall(
-                            name=function_call.name or "",
+                            name=mapped_function_name,
                             args=function_call.args or {},
                         )
                     )
@@ -474,7 +567,7 @@ class GeminiProvider(BaseProvider):
         else:
             system_instruction = None
 
-        gemini_tools: ToolListUnion | None = self._format_tools(tools)
+        gemini_tools, tool_name_map, reverse_tool_name_map = self._format_tools(tools)
         log.debug(f"Using {len(gemini_tools) if gemini_tools else 0} tools")
 
         client = self.get_client()
@@ -490,7 +583,7 @@ class GeminiProvider(BaseProvider):
         )
         log.debug(f"Generated config with response format: {'json' if response_format else 'text'}")
 
-        contents = await self._prepare_messages(messages)
+        contents = await self._prepare_messages(messages, tool_name_map=tool_name_map)
         log.debug(f"Making API call to model {model}")
 
         try:
@@ -511,7 +604,10 @@ class GeminiProvider(BaseProvider):
             if candidate.content:
                 content_parts = candidate.content.parts
                 log.debug(f"Extracting content from {len(content_parts) if content_parts else 0} parts")
-                content, tool_calls, output_files = self._extract_content_from_parts(content_parts or [])
+                content, tool_calls, output_files = self._extract_content_from_parts(
+                    content_parts or [],
+                    reverse_tool_name_map=reverse_tool_name_map,
+                )
                 log.debug(
                     f"Extracted: {len(tool_calls)} tool calls, {len(output_files) if output_files else 0} output files"
                 )
@@ -585,7 +681,7 @@ class GeminiProvider(BaseProvider):
             system_instruction = None
 
         client = self.get_client()
-        gemini_tools = self._format_tools(tools)
+        gemini_tools, tool_name_map, reverse_tool_name_map = self._format_tools(tools)
 
         config = GenerateContentConfig(
             tools=gemini_tools,
@@ -595,7 +691,7 @@ class GeminiProvider(BaseProvider):
             thinking_config=kwargs.get("thinking_config"),
         )
 
-        contents = await self._prepare_messages(messages)
+        contents = await self._prepare_messages(messages, tool_name_map=tool_name_map)
         log.debug(f"Starting streaming API call to model {model}")
 
         # Prefer the official async streaming API if available
@@ -643,8 +739,10 @@ class GeminiProvider(BaseProvider):
 
                             function_call = getattr(part, "function_call", None)
                             if function_call is not None:
+                                function_name = getattr(function_call, "name", "") or ""
+                                mapped_function_name = reverse_tool_name_map.get(function_name, function_name)
                                 yield ToolCall(
-                                    name=getattr(function_call, "name", "") or "",
+                                    name=mapped_function_name,
                                     args=getattr(function_call, "args", {}) or {},
                                 )
                                 continue

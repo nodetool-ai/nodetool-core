@@ -88,6 +88,7 @@ metadata generation.
 """
 
 import asyncio
+from enum import Enum
 import functools
 import importlib
 import inspect
@@ -193,6 +194,32 @@ def sanitize_node_name(node_name: str) -> str:
         return node_name[:max_length]
     else:
         return node_name
+
+
+def _to_json_compatible(value: Any) -> Any:
+    """Convert values to JSON-compatible primitives for control schemas."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+
+    if isinstance(value, Enum):
+        return _to_json_compatible(value.value)
+
+    if isinstance(value, BaseModel):
+        return _to_json_compatible(value.model_dump())
+
+    if isinstance(value, dict):
+        return {str(key): _to_json_compatible(item) for key, item in value.items()}
+
+    if isinstance(value, (list, tuple, set)):
+        return [_to_json_compatible(item) for item in value]
+
+    if isinstance(value, bytes):
+        try:
+            return value.decode("utf-8")
+        except Exception:
+            return value.hex()
+
+    return str(value)
 
 
 def split_camel_case(text: str) -> str:
@@ -639,9 +666,9 @@ class BaseNode(BaseModel):
         required_properties: list[str] = []
 
         for prop in cls.properties():
-            schema = prop.get_json_schema()
+            schema = _to_json_compatible(prop.get_json_schema())
             if prop.default is not None:
-                schema.setdefault("default", prop.default)
+                schema.setdefault("default", _to_json_compatible(prop.default))
             properties_schema[prop.name] = schema
             if prop.required:
                 required_properties.append(prop.name)

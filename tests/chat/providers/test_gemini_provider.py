@@ -336,6 +336,150 @@ class TestGeminiProvider(BaseProviderTest):
         assert response.role == "assistant"
 
     @pytest.mark.asyncio
+    async def test_format_tools_sanitizes_invalid_names_and_resolves_collisions(self):
+        """Gemini tool names should always be valid and unique."""
+        provider = self.create_provider()
+
+        tool_a = self.create_mock_tool()
+        tool_b = self.create_mock_tool()
+        tool_a.name = "123 bad/tool"
+        tool_b.name = "123 bad?tool"
+
+        gemini_tools, tool_name_map, reverse_tool_name_map = provider._format_tools([tool_a, tool_b])
+
+        assert len(gemini_tools) == 2
+        assert tool_name_map[tool_a.name].startswith("_")
+        assert tool_name_map[tool_a.name] != tool_name_map[tool_b.name]
+        assert reverse_tool_name_map[tool_name_map[tool_a.name]] == tool_a.name
+        assert reverse_tool_name_map[tool_name_map[tool_b.name]] == tool_b.name
+
+        for gemini_tool in gemini_tools:
+            declaration_name = gemini_tool.function_declarations[0].name
+            assert declaration_name is not None
+            assert len(declaration_name) <= 64
+            assert declaration_name[0].isalpha() or declaration_name[0] == "_"
+
+    @pytest.mark.asyncio
+    async def test_format_tools_sanitizes_non_json_schema_values(self):
+        """Gemini tool schemas should be JSON-serializable even with plain Enum defaults."""
+        from enum import Enum
+
+        provider = self.create_provider()
+        tool = self.create_mock_tool()
+
+        class SampleEnum(Enum):
+            SAFE = "safe"
+
+        tool.input_schema = {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "default": SampleEnum.SAFE,
+                }
+            },
+        }
+
+        gemini_tools, _tool_name_map, _reverse_tool_name_map = provider._format_tools([tool])
+        schema = gemini_tools[0].function_declarations[0].parameters_json_schema
+
+        assert schema["properties"]["mode"]["default"] == "safe"
+
+    @pytest.mark.asyncio
+    async def test_generate_message_maps_sanitized_tool_name_back_to_original(self):
+        """Non-streaming function call names should map back to original tool names."""
+        provider = self.create_provider()
+        tool = self.create_mock_tool()
+        tool.name = "123 bad/tool"
+        sanitized_name = provider._sanitize_tool_name_for_gemini(tool.name)
+
+        function_call = MagicMock()
+        function_call.name = sanitized_name
+        function_call.args = {"query": "test search"}
+
+        part = MagicMock()
+        part.text = None
+        part.thought = False
+        part.thought_signature = None
+        part.function_call = function_call
+        part.executable_code = None
+        part.code_execution_result = None
+        part.inline_data = None
+
+        mock_response = MagicMock()
+        mock_response.candidates = [MagicMock(content=MagicMock(parts=[part]))]
+
+        mock_client = MagicMock()
+        mock_models = MagicMock()
+        mock_models.generate_content = AsyncMock(return_value=mock_response)
+        mock_client.models = mock_models
+
+        with patch.object(GeminiProvider, "get_client", return_value=mock_client):
+            response = await provider.generate_message(
+                self.create_simple_messages("Use a tool"),
+                "gemini-1.5-pro",
+                tools=[tool],
+            )
+
+        assert response.tool_calls is not None
+        assert response.tool_calls[0].name == tool.name
+
+        call_kwargs = mock_models.generate_content.call_args.kwargs
+        config = call_kwargs["config"]
+        declaration_name = config.tools[0].function_declarations[0].name
+        assert declaration_name == sanitized_name
+
+    @pytest.mark.asyncio
+    async def test_generate_messages_maps_sanitized_tool_name_back_to_original(self):
+        """Streaming function call names should map back to original tool names."""
+        from nodetool.metadata.types import ToolCall
+        from nodetool.workflows.types import Chunk
+
+        provider = self.create_provider()
+        tool = self.create_mock_tool()
+        tool.name = "9-weather lookup"
+        sanitized_name = provider._sanitize_tool_name_for_gemini(tool.name)
+
+        async def mock_stream():
+            function_call = MagicMock()
+            function_call.name = sanitized_name
+            function_call.args = {"query": "sf weather"}
+
+            part = MagicMock()
+            part.text = None
+            part.thought = False
+            part.thought_signature = None
+            part.function_call = function_call
+            part.executable_code = None
+            part.code_execution_result = None
+            part.inline_data = None
+
+            chunk = MagicMock()
+            chunk.candidates = [MagicMock(content=MagicMock(parts=[part]))]
+            yield chunk
+
+        mock_client = MagicMock()
+        mock_models = MagicMock()
+        mock_models.generate_content_stream = AsyncMock(return_value=mock_stream())
+        mock_client.models = mock_models
+
+        with patch.object(GeminiProvider, "get_client", return_value=mock_client):
+            results = []
+            async for item in provider.generate_messages(
+                self.create_simple_messages("Use a tool"),
+                "gemini-1.5-pro",
+                tools=[tool],
+            ):
+                results.append(item)
+
+        tool_calls = [item for item in results if isinstance(item, ToolCall)]
+        done_chunks = [item for item in results if isinstance(item, Chunk) and item.done]
+
+        assert len(tool_calls) == 1
+        assert tool_calls[0].name == tool.name
+        assert len(done_chunks) == 1
+
+    @pytest.mark.asyncio
     async def test_large_context_handling(self):
         """Test handling of large context windows."""
         provider = self.create_provider()
