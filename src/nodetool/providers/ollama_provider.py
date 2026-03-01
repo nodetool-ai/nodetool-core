@@ -211,6 +211,18 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             log.debug(f"Defaulting to True for model {model} due to error")
             return True
 
+    @staticmethod
+    def _is_gemma_model(model: str) -> bool:
+        """Check if the model is a Gemma model by name pattern.
+
+        Args:
+            model: Model identifier string (e.g. "gemma3:4b", "gemma:2b").
+
+        Returns:
+            True if the model name starts with "gemma".
+        """
+        return model.lower().startswith("gemma")
+
     async def get_available_language_models(self) -> list[LanguageModel]:
         """
         Get available Ollama models.
@@ -396,27 +408,38 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         # Prepare messages
         ollama_messages = []
         if use_tool_emulation and len(tools) > 0:
-            # Add tool definitions to system message
-            tool_definitions = self._format_tools_as_python(tools)
-            tool_instruction = (
-                "\n\n=== AVAILABLE FUNCTIONS ===\n"
-                "You can call these functions by writing a function call on a single line.\n"
-                "DO NOT write function definitions - only write function CALLS.\n\n"
-                f"{tool_definitions}\n\n"
-                "=== INSTRUCTIONS ===\n"
-                "When you need to use a function:\n"
-                "1. Write ONLY the function call, nothing else\n"
-                "2. Use this exact format: function_name(param='value')\n"
-                "3. Do NOT write 'def', 'return', or any other Python keywords\n"
-                "4. After calling a function, wait for the result\n"
-                "5. Once you receive a function result, use it in your final answer\n"
-                "6. Do NOT call the same function twice\n\n"
-                "Example conversation:\n"
-                "User: What is 5 + 3?\n"
-                "You: calculator(expression='5 + 3')\n"
-                "[System returns: {'result': 8}]\n"
-                "You: The answer is 8."
-            )
+            # Use Gemma-specific prompt format for Gemma models
+            if self._is_gemma_model(model):
+                tool_definitions = self._format_tools_as_gemma_json(tools)
+                tool_instruction = (
+                    "\n\nYou have access to functions. If you decide to invoke any of the function(s), "
+                    "you MUST put it in the format of\n"
+                    "[func_name1(params_name1=params_value1, params_name2=params_value2...), func_name2(params)]\n\n"
+                    "You SHOULD NOT include any other text in the response if you call a function\n\n"
+                    f"{tool_definitions}"
+                )
+                log.debug("Using Gemma-specific function calling format")
+            else:
+                tool_definitions = self._format_tools_as_python(tools)
+                tool_instruction = (
+                    "\n\n=== AVAILABLE FUNCTIONS ===\n"
+                    "You can call these functions by writing a function call on a single line.\n"
+                    "DO NOT write function definitions - only write function CALLS.\n\n"
+                    f"{tool_definitions}\n\n"
+                    "=== INSTRUCTIONS ===\n"
+                    "When you need to use a function:\n"
+                    "1. Write ONLY the function call, nothing else\n"
+                    "2. Use this exact format: function_name(param='value')\n"
+                    "3. Do NOT write 'def', 'return', or any other Python keywords\n"
+                    "4. After calling a function, wait for the result\n"
+                    "5. Once you receive a function result, use it in your final answer\n"
+                    "6. Do NOT call the same function twice\n\n"
+                    "Example conversation:\n"
+                    "User: What is 5 + 3?\n"
+                    "You: calculator(expression='5 + 3')\n"
+                    "[System returns: {'result': 8}]\n"
+                    "You: The answer is 8."
+                )
 
             # Find or create system message
             modified_messages = list(messages)
@@ -545,17 +568,26 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                 # Accumulate content for emulation parsing
                 if use_tool_emulation:
                     accumulated_content += content
-
-                yield Chunk(
-                    content=content,
-                    done=response.done or False,
-                )
+                    # Don't yield content chunks during emulation - wait for cleaned content at the end
+                else:
+                    # Yield content immediately when not using emulation
+                    yield Chunk(
+                        content=content,
+                        done=response.done or False,
+                    )
 
                 if response.done:
                     # Parse emulated tool calls from accumulated content
                     if use_tool_emulation and accumulated_content:
                         log.debug("Parsing emulated tool calls from response")
-                        emulated_calls, _ = self._parse_function_calls(accumulated_content, tools)
+                        emulated_calls, cleaned_content = self._parse_function_calls(accumulated_content, tools)
+                        # Yield cleaned content with function calls removed
+                        if cleaned_content:
+                            yield Chunk(
+                                content=cleaned_content,
+                                done=True,
+                            )
+                        # Yield tool calls after the content
                         for tool_call in emulated_calls:
                             tool_call_count += 1
                             log.debug(f"Yielding emulated tool call: {tool_call.name}")
