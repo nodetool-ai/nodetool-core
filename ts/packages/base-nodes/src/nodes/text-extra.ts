@@ -1,4 +1,6 @@
 import { BaseNode } from "@nodetool/node-sdk";
+import { promises as fs } from "node:fs";
+import { extname, join } from "node:path";
 
 function flagsFromOpts(opts: {
   dotall?: unknown;
@@ -153,6 +155,73 @@ export class TextParseJSONNode extends BaseNode {
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const text = String(inputs.text ?? this._props.text ?? "");
     return { output: JSON.parse(text) };
+  }
+}
+
+function jsonPathFind(path: string, root: unknown): unknown[] {
+  if (!path.startsWith("$")) {
+    return [];
+  }
+  const tokens = path
+    .replace(/^\$\./, "")
+    .replace(/\[(\d+)\]/g, ".$1")
+    .split(".")
+    .filter(Boolean);
+
+  let current: unknown[] = [root];
+  for (const token of tokens) {
+    const next: unknown[] = [];
+    for (const value of current) {
+      if (token === "*") {
+        if (Array.isArray(value)) {
+          next.push(...value);
+        } else if (value && typeof value === "object") {
+          next.push(...Object.values(value as Record<string, unknown>));
+        }
+        continue;
+      }
+      if (Array.isArray(value)) {
+        const idx = Number(token);
+        if (Number.isInteger(idx) && idx >= 0 && idx < value.length) {
+          next.push(value[idx]);
+        }
+        continue;
+      }
+      if (value && typeof value === "object" && token in (value as object)) {
+        next.push((value as Record<string, unknown>)[token]);
+      }
+    }
+    current = next;
+    if (current.length === 0) {
+      break;
+    }
+  }
+  return current;
+}
+
+export class ExtractJSONNode extends BaseNode {
+  static readonly nodeType = "nodetool.text.ExtractJSON";
+  static readonly title = "Extract JSON";
+  static readonly description = "Extract JSON values using basic JSONPath";
+
+  defaults() {
+    return { text: "", json_path: "$.*", find_all: false };
+  }
+
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const text = String(inputs.text ?? this._props.text ?? "");
+    const jsonPath = String(inputs.json_path ?? this._props.json_path ?? "$.*");
+    const findAll = Boolean(inputs.find_all ?? this._props.find_all ?? false);
+
+    const parsed = JSON.parse(text) as unknown;
+    const matches = jsonPathFind(jsonPath, parsed);
+    if (findAll) {
+      return { output: matches };
+    }
+    if (matches.length === 0) {
+      throw new Error("JSONPath did not match any value");
+    }
+    return { output: matches[0] };
   }
 }
 
@@ -837,6 +906,222 @@ export class SurroundWithTextNode extends BaseNode {
   }
 }
 
+export class CountTokensNode extends BaseNode {
+  static readonly nodeType = "nodetool.text.CountTokens";
+  static readonly title = "Count Tokens";
+  static readonly description =
+    "Approximate token count (whitespace and punctuation split)";
+
+  defaults() {
+    return { text: "", encoding: "cl100k_base" };
+  }
+
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const text = String(inputs.text ?? this._props.text ?? "");
+    if (!text.trim()) {
+      return { output: 0 };
+    }
+    const tokens = text.match(/[A-Za-z0-9_]+|[^\s]/g) ?? [];
+    return { output: tokens.length };
+  }
+}
+
+export class HtmlToTextNode extends BaseNode {
+  static readonly nodeType = "nodetool.text.HtmlToText";
+  static readonly title = "HTML to Text";
+  static readonly description = "Convert simple HTML to plain text";
+
+  defaults() {
+    return {
+      html: "",
+      base_url: "",
+      body_width: 0,
+      ignore_images: true,
+      ignore_mailto_links: true,
+    };
+  }
+
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const html = String(inputs.html ?? this._props.html ?? "");
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, "\"");
+    return { output: text.trim() };
+  }
+}
+
+function seededEmbedding(input: string, dims: number = 64): number[] {
+  const out = new Array<number>(dims).fill(0);
+  for (let i = 0; i < input.length; i++) {
+    const code = input.charCodeAt(i);
+    const idx = i % dims;
+    out[idx] += (code % 97) / 97;
+  }
+  const norm = Math.sqrt(out.reduce((a, b) => a + b * b, 0)) || 1;
+  return out.map((v) => v / norm);
+}
+
+export class AutomaticSpeechRecognitionNode extends BaseNode {
+  static readonly nodeType = "nodetool.text.AutomaticSpeechRecognition";
+  static readonly title = "Automatic Speech Recognition";
+  static readonly description = "TS placeholder for ASR provider-backed node";
+
+  defaults() {
+    return { model: {}, audio: {} };
+  }
+
+  async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    throw new Error(
+      "AutomaticSpeechRecognition is not implemented in base TS nodes without provider runtime."
+    );
+  }
+}
+
+export class EmbeddingTextNode extends BaseNode {
+  static readonly nodeType = "nodetool.text.Embedding";
+  static readonly title = "Embedding";
+  static readonly description = "Deterministic local text embedding fallback";
+
+  defaults() {
+    return { model: {}, input: "", chunk_size: 4096 };
+  }
+
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const text = String(inputs.input ?? this._props.input ?? "");
+    return { output: seededEmbedding(text) };
+  }
+}
+
+export class SaveTextFileNode extends BaseNode {
+  static readonly nodeType = "nodetool.text.SaveTextFile";
+  static readonly title = "Save Text File";
+  static readonly description = "Save text to filesystem path";
+
+  defaults() {
+    return { text: "", folder: "", name: "output.txt" };
+  }
+
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const text = String(inputs.text ?? this._props.text ?? "");
+    const folder = String(inputs.folder ?? this._props.folder ?? "");
+    const name = String(inputs.name ?? this._props.name ?? "output.txt");
+    if (!folder) {
+      throw new Error("folder cannot be empty");
+    }
+    await fs.mkdir(folder, { recursive: true });
+    const path = join(folder, name);
+    await fs.writeFile(path, text, "utf-8");
+    return { output: { uri: path, data: text } };
+  }
+}
+
+export class SaveTextNode extends BaseNode {
+  static readonly nodeType = "nodetool.text.SaveText";
+  static readonly title = "Save Text";
+  static readonly description = "Save text to local file (TS fallback)";
+
+  defaults() {
+    return { text: "", name: "output.txt" };
+  }
+
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const text = String(inputs.text ?? this._props.text ?? "");
+    const name = String(inputs.name ?? this._props.name ?? "output.txt");
+    await fs.writeFile(name, text, "utf-8");
+    return { output: { uri: name, data: text } };
+  }
+}
+
+export class LoadTextFolderNode extends BaseNode {
+  static readonly nodeType = "nodetool.text.LoadTextFolder";
+  static readonly title = "Load Text Folder";
+  static readonly description = "Load text files from folder path";
+
+  defaults() {
+    return {
+      folder: "",
+      include_subdirectories: false,
+      extensions: [".txt", ".csv", ".json", ".xml", ".md", ".html", ".pdf"],
+      pattern: "",
+    };
+  }
+
+  async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return {};
+  }
+
+  async *genProcess(
+    inputs: Record<string, unknown>
+  ): AsyncGenerator<Record<string, unknown>> {
+    const folder = String(inputs.folder ?? this._props.folder ?? "");
+    const includeSubdirs = Boolean(
+      inputs.include_subdirectories ?? this._props.include_subdirectories ?? false
+    );
+    const extensions = Array.isArray(inputs.extensions ?? this._props.extensions)
+      ? ((inputs.extensions ?? this._props.extensions) as unknown[]).map((v) =>
+          String(v).toLowerCase()
+        )
+      : [".txt"];
+
+    if (!folder) {
+      throw new Error("folder cannot be empty");
+    }
+
+    const walk = async function* (dir: string): AsyncGenerator<string> {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (includeSubdirs) {
+            yield* walk(full);
+          }
+          continue;
+        }
+        yield full;
+      }
+    };
+
+    for await (const path of walk(folder)) {
+      if (!extensions.includes(extname(path).toLowerCase())) {
+        continue;
+      }
+      const text = await fs.readFile(path, "utf-8");
+      yield { path, text };
+    }
+  }
+}
+
+export class LoadTextAssetsNode extends BaseNode {
+  static readonly nodeType = "nodetool.text.LoadTextAssets";
+  static readonly title = "Load Text Assets";
+  static readonly description =
+    "TS placeholder for asset-backed text loading node";
+  static readonly isStreamingOutput = true;
+
+  defaults() {
+    return { folder: {} };
+  }
+
+  async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return {};
+  }
+
+  async *genProcess(): AsyncGenerator<Record<string, unknown>> {
+    throw new Error(
+      "LoadTextAssets is not implemented in base TS nodes without asset runtime."
+    );
+  }
+}
+
 type FilterStringType =
   | "contains"
   | "starts_with"
@@ -977,6 +1262,7 @@ export const TEXT_EXTRA_NODES = [
   ExtractRegexNode,
   FindAllRegexNode,
   TextParseJSONNode,
+  ExtractJSONNode,
   RegexMatchNode,
   RegexReplaceNode,
   RegexSplitNode,
@@ -1003,6 +1289,14 @@ export const TEXT_EXTRA_NODES = [
   LengthTextNode,
   IndexOfTextNode,
   SurroundWithTextNode,
+  CountTokensNode,
+  HtmlToTextNode,
+  AutomaticSpeechRecognitionNode,
+  EmbeddingTextNode,
+  SaveTextFileNode,
+  SaveTextNode,
+  LoadTextFolderNode,
+  LoadTextAssetsNode,
   FilterStringNode,
   FilterRegexStringNode,
 ] as const;

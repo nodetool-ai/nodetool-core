@@ -1,4 +1,5 @@
 import { BaseNode } from "@nodetool/node-sdk";
+import { promises as fs } from "node:fs";
 
 function toArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [value];
@@ -513,6 +514,26 @@ export class FlattenNode extends BaseNode {
   }
 }
 
+export class SaveListNode extends BaseNode {
+  static readonly nodeType = "nodetool.list.SaveList";
+  static readonly title = "Save List";
+  static readonly description = "Save list values to a text file";
+
+  defaults() {
+    return { values: [] as unknown[], name: "text.txt" };
+  }
+
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const values = Array.isArray(inputs.values ?? this._props.values)
+      ? ((inputs.values ?? this._props.values) as unknown[])
+      : [];
+    const name = String(inputs.name ?? this._props.name ?? "text.txt");
+    const content = values.map((v) => String(v)).join("\n");
+    await fs.writeFile(name, content, "utf-8");
+    return { output: name };
+  }
+}
+
 export const LIST_NODES = [
   LengthNode,
   ListRangeNode,
@@ -536,4 +557,5 @@ export const LIST_NODES = [
   MaximumNode,
   ProductNode,
   FlattenNode,
+  SaveListNode,
 ] as const;

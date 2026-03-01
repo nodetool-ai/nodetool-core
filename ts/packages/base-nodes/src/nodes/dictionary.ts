@@ -1,4 +1,5 @@
 import { BaseNode } from "@nodetool/node-sdk";
+import { promises as fs } from "node:fs";
 
 type ConflictResolution = "first" | "last" | "error";
 type FilterDictNumberType =
@@ -282,6 +283,171 @@ export class ToJSONNode extends BaseNode {
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const dictionary = asRecord(inputs.dictionary ?? this._props.dictionary ?? {});
     return { output: JSON.stringify(dictionary) };
+  }
+}
+
+function toYAML(value: unknown, indent: number = 0): string {
+  const space = " ".repeat(indent);
+  if (value === null || value === undefined) {
+    return "null";
+  }
+  if (typeof value === "string") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => `${space}- ${toYAML(item, indent + 2).trimStart()}`)
+      .join("\n");
+  }
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([k, v]) => {
+        const rendered = toYAML(v, indent + 2);
+        if (typeof v === "object" && v !== null) {
+          return `${space}${k}:\n${rendered}`;
+        }
+        return `${space}${k}: ${rendered}`;
+      })
+      .join("\n");
+  }
+  return JSON.stringify(value);
+}
+
+export class ToYAMLNode extends BaseNode {
+  static readonly nodeType = "nodetool.dictionary.ToYAML";
+  static readonly title = "To YAML";
+  static readonly description = "Serialize dictionary to YAML string";
+
+  defaults() {
+    return { dictionary: {} };
+  }
+
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const dictionary = asRecord(inputs.dictionary ?? this._props.dictionary ?? {});
+    return { output: toYAML(dictionary) };
+  }
+}
+
+export class LoadCSVFileNode extends BaseNode {
+  static readonly nodeType = "nodetool.dictionary.LoadCSVFile";
+  static readonly title = "Load CSVFile";
+  static readonly description = "Load CSV file into list of dictionaries";
+
+  defaults() {
+    return { path: "" };
+  }
+
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const path = String(inputs.path ?? this._props.path ?? "");
+    if (!path) {
+      throw new Error("path cannot be empty");
+    }
+    const content = await fs.readFile(path, "utf-8");
+    const lines = content.split(/\r?\n/).filter((line) => line.length > 0);
+    if (lines.length === 0) {
+      return { output: [] };
+    }
+    const headers = lines[0].split(",");
+    const output = lines.slice(1).map((line) => {
+      const cols = line.split(",");
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        row[h] = cols[i] ?? "";
+      });
+      return row;
+    });
+    return { output };
+  }
+}
+
+export class SaveCSVFileNode extends BaseNode {
+  static readonly nodeType = "nodetool.dictionary.SaveCSVFile";
+  static readonly title = "Save CSVFile";
+  static readonly description = "Save list of dictionaries to CSV path";
+
+  defaults() {
+    return { data: [] as Record<string, unknown>[], folder: "", filename: "" };
+  }
+
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const data = Array.isArray(inputs.data ?? this._props.data)
+      ? ((inputs.data ?? this._props.data) as Record<string, unknown>[])
+      : [];
+    const folder = String(inputs.folder ?? this._props.folder ?? "");
+    const filename = String(inputs.filename ?? this._props.filename ?? "");
+    if (data.length === 0) {
+      throw new Error("'data' field cannot be empty");
+    }
+    if (!folder) {
+      throw new Error("folder cannot be empty");
+    }
+    if (!filename) {
+      throw new Error("filename cannot be empty");
+    }
+
+    const headers = Object.keys(data[0]);
+    const rows = [
+      headers.join(","),
+      ...data.map((row) => headers.map((h) => String(row[h] ?? "")).join(",")),
+    ];
+    await fs.mkdir(folder, { recursive: true });
+    const path = `${folder.replace(/\/$/, "")}/${filename}`;
+    await fs.writeFile(path, rows.join("\n"), "utf-8");
+    return { output: path };
+  }
+}
+
+export class FilterDictByQueryNode extends BaseNode {
+  static readonly nodeType = "nodetool.dictionary.FilterDictByQuery";
+  static readonly title = "Filter Dict By Query";
+  static readonly description = "Stream-filter dictionaries with JS-like condition";
+  static readonly syncMode = "on_any" as const;
+
+  private _condition = "";
+
+  defaults() {
+    return { value: {}, condition: "" };
+  }
+
+  async initialize(): Promise<void> {
+    this._condition = String(this._props.condition ?? "");
+  }
+
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    if ("condition" in inputs) {
+      this._condition = String(inputs.condition ?? "");
+      return {};
+    }
+    if (!("value" in inputs)) {
+      return {};
+    }
+    const dict = asRecord(inputs.value);
+    if (!this._condition.trim()) {
+      return { output: dict };
+    }
+
+    const expr = this._condition
+      .replace(/\band\b/g, "&&")
+      .replace(/\bor\b/g, "||")
+      .replace(/\bnot\b/g, "!");
+    const fn = new Function("row", `with (row) { return (${expr}); }`) as (
+      row: Record<string, unknown>
+    ) => unknown;
+
+    let passed = false;
+    try {
+      passed = Boolean(fn(dict));
+    } catch {
+      passed = false;
+    }
+
+    if (!passed) {
+      return {};
+    }
+    return { output: dict };
   }
 }
 
@@ -597,6 +763,10 @@ export const DICTIONARY_NODES = [
   MakeDictionaryNode,
   ArgMaxNode,
   ToJSONNode,
+  ToYAMLNode,
+  LoadCSVFileNode,
+  SaveCSVFileNode,
+  FilterDictByQueryNode,
   FilterDictByNumberNode,
   FilterDictByRangeNode,
   FilterDictRegexNode,

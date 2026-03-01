@@ -102,10 +102,62 @@ export class CollectTextNode extends BaseNode {
   }
 }
 
+export class FormatTextNode extends BaseNode {
+  static readonly nodeType = "nodetool.text.FormatText";
+  static readonly title = "Format Text";
+  static readonly description = "Render template placeholders with inputs/props";
+
+  defaults() {
+    return { template: "" };
+  }
+
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    let template = String(inputs.template ?? this._props.template ?? "");
+    const values = { ...this._props, ...inputs };
+
+    for (const [key, value] of Object.entries(values)) {
+      const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const pattern = new RegExp(`\\{\\{\\s*${escaped}\\s*\\}\\}`, "g");
+      template = template.replace(pattern, String(value ?? ""));
+    }
+
+    return { output: template };
+  }
+}
+
+export class TemplateTextNode extends BaseNode {
+  static readonly nodeType = "nodetool.text.Template";
+  static readonly title = "Template";
+  static readonly description = "Render a string template using values object";
+
+  defaults() {
+    return { string: "", values: {} as Record<string, unknown> };
+  }
+
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    let template = String(inputs.string ?? this._props.string ?? "");
+    const valuesInput = inputs.values ?? this._props.values ?? {};
+    const values =
+      valuesInput && typeof valuesInput === "object"
+        ? (valuesInput as Record<string, unknown>)
+        : {};
+
+    for (const [key, value] of Object.entries(values)) {
+      const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const pattern = new RegExp(`\\{\\{\\s*${escaped}\\s*\\}\\}`, "g");
+      template = template.replace(pattern, String(value ?? ""));
+    }
+
+    return { output: template };
+  }
+}
+
 export const TEXT_NODES = [
   ToStringNode,
   ConcatTextNode,
   JoinTextNode,
   ReplaceTextNode,
   CollectTextNode,
+  FormatTextNode,
+  TemplateTextNode,
 ] as const;

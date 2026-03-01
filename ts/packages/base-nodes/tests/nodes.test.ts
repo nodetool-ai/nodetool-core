@@ -14,6 +14,7 @@ import {
   SomeNode,
   CollectNode,
   SliceNode,
+  SaveListNode,
   SelectElementsNode,
   GetElementNode,
   FlattenNode,
@@ -25,9 +26,18 @@ import {
   ToStringNode,
   JoinTextNode,
   ReplaceTextNode,
+  FormatTextNode,
+  TemplateTextNode,
   SplitTextNode,
   ExtractTextNode,
   ChunkTextNode,
+  ExtractJSONNode,
+  CountTokensNode,
+  HtmlToTextNode,
+  SaveTextFileNode,
+  SaveTextNode,
+  LoadTextFolderNode,
+  EmbeddingTextNode,
   RegexReplaceNode,
   CompareTextNode,
   ContainsTextNode,
@@ -39,7 +49,11 @@ import {
   FilterStringNode,
   FilterRegexStringNode,
   ConstantIntegerNode,
+  ConstantBaseNode,
   ConstantDictNode,
+  ConstantImageSizeNode,
+  ConstantDateNode,
+  ConstantSelectNode,
   FilterNumberNode,
   FilterNumberRangeNode,
   GetValueNode,
@@ -53,6 +67,8 @@ import {
   MakeDictionaryNode,
   ArgMaxNode,
   ToJSONNode,
+  ToYAMLNode,
+  FilterDictByQueryNode,
   FilterDictByNumberNode,
   FilterDictByRangeNode,
   FilterDictRegexNode,
@@ -163,6 +179,13 @@ describe("list nodes", () => {
     ).resolves.toEqual({ output: [1, 2, 3] });
   });
 
+  it("SaveListNode writes newline-separated file", async () => {
+    const path = `/tmp/nodetool-save-list-${Date.now()}.txt`;
+    await expect(
+      new SaveListNode().process({ values: [1, "a"], name: path })
+    ).resolves.toEqual({ output: path });
+  });
+
   it("SelectElements/GetElement support Python-style negative indices", async () => {
     const select = new SelectElementsNode();
     await expect(
@@ -231,6 +254,19 @@ describe("text nodes", () => {
     ).resolves.toEqual({
       output: "x-b-x-b",
     });
+  });
+
+  it("template nodes render placeholders", async () => {
+    await expect(
+      new FormatTextNode().process({ template: "Hi {{ name }}", name: "Sam" })
+    ).resolves.toEqual({ output: "Hi Sam" });
+
+    await expect(
+      new TemplateTextNode().process({
+        string: "A={{ a }}, B={{b}}",
+        values: { a: 1, b: 2 },
+      })
+    ).resolves.toEqual({ output: "A=1, B=2" });
   });
 
   it("basic text transform nodes work", async () => {
@@ -317,6 +353,56 @@ describe("text nodes", () => {
     });
     await expect(regexFilter.process({ value: "abzx" })).resolves.toEqual({});
   });
+
+  it("extract json / token count / html to text", async () => {
+    await expect(
+      new ExtractJSONNode().process({
+        text: "{\"a\":{\"b\":[1,2]}}",
+        json_path: "$.a.b[1]",
+        find_all: false,
+      })
+    ).resolves.toEqual({ output: 2 });
+
+    await expect(new CountTokensNode().process({ text: "hello, world!" })).resolves
+      .toEqual({ output: 4 });
+
+    await expect(
+      new HtmlToTextNode().process({ html: "<p>Hello<br>World</p>" })
+    ).resolves.toEqual({ output: "Hello\nWorld" });
+  });
+
+  it("filesystem text save/load and embedding fallback", async () => {
+    const savePath = `/tmp/nodetool-save-text-${Date.now()}.txt`;
+    await expect(
+      new SaveTextNode().process({ text: "hello", name: savePath })
+    ).resolves.toEqual({
+      output: { uri: savePath, data: "hello" },
+    });
+
+    const saveDir = `/tmp/nodetool-save-text-dir-${Date.now()}`;
+    await expect(
+      new SaveTextFileNode().process({ text: "abc", folder: saveDir, name: "x.txt" })
+    ).resolves.toEqual({
+      output: { uri: `${saveDir}/x.txt`, data: "abc" },
+    });
+
+    const load = new LoadTextFolderNode();
+    const items: Array<Record<string, unknown>> = [];
+    for await (const row of load.genProcess({
+      folder: saveDir,
+      include_subdirectories: false,
+      extensions: [".txt"],
+      pattern: "",
+    })) {
+      items.push(row);
+    }
+    expect(items.length).toBe(1);
+    expect(items[0].text).toBe("abc");
+
+    const emb = await new EmbeddingTextNode().process({ input: "hello world" });
+    expect(Array.isArray(emb.output)).toBe(true);
+    expect((emb.output as number[]).length).toBe(64);
+  });
 });
 
 describe("constant nodes", () => {
@@ -331,6 +417,27 @@ describe("constant nodes", () => {
     await expect(node.process({ value: { ok: true } })).resolves.toEqual({
       output: { ok: true },
     });
+  });
+
+  it("additional constant node variants work", async () => {
+    await expect(
+      new ConstantImageSizeNode().process({ value: { width: 640, height: 480 } })
+    ).resolves.toEqual({
+      output: { width: 640, height: 480 },
+      image_size: { width: 640, height: 480 },
+      width: 640,
+      height: 480,
+    });
+    await expect(
+      new ConstantDateNode().process({ year: 2025, month: 3, day: 1 })
+    ).resolves.toEqual({ output: { year: 2025, month: 3, day: 1 } });
+    await expect(
+      new ConstantSelectNode().process({ value: "x", options: ["x", "y"] })
+    ).resolves.toEqual({ output: "x" });
+  });
+
+  it("ConstantBaseNode emits null output", async () => {
+    await expect(new ConstantBaseNode().process({})).resolves.toEqual({ output: null });
   });
 });
 
@@ -387,6 +494,10 @@ describe("dictionary nodes", () => {
     await expect(new ToJSONNode().process({ dictionary: { a: 1 } })).resolves.toEqual({
       output: "{\"a\":1}",
     });
+    await expect(new ToYAMLNode().process({ dictionary: { a: 1, b: "x" } })).resolves
+      .toEqual({
+        output: "a: 1\nb: \"x\"",
+      });
   });
 
   it("ReduceDictionaries handles conflict policies", async () => {
@@ -463,5 +574,17 @@ describe("dictionary filter stream-style nodes", () => {
       output: { name: "Alice" },
     });
     await expect(byValue.process({ value: { name: "Bob" } })).resolves.toEqual({});
+  });
+
+  it("FilterDictByQuery evaluates expression", async () => {
+    const node = new FilterDictByQueryNode();
+    node.assign({ condition: "score > 0 and label == 'ok'" });
+    await node.initialize();
+    await expect(node.process({ value: { score: 1, label: "ok" } })).resolves.toEqual({
+      output: { score: 1, label: "ok" },
+    });
+    await expect(node.process({ value: { score: -1, label: "ok" } })).resolves.toEqual(
+      {}
+    );
   });
 });
