@@ -96,6 +96,17 @@ import {
   ConcatAudioNode,
   AudioToNumpyNode,
   NumpyToAudioNode,
+  TextToImageNode,
+  ImageToImageNode,
+  GetMetadataNode,
+  TextToVideoNode,
+  GetVideoInfoNode,
+  CreateThreadNode,
+  ClassifierNode,
+  StructuredOutputGeneratorNode,
+  ListGeneratorNode,
+  TextTo3DNode,
+  GetModel3DMetadataNode,
 } from "../src/index.js";
 
 describe("base node registration", () => {
@@ -118,6 +129,7 @@ describe("base node registration", () => {
     expect(registry.has("nodetool.code.ExecuteCommand")).toBe(true);
     expect(registry.has("nodetool.audio.TextToSpeech")).toBe(true);
     expect(registry.has("nodetool.triggers.WaitNode")).toBe(true);
+    expect(registry.has("nodetool.image.TextToImage")).toBe(true);
   });
 });
 
@@ -285,6 +297,57 @@ describe("input/output/workspace nodes", () => {
     const audio = await new NumpyToAudioNode().process({ values: arr.output });
     expect(Array.isArray(arr.output)).toBe(true);
     expect((audio.output as { data: string }).data.length).toBeGreaterThan(0);
+  });
+
+  it("image nodes create and transform image refs", async () => {
+    const generated = await new TextToImageNode().process({
+      prompt: "hello-image",
+      width: 320,
+      height: 240,
+    });
+    const transformed = await new ImageToImageNode().process({
+      image: generated.output,
+      prompt: "style transfer",
+    });
+    const meta = await new GetMetadataNode().process({ image: transformed.output });
+    expect((transformed.output as { prompt: string }).prompt).toBe("style transfer");
+    expect((meta.output as { size_bytes: number }).size_bytes).toBeGreaterThan(0);
+  });
+
+  it("video nodes create video refs and expose metadata", async () => {
+    const generated = await new TextToVideoNode().process({
+      prompt: "clip-one",
+    });
+    const info = await new GetVideoInfoNode().process({ video: generated.output });
+    expect((info.output as { size_bytes: number }).size_bytes).toBeGreaterThan(0);
+  });
+
+  it("agent nodes create threads and classify text", async () => {
+    const thread = await new CreateThreadNode().process({ title: "T" });
+    expect(String(thread.thread_id)).toContain("thread_");
+    const classified = await new ClassifierNode().process({
+      text: "payment failed and card was charged twice",
+      categories: ["billing", "sales", "support"],
+    });
+    expect(classified.category).toBe("billing");
+  });
+
+  it("generator nodes return structured/list outputs", async () => {
+    const structured = await new StructuredOutputGeneratorNode().process({
+      schema: { properties: { ok: { type: "boolean" }, name: { type: "string" } } },
+    });
+    expect(structured.ok).toBe(false);
+    expect(structured.name).toBe("");
+
+    const listed = await new ListGeneratorNode().process({ prompt: "Generate 3 fruits" });
+    expect(Array.isArray(listed.output)).toBe(true);
+    expect((listed.output as unknown[]).length).toBe(3);
+  });
+
+  it("model3d nodes generate and inspect metadata", async () => {
+    const model = await new TextTo3DNode().process({ prompt: "cube" });
+    const meta = await new GetModel3DMetadataNode().process({ model: model.output });
+    expect((meta.output as { size_bytes: number }).size_bytes).toBeGreaterThan(0);
   });
 });
 

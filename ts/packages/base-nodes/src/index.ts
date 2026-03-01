@@ -305,6 +305,91 @@ export {
   AUDIO_NODES,
 } from "./nodes/audio.js";
 export { WaitNode, TRIGGER_NODES } from "./nodes/triggers.js";
+export {
+  LoadImageFileNode,
+  LoadImageFolderNode,
+  SaveImageFileImageNode,
+  LoadImageAssetsNode,
+  SaveImageNode,
+  GetMetadataNode,
+  BatchToListNode,
+  ImagesToListNode,
+  PasteNode,
+  ScaleNode,
+  ResizeNode,
+  CropNode,
+  FitNode,
+  TextToImageNode,
+  ImageToImageNode,
+  IMAGE_NODES,
+} from "./nodes/image.js";
+export {
+  TextToVideoNode,
+  ImageToVideoNode,
+  LoadVideoFileNode,
+  SaveVideoFileVideoNode,
+  LoadVideoAssetsNode,
+  SaveVideoNode,
+  FrameIteratorNode,
+  FpsNode,
+  FrameToVideoNode,
+  ConcatVideoNode,
+  TrimVideoNode,
+  ResizeVideoNode,
+  RotateVideoNode,
+  SetSpeedVideoNode,
+  OverlayVideoNode,
+  ColorBalanceVideoNode,
+  DenoiseVideoNode,
+  StabilizeVideoNode,
+  SharpnessVideoNode,
+  BlurVideoNode,
+  SaturationVideoNode,
+  AddSubtitlesVideoNode,
+  ReverseVideoNode,
+  TransitionVideoNode,
+  AddAudioVideoNode,
+  ChromaKeyVideoNode,
+  ExtractAudioVideoNode,
+  ExtractFrameVideoNode,
+  GetVideoInfoNode,
+  VIDEO_NODES,
+} from "./nodes/video.js";
+export {
+  SummarizerNode,
+  CreateThreadNode,
+  ExtractorNode,
+  ClassifierNode,
+  AgentNode,
+  ControlAgentNode,
+  ResearchAgentNode,
+  AGENT_NODES,
+} from "./nodes/agents.js";
+export {
+  StructuredOutputGeneratorNode,
+  DataGeneratorNode,
+  ListGeneratorNode,
+  ChartGeneratorNode,
+  SVGGeneratorNode,
+  GENERATOR_NODES,
+} from "./nodes/generators.js";
+export {
+  LoadModel3DFileNode,
+  SaveModel3DFileNode,
+  SaveModel3DNode,
+  FormatConverterNode,
+  GetModel3DMetadataNode,
+  Transform3DNode,
+  DecimateNode,
+  Boolean3DNode,
+  RecalculateNormalsNode,
+  CenterMeshNode,
+  FlipNormalsNode,
+  MergeMeshesNode,
+  TextTo3DNode,
+  ImageTo3DNode,
+  MODEL3D_NODES,
+} from "./nodes/model3d.js";
 
 import { CONTROL_NODES } from "./nodes/control.js";
 import { BOOLEAN_NODES } from "./nodes/boolean.js";
@@ -324,6 +409,11 @@ import { DATA_NODES } from "./nodes/data.js";
 import { CODE_NODES } from "./nodes/code.js";
 import { AUDIO_NODES } from "./nodes/audio.js";
 import { TRIGGER_NODES } from "./nodes/triggers.js";
+import { IMAGE_NODES } from "./nodes/image.js";
+import { VIDEO_NODES } from "./nodes/video.js";
+import { AGENT_NODES } from "./nodes/agents.js";
+import { GENERATOR_NODES } from "./nodes/generators.js";
+import { MODEL3D_NODES } from "./nodes/model3d.js";
 
 export const ALL_BASE_NODES = [
   ...CONTROL_NODES,
@@ -344,6 +434,11 @@ export const ALL_BASE_NODES = [
   ...CODE_NODES,
   ...AUDIO_NODES,
   ...TRIGGER_NODES,
+  ...IMAGE_NODES,
+  ...VIDEO_NODES,
+  ...AGENT_NODES,
+  ...GENERATOR_NODES,
+  ...MODEL3D_NODES,
 ] as const;
 
 export function registerBaseNodes(registry: NodeRegistry): void {
