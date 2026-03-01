@@ -144,4 +144,4 @@ tmp/
 *.old
 
 # Agent
-__plans__/
+__plans__/node_modules/

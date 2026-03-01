@@ -1,0 +1,14 @@
+{
+  "name": "nodetool-workflow-ts",
+  "private": true,
+  "workspaces": [
+    "packages/protocol",
+    "packages/kernel",
+    "packages/runtime"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces"
+  }
+}
