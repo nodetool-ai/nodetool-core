@@ -116,6 +116,64 @@ export class WorkflowRunner {
   // -----------------------------------------------------------------------
 
   /**
+   * Push a streaming input value into the graph while it is running.
+   * The input name matches an input-node's `name` (or `id` fallback).
+   */
+  async pushInputValue(
+    inputName: string,
+    value: unknown,
+    sourceHandle?: string
+  ): Promise<void> {
+    if (!this._graph) {
+      throw new Error("Workflow has not been started");
+    }
+
+    const inputNodes = this._resolveInputNodes(inputName);
+    if (inputNodes.length === 0) {
+      throw new Error(`Input node not found: ${inputName}`);
+    }
+
+    for (const node of inputNodes) {
+      const outgoing = this._graph.findOutgoingEdges(node.id).filter(isDataEdge);
+      for (const edge of outgoing) {
+        if (sourceHandle && edge.sourceHandle !== sourceHandle) {
+          continue;
+        }
+        const targetInbox = this._inboxes.get(edge.target);
+        if (!targetInbox) continue;
+        await targetInbox.put(edge.targetHandle, value);
+        this._incrementEdgeCounter(edge);
+      }
+    }
+  }
+
+  /**
+   * Signal end-of-stream for an input node so downstream handles can complete.
+   */
+  finishInputStream(inputName: string, sourceHandle?: string): void {
+    if (!this._graph) {
+      throw new Error("Workflow has not been started");
+    }
+
+    const inputNodes = this._resolveInputNodes(inputName);
+    if (inputNodes.length === 0) {
+      throw new Error(`Input node not found: ${inputName}`);
+    }
+
+    for (const node of inputNodes) {
+      const outgoing = this._graph.findOutgoingEdges(node.id).filter(isDataEdge);
+      for (const edge of outgoing) {
+        if (sourceHandle && edge.sourceHandle !== sourceHandle) {
+          continue;
+        }
+        const targetInbox = this._inboxes.get(edge.target);
+        if (!targetInbox) continue;
+        targetInbox.markSourceDone(edge.targetHandle);
+      }
+    }
+  }
+
+  /**
    * Execute a workflow graph.
    */
   async run(request: RunJobRequest, graphData: { nodes: NodeDescriptor[]; edges: Edge[] }): Promise<RunResult> {
@@ -453,5 +511,11 @@ export class WorkflowRunner {
 
   private _emit(msg: ProcessingMessage): void {
     this._messages.push(msg);
+  }
+
+  private _resolveInputNodes(inputName: string): NodeDescriptor[] {
+    return this._graph
+      .inputNodes()
+      .filter((node) => (node.name ?? node.id) === inputName || node.id === inputName);
   }
 }

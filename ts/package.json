@@ -8,7 +8,8 @@
     "packages/models",
     "packages/node-sdk",
     "packages/base-nodes",
-    "packages/parity-harness"
+    "packages/parity-harness",
+    "packages/websocket"
   ],
   "scripts": {
     "build": "npm run build --workspaces",

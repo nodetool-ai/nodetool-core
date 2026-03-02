@@ -248,3 +248,32 @@ describe("WorkflowRunner – multiple output nodes", () => {
     expect(result.outputs.result2).toBeDefined();
   });
 });
+
+describe("WorkflowRunner – stream input", () => {
+  it("accepts runtime streamed input and finishes input stream", async () => {
+    const nodes: NodeDescriptor[] = [
+      { id: "stream_input", type: "test.Input", name: "stream_input" },
+      { id: "sink", type: "test.Sink", name: "sink" },
+    ];
+    const edges: Edge[] = [
+      { source: "stream_input", sourceHandle: "value", target: "sink", targetHandle: "value" },
+    ];
+
+    const runner = makeRunner({
+      "test.Sink": simpleExecutor((inputs) => ({ value: inputs.value })),
+    });
+
+    const runPromise = runner.run(
+      { job_id: "j-stream", params: {} },
+      { nodes, edges }
+    );
+
+    await new Promise((r) => setTimeout(r, 10));
+    await runner.pushInputValue("stream_input", 123);
+    runner.finishInputStream("stream_input");
+
+    const result = await runPromise;
+    expect(result.status).toBe("completed");
+    expect(result.outputs.sink).toContain(123);
+  });
+});
