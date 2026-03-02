@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { NodeRegistry } from "@nodetool/node-sdk";
+import type { ProcessingContext } from "@nodetool/runtime";
 import {
   registerBaseNodes,
   IfNode,
@@ -352,7 +353,7 @@ describe("input/output/workspace nodes", () => {
           content: "provider-response",
         }),
       }),
-    };
+    } as unknown as ProcessingContext;
     const result = await agent.process(
       {
         system: "You are helpful",

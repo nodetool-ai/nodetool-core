@@ -15,6 +15,7 @@
  */
 
 import type { NodeDescriptor, SyncMode, ControlEvent } from "@nodetool/protocol";
+import type { ProcessingContext } from "@nodetool/runtime";
 import { NodeInbox } from "./inbox.js";
 
 // ---------------------------------------------------------------------------
@@ -25,7 +26,7 @@ export interface NodeExecutor {
   /** One-shot processing (buffered mode). */
   process(
     inputs: Record<string, unknown>,
-    context?: unknown
+    context?: ProcessingContext
   ): Promise<Record<string, unknown>>;
 
   /**
@@ -34,7 +35,7 @@ export interface NodeExecutor {
    */
   genProcess?(
     inputs: Record<string, unknown>,
-    context?: unknown
+    context?: ProcessingContext
   ): AsyncGenerator<Record<string, unknown>>;
 
   /** Called before process/genProcess. */
@@ -83,7 +84,7 @@ export class NodeActor {
   /** Callback to emit processing messages (NodeUpdate, etc.). */
   private _emitMessage: (msg: unknown) => void;
   /** Optional execution context passed into node executors. */
-  private _executionContext: unknown;
+  private _executionContext: ProcessingContext | undefined;
 
   constructor(opts: {
     node: NodeDescriptor;
@@ -94,7 +95,7 @@ export class NodeActor {
       outputs: Record<string, unknown>
     ) => Promise<void>;
     emitMessage: (msg: unknown) => void;
-    executionContext?: unknown;
+    executionContext?: ProcessingContext;
   }) {
     this.node = opts.node;
     this.inbox = opts.inbox;

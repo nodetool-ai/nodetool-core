@@ -1,4 +1,5 @@
 import { BaseNode } from "@nodetool/node-sdk";
+import type { ProcessingContext } from "@nodetool/runtime";
 
 type MessagePart = { type?: string; text?: string };
 type ProviderMessage = {
@@ -20,9 +21,6 @@ type ProviderLike = {
     model: string;
     maxTokens?: number;
   }): Promise<{ content?: string | null }>;
-};
-type RuntimeContextLike = {
-  getProvider?: (providerId: string) => Promise<ProviderLike>;
 };
 
 const THREAD_STORE = new Map<string, ThreadLike>();
@@ -211,7 +209,7 @@ export class AgentNode extends BaseNode {
 
   async process(
     inputs: Record<string, unknown>,
-    runtimeContext?: unknown
+    context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
     const prompt = asText(inputs.prompt ?? this._props.prompt ?? "");
     const system = asText(inputs.system ?? this._props.system ?? "");
@@ -223,12 +221,11 @@ export class AgentNode extends BaseNode {
     const modelId = typeof model.id === "string" ? model.id : "";
 
     let response = "";
-    const context = (runtimeContext ?? null) as RuntimeContextLike | null;
     const providerSupported =
       !!context && typeof context.getProvider === "function" && providerId && modelId;
 
     if (providerSupported) {
-      const provider = await context.getProvider!(providerId);
+      const provider = (await context.getProvider(providerId)) as ProviderLike;
       const messages: ProviderMessage[] = [];
 
       if (system.trim().length > 0) {

@@ -7,11 +7,13 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
+    "test:metadata-parity": "vitest run tests/metadata-parity.test.ts",
     "test:watch": "vitest",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@nodetool/node-sdk": "*"
+    "@nodetool/node-sdk": "*",
+    "@nodetool/runtime": "*"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

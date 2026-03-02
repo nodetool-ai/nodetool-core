@@ -20,6 +20,7 @@ import type {
   ProcessingMessage,
   ControlEvent,
 } from "@nodetool/protocol";
+import type { ProcessingContext } from "@nodetool/runtime";
 import { isControlEdge, isDataEdge } from "@nodetool/protocol";
 import { Graph } from "./graph.js";
 import { NodeInbox } from "./inbox.js";
@@ -54,7 +55,7 @@ export interface WorkflowRunnerOptions {
   bufferLimit?: number | null;
 
   /** Optional execution context passed to each node executor call. */
-  executionContext?: unknown;
+  executionContext?: ProcessingContext;
 }
 
 // ---------------------------------------------------------------------------

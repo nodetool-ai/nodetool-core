@@ -1,5 +1,6 @@
 import type { NodeDescriptor, SyncMode } from "@nodetool/protocol";
 import type { NodeExecutor } from "@nodetool/kernel";
+import type { ProcessingContext } from "@nodetool/runtime";
 
 export type NodeClass = {
   new (): BaseNode;
@@ -42,12 +43,12 @@ export abstract class BaseNode {
 
   abstract process(
     inputs: Record<string, unknown>,
-    context?: unknown
+    context?: ProcessingContext
   ): Promise<Record<string, unknown>>;
 
   async *genProcess(
     inputs: Record<string, unknown>,
-    context?: unknown
+    context?: ProcessingContext
   ): AsyncGenerator<Record<string, unknown>> {
     yield await this.process(inputs, context);
   }
@@ -55,10 +56,10 @@ export abstract class BaseNode {
   toExecutor(): NodeExecutor {
     const self = this;
     return {
-      async process(inputs: Record<string, unknown>, context?: unknown) {
+      async process(inputs: Record<string, unknown>, context?: ProcessingContext) {
         return self.process(inputs, context);
       },
-      async *genProcess(inputs: Record<string, unknown>, context?: unknown) {
+      async *genProcess(inputs: Record<string, unknown>, context?: ProcessingContext) {
         yield* self.genProcess(inputs, context);
       },
       async preProcess() {

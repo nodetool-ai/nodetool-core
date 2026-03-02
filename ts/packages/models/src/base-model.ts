@@ -128,9 +128,26 @@ export function getGlobalAdapterResolver(): AdapterResolver | null {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ModelClass<T extends DBModel = DBModel> = {
   new (data: Row): T;
+  name: string;
   schema: TableSchema;
   indexes: IndexSpec[];
   adapterResolver?: AdapterResolver;
+  getAdapter(this: ModelClass<T>): DatabaseAdapter;
+  createTable(this: ModelClass<T>): Promise<void>;
+  dropTable(this: ModelClass<T>): Promise<void>;
+  listIndexes(this: ModelClass<T>): Promise<IndexDef[]>;
+  create(this: ModelClass<T>, data: Row): Promise<T>;
+  get(this: ModelClass<T>, key: string | number): Promise<T | null>;
+  query(
+    this: ModelClass<T>,
+    opts?: {
+      condition?: ConditionBuilder;
+      limit?: number;
+      orderBy?: string;
+      reverse?: boolean;
+      columns?: string[];
+    },
+  ): Promise<[T[], string]>;
 };
 
 export abstract class DBModel {
