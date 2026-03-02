@@ -104,8 +104,20 @@ function htmlPage(): string {
       <input id="search" placeholder="Search nodes (zapier style)" />
       <select id="node-select" size="12"></select>
       <button id="add-step" class="btn-accent">Add Step</button>
+      <h2>Saved Tests</h2>
+      <select id="saved-workflows" size="6"></select>
+      <div class="row">
+        <input id="workflow-name" placeholder="Test workflow name" value="Quick Test Pipeline" />
+        <button id="save-workflow">Save Test</button>
+      </div>
+      <button id="load-workflow">Load Selected</button>
       <h2>Run Params (JSON)</h2>
       <textarea id="params" rows="8" placeholder='{"text": "hello"}'></textarea>
+      <h2>Asset Fixture</h2>
+      <input id="fixture-key" placeholder="Param key (e.g. image or text)" value="text" />
+      <input id="fixture-file" type="file" />
+      <button id="fixture-apply">Apply Fixture To Params</button>
+      <p class="muted tiny">Text files -> plain string, images -> data URI.</p>
       <div class="row">
         <button id="run" class="btn-good">Run Pipeline</button>
         <button id="cancel" class="btn-danger">Cancel</button>
@@ -116,6 +128,8 @@ function htmlPage(): string {
     <section class="panel stack">
       <h1>Steps</h1>
       <div id="steps" class="stack"></div>
+      <h2>Connection Warnings</h2>
+      <pre id="warnings"></pre>
       <h2>Compiled Graph</h2>
       <pre id="graph"></pre>
     </section>
@@ -125,6 +139,8 @@ function htmlPage(): string {
       <div id="summary" class="tiny muted">No run yet</div>
       <h2>Output Updates</h2>
       <pre id="outputs"></pre>
+      <h2>Preview</h2>
+      <div id="preview" class="stack"></div>
       <h2>Event Log</h2>
       <div id="logs" class="logs"></div>
     </section>
@@ -139,20 +155,32 @@ const state = {
   jobId: null,
   runEvents: [],
   outputEvents: [],
+  linkWarnings: [],
+  savedWorkflows: [],
+  selectedWorkflowId: null,
 };
 
 const el = {
   search: document.getElementById('search'),
   select: document.getElementById('node-select'),
   addStep: document.getElementById('add-step'),
+  savedWorkflows: document.getElementById('saved-workflows'),
+  workflowName: document.getElementById('workflow-name'),
+  saveWorkflow: document.getElementById('save-workflow'),
+  loadWorkflow: document.getElementById('load-workflow'),
   steps: document.getElementById('steps'),
+  warnings: document.getElementById('warnings'),
   graph: document.getElementById('graph'),
   params: document.getElementById('params'),
+  fixtureKey: document.getElementById('fixture-key'),
+  fixtureFile: document.getElementById('fixture-file'),
+  fixtureApply: document.getElementById('fixture-apply'),
   run: document.getElementById('run'),
   cancel: document.getElementById('cancel'),
   status: document.getElementById('status'),
   logs: document.getElementById('logs'),
   outputs: document.getElementById('outputs'),
+  preview: document.getElementById('preview'),
   summary: document.getElementById('summary'),
 };
 
@@ -189,7 +217,18 @@ function renderSteps() {
     node.className = 'step stack';
 
     const header = document.createElement('div');
-    header.innerHTML = '<div class="step-title">' + (idx + 1) + '. ' + (md?.title || step.type) + '</div><div class="muted">' + step.type + ' <span class="chip">' + (md?.namespace || '') + '</span></div>';
+    const title = document.createElement('div');
+    title.className = 'step-title';
+    title.textContent = (idx + 1) + '. ' + (md?.title || step.type);
+    const subtitle = document.createElement('div');
+    subtitle.className = 'muted';
+    subtitle.textContent = step.type + ' ';
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.textContent = md?.namespace || '';
+    subtitle.appendChild(chip);
+    header.appendChild(title);
+    header.appendChild(subtitle);
     node.appendChild(header);
 
     const propList = md?.properties || [];
@@ -254,15 +293,64 @@ function renderSteps() {
   renderGraph();
 }
 
-function firstOutputHandle(md) {
-  return md?.outputs?.[0]?.name || 'output';
+function normalizeType(raw) {
+  const t = String(raw || '').toLowerCase();
+  if (!t) return 'any';
+  if (['any', 'object', 'unknown'].includes(t)) return 'any';
+  if (['string', 'str', 'text'].includes(t)) return 'str';
+  if (['int', 'integer'].includes(t)) return 'int';
+  if (['float', 'double', 'number'].includes(t)) return 'float';
+  if (['bool', 'boolean'].includes(t)) return 'bool';
+  if (['list', 'array'].includes(t)) return 'list';
+  if (['dict', 'dictionary', 'map'].includes(t)) return 'dict';
+  return t;
 }
 
-function firstInputHandle(md) {
-  return md?.properties?.[0]?.name || 'input';
+function outputType(out) {
+  return normalizeType(out?.type?.type);
+}
+
+function inputType(prop) {
+  return normalizeType(prop?.type?.type);
+}
+
+function isTypeCompatible(fromType, toType) {
+  if (fromType === 'any' || toType === 'any') return true;
+  if (fromType === toType) return true;
+  if (fromType === 'int' && toType === 'float') return true;
+  return false;
+}
+
+function chooseLink(aMd, bMd) {
+  const outputs = Array.isArray(aMd?.outputs) ? aMd.outputs : [];
+  const inputs = Array.isArray(bMd?.properties) ? bMd.properties : [];
+  if (!outputs.length || !inputs.length) {
+    return {
+      sourceHandle: outputs[0]?.name || 'output',
+      targetHandle: inputs[0]?.name || 'input',
+      warning: 'Fallback handle mapping due to missing metadata slots',
+    };
+  }
+
+  for (const out of outputs) {
+    for (const inp of inputs) {
+      const ot = outputType(out);
+      const it = inputType(inp);
+      if (isTypeCompatible(ot, it)) {
+        return { sourceHandle: out.name, targetHandle: inp.name, warning: null };
+      }
+    }
+  }
+
+  return {
+    sourceHandle: outputs[0].name,
+    targetHandle: inputs[0].name,
+    warning: 'No compatible type match (' + outputType(outputs[0]) + ' -> ' + inputType(inputs[0]) + '), using first handles',
+  };
 }
 
 function compileGraph() {
+  const warnings = [];
   const nodes = state.steps.map((step, i) => {
     const id = 'n' + (i + 1);
     return {
@@ -276,24 +364,103 @@ function compileGraph() {
   for (let i = 0; i < nodes.length - 1; i++) {
     const aMd = state.metadata.find((m) => m.node_type === nodes[i].type);
     const bMd = state.metadata.find((m) => m.node_type === nodes[i + 1].type);
+    const link = chooseLink(aMd, bMd);
+    if (link.warning) {
+      warnings.push(
+        'Step ' + (i + 1) + ' -> ' + (i + 2) + ': ' + link.warning + ' (' + nodes[i].type + ' -> ' + nodes[i + 1].type + ')'
+      );
+    }
     edges.push({
       id: 'e' + (i + 1),
       source: nodes[i].id,
       target: nodes[i + 1].id,
-      sourceHandle: firstOutputHandle(aMd),
-      targetHandle: firstInputHandle(bMd),
+      sourceHandle: link.sourceHandle,
+      targetHandle: link.targetHandle,
       edge_type: 'data',
     });
   }
+  state.linkWarnings = warnings;
   return { nodes, edges };
 }
 
 function renderGraph() {
   el.graph.textContent = JSON.stringify(compileGraph(), null, 2);
+  el.warnings.textContent = state.linkWarnings.length ? state.linkWarnings.join('\\n') : 'No connection warnings';
 }
 
 function renderOutputs() {
   el.outputs.textContent = JSON.stringify(state.outputEvents, null, 2);
+  renderPreview();
+}
+
+function renderPreview() {
+  el.preview.innerHTML = '';
+  const last = state.outputEvents[state.outputEvents.length - 1];
+  if (!last) {
+    const p = document.createElement('div');
+    p.className = 'muted tiny';
+    p.textContent = 'No output yet';
+    el.preview.appendChild(p);
+    return;
+  }
+
+  const v = last.value;
+  if (typeof v === 'string' && v.startsWith('data:image/')) {
+    const img = document.createElement('img');
+    img.src = v;
+    img.style.maxWidth = '100%';
+    img.style.borderRadius = '8px';
+    img.style.border = '1px solid #30363d';
+    el.preview.appendChild(img);
+    return;
+  }
+
+  const pre = document.createElement('pre');
+  if (typeof v === 'string') pre.textContent = v;
+  else pre.textContent = JSON.stringify(v, null, 2);
+  el.preview.appendChild(pre);
+}
+
+function parseParamsEditor() {
+  const raw = el.params.value.trim();
+  if (!raw) return {};
+  return JSON.parse(raw);
+}
+
+function writeParamsEditor(params) {
+  el.params.value = JSON.stringify(params, null, 2);
+}
+
+async function applyFixture() {
+  const key = (el.fixtureKey.value || '').trim();
+  const file = el.fixtureFile.files && el.fixtureFile.files[0];
+  if (!key) {
+    log('Fixture param key is required', 'err');
+    return;
+  }
+  if (!file) {
+    log('Choose a fixture file first', 'err');
+    return;
+  }
+
+  const params = parseParamsEditor();
+  if (file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md') || file.name.endsWith('.json')) {
+    params[key] = await file.text();
+  } else if (file.type.startsWith('image/')) {
+    const dataUri = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Failed reading image file'));
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.readAsDataURL(file);
+    });
+    params[key] = dataUri;
+  } else {
+    log('Unsupported fixture type for quick mode; use text/image', 'err');
+    return;
+  }
+
+  writeParamsEditor(params);
+  log('Fixture applied to params key: ' + key, 'ok');
 }
 
 function connectWs() {
@@ -321,6 +488,12 @@ function connectWs() {
         renderOutputs();
       }
       if (data.type === 'job_update') {
+        if (typeof data.job_id === 'string' && data.job_id) {
+          state.jobId = data.job_id;
+        }
+        if (['completed', 'failed', 'cancelled'].includes(String(data.status || ''))) {
+          state.jobId = null;
+        }
         el.status.textContent = 'Job ' + (data.job_id || '') + ': ' + data.status + (data.error ? (' (' + data.error + ')') : '');
       }
       if (data.error) log('Error: ' + data.error, 'err');
@@ -334,13 +507,12 @@ function connectWs() {
 async function runPipeline() {
   try {
     const ws = await connectWs();
+    state.jobId = null;
     state.runEvents = [];
     state.outputEvents = [];
     renderOutputs();
 
-    let params = {};
-    const raw = el.params.value.trim();
-    if (raw) params = JSON.parse(raw);
+    const params = parseParamsEditor();
 
     const graph = compileGraph();
     if (!graph.nodes.length) {
@@ -363,8 +535,76 @@ async function runPipeline() {
 
 async function cancelRun() {
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
-  state.ws.send(JSON.stringify({ command: 'get_status', data: {} }));
-  log('Requested status; use stop when job_id is known in logs');
+  if (!state.jobId) {
+    log('No active job to cancel yet', 'err');
+    return;
+  }
+  state.ws.send(JSON.stringify({ command: 'cancel_job', data: { job_id: state.jobId } }));
+  log('Cancellation requested for job ' + state.jobId);
+}
+
+async function refreshSavedWorkflows() {
+  const res = await fetch('/api/workflows?run_mode=test&limit=200');
+  if (!res.ok) throw new Error('failed to list workflows: ' + res.status);
+  const body = await res.json();
+  state.savedWorkflows = Array.isArray(body.workflows) ? body.workflows : [];
+  el.savedWorkflows.innerHTML = '';
+  for (const wf of state.savedWorkflows) {
+    const opt = document.createElement('option');
+    opt.value = wf.id;
+    opt.textContent = wf.name + ' (' + wf.id.slice(0, 8) + ')';
+    el.savedWorkflows.appendChild(opt);
+  }
+}
+
+async function saveCurrentWorkflow() {
+  const name = (el.workflowName.value || '').trim() || 'Quick Test Pipeline';
+  const graph = compileGraph();
+  if (!graph.nodes.length) {
+    log('Cannot save empty pipeline', 'err');
+    return;
+  }
+  const payload = {
+    name,
+    access: 'private',
+    description: 'Saved from TS test UI',
+    run_mode: 'test',
+    graph,
+    tags: ['test-ui'],
+  };
+  const res = await fetch('/api/workflows', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error('save failed: ' + res.status + ' ' + detail);
+  }
+  const wf = await res.json();
+  state.selectedWorkflowId = wf.id;
+  log('Saved test workflow: ' + wf.name, 'ok');
+  await refreshSavedWorkflows();
+}
+
+async function loadSelectedWorkflow() {
+  const id = el.savedWorkflows.value;
+  if (!id) {
+    log('Select a saved workflow first', 'err');
+    return;
+  }
+  const res = await fetch('/api/workflows/' + encodeURIComponent(id));
+  if (!res.ok) throw new Error('load failed: ' + res.status);
+  const wf = await res.json();
+  const nodes = Array.isArray(wf.graph?.nodes) ? wf.graph.nodes : [];
+  state.steps = nodes.map((n) => ({
+    type: n.type,
+    properties: n.properties && typeof n.properties === 'object' ? n.properties : {},
+  }));
+  state.selectedWorkflowId = id;
+  if (wf.name) el.workflowName.value = wf.name;
+  renderSteps();
+  log('Loaded workflow: ' + (wf.name || id), 'ok');
 }
 
 async function loadMetadata() {
@@ -375,6 +615,7 @@ async function loadMetadata() {
   state.filtered = state.metadata;
   renderSelect();
   log('Loaded ' + state.metadata.length + ' node metadata entries', 'ok');
+  await refreshSavedWorkflows();
 }
 
 el.search.oninput = () => {
@@ -394,6 +635,12 @@ el.addStep.onclick = () => {
 
 el.run.onclick = runPipeline;
 el.cancel.onclick = cancelRun;
+el.fixtureApply.onclick = () => void applyFixture().catch((err) => log(String(err), 'err'));
+el.saveWorkflow.onclick = () => void saveCurrentWorkflow().catch((err) => log(String(err), 'err'));
+el.loadWorkflow.onclick = () => void loadSelectedWorkflow().catch((err) => log(String(err), 'err'));
+el.savedWorkflows.onchange = () => {
+  state.selectedWorkflowId = el.savedWorkflows.value || null;
+};
 
 loadMetadata().catch((err) => log(String(err), 'err'));
 </script>

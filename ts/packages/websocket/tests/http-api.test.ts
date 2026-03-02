@@ -124,6 +124,21 @@ describe("HTTP API: metadata + workflows", () => {
     expect(updated.name).toBe("Workflow B");
     expect(updated.run_mode).toBe("tool");
 
+    const missingUpdateReq = new Request("http://localhost/api/workflows/does-not-exist", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": "user-1",
+      },
+      body: JSON.stringify({
+        name: "Missing",
+        access: "private",
+        graph: { nodes: [], edges: [] },
+      }),
+    });
+    const missingUpdateRes = await handleApiRequest(missingUpdateReq);
+    expect(missingUpdateRes.status).toBe(404);
+
     const deleteReq = new Request(`http://localhost/api/workflows/${workflowId}`, {
       method: "DELETE",
       headers: { "x-user-id": "user-1" },
@@ -134,5 +149,44 @@ describe("HTTP API: metadata + workflows", () => {
     const missingRes = await handleApiRequest(getReq);
     expect(missingRes.status).toBe(404);
   });
-});
 
+  it("supports /api/workflows/public/{id} only for public workflows", async () => {
+    const privateRes = await handleApiRequest(
+      new Request("http://localhost/api/workflows", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-user-id": "u1" },
+        body: JSON.stringify({
+          name: "Private WF",
+          access: "private",
+          graph: { nodes: [], edges: [] },
+        }),
+      })
+    );
+    expect(privateRes.status).toBe(200);
+    const privateWf = (await jsonBody(privateRes)) as Record<string, unknown>;
+
+    const publicRes = await handleApiRequest(
+      new Request("http://localhost/api/workflows", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-user-id": "u1" },
+        body: JSON.stringify({
+          name: "Public WF",
+          access: "public",
+          graph: { nodes: [], edges: [] },
+        }),
+      })
+    );
+    expect(publicRes.status).toBe(200);
+    const publicWf = (await jsonBody(publicRes)) as Record<string, unknown>;
+
+    const publicGetOk = await handleApiRequest(
+      new Request(`http://localhost/api/workflows/public/${String(publicWf.id)}`)
+    );
+    expect(publicGetOk.status).toBe(200);
+
+    const publicGetPrivate = await handleApiRequest(
+      new Request(`http://localhost/api/workflows/public/${String(privateWf.id)}`)
+    );
+    expect(publicGetPrivate.status).toBe(404);
+  });
+});
