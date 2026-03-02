@@ -114,6 +114,9 @@ async def list_files(path: str = ".", __user: str = Depends(current_user)) -> li
 
         # Validate and normalize path
         abs_path = path
+        if not _is_safe_path(abs_path):
+            raise HTTPException(status_code=403, detail="Access to this path is forbidden")
+
         exists = await asyncio.to_thread(os.path.exists, abs_path)
         if not exists:
             raise HTTPException(status_code=404, detail=f"Path not found: {path}")
@@ -148,6 +151,9 @@ async def get_file(path: str, __user: str = Depends(current_user)) -> FileInfo:
     Get information about a specific file or directory
     """
     try:
+        if not _is_safe_path(path):
+            raise HTTPException(status_code=403, detail="Access to this path is forbidden")
+
         exists = await asyncio.to_thread(os.path.exists, path)
         if not exists:
             raise HTTPException(status_code=404, detail=f"Path not found: {path}")
