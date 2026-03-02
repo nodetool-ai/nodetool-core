@@ -189,4 +189,50 @@ describe("HTTP API: metadata + workflows", () => {
     );
     expect(publicGetPrivate.status).toBe(404);
   });
+
+  it("serves /api/models/providers and /api/models/recommended", async () => {
+    const providersRes = await handleApiRequest(new Request("http://localhost/api/models/providers"));
+    expect(providersRes.status).toBe(200);
+    const providers = (await jsonBody(providersRes)) as Array<Record<string, unknown>>;
+    expect(Array.isArray(providers)).toBe(true);
+
+    const recommendedRes = await handleApiRequest(new Request("http://localhost/api/models/recommended"));
+    expect(recommendedRes.status).toBe(200);
+    const recommended = (await jsonBody(recommendedRes)) as Array<Record<string, unknown>>;
+    expect(Array.isArray(recommended)).toBe(true);
+    expect(recommended.length).toBeGreaterThan(0);
+  });
+
+  it("serves /api/models/all as a deduped list", async () => {
+    const response = await handleApiRequest(new Request("http://localhost/api/models/all"));
+    expect(response.status).toBe(200);
+    const all = (await jsonBody(response)) as Array<{ repo_id: string | null; path: string | null }>;
+    expect(Array.isArray(all)).toBe(true);
+
+    const keys = new Set<string>();
+    for (const model of all) {
+      const key = `${model.repo_id ?? ""}::${model.path ?? ""}`;
+      expect(keys.has(key)).toBe(false);
+      keys.add(key);
+    }
+  });
+
+  it("handles /api/models/huggingface/cache_status", async () => {
+    const response = await handleApiRequest(
+      new Request("http://localhost/api/models/huggingface/cache_status", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify([
+          {
+            key: "k1",
+            repo_id: "openai/does-not-exist",
+            allow_patterns: "*.safetensors",
+          },
+        ]),
+      })
+    );
+    expect(response.status).toBe(200);
+    const body = (await jsonBody(response)) as Array<{ key: string; downloaded: boolean }>;
+    expect(body).toEqual([{ key: "k1", downloaded: false }]);
+  });
 });

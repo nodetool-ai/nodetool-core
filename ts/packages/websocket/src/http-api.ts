@@ -6,6 +6,7 @@ import {
   setGlobalAdapterResolver,
 } from "@nodetool/models";
 import { loadPythonPackageMetadata, type NodeMetadata } from "@nodetool/node-sdk";
+import { handleModelsApiRequest } from "./models-api.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -308,6 +309,11 @@ export async function handleApiRequest(
 ): Promise<Response> {
   const url = new URL(request.url);
   const pathname = normalizePath(url.pathname);
+
+  if (pathname === "/api/models" || pathname.startsWith("/api/models/")) {
+    const response = await handleModelsApiRequest(request);
+    if (response) return response;
+  }
 
   if (pathname === "/api/nodes/metadata" || pathname === "/api/node/metadata") {
     return handleNodeMetadata(request, options);
