@@ -77,6 +77,7 @@ import {
   StringInputNode,
   MessageDeconstructorNode,
   OutputNode,
+  PreviewNode,
   WriteTextFileNode,
   ReadTextFileNode,
   JoinWorkspacePathsNode,
@@ -121,6 +122,7 @@ describe("base node registration", () => {
     expect(registry.has(CompareNode.nodeType)).toBe(true);
     expect(registry.has("nodetool.input.StringInput")).toBe(true);
     expect(registry.has("nodetool.output.Output")).toBe(true);
+    expect(registry.has("nodetool.workflows.base_node.Preview")).toBe(true);
     expect(registry.has("nodetool.audio.TextToSpeech")).toBe(true);
     expect(registry.has("nodetool.image.ImageToImage")).toBe(true);
     expect(registry.has("nodetool.video.TextToVideo")).toBe(true);
@@ -179,6 +181,26 @@ describe("input/output/workspace nodes", () => {
   it("OutputNode forwards a value handle", async () => {
     await expect(new OutputNode().process({ value: 5 })).resolves.toEqual({
       output: 5,
+    });
+  });
+
+  it("PreviewNode emits preview_update and returns normalized output", async () => {
+    const node = new PreviewNode();
+    node.assign({ value: "fallback" });
+    const emitted: Array<Record<string, unknown>> = [];
+    const context = {
+      emit: (msg: Record<string, unknown>) => emitted.push(msg),
+      normalizeOutputValue: async (value: unknown) =>
+        typeof value === "string" ? value.toUpperCase() : value,
+    } as unknown as ProcessingContext;
+
+    await expect(node.process({ value: "hello" }, context)).resolves.toEqual({
+      output: "HELLO",
+    });
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toMatchObject({
+      type: "preview_update",
+      value: "HELLO",
     });
   });
 

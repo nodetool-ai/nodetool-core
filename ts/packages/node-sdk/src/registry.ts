@@ -53,9 +53,12 @@ export class NodeRegistry {
       throw new Error(`Unknown node type: ${descriptor.type}`);
     }
     const instance = new NodeClass();
-    if (descriptor.properties) {
-      instance.assign(descriptor.properties as Record<string, unknown>);
-    }
+    const descriptorProps: Record<string, unknown> = {
+      ...(descriptor.properties as Record<string, unknown> | undefined),
+      __node_id: descriptor.id,
+      __node_name: descriptor.name ?? descriptor.type,
+    };
+    instance.assign(descriptorProps);
     return instance.toExecutor();
   }
 

@@ -194,7 +194,7 @@ export {
   MessageDeconstructorNode,
   INPUT_NODES,
 } from "./nodes/input.js";
-export { OutputNode, OUTPUT_NODES } from "./nodes/output.js";
+export { OutputNode, PreviewNode, OUTPUT_NODES } from "./nodes/output.js";
 export {
   GetWorkspaceDirNode,
   ListWorkspaceFilesNode,
@@ -457,6 +457,23 @@ export const ALL_BASE_NODES = [
 
 export function registerBaseNodes(registry: NodeRegistry): void {
   for (const nodeClass of ALL_BASE_NODES) {
+    if (nodeClass.nodeType === "nodetool.workflows.base_node.Preview") {
+      registry.register(nodeClass, {
+        metadata: {
+          title: "Preview",
+          description: "Preview values inside the workflow graph",
+          namespace: "nodetool.workflows.base_node",
+          node_type: "nodetool.workflows.base_node.Preview",
+          properties: [
+            { name: "value", type: { type: "any" }, default: null },
+            { name: "name", type: { type: "str" }, default: "" },
+          ],
+          outputs: [{ name: "output", type: { type: "any" } }],
+          basic_fields: ["value"],
+        },
+      });
+      continue;
+    }
     registry.register(nodeClass);
   }
 }
