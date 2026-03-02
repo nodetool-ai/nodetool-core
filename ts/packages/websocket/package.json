@@ -7,19 +7,24 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
+    "test-ui": "npm run build && node dist/test-ui-server.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@nodetool/base-nodes": "*",
     "@nodetool/kernel": "*",
     "@nodetool/models": "*",
+    "@nodetool/node-sdk": "*",
     "@nodetool/protocol": "*",
     "@nodetool/runtime": "*",
-    "msgpackr": "^1.11.2"
+    "msgpackr": "^1.11.2",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/ws": "^8.5.13",
     "typescript": "^5.4.0",
     "vitest": "^1.6.1"
   }
