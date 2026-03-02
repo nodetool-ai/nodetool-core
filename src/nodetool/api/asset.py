@@ -8,10 +8,9 @@ import zipfile
 from io import BytesIO
 from typing import Optional
 
-from PIL import UnidentifiedImageError as PIL_UnidentifiedImageError
-
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
+from PIL import UnidentifiedImageError as PIL_UnidentifiedImageError
 from pydantic import BaseModel
 from pydantic import Field as PydanticField
 

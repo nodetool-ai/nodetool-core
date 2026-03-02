@@ -88,12 +88,12 @@ metadata generation.
 """
 
 import asyncio
-from enum import Enum
 import functools
 import importlib
 import inspect
 import re
 import traceback
+from enum import Enum
 from types import UnionType
 from typing import (
     TYPE_CHECKING,
