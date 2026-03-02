@@ -159,4 +159,205 @@ describe("UnifiedWebSocketRunner", () => {
     await new Promise((r) => setTimeout(r, 20));
     await runner.disconnect();
   });
+
+  it("emits output_update for constant -> output graph", async () => {
+    const outputRunner = new UnifiedWebSocketRunner({
+      resolveExecutor: (node) => {
+        if (node.type === "nodetool.constant.String") {
+          return {
+            async process(inputs: Record<string, unknown>) {
+              return { output: inputs.value ?? "hello world" };
+            },
+          };
+        }
+        if (node.type === "nodetool.output.Output") {
+          return {
+            async process(inputs: Record<string, unknown>) {
+              return { output: inputs.value ?? null };
+            },
+          };
+        }
+        return {
+          async process() {
+            return {};
+          },
+        };
+      },
+    });
+
+    await outputRunner.connect(ws);
+    const graph = {
+      nodes: [
+        {
+          id: "n1",
+          type: "nodetool.constant.String",
+          name: "nodetool.constant.String",
+          properties: { value: "hello world" },
+        },
+        {
+          id: "n2",
+          type: "nodetool.output.Output",
+          name: "nodetool.output.Output",
+          properties: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "n1",
+          target: "n2",
+          sourceHandle: "output",
+          targetHandle: "value",
+          edge_type: "data",
+        },
+      ],
+    };
+
+    await outputRunner.handleCommand({ command: "run_job", data: { graph, params: {} } });
+    await new Promise((r) => setTimeout(r, 30));
+
+    const sent = ws.sentBytes.map((b) => unpack(b) as Record<string, unknown>);
+    const updates = sent.filter((m) => m.type === "output_update");
+    expect(updates.length).toBeGreaterThan(0);
+    expect(updates.some((m) => m.value === "hello world")).toBe(true);
+
+    await outputRunner.disconnect();
+  });
+
+  it("includes outputs in terminal job_update", async () => {
+    const outputRunner = new UnifiedWebSocketRunner({
+      resolveExecutor: (node) => {
+        if (node.type === "nodetool.constant.String") {
+          return {
+            async process(inputs: Record<string, unknown>) {
+              return { output: inputs.value ?? "hello world" };
+            },
+          };
+        }
+        if (node.type === "nodetool.output.Output") {
+          return {
+            async process(inputs: Record<string, unknown>) {
+              return { output: inputs.value ?? null };
+            },
+          };
+        }
+        return {
+          async process() {
+            return {};
+          },
+        };
+      },
+    });
+
+    await outputRunner.connect(ws);
+    const graph = {
+      nodes: [
+        {
+          id: "n1",
+          type: "nodetool.constant.String",
+          name: "nodetool.constant.String",
+          properties: { value: "hello world" },
+        },
+        {
+          id: "n2",
+          type: "nodetool.output.Output",
+          name: "nodetool.output.Output",
+          properties: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "n1",
+          target: "n2",
+          sourceHandle: "output",
+          targetHandle: "value",
+          edge_type: "data",
+        },
+      ],
+    };
+
+    await outputRunner.handleCommand({ command: "run_job", data: { graph, params: {} } });
+    await new Promise((r) => setTimeout(r, 30));
+
+    const sent = ws.sentBytes.map((b) => unpack(b) as Record<string, unknown>);
+    const terminal = sent
+      .filter((m) => m.type === "job_update" && m.status === "completed")
+      .at(-1) as Record<string, unknown> | undefined;
+    expect(terminal).toBeDefined();
+    expect(terminal?.result).toBeDefined();
+    const result = terminal?.result as { outputs?: Record<string, unknown[]> };
+    expect(result.outputs).toBeDefined();
+    const outputValues = result.outputs?.["nodetool.output.Output"] ?? [];
+    expect(Array.isArray(outputValues)).toBe(true);
+    expect(outputValues).toContain("hello world");
+
+    await outputRunner.disconnect();
+  });
+
+  it("emits output_update in text mode", async () => {
+    const outputRunner = new UnifiedWebSocketRunner({
+      resolveExecutor: (node) => {
+        if (node.type === "nodetool.constant.String") {
+          return {
+            async process(inputs: Record<string, unknown>) {
+              return { output: inputs.value ?? "hello world" };
+            },
+          };
+        }
+        if (node.type === "nodetool.output.Output") {
+          return {
+            async process(inputs: Record<string, unknown>) {
+              return { output: inputs.value ?? null };
+            },
+          };
+        }
+        return {
+          async process() {
+            return {};
+          },
+        };
+      },
+    });
+
+    await outputRunner.connect(ws);
+    await outputRunner.handleCommand({ command: "set_mode", data: { mode: "text" } });
+
+    const graph = {
+      nodes: [
+        {
+          id: "n1",
+          type: "nodetool.constant.String",
+          name: "nodetool.constant.String",
+          properties: { value: "hello world" },
+        },
+        {
+          id: "n2",
+          type: "nodetool.output.Output",
+          name: "nodetool.output.Output",
+          properties: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "n1",
+          target: "n2",
+          sourceHandle: "output",
+          targetHandle: "value",
+          edge_type: "data",
+        },
+      ],
+    };
+
+    await outputRunner.handleCommand({ command: "run_job", data: { graph, params: {} } });
+    await new Promise((r) => setTimeout(r, 30));
+
+    const sent = ws.sentText.map((t) => JSON.parse(t) as Record<string, unknown>);
+    const outputUpdate = sent.find((m) => m.type === "output_update");
+    expect(outputUpdate).toBeDefined();
+    expect(outputUpdate?.value).toBe("hello world");
+
+    await outputRunner.disconnect();
+  });
 });

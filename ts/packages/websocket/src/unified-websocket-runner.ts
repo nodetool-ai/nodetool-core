@@ -54,6 +54,7 @@ interface ActiveJob {
   workflowId: string | null;
   context: ProcessingContext;
   runner: WorkflowRunner;
+  graph: { nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> };
   finished: boolean;
   status: "running" | "completed" | "failed" | "cancelled";
   error?: string;
@@ -115,6 +116,57 @@ export class UnifiedWebSocketRunner {
   private toolBridge = new ToolBridge();
   private observerRegistered = false;
 
+  private logError(context: string, error: unknown): void {
+    const detail = error instanceof Error ? error : new Error(String(error));
+    // eslint-disable-next-line no-console
+    console.error(`[UnifiedWebSocketRunner] ${context}`, detail);
+  }
+
+  private inferOutputType(value: unknown): string {
+    if (value === null || value === undefined) return "any";
+    if (typeof value === "string") return "str";
+    if (typeof value === "number") return Number.isInteger(value) ? "int" : "float";
+    if (typeof value === "boolean") return "bool";
+    if (Array.isArray(value)) return "list";
+    if (value && typeof value === "object") return "dict";
+    return "any";
+  }
+
+  private resolveOutputNodeForKey(active: ActiveJob, outputKey: string): { id: string; name: string } | null {
+    let fallback: { id: string; name: string } | null = null;
+    for (const raw of active.graph.nodes) {
+      const node = raw as { id?: unknown; name?: unknown; type?: unknown };
+      const id = typeof node.id === "string" ? node.id : null;
+      if (!id) continue;
+      const name = typeof node.name === "string" ? node.name : id;
+      const type = typeof node.type === "string" ? node.type : "";
+      if (name === outputKey || id === outputKey) return { id, name };
+      if (type === "nodetool.output.Output" && !fallback) fallback = { id, name };
+    }
+    return fallback;
+  }
+
+  private async sendOutputUpdates(active: ActiveJob, outputs: Record<string, unknown[]>): Promise<void> {
+    for (const [outputKey, values] of Object.entries(outputs)) {
+      const nodeRef = this.resolveOutputNodeForKey(active, outputKey) ?? { id: outputKey, name: outputKey };
+      const seq = Array.isArray(values) ? values : [];
+      for (const rawValue of seq) {
+        const value = await active.context.normalizeOutputValue(rawValue);
+        await this.sendMessage({
+          type: "output_update",
+          node_id: nodeRef.id,
+          node_name: nodeRef.name,
+          output_name: "output",
+          value,
+          output_type: this.inferOutputType(value),
+          metadata: {},
+          workflow_id: active.workflowId,
+          job_id: active.jobId,
+        });
+      }
+    }
+  }
+
   constructor(options: UnifiedWebSocketRunnerOptions) {
     this.userId = options.userId ?? null;
     this.authToken = options.authToken ?? null;
@@ -160,8 +212,8 @@ export class UnifiedWebSocketRunner {
     if (this.websocket) {
       try {
         await this.websocket.close();
-      } catch {
-        // no-op
+      } catch (error) {
+        this.logError("disconnect websocket.close failed", error);
       }
     }
     this.websocket = null;
@@ -261,6 +313,7 @@ export class UnifiedWebSocketRunner {
       workflowId,
       context,
       runner,
+      graph,
       finished: false,
       status: "running",
     };
@@ -278,7 +331,8 @@ export class UnifiedWebSocketRunner {
           graph,
         });
       }
-    } catch {
+    } catch (error) {
+      this.logError("runJob persistence failed", error);
       // Persistence is best-effort in TS runtime mode.
     }
 
@@ -294,16 +348,22 @@ export class UnifiedWebSocketRunner {
     active.streamTask = this.streamJobMessages(active, executePromise);
   }
 
-  private async streamJobMessages(active: ActiveJob, executePromise: Promise<{ status: "completed" | "failed" | "cancelled"; error?: string }>): Promise<void> {
+  private async streamJobMessages(
+    active: ActiveJob,
+    executePromise: Promise<{ status: "completed" | "failed" | "cancelled"; error?: string; outputs?: Record<string, unknown[]> }>
+  ): Promise<void> {
     let terminalSeen = false;
+    let finalOutputs: Record<string, unknown[]> = {};
     await this.sendMessage({ type: "job_update", status: "running", job_id: active.jobId, workflow_id: active.workflowId });
 
     void executePromise
       .then((result) => {
         active.status = result.status;
         active.error = result.error;
+        finalOutputs = result.outputs ?? {};
       })
       .catch((err) => {
+        this.logError("job execution failed", err);
         active.status = "failed";
         active.error = err instanceof Error ? err.message : String(err);
       })
@@ -333,6 +393,10 @@ export class UnifiedWebSocketRunner {
       }
     }
 
+    if (Object.keys(finalOutputs).length > 0) {
+      await this.sendOutputUpdates(active, finalOutputs);
+    }
+
     if (!terminalSeen) {
       await this.sendMessage({
         type: "job_update",
@@ -340,6 +404,7 @@ export class UnifiedWebSocketRunner {
         job_id: active.jobId,
         workflow_id: active.workflowId,
         error: active.error,
+        result: { outputs: finalOutputs },
       });
     }
 
@@ -585,6 +650,7 @@ export class UnifiedWebSocketRunner {
         const seq = this.chatRequestSeq;
         this.currentTask = this.handleChatMessage(data, seq);
         void this.currentTask.catch(async (err) => {
+          this.logError("chat_message processing failed", err);
           await this.sendMessage({ type: "error", message: err instanceof Error ? err.message : String(err) });
         });
         return { message: "Chat message processing started", thread_id: threadId };
@@ -719,6 +785,7 @@ export class UnifiedWebSocketRunner {
           const response = await this.handleCommand(command);
           await this.sendMessage(response);
         } catch (err) {
+          this.logError("invalid_command handling failed", err);
           await this.sendMessage({ error: "invalid_command", details: err instanceof Error ? err.message : String(err) });
         }
         continue;

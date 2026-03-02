@@ -405,6 +405,8 @@ export async function handleNodeHttpRequest(
 export function createHttpApiServer(options: HttpApiOptions = {}): Server {
   return createServer((req, res) => {
     void handleNodeHttpRequest(req, res, options).catch((error) => {
+      // eslint-disable-next-line no-console
+      console.error("[createHttpApiServer] request failed", error);
       res.statusCode = 500;
       res.setHeader("content-type", "application/json");
       const detail = error instanceof Error ? error.message : String(error);
