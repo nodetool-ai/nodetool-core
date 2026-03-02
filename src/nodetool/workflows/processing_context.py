@@ -3525,7 +3525,7 @@ class ProcessingContext:
             # Resolve a human-readable title for controlled-node tool naming.
             node_title: str | None = None
             try:
-                ui_props = target_node.ui_properties() if callable(getattr(target_node, "ui_properties", None)) else {}
+                ui_props = target_node.ui_properties if getattr(target_node, "ui_properties", None) is not None else {}
                 if isinstance(ui_props, dict):
                     for key in ("title", "label", "name"):
                         value = ui_props.get(key)
