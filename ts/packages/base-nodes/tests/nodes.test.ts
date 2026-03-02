@@ -184,6 +184,29 @@ describe("input/output/workspace nodes", () => {
     });
   });
 
+  it("OutputNode emits output_update and normalizes value", async () => {
+    const node = new OutputNode();
+    node.assign({ __node_id: "out1", __node_name: "result", name: "result" });
+    const emitted: Array<Record<string, unknown>> = [];
+    const context = {
+      emit: (msg: Record<string, unknown>) => emitted.push(msg),
+      normalizeOutputValue: async (value: unknown) =>
+        typeof value === "string" ? value.toUpperCase() : value,
+    } as unknown as ProcessingContext;
+
+    await expect(node.process({ value: "hello" }, context)).resolves.toEqual({
+      output: "HELLO",
+    });
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toMatchObject({
+      type: "output_update",
+      node_id: "out1",
+      node_name: "result",
+      output_name: "result",
+      value: "HELLO",
+    });
+  });
+
   it("PreviewNode emits preview_update and returns normalized output", async () => {
     const node = new PreviewNode();
     node.assign({ value: "fallback" });
