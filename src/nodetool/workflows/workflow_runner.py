@@ -1735,12 +1735,14 @@ class WorkflowRunner:
         self.node_inboxes.clear()
         # Pre-compute upstream counts per (node_id, handle)
         # Exclude control edges - they're handled separately below
-        upstream_counts: dict[tuple[str, str], int] = {}
+        upstream_counts: dict[str, dict[str, int]] = defaultdict(dict)
         for edge in graph.edges:
             if edge.edge_type == "control":
                 continue  # Control edges are handled separately
-            key = (edge.target, edge.targetHandle)
-            upstream_counts[key] = upstream_counts.get(key, 0) + 1
+
+            target = edge.target
+            handle = edge.targetHandle
+            upstream_counts[target][handle] = upstream_counts[target].get(handle, 0) + 1
 
         log.debug("Initializing inboxes with upstream_counts=%s", upstream_counts)
 
@@ -1748,18 +1750,19 @@ class WorkflowRunner:
             inbox = NodeInbox(buffer_limit=self.buffer_limit)
             # Attach per-handle upstream counts
             # Only handles with at least one upstream are registered; others remain implicit
-            for (target_id, handle), count in upstream_counts.items():
-                if target_id == node._id:
-                    inbox.add_upstream(handle, count)
+            for handle, count in upstream_counts.get(node._id, {}).items():
+                inbox.add_upstream(handle, count)
 
             # Check for control edges - mark node as controlled and create __control__ handle
-            control_edges = graph.get_control_edges(node._id)
+            # Use pre-computed _control_edges if available
+            control_edges = self._control_edges.get(node._id, [])
             if control_edges:
                 # Mark node as controlled for actor detection
                 node._is_controlled = True
 
                 # Count unique controllers for upstream count
-                controller_count = len(graph.get_controller_nodes(node._id))
+                # Count unique sources to avoid double counting if multiple control edges come from same source
+                controller_count = len({e.source for e in control_edges})
                 inbox.add_upstream("__control__", controller_count)
                 log.debug(
                     f"Node {node._id} is controlled by {controller_count} controller(s): "
@@ -1772,7 +1775,7 @@ class WorkflowRunner:
                 "Inbox attached: node=%s (%s) handles=%s",
                 node.get_title(),
                 node._id,
-                [handle for (target_id, handle), _ in upstream_counts.items() if target_id == node._id],
+                list(upstream_counts.get(node._id, {}).keys()),
             )
 
     def _mark_node_outbound_eos(self, context: ProcessingContext, node: BaseNode) -> None:
