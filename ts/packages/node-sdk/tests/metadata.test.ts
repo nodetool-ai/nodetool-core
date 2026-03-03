@@ -62,6 +62,39 @@ describe("Python metadata loader", () => {
     expect(loaded.nodesByType.has("nodetool.test.Sample")).toBe(true);
     expect(loaded.warnings).toEqual([]);
   });
+
+  it("loads metadata files from nodetool/package_metadata (pip layout)", () => {
+    const root = makeTmpRoot();
+    const metadataDir = path.join(root, "site-packages", "nodetool", "package_metadata");
+    fs.mkdirSync(metadataDir, { recursive: true });
+    const metadataPath = path.join(metadataDir, "pkg-pip.json");
+    fs.writeFileSync(
+      metadataPath,
+      JSON.stringify(
+        {
+          name: "pkg-pip",
+          version: "0.1.0",
+          nodes: [
+            {
+              title: "Sample",
+              description: "sample",
+              namespace: "nodetool.test",
+              node_type: "nodetool.test.Sample",
+              properties: [],
+              outputs: [{ name: "output", type: { type: "str" } }],
+            },
+          ],
+        },
+        null,
+        2
+      )
+    );
+
+    const loaded = loadPythonPackageMetadata({ roots: [root] });
+    expect(loaded.files).toContain(path.resolve(metadataPath));
+    expect(loaded.nodesByType.has("nodetool.test.Sample")).toBe(true);
+    expect(loaded.warnings).toEqual([]);
+  });
 });
 
 describe("NodeRegistry metadata integration", () => {

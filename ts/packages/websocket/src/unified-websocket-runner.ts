@@ -353,6 +353,8 @@ export class UnifiedWebSocketRunner {
     executePromise: Promise<{ status: "completed" | "failed" | "cancelled"; error?: string; outputs?: Record<string, unknown[]> }>
   ): Promise<void> {
     let terminalSeen = false;
+    let terminalWithResultSeen = false;
+    let outputUpdateSeen = false;
     let finalOutputs: Record<string, unknown[]> = {};
     await this.sendMessage({ type: "job_update", status: "running", job_id: active.jobId, workflow_id: active.workflowId });
 
@@ -381,10 +383,16 @@ export class UnifiedWebSocketRunner {
           workflow_id: (msg as unknown as Record<string, unknown>).workflow_id ?? active.workflowId,
         };
         await this.sendMessage(outbound);
+        if (outbound.type === "output_update") {
+          outputUpdateSeen = true;
+        }
         if (outbound.type === "job_update") {
           const status = String(outbound.status ?? "");
           if (["completed", "failed", "cancelled", "error", "suspended"].includes(status)) {
             terminalSeen = true;
+            if (outbound.result !== undefined) {
+              terminalWithResultSeen = true;
+            }
           }
         }
       }
@@ -393,11 +401,11 @@ export class UnifiedWebSocketRunner {
       }
     }
 
-    if (Object.keys(finalOutputs).length > 0) {
+    if (!outputUpdateSeen && Object.keys(finalOutputs).length > 0) {
       await this.sendOutputUpdates(active, finalOutputs);
     }
 
-    if (!terminalSeen) {
+    if (!terminalSeen || (!terminalWithResultSeen && Object.keys(finalOutputs).length > 0)) {
       await this.sendMessage({
         type: "job_update",
         status: active.status,

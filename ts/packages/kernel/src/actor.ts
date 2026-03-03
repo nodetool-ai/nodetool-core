@@ -160,6 +160,27 @@ export class NodeActor {
    */
   private async _runBuffered(): Promise<void> {
     const syncMode = this.node.sync_mode ?? "zip_all";
+    const inputHandles = [...this.inbox["_buffers"].keys()].filter(
+      (h) => h !== "__control__"
+    );
+
+    // Source nodes with no data inputs should execute once with empty inputs.
+    if (inputHandles.length === 0) {
+      if (this.node.is_streaming_output && this._executor.genProcess) {
+        for await (const partial of this._executor.genProcess(
+          {},
+          this._executionContext
+        )) {
+          this._latestResult = partial;
+          await this._sendOutputs(this.node.id, partial);
+        }
+      } else {
+        const outputs = await this._executor.process({}, this._executionContext);
+        this._latestResult = outputs;
+        await this._sendOutputs(this.node.id, outputs);
+      }
+      return;
+    }
 
     // Keep gathering input batches until inbox is drained
     while (true) {
@@ -350,6 +371,10 @@ export class NodeActor {
       status,
       result: result ?? null,
       error: error ?? null,
+      properties:
+        this.node.properties && typeof this.node.properties === "object"
+          ? (this.node.properties as Record<string, unknown>)
+          : null,
     });
   }
 }

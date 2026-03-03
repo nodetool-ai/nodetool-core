@@ -14,6 +14,7 @@ import { describe, it, expect } from "vitest";
 import { WorkflowRunner, type RunJobRequest } from "../src/runner.js";
 import type { NodeDescriptor, Edge, JobUpdate, NodeUpdate, EdgeUpdate } from "@nodetool/protocol";
 import type { NodeExecutor } from "../src/actor.js";
+import type { ProcessingContext } from "@nodetool/runtime";
 
 // ---------------------------------------------------------------------------
 // Test executor factory
@@ -30,7 +31,8 @@ function simpleExecutor(
 }
 
 function makeRunner(
-  executorMap: Record<string, NodeExecutor>
+  executorMap: Record<string, NodeExecutor>,
+  executionContext?: ProcessingContext
 ): WorkflowRunner {
   return new WorkflowRunner("test-job", {
     resolveExecutor: (node) => {
@@ -40,6 +42,7 @@ function makeRunner(
       }
       return exec;
     },
+    executionContext,
   });
 }
 
@@ -158,6 +161,7 @@ describe("WorkflowRunner – edge counters", () => {
   it("emits edge_update messages with counters", async () => {
     const nodes: NodeDescriptor[] = [
       { id: "in", type: "test.Input", name: "x" },
+      { id: "mid", type: "test.Pass" },
       { id: "out", type: "test.Output" },
     ];
     const edges: Edge[] = [
@@ -165,12 +169,20 @@ describe("WorkflowRunner – edge counters", () => {
         id: "e1",
         source: "in",
         sourceHandle: "value",
+        target: "mid",
+        targetHandle: "value",
+      },
+      {
+        id: "e2",
+        source: "mid",
+        sourceHandle: "value",
         target: "out",
         targetHandle: "value",
       },
     ];
 
     const runner = makeRunner({
+      "test.Pass": simpleExecutor((inputs) => ({ value: inputs.value })),
       "test.Output": simpleExecutor((inputs) => inputs),
     });
 
@@ -183,8 +195,10 @@ describe("WorkflowRunner – edge counters", () => {
       (m) => m.type === "edge_update"
     ) as EdgeUpdate[];
     expect(edgeMsgs.length).toBeGreaterThanOrEqual(1);
-    expect(edgeMsgs[0].edge_id).toBe("e1");
-    expect(edgeMsgs[0].counter).toBeGreaterThanOrEqual(1);
+    expect(edgeMsgs.some((m) => m.edge_id === "e2" && m.status === "active")).toBe(true);
+    expect(edgeMsgs.some((m) => m.edge_id === "e2" && m.status === "completed")).toBe(true);
+    const active = edgeMsgs.find((m) => m.edge_id === "e2" && m.status === "active");
+    expect((active?.counter ?? 0)).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -275,5 +289,83 @@ describe("WorkflowRunner – stream input", () => {
     const result = await runPromise;
     expect(result.status).toBe("completed");
     expect(result.outputs.sink).toContain(123);
+  });
+});
+
+describe("WorkflowRunner – execution context forwarding", () => {
+  it("forwards emitted processing messages to executionContext.emit", async () => {
+    const nodes: NodeDescriptor[] = [
+      { id: "in", type: "test.Input", name: "val" },
+      { id: "out", type: "test.Output", name: "result" },
+    ];
+    const edges: Edge[] = [
+      { source: "in", sourceHandle: "value", target: "out", targetHandle: "value" },
+    ];
+    const forwarded: Array<{ type?: string; status?: string; node_id?: string }> = [];
+    const executionContext = {
+      emit(msg: { type?: string; status?: string; node_id?: string }) {
+        forwarded.push(msg);
+      },
+    } as unknown as ProcessingContext;
+
+    const runner = makeRunner(
+      {
+        "test.Output": simpleExecutor((inputs) => ({ value: inputs.value })),
+      },
+      executionContext
+    );
+
+    await runner.run({ job_id: "ctx-forward", params: { val: 7 } }, { nodes, edges });
+
+    expect(forwarded.some((m) => m.type === "node_update" && m.node_id === "out" && m.status === "running")).toBe(true);
+    expect(forwarded.some((m) => m.type === "node_update" && m.node_id === "out" && m.status === "completed")).toBe(true);
+    expect(forwarded.some((m) => m.type === "job_update" && m.status === "completed")).toBe(true);
+  });
+});
+
+describe("WorkflowRunner – source nodes that are not external inputs", () => {
+  it("executes source constant nodes and completes", async () => {
+    const nodes: NodeDescriptor[] = [
+      {
+        id: "n1",
+        type: "nodetool.constant.String",
+        name: "nodetool.constant.String",
+        properties: { value: "Hello World" },
+      },
+      {
+        id: "n2",
+        type: "nodetool.text.FilterString",
+        name: "nodetool.text.FilterString",
+        properties: { criteria: "world" },
+      },
+    ];
+    const edges: Edge[] = [
+      {
+        id: "e1",
+        source: "n1",
+        sourceHandle: "output",
+        target: "n2",
+        targetHandle: "value",
+      },
+    ];
+
+    const runner = makeRunner({
+      "nodetool.constant.String": simpleExecutor(() => ({ output: "Hello World" })),
+      "nodetool.text.FilterString": simpleExecutor((inputs) => {
+        const value = String(inputs.value ?? "");
+        return { output: value.toLowerCase().includes("world") ? value : "" };
+      }),
+    });
+
+    const result = await runner.run(
+      { job_id: "j-constant-filter", params: {} },
+      { nodes, edges }
+    );
+
+    expect(result.status).toBe("completed");
+    const edgeMsgs = result.messages.filter(
+      (m) => m.type === "edge_update"
+    ) as EdgeUpdate[];
+    expect(edgeMsgs.some((m) => m.edge_id === "e1" && (m.counter ?? 0) > 0)).toBe(true);
   });
 });

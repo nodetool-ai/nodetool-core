@@ -82,6 +82,22 @@ function walkForMetadataFiles(
   depth = 0
 ): void {
   if (depth > maxDepth) return;
+  const normalizedRoot = root.split(path.sep).join("/");
+  if (
+    normalizedRoot.endsWith("/src/nodetool/package_metadata") ||
+    normalizedRoot.endsWith("/nodetool/package_metadata")
+  ) {
+    try {
+      const metadataFiles = fs
+        .readdirSync(root, { withFileTypes: true })
+        .filter((f) => f.isFile() && f.name.endsWith(".json"))
+        .map((f) => path.join(root, f.name));
+      files.push(...metadataFiles);
+    } catch (error) {
+      warnings.push(`Failed to scan metadata dir ${root}: ${String(error)}`);
+    }
+    return;
+  }
 
   let entries: fs.Dirent[];
   try {
@@ -98,7 +114,10 @@ function walkForMetadataFiles(
         continue;
       }
       const normalized = fullPath.split(path.sep).join("/");
-      if (normalized.endsWith("/src/nodetool/package_metadata")) {
+      if (
+        normalized.endsWith("/src/nodetool/package_metadata") ||
+        normalized.endsWith("/nodetool/package_metadata")
+      ) {
         try {
           const metadataFiles = fs
             .readdirSync(fullPath, { withFileTypes: true })

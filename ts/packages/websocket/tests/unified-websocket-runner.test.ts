@@ -218,8 +218,75 @@ describe("UnifiedWebSocketRunner", () => {
 
     const sent = ws.sentBytes.map((b) => unpack(b) as Record<string, unknown>);
     const updates = sent.filter((m) => m.type === "output_update");
-    expect(updates.length).toBeGreaterThan(0);
+    expect(updates.length).toBe(1);
     expect(updates.some((m) => m.value === "hello world")).toBe(true);
+
+    await outputRunner.disconnect();
+  });
+
+  it("streams node_update events for executed nodes", async () => {
+    const outputRunner = new UnifiedWebSocketRunner({
+      resolveExecutor: (node) => {
+        if (node.type === "nodetool.constant.String") {
+          return {
+            async process(inputs: Record<string, unknown>) {
+              return { output: inputs.value ?? "hello world" };
+            },
+          };
+        }
+        if (node.type === "nodetool.output.Output") {
+          return {
+            async process(inputs: Record<string, unknown>) {
+              return { output: inputs.value ?? null };
+            },
+          };
+        }
+        return {
+          async process() {
+            return {};
+          },
+        };
+      },
+    });
+
+    await outputRunner.connect(ws);
+    const graph = {
+      nodes: [
+        {
+          id: "n1",
+          type: "nodetool.constant.String",
+          name: "nodetool.constant.String",
+          properties: { value: "hello world" },
+        },
+        {
+          id: "n2",
+          type: "nodetool.output.Output",
+          name: "nodetool.output.Output",
+          properties: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "n1",
+          target: "n2",
+          sourceHandle: "output",
+          targetHandle: "value",
+          edge_type: "data",
+        },
+      ],
+    };
+
+    await outputRunner.handleCommand({ command: "run_job", data: { graph, params: {} } });
+    await new Promise((r) => setTimeout(r, 30));
+
+    const sent = ws.sentBytes.map((b) => unpack(b) as Record<string, unknown>);
+    const nodeUpdates = sent.filter((m) => m.type === "node_update");
+
+    expect(nodeUpdates.some((m) => m.node_id === "n1" && m.status === "running")).toBe(true);
+    expect(nodeUpdates.some((m) => m.node_id === "n1" && m.status === "completed")).toBe(true);
+    expect(nodeUpdates.some((m) => m.node_id === "n2" && m.status === "running")).toBe(true);
+    expect(nodeUpdates.some((m) => m.node_id === "n2" && m.status === "completed")).toBe(true);
 
     await outputRunner.disconnect();
   });
