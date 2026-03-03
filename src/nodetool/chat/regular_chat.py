@@ -96,6 +96,37 @@ async def run_tool(
     )
 
 
+def create_tools() -> list[Tool]:
+    """
+    Create and return the list of available tools for regular chat mode.
+
+    Returns:
+        A list of Tool instances available for use in chat.
+    """
+    return [
+        AddLabelToEmailTool(),
+        ArchiveEmailTool(),
+        BrowserTool(),
+        ConvertPDFToMarkdownTool(),
+        DownloadFileTool(),
+        ExtractPDFTablesTool(),
+        ExtractPDFTextTool(),
+        GoogleGroundedSearchTool(),
+        GoogleImageGenerationTool(),
+        GoogleImagesTool(),
+        GoogleNewsTool(),
+        GoogleSearchTool(),
+        ListAssetsDirectoryTool(),
+        OpenAIImageGenerationTool(),
+        OpenAITextToSpeechTool(),
+        OpenAIWebSearchTool(),
+        ReadAssetTool(),
+        SaveAssetTool(),
+        ScreenshotTool(),
+        SearchEmailTool(),
+    ]
+
+
 async def process_regular_chat(
     user_input: str,
     messages: list[Message],
@@ -129,28 +160,7 @@ async def process_regular_chat(
     # Process messages
     messages_to_send = messages
 
-    tools: list[Tool] = [
-        AddLabelToEmailTool(),
-        ArchiveEmailTool(),
-        BrowserTool(),
-        ConvertPDFToMarkdownTool(),
-        DownloadFileTool(),
-        ExtractPDFTablesTool(),
-        ExtractPDFTextTool(),
-        GoogleGroundedSearchTool(),
-        GoogleImageGenerationTool(),
-        GoogleImagesTool(),
-        GoogleNewsTool(),
-        GoogleSearchTool(),
-        ListAssetsDirectoryTool(),
-        OpenAIImageGenerationTool(),
-        OpenAITextToSpeechTool(),
-        OpenAIWebSearchTool(),
-        ReadAssetTool(),
-        SaveAssetTool(),
-        ScreenshotTool(),
-        SearchEmailTool(),
-    ]
+    tools = create_tools()
 
     while True:
         async for chunk in provider.generate_messages(

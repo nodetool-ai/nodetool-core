@@ -63,7 +63,7 @@ _SKILL_RESERVED_TERMS = ("anthropic", "claude")
 _SKILL_WORD_RE = re.compile(r"[a-z0-9]+")
 
 
-@dataclass
+@dataclass(frozen=True)
 class AgentSkill:
     """Filesystem-backed skill metadata and instructions."""
 
