@@ -210,3 +210,239 @@ class TestZAIProvider:
                 # Verify provider is set correctly
                 for model in models:
                     assert model.provider.value == "zai"
+
+    @pytest.mark.asyncio
+    async def test_get_available_image_models(self):
+        """Test that Z.AI can return available image models."""
+        with patch("nodetool.config.environment.Environment.get_environment") as mock_env:
+            mock_env.return_value.get.return_value = "false"
+            provider = ZAIProvider(secrets={"ZHIPU_API_KEY": "test-key"})
+
+            models = await provider.get_available_image_models()
+
+            assert len(models) == 1
+            assert models[0].id == "glm-image"
+            assert models[0].name == "GLM-Image"
+            assert models[0].provider.value == "zai"
+            assert "text_to_image" in models[0].supported_tasks
+
+    @pytest.mark.asyncio
+    async def test_get_available_image_models_no_api_key(self):
+        """Test that no image models are returned without API key."""
+        with patch("nodetool.config.environment.Environment.get_environment") as mock_env:
+            mock_env.return_value.get.return_value = "false"
+            provider = ZAIProvider(secrets={"ZHIPU_API_KEY": "test-key"})
+            provider.api_key = ""  # Clear API key
+
+            models = await provider.get_available_image_models()
+
+            assert len(models) == 0
+
+    def test_resolve_zai_image_size_default(self):
+        """Test default image size resolution."""
+        with patch("nodetool.config.environment.Environment.get_environment") as mock_env:
+            mock_env.return_value.get.return_value = "false"
+            provider = ZAIProvider(secrets={"ZHIPU_API_KEY": "test-key"})
+
+            # Test default (no dimensions)
+            assert provider._resolve_zai_image_size(None, None) == "1280x1280"
+
+    def test_resolve_zai_image_size_custom(self):
+        """Test custom image size resolution with rounding to multiples of 32."""
+        with patch("nodetool.config.environment.Environment.get_environment") as mock_env:
+            mock_env.return_value.get.return_value = "false"
+            provider = ZAIProvider(secrets={"ZHIPU_API_KEY": "test-key"})
+
+            # Test custom size (should round to nearest multiple of 32)
+            assert provider._resolve_zai_image_size(1024, 768) == "1024x768"
+            assert provider._resolve_zai_image_size(1000, 750) == "992x736"
+            assert provider._resolve_zai_image_size(1920, 1080) == "1920x1088"
+
+    def test_resolve_zai_image_size_clamping(self):
+        """Test image size clamping to Z.AI limits."""
+        with patch("nodetool.config.environment.Environment.get_environment") as mock_env:
+            mock_env.return_value.get.return_value = "false"
+            provider = ZAIProvider(secrets={"ZHIPU_API_KEY": "test-key"})
+
+            # Test clamping to minimum
+            assert provider._resolve_zai_image_size(100, 200) == "512x512"
+            # Test clamping to maximum
+            assert provider._resolve_zai_image_size(3000, 2500) == "2048x2048"
+
+    @pytest.mark.asyncio
+    async def test_text_to_image(self):
+        """Test text-to-image generation."""
+        with patch("nodetool.config.environment.Environment.get_environment") as mock_env:
+            mock_env.return_value.get.return_value = "false"
+            provider = ZAIProvider(secrets={"ZHIPU_API_KEY": "test-key"})
+
+            # Mock the image model params
+            class MockParams:
+                prompt = "A cute cat"
+                negative_prompt = None
+                width = 1280
+                height = 1280
+                model = MagicMock()
+                model.id = "glm-image"
+
+            mock_params = MockParams()
+
+            # Create mock response for image generation
+            mock_image_response = {"data": [{"url": "https://example.com/image.png"}]}
+            mock_image_bytes = b"fake_image_bytes"
+
+            # Mock aiohttp
+            class MockGenerationResponse:
+                status = 200
+
+                async def json(self):
+                    return mock_image_response
+
+                async def text(self):
+                    return ""
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *args):
+                    pass
+
+            class MockImageDownloadResponse:
+                status = 200
+
+                async def read(self):
+                    return mock_image_bytes
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *args):
+                    pass
+
+            class MockSession:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *args):
+                    pass
+
+                def post(self, *args, **kwargs):
+                    return MockGenerationResponse()
+
+                def get(self, *args, **kwargs):
+                    return MockImageDownloadResponse()
+
+            with patch("aiohttp.ClientSession", MockSession):
+                result = await provider.text_to_image(mock_params)
+
+                assert result == mock_image_bytes
+
+    @pytest.mark.asyncio
+    async def test_text_to_image_empty_prompt(self):
+        """Test that text-to-image raises error for empty prompt."""
+        with patch("nodetool.config.environment.Environment.get_environment") as mock_env:
+            mock_env.return_value.get.return_value = "false"
+            provider = ZAIProvider(secrets={"ZHIPU_API_KEY": "test-key"})
+
+            class MockParams:
+                prompt = ""
+                negative_prompt = None
+                width = 1280
+                height = 1280
+                model = MagicMock()
+                model.id = "glm-image"
+
+            with pytest.raises(ValueError, match="prompt cannot be empty"):
+                await provider.text_to_image(MockParams())
+
+    @pytest.mark.asyncio
+    async def test_text_to_image_no_api_key(self):
+        """Test that text-to-image raises error without API key."""
+        with patch("nodetool.config.environment.Environment.get_environment") as mock_env:
+            mock_env.return_value.get.return_value = "false"
+            provider = ZAIProvider(secrets={"ZHIPU_API_KEY": "test-key"})
+            provider.api_key = ""  # Clear API key
+
+            class MockParams:
+                prompt = "A cute cat"
+                negative_prompt = None
+                width = 1280
+                height = 1280
+                model = MagicMock()
+                model.id = "glm-image"
+
+            with pytest.raises(ValueError, match="ZHIPU_API_KEY is required"):
+                await provider.text_to_image(MockParams())
+
+    @pytest.mark.asyncio
+    async def test_text_to_image_with_negative_prompt(self):
+        """Test text-to-image generation with negative prompt."""
+        with patch("nodetool.config.environment.Environment.get_environment") as mock_env:
+            mock_env.return_value.get.return_value = "false"
+            provider = ZAIProvider(secrets={"ZHIPU_API_KEY": "test-key"})
+
+            class MockParams:
+                prompt = "A cute cat"
+                negative_prompt = "blurry, low quality"
+                width = 1280
+                height = 1280
+                model = MagicMock()
+                model.id = "glm-image"
+
+            mock_params = MockParams()
+            mock_image_response = {"data": [{"url": "https://example.com/image.png"}]}
+            mock_image_bytes = b"fake_image_bytes"
+
+            captured_payload = None
+
+            class MockGenerationResponse:
+                status = 200
+
+                async def json(self):
+                    return mock_image_response
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *args):
+                    pass
+
+            class MockImageDownloadResponse:
+                status = 200
+
+                async def read(self):
+                    return mock_image_bytes
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *args):
+                    pass
+
+            class MockSession:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *args):
+                    pass
+
+                def post(self, url, headers=None, json=None):
+                    nonlocal captured_payload
+                    captured_payload = json
+                    return MockGenerationResponse()
+
+                def get(self, *args, **kwargs):
+                    return MockImageDownloadResponse()
+
+            with patch("aiohttp.ClientSession", MockSession):
+                await provider.text_to_image(mock_params)
+
+                # Verify negative prompt was appended
+                assert captured_payload is not None
+                assert "Do not include: blurry, low quality" in captured_payload["prompt"]
