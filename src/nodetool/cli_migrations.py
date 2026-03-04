@@ -11,9 +11,10 @@ Provides commands for managing database schema migrations including:
 """
 
 import asyncio
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import click
 from rich.console import Console
@@ -22,7 +23,7 @@ from rich.table import Table
 console = Console()
 
 
-def _ensure_settings_loaded():
+def _ensure_settings_loaded() -> None:
     """Ensure environment settings are loaded before command processing.
 
     This must be called before Click processes envvar options, otherwise
@@ -33,7 +34,9 @@ def _ensure_settings_loaded():
     Environment.load_settings()
 
 
-async def _get_db_connection(postgres_url: Optional[str] = None):
+async def _get_db_connection(
+    postgres_url: Optional[str] = None,
+) -> tuple[Any, Callable[[], Any], str]:
     """Get a database connection based on configuration.
 
     Args:
@@ -108,7 +111,7 @@ async def _get_db_connection(postgres_url: Optional[str] = None):
 
 
 @click.group("migrations")
-def migrations():
+def migrations() -> None:
     """Manage database migrations.
 
     Commands for applying, rolling back, and managing database schema migrations.
@@ -150,7 +153,12 @@ def migrations():
     envvar="POSTGRES_URL",
     help="PostgreSQL connection URL. Use for PostgreSQL/Supabase migrations.",
 )
-def upgrade(dry_run: bool, target: Optional[str], skip_checksum_validation: bool, postgres_url: Optional[str]):
+def upgrade(
+    dry_run: bool,
+    target: Optional[str],
+    skip_checksum_validation: bool,
+    postgres_url: Optional[str],
+) -> None:
     """Apply pending migrations.
 
     Detects the database state and applies the appropriate migrations:
@@ -172,7 +180,7 @@ def upgrade(dry_run: bool, target: Optional[str], skip_checksum_validation: bool
         nodetool migrations upgrade --target 20250501_000000
     """
 
-    async def run_upgrade():
+    async def run_upgrade() -> None:
         from nodetool.migrations.runner import MigrationRunner
 
         cleanup = None
@@ -229,7 +237,7 @@ def upgrade(dry_run: bool, target: Optional[str], skip_checksum_validation: bool
     envvar="POSTGRES_URL",
     help="PostgreSQL connection URL. Use for PostgreSQL/Supabase migrations.",
 )
-def downgrade(steps: int, force: bool, postgres_url: Optional[str]):
+def downgrade(steps: int, force: bool, postgres_url: Optional[str]) -> None:
     """Rollback migrations.
 
     Rolls back the specified number of most recently applied migrations.
@@ -250,7 +258,7 @@ def downgrade(steps: int, force: bool, postgres_url: Optional[str]):
             console.print("[yellow]Operation cancelled[/]")
             return
 
-    async def run_downgrade():
+    async def run_downgrade() -> None:
         from nodetool.migrations.runner import MigrationRunner
 
         cleanup = None
@@ -286,7 +294,7 @@ def downgrade(steps: int, force: bool, postgres_url: Optional[str]):
     envvar="POSTGRES_URL",
     help="PostgreSQL connection URL. Use for PostgreSQL/Supabase migrations.",
 )
-def status(postgres_url: Optional[str]):
+def status(postgres_url: Optional[str]) -> None:
     """Show migration status.
 
     Displays the current database state, applied migrations, and pending migrations.
@@ -299,7 +307,7 @@ def status(postgres_url: Optional[str]):
         nodetool migrations status --postgres-url "postgresql://user:pass@host:5432/db"
     """
 
-    async def run_status():
+    async def run_status() -> None:
         from nodetool.migrations.runner import MigrationRunner
 
         cleanup = None
@@ -361,7 +369,7 @@ def status(postgres_url: Optional[str]):
 
 @migrations.command("create")
 @click.argument("name")
-def create(name: str):
+def create(name: str) -> None:
     """Create a new migration file.
 
     Creates a new migration file with a timestamp-based version and the
@@ -446,7 +454,7 @@ async def down(db: "MigrationDBAdapter") -> None:
     envvar="POSTGRES_URL",
     help="PostgreSQL connection URL. Use for PostgreSQL/Supabase migrations.",
 )
-def validate(postgres_url: Optional[str]):
+def validate(postgres_url: Optional[str]) -> None:
     """Validate migration checksums.
 
     Checks that the checksums of applied migrations match the current
@@ -461,7 +469,7 @@ def validate(postgres_url: Optional[str]):
         nodetool migrations validate --postgres-url "postgresql://user:pass@host:5432/db"
     """
 
-    async def run_validate():
+    async def run_validate() -> None:
         from nodetool.migrations.runner import MigrationRunner
 
         cleanup = None
@@ -512,7 +520,7 @@ def validate(postgres_url: Optional[str]):
     envvar="POSTGRES_URL",
     help="PostgreSQL connection URL. Use for PostgreSQL/Supabase migrations.",
 )
-def baseline(force: bool, postgres_url: Optional[str]):
+def baseline(force: bool, postgres_url: Optional[str]) -> None:
     """Manually baseline migrations.
 
     Marks migrations as applied without executing them, based on which
@@ -536,7 +544,7 @@ def baseline(force: bool, postgres_url: Optional[str]):
             console.print("[yellow]Operation cancelled[/]")
             return
 
-    async def run_baseline():
+    async def run_baseline() -> None:
         from nodetool.migrations.runner import MigrationRunner
 
         cleanup = None
