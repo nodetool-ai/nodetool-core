@@ -294,7 +294,7 @@ class PostgresAdapter(DatabaseAdapter):
                     await cursor.execute(sql)  # type: ignore[arg-type]
                 await conn.commit()
         except psycopg.Error as e:
-            print(f"PostgreSQL error during table creation: {e}")
+            log.error(f"PostgreSQL error during table creation: {e}")
             raise e
 
     async def drop_table(self) -> None:
@@ -540,7 +540,7 @@ class PostgresAdapter(DatabaseAdapter):
                     await cursor.execute(sql)  # type: ignore[arg-type]
                 await conn.commit()
         except psycopg.Error as e:
-            print(f"PostgreSQL error during index creation: {e}")
+            log.error(f"PostgreSQL error during index creation: {e}")
             raise e
 
     async def drop_index(self, index_name: str) -> None:
@@ -553,7 +553,7 @@ class PostgresAdapter(DatabaseAdapter):
                     await cursor.execute(sql)  # type: ignore[arg-type]
                 await conn.commit()
         except psycopg.Error as e:
-            print(f"PostgreSQL error during index deletion: {e}")
+            log.error(f"PostgreSQL error during index deletion: {e}")
             raise e
 
     async def list_indexes(self) -> list[dict[str, Any]]:
@@ -597,7 +597,7 @@ class PostgresAdapter(DatabaseAdapter):
                     )
                 return indexes
         except psycopg.Error as e:
-            print(f"PostgreSQL error during index listing: {e}")
+            log.error(f"PostgreSQL error during index listing: {e}")
             raise e
 
     async def auto_migrate(self) -> None:
