@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import stat
 from datetime import UTC, datetime
 
 import aiofiles
@@ -38,14 +39,14 @@ class WorkspaceInfo(BaseModel):
 async def get_file_info(path: str) -> FileInfo:
     """Helper function to get file information"""
     try:
-        stat = await aiofiles.os.stat(path)
-        is_dir = await asyncio.to_thread(os.path.isdir, path)
+        st = await aiofiles.os.stat(path)
+        is_dir = stat.S_ISDIR(st.st_mode)
         return FileInfo(
             name=os.path.basename(path),
             path=path,
-            size=stat.st_size,
+            size=st.st_size,
             is_dir=is_dir,
-            modified_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
+            modified_at=datetime.fromtimestamp(st.st_mtime, tz=UTC).isoformat(),
         )
     except Exception as e:
         log.error(f"Error getting file info for {path}: {str(e)}")
