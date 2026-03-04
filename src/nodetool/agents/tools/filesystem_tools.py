@@ -11,6 +11,13 @@ from nodetool.workflows.processing_context import ProcessingContext
 from .base import Tool
 
 
+def _ensure_safe_path(context: ProcessingContext, path: str) -> str:
+    """Ensure the path resolves to within the context's workspace directory."""
+    full_path = context.resolve_workspace_path(path)
+    # resolve_workspace_path handles path traversal checks and returns absolute path
+    return full_path
+
+
 class WriteFileTool(Tool):
     name = "write_file"
     description = "Write content to a file, creating it if it doesn't exist"
@@ -40,7 +47,10 @@ class WriteFileTool(Tool):
             content = params["content"]
             append = params.get("append", False)
 
-            full_path = os.path.abspath(path)
+            try:
+                full_path = _ensure_safe_path(context, path)
+            except ValueError as e:
+                return {"success": False, "error": str(e)}
 
             # Create parent directories if they don't exist
             parent_dir = os.path.dirname(full_path)
@@ -108,7 +118,10 @@ class ReadFileTool(Tool):
             max_tokens = 25000
             max_length_per_file = 100000
 
-            full_path = os.path.abspath(path)
+            try:
+                full_path = _ensure_safe_path(context, path)
+            except ValueError as e:
+                return {"success": False, "error": str(e)}
 
             path_exists = await asyncio.to_thread(os.path.exists, full_path)
             if not path_exists:
@@ -266,7 +279,10 @@ class ListDirectoryTool(Tool):
         try:
             path = params["path"]
             recursive = params.get("recursive", False)
-            full_path = os.path.abspath(path)
+            try:
+                full_path = _ensure_safe_path(context, path)
+            except ValueError as e:
+                return {"success": False, "error": str(e)}
 
             def _list_directory_blocking():
                 # Check if path exists and is a directory
