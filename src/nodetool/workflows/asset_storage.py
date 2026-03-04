@@ -88,6 +88,17 @@ def get_content_type_for_asset_ref(asset_ref: AssetRef) -> str:
     elif isinstance(asset_ref, ExcelRef):
         return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     elif isinstance(asset_ref, Model3DRef):
+        if asset_ref.format:
+            _3d_format_to_content_type = {
+                "glb": "model/gltf-binary",
+                "gltf": "model/gltf+json",
+                "obj": "model/obj",
+                "stl": "model/stl",
+                "ply": "application/x-ply",
+                "fbx": "application/octet-stream+fbx",
+                "usdz": "model/vnd.usdz+zip",
+            }
+            return _3d_format_to_content_type.get(asset_ref.format, "model/gltf-binary")
         return "model/gltf-binary"
     elif isinstance(asset_ref, FolderRef):
         return "folder"
@@ -134,6 +145,11 @@ def get_extension_for_content_type(content_type: str) -> str:
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
         "model/gltf-binary": ".glb",
         "model/gltf+json": ".gltf",
+        "model/obj": ".obj",
+        "model/stl": ".stl",
+        "model/vnd.usdz+zip": ".usdz",
+        "application/x-ply": ".ply",
+        "application/octet-stream+fbx": ".fbx",
     }
     return extension_map.get(content_type, "")
 
