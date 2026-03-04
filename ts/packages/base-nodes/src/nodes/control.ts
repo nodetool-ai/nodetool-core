@@ -4,6 +4,7 @@ export class IfNode extends BaseNode {
   static readonly nodeType = "nodetool.control.If";
   static readonly title = "If";
   static readonly description = "Conditionally route value to true/false outputs";
+  static readonly isStreamingOutput = true;
   static readonly syncMode = "zip_all" as const;
 
   defaults() {
@@ -76,6 +77,7 @@ export class RerouteNode extends BaseNode {
   static readonly nodeType = "nodetool.control.Reroute";
   static readonly title = "Reroute";
   static readonly description = "Pass input through unchanged";
+  static readonly isStreamingOutput = true;
   static readonly syncMode = "on_any" as const;
 
   defaults() {

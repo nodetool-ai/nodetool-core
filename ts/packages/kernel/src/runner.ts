@@ -20,6 +20,7 @@ import type {
   ProcessingMessage,
   ControlEvent,
 } from "@nodetool/protocol";
+import type { ProcessingContext } from "@nodetool/runtime";
 import { isControlEdge, isDataEdge } from "@nodetool/protocol";
 import { Graph } from "./graph.js";
 import { NodeInbox } from "./inbox.js";
@@ -54,7 +55,7 @@ export interface WorkflowRunnerOptions {
   bufferLimit?: number | null;
 
   /** Optional execution context passed to each node executor call. */
-  executionContext?: unknown;
+  executionContext?: ProcessingContext;
 }
 
 // ---------------------------------------------------------------------------
@@ -113,6 +114,64 @@ export class WorkflowRunner {
   // -----------------------------------------------------------------------
   // Public API
   // -----------------------------------------------------------------------
+
+  /**
+   * Push a streaming input value into the graph while it is running.
+   * The input name matches an input-node's `name` (or `id` fallback).
+   */
+  async pushInputValue(
+    inputName: string,
+    value: unknown,
+    sourceHandle?: string
+  ): Promise<void> {
+    if (!this._graph) {
+      throw new Error("Workflow has not been started");
+    }
+
+    const inputNodes = this._resolveInputNodes(inputName);
+    if (inputNodes.length === 0) {
+      throw new Error(`Input node not found: ${inputName}`);
+    }
+
+    for (const node of inputNodes) {
+      const outgoing = this._graph.findOutgoingEdges(node.id).filter(isDataEdge);
+      for (const edge of outgoing) {
+        if (sourceHandle && edge.sourceHandle !== sourceHandle) {
+          continue;
+        }
+        const targetInbox = this._inboxes.get(edge.target);
+        if (!targetInbox) continue;
+        await targetInbox.put(edge.targetHandle, value);
+        this._incrementEdgeCounter(edge);
+      }
+    }
+  }
+
+  /**
+   * Signal end-of-stream for an input node so downstream handles can complete.
+   */
+  finishInputStream(inputName: string, sourceHandle?: string): void {
+    if (!this._graph) {
+      throw new Error("Workflow has not been started");
+    }
+
+    const inputNodes = this._resolveInputNodes(inputName);
+    if (inputNodes.length === 0) {
+      throw new Error(`Input node not found: ${inputName}`);
+    }
+
+    for (const node of inputNodes) {
+      const outgoing = this._graph.findOutgoingEdges(node.id).filter(isDataEdge);
+      for (const edge of outgoing) {
+        if (sourceHandle && edge.sourceHandle !== sourceHandle) {
+          continue;
+        }
+        const targetInbox = this._inboxes.get(edge.target);
+        if (!targetInbox) continue;
+        targetInbox.markSourceDone(edge.targetHandle);
+      }
+    }
+  }
 
   /**
    * Execute a workflow graph.
@@ -261,6 +320,7 @@ export class WorkflowRunner {
     for (const node of this._graph.nodes) {
       const incoming = this._graph.findDataEdges(node.id);
       if (incoming.length > 0) continue; // not an input node
+      if (!this._isExternalInputNode(node)) continue;
 
       // Check if we have a param for this node
       const paramValue = params[node.name ?? node.id];
@@ -305,7 +365,11 @@ export class WorkflowRunner {
         .findIncomingEdges(node.id)
         .filter(isControlEdge);
 
-      if (incoming.length === 0 && incomingControl.length === 0) {
+      if (
+        incoming.length === 0 &&
+        incomingControl.length === 0 &&
+        this._isExternalInputNode(node)
+      ) {
         continue; // pure input node, already dispatched
       }
 
@@ -390,6 +454,14 @@ export class WorkflowRunner {
       if (targetInbox) {
         targetInbox.markSourceDone(edge.targetHandle);
       }
+      const edgeId = edge.id ?? `${edge.source}:${edge.sourceHandle}->${edge.target}:${edge.targetHandle}`;
+      this._emit({
+        type: "edge_update",
+        workflow_id: this.jobId,
+        edge_id: edgeId,
+        status: "completed",
+        counter: this._edgeCounters.get(edgeId) ?? null,
+      });
     }
   }
 
@@ -450,7 +522,26 @@ export class WorkflowRunner {
     return outgoing.length === 0;
   }
 
+  /**
+   * External input nodes are placeholders that receive runtime params/streamed values.
+   * They should not execute as normal source actors.
+   */
+  private _isExternalInputNode(node: NodeDescriptor): boolean {
+    return node.type.startsWith("nodetool.input.") || node.type === "test.Input";
+  }
+
   private _emit(msg: ProcessingMessage): void {
     this._messages.push(msg);
+    if (this._options.executionContext) {
+      this._options.executionContext.emit(msg);
+    }
+    // eslint-disable-next-line no-console
+    console.log("[WorkflowRunner]", this.jobId, msg.type, msg);
+  }
+
+  private _resolveInputNodes(inputName: string): NodeDescriptor[] {
+    return this._graph
+      .inputNodes()
+      .filter((node) => (node.name ?? node.id) === inputName || node.id === inputName);
   }
 }

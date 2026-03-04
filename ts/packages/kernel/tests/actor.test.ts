@@ -72,7 +72,7 @@ function createActor(
 
 describe("NodeActor – buffered mode", () => {
   it("calls process once and sends outputs", async () => {
-    const node = makeNode({ sync_mode: "zip_all" });
+    const node = makeNode({ sync_mode: "zip_all", properties: { label: "demo" } });
     const inbox = new NodeInbox();
     inbox.addUpstream("a", 1);
 
@@ -99,6 +99,7 @@ describe("NodeActor – buffered mode", () => {
     ) as NodeUpdate[];
     expect(statusMsgs.some((m) => m.status === "running")).toBe(true);
     expect(statusMsgs.some((m) => m.status === "completed")).toBe(true);
+    expect(statusMsgs.every((m) => m.properties?.label === "demo")).toBe(true);
   });
 });
 

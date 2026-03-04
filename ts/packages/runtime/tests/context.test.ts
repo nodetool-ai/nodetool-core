@@ -13,6 +13,8 @@ import {
   type S3Client,
 } from "../src/context.js";
 import type { ProcessingMessage, NodeUpdate } from "@nodetool/protocol";
+import { BaseProvider } from "../src/providers/base-provider.js";
+import type { Message, ProviderStreamItem, StreamingAudioChunk } from "../src/providers/types.js";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -56,6 +58,39 @@ describe("ProcessingContext – message queue", () => {
     ctx.emit({ type: "job_update", status: "running" });
     ctx.clearMessages();
     expect(ctx.getMessages()).toHaveLength(0);
+  });
+
+  it("supports hasMessages/popMessage/popMessageAsync", async () => {
+    const ctx = new ProcessingContext({ jobId: "j1" });
+    expect(ctx.hasMessages()).toBe(false);
+    ctx.emit({ type: "job_update", status: "running" });
+    expect(ctx.hasMessages()).toBe(true);
+    const popped = ctx.popMessage();
+    expect(popped?.type).toBe("job_update");
+    expect(ctx.hasMessages()).toBe(false);
+
+    const waiter = ctx.popMessageAsync();
+    ctx.emit({ type: "job_update", status: "completed" });
+    await expect(waiter).resolves.toMatchObject({ type: "job_update", status: "completed" });
+  });
+
+  it("tracks latest node and edge statuses", () => {
+    const ctx = new ProcessingContext({ jobId: "j1" });
+    ctx.emit({
+      type: "node_update",
+      node_id: "n1",
+      node_name: "Test",
+      node_type: "test.Node",
+      status: "running",
+    });
+    ctx.emit({
+      type: "edge_update",
+      workflow_id: "w1",
+      edge_id: "e1",
+      status: "active",
+    });
+    expect(ctx.getNodeStatuses().n1).toMatchObject({ type: "node_update", status: "running" });
+    expect(ctx.getEdgeStatuses().e1).toMatchObject({ type: "edge_update", status: "active" });
   });
 });
 
@@ -332,6 +367,29 @@ describe("output normalization", () => {
     expect(await storage.exists(normalized.image.uri)).toBe(true);
   });
 
+  it("materializes asset refs to temp URLs via resolver", async () => {
+    const storage = new InMemoryStorageAdapter();
+    const ctx = new ProcessingContext({
+      jobId: "j1",
+      assetOutputMode: "temp_url",
+      storage,
+      tempUrlResolver: (uri) => `https://temp.local/${encodeURIComponent(uri)}`,
+    });
+    const value = {
+      image: {
+        type: "ImageRef",
+        uri: "memory://img",
+        data: Buffer.from("hello").toString("base64"),
+      },
+    };
+
+    const normalized = (await ctx.normalizeOutputValue(value)) as {
+      image: { uri: string; data?: unknown };
+    };
+    expect(normalized.image.uri.startsWith("https://temp.local/")).toBe(true);
+    expect(normalized.image.data).toBeUndefined();
+  });
+
   it("materializes asset refs into workspace files", async () => {
     const root = await mkdtemp(join(tmpdir(), "nodetool-ts-workspace-"));
     try {
@@ -358,5 +416,278 @@ describe("output normalization", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("ProcessingContext – asset helper methods", () => {
+  const assetValue = {
+    image: {
+      type: "ImageRef",
+      uri: "memory://img",
+      data: Buffer.from("hello").toString("base64"),
+    },
+  };
+
+  it("assetsToDataUri converts assets to data URIs", async () => {
+    const ctx = new ProcessingContext({ jobId: "j1" });
+    const normalized = (await ctx.assetsToDataUri(assetValue)) as { image: { uri: string } };
+    expect(normalized.image.uri.startsWith("data:image/png;base64,")).toBe(true);
+  });
+
+  it("assetsToStorageUrl converts assets to stored URIs", async () => {
+    const storage = new InMemoryStorageAdapter();
+    const ctx = new ProcessingContext({ jobId: "j1", storage });
+    const normalized = (await ctx.assetsToStorageUrl(assetValue)) as {
+      image: { uri: string; data?: unknown };
+    };
+    expect(normalized.image.uri.startsWith("memory://assets/")).toBe(true);
+    expect(normalized.image.data).toBeUndefined();
+  });
+
+  it("uploadAssetsToTemp converts assets to temp URLs", async () => {
+    const storage = new InMemoryStorageAdapter();
+    const ctx = new ProcessingContext({
+      jobId: "j1",
+      storage,
+      tempUrlResolver: (uri) => `https://temp.local/${encodeURIComponent(uri)}`,
+    });
+    const normalized = (await ctx.uploadAssetsToTemp(assetValue)) as {
+      image: { uri: string; data?: unknown };
+    };
+    expect(normalized.image.uri.startsWith("https://temp.local/")).toBe(true);
+    expect(normalized.image.data).toBeUndefined();
+  });
+});
+
+class MockProvider extends BaseProvider {
+  constructor() {
+    super("mock");
+  }
+
+  async generateMessage(_args: {
+    messages: Message[];
+    model: string;
+    tools?: unknown[];
+    maxTokens?: number;
+    responseFormat?: Record<string, unknown>;
+    jsonSchema?: Record<string, unknown>;
+    temperature?: number;
+    topP?: number;
+    presencePenalty?: number;
+    frequencyPenalty?: number;
+  }): Promise<Message> {
+    return {
+      role: "assistant",
+      content: "mock-generated-message",
+    };
+  }
+
+  async *generateMessages(_args: {
+    messages: Message[];
+    model: string;
+    tools?: unknown[];
+    maxTokens?: number;
+    responseFormat?: Record<string, unknown>;
+    jsonSchema?: Record<string, unknown>;
+    temperature?: number;
+    topP?: number;
+    presencePenalty?: number;
+    frequencyPenalty?: number;
+    audio?: Record<string, unknown>;
+  }): AsyncGenerator<ProviderStreamItem> {
+    yield { type: "chunk", content: "a", done: false };
+    yield { type: "chunk", content: "b", done: true };
+  }
+
+  override async *textToSpeech(_args: {
+    text: string;
+    model: string;
+    voice?: string;
+    speed?: number;
+  }): AsyncGenerator<StreamingAudioChunk> {
+    yield { samples: new Int16Array([1, 2, 3]) };
+  }
+}
+
+describe("ProcessingContext – variables and secrets", () => {
+  it("supports get/set and persisted step results", async () => {
+    const root = await mkdtemp(join(tmpdir(), "nodetool-ts-vars-"));
+    try {
+      const ctx = new ProcessingContext({
+        jobId: "j1",
+        workspaceDir: root,
+        variables: { existing: 1 },
+      });
+
+      expect(ctx.get("existing", 0)).toBe(1);
+      ctx.set("new_key", { ok: true });
+      expect(ctx.get("new_key")).toEqual({ ok: true });
+
+      const outPath = await ctx.storeStepResult("step_a", { n: 42 });
+      expect(outPath.endsWith("step_a.json")).toBe(true);
+      await expect(ctx.loadStepResult("step_a")).resolves.toEqual({ n: 42 });
+      await expect(readFile(join(root, "var_new_key.json"), "utf8")).resolves.toContain('"ok": true');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("supports getSecret/getSecretRequired", async () => {
+    const ctx = new ProcessingContext({
+      jobId: "j1",
+      secretResolver: async (key) => (key === "OPENAI_API_KEY" ? "secret-value" : null),
+    });
+
+    await expect(ctx.getSecret("OPENAI_API_KEY")).resolves.toBe("secret-value");
+    await expect(ctx.getSecret("MISSING")).resolves.toBeNull();
+    await expect(ctx.getSecretRequired("OPENAI_API_KEY")).resolves.toBe("secret-value");
+    await expect(ctx.getSecretRequired("MISSING")).rejects.toThrow("Missing required secret: MISSING");
+  });
+});
+
+describe("ProcessingContext – HTTP helpers", () => {
+  it("retries transient responses and downloads bytes/text", async () => {
+    let calls = 0;
+    const ctx = new ProcessingContext({
+      jobId: "j1",
+      fetchFn: async () => {
+        calls += 1;
+        if (calls === 1) {
+          return new Response("retry", { status: 503 });
+        }
+        return new Response("hello", { status: 200 });
+      },
+    });
+
+    const response = await ctx.httpGet("https://example.com", {
+      retry: { maxRetries: 2, backoffMs: 1 },
+    });
+    expect(response.status).toBe(200);
+    expect(calls).toBe(2);
+
+    const bytes = await ctx.downloadFile("https://example.com/file", {
+      retry: { maxRetries: 1, backoffMs: 1 },
+    });
+    expect(new TextDecoder().decode(bytes)).toBe("hello");
+    await expect(ctx.downloadText("https://example.com/text")).resolves.toBe("hello");
+  });
+});
+
+describe("ProcessingContext – provider prediction pipeline", () => {
+  it("runs non-stream and emits prediction lifecycle updates", async () => {
+    const ctx = new ProcessingContext({ jobId: "j1" });
+    ctx.registerProvider("mock", new MockProvider());
+
+    const out = await ctx.runProviderPrediction({
+      provider: "mock",
+      capability: "generate_message",
+      model: "m1",
+      nodeId: "n1",
+      params: { messages: [{ role: "user", content: "hi" }] },
+    });
+
+    expect((out as Message).content).toBe("mock-generated-message");
+    const predictionMessages = ctx.getMessages().filter((m) => m.type === "prediction");
+    expect(predictionMessages).toHaveLength(2);
+    expect((predictionMessages[0] as { status: string }).status).toBe("running");
+    expect((predictionMessages[1] as { status: string }).status).toBe("completed");
+  });
+
+  it("streams provider capability and emits lifecycle updates", async () => {
+    const ctx = new ProcessingContext({ jobId: "j1" });
+    ctx.registerProvider("mock", new MockProvider());
+
+    const chunks: ProviderStreamItem[] = [];
+    for await (const item of ctx.streamProviderPrediction({
+      provider: "mock",
+      capability: "generate_messages",
+      model: "m1",
+      params: { messages: [{ role: "user", content: "hi" }] },
+    })) {
+      chunks.push(item as ProviderStreamItem);
+    }
+
+    expect(chunks).toHaveLength(2);
+    const predictionMessages = ctx.getMessages().filter((m) => m.type === "prediction");
+    expect(predictionMessages).toHaveLength(2);
+    expect((predictionMessages[1] as { status: string }).status).toBe("completed");
+  });
+});
+
+describe("ProcessingContext – copy and cost tracking", () => {
+  it("copies key runtime state", async () => {
+    const ctx = new ProcessingContext({
+      jobId: "j1",
+      workflowId: "w1",
+      userId: "u1",
+      variables: { x: 1 },
+      environment: { APP_ENV: "test" },
+      secretResolver: async () => "s",
+    });
+    ctx.registerProvider("mock", new MockProvider());
+    ctx.trackOperationCost("op1", 1.25);
+
+    const cloned = ctx.copy();
+    expect(cloned.jobId).toBe("j1");
+    expect(cloned.workflowId).toBe("w1");
+    expect(cloned.userId).toBe("u1");
+    expect(cloned.get("x")).toBe(1);
+    expect(cloned.environment.APP_ENV).toBe("test");
+    await expect(cloned.getSecretRequired("any")).resolves.toBe("s");
+    await expect(cloned.getProvider("mock")).resolves.toBeInstanceOf(MockProvider);
+    expect(cloned.getTotalCost()).toBeCloseTo(1.25);
+  });
+
+  it("tracks/reset costs", () => {
+    const ctx = new ProcessingContext({ jobId: "j1" });
+    ctx.trackOperationCost("tokens", 0.5, { provider: "openai" });
+    ctx.addToTotalCost(0.2);
+    expect(ctx.getTotalCost()).toBeCloseTo(0.7);
+    expect(ctx.getOperationCosts()).toHaveLength(1);
+    expect(ctx.getOperationCosts()[0]).toMatchObject({ operation: "tokens", provider: "openai" });
+    ctx.resetTotalCost();
+    expect(ctx.getTotalCost()).toBe(0);
+    expect(ctx.getOperationCosts()).toHaveLength(0);
+  });
+});
+
+describe("ProcessingContext – node result cache helpers", () => {
+  it("generates deterministic cache keys and stores/retrieves results", async () => {
+    const ctx = new ProcessingContext({ jobId: "j1", userId: "u1" });
+    const props = { a: 1, b: "x" };
+    const k1 = ctx.generateNodeCacheKey("nodetool.test.Node", props);
+    const k2 = ctx.generateNodeCacheKey("nodetool.test.Node", { b: "x", a: 1 });
+    expect(k1).toBe(k2);
+
+    await ctx.cacheResult("nodetool.test.Node", props, { out: 123 }, 60);
+    await expect(ctx.getCachedResult("nodetool.test.Node", props)).resolves.toEqual({ out: 123 });
+  });
+});
+
+describe("ProcessingContext – memory helpers", () => {
+  it("tracks memory:// values and reports stats", () => {
+    const ctx = new ProcessingContext({ jobId: "j1" });
+    ctx.set("memory://assets/a", { id: 1 });
+    ctx.set("memory://assets/b", { id: 2 });
+    ctx.set("memory://tmp/c", { id: 3 });
+
+    expect(ctx.getMemoryStats()).toEqual({
+      total: 3,
+      byPrefix: { assets: 2, tmp: 1 },
+    });
+  });
+
+  it("clears memory entries globally or by pattern", () => {
+    const ctx = new ProcessingContext({ jobId: "j1" });
+    ctx.set("memory://assets/a", 1);
+    ctx.set("memory://tmp/b", 2);
+    ctx.clearMemory("assets");
+    expect(ctx.getMemoryStats()).toEqual({
+      total: 1,
+      byPrefix: { tmp: 1 },
+    });
+
+    ctx.clearMemory();
+    expect(ctx.getMemoryStats()).toEqual({ total: 0, byPrefix: {} });
   });
 });

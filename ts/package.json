@@ -5,13 +5,17 @@
     "packages/protocol",
     "packages/kernel",
     "packages/runtime",
+    "packages/models",
     "packages/node-sdk",
     "packages/base-nodes",
-    "packages/parity-harness"
+    "packages/parity-harness",
+    "packages/websocket"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
+    "metadata-parity": "npm run test:metadata --workspace @nodetool/node-sdk && npm run test:metadata-parity --workspace @nodetool/base-nodes",
+    "devserver": "npm run devserver --workspace @nodetool/websocket",
     "lint": "npm run lint --workspaces",
     "workflow": "node ./scripts/run-workflow.mjs"
   },

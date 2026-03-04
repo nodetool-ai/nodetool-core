@@ -1,0 +1,33 @@
+{
+  "name": "@nodetool/websocket",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Unified websocket runner for workflow and chat operations",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "build:all": "npm run build --workspace @nodetool/protocol && npm run build --workspace @nodetool/runtime && npm run build --workspace @nodetool/kernel && npm run build --workspace @nodetool/node-sdk && npm run build --workspace @nodetool/base-nodes && npm run build --workspace @nodetool/models && npm run build",
+    "test-ui": "npm run build:all && node dist/test-ui-server.js",
+    "devserver": "npm run test-ui",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@nodetool/base-nodes": "*",
+    "@nodetool/kernel": "*",
+    "@nodetool/models": "*",
+    "@nodetool/node-sdk": "*",
+    "@nodetool/protocol": "*",
+    "@nodetool/runtime": "*",
+    "msgpackr": "^1.11.2",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.1"
+  }
+}

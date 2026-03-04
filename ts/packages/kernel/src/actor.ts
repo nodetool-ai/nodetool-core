@@ -15,6 +15,7 @@
  */
 
 import type { NodeDescriptor, SyncMode, ControlEvent } from "@nodetool/protocol";
+import type { ProcessingContext } from "@nodetool/runtime";
 import { NodeInbox } from "./inbox.js";
 
 // ---------------------------------------------------------------------------
@@ -25,7 +26,7 @@ export interface NodeExecutor {
   /** One-shot processing (buffered mode). */
   process(
     inputs: Record<string, unknown>,
-    context?: unknown
+    context?: ProcessingContext
   ): Promise<Record<string, unknown>>;
 
   /**
@@ -34,7 +35,7 @@ export interface NodeExecutor {
    */
   genProcess?(
     inputs: Record<string, unknown>,
-    context?: unknown
+    context?: ProcessingContext
   ): AsyncGenerator<Record<string, unknown>>;
 
   /** Called before process/genProcess. */
@@ -83,7 +84,7 @@ export class NodeActor {
   /** Callback to emit processing messages (NodeUpdate, etc.). */
   private _emitMessage: (msg: unknown) => void;
   /** Optional execution context passed into node executors. */
-  private _executionContext: unknown;
+  private _executionContext: ProcessingContext | undefined;
 
   constructor(opts: {
     node: NodeDescriptor;
@@ -94,7 +95,7 @@ export class NodeActor {
       outputs: Record<string, unknown>
     ) => Promise<void>;
     emitMessage: (msg: unknown) => void;
-    executionContext?: unknown;
+    executionContext?: ProcessingContext;
   }) {
     this.node = opts.node;
     this.inbox = opts.inbox;
@@ -159,6 +160,27 @@ export class NodeActor {
    */
   private async _runBuffered(): Promise<void> {
     const syncMode = this.node.sync_mode ?? "zip_all";
+    const inputHandles = [...this.inbox["_buffers"].keys()].filter(
+      (h) => h !== "__control__"
+    );
+
+    // Source nodes with no data inputs should execute once with empty inputs.
+    if (inputHandles.length === 0) {
+      if (this.node.is_streaming_output && this._executor.genProcess) {
+        for await (const partial of this._executor.genProcess(
+          {},
+          this._executionContext
+        )) {
+          this._latestResult = partial;
+          await this._sendOutputs(this.node.id, partial);
+        }
+      } else {
+        const outputs = await this._executor.process({}, this._executionContext);
+        this._latestResult = outputs;
+        await this._sendOutputs(this.node.id, outputs);
+      }
+      return;
+    }
 
     // Keep gathering input batches until inbox is drained
     while (true) {
@@ -349,6 +371,10 @@ export class NodeActor {
       status,
       result: result ?? null,
       error: error ?? null,
+      properties:
+        this.node.properties && typeof this.node.properties === "object"
+          ? (this.node.properties as Record<string, unknown>)
+          : null,
     });
   }
 }

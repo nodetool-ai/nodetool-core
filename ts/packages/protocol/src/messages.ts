@@ -258,6 +258,78 @@ export interface Prediction {
 }
 
 // ---------------------------------------------------------------------------
+// Unified websocket command/control/update types
+// ---------------------------------------------------------------------------
+
+export type WebSocketMode = "binary" | "text";
+
+export type UnifiedCommandType =
+  | "run_job"
+  | "reconnect_job"
+  | "resume_job"
+  | "cancel_job"
+  | "get_status"
+  | "set_mode"
+  | "clear_models"
+  | "stream_input"
+  | "end_input_stream"
+  | "chat_message"
+  | "stop";
+
+export interface WebSocketCommandEnvelope<
+  C extends UnifiedCommandType = UnifiedCommandType,
+  D extends Record<string, unknown> = Record<string, unknown>,
+> {
+  command: C;
+  data: D;
+}
+
+export interface PingMessage {
+  type: "ping";
+  ts?: number;
+}
+
+export interface PongMessage {
+  type: "pong";
+  ts: number;
+}
+
+export interface ClientToolManifestMessage {
+  type: "client_tools_manifest";
+  tools: Array<Record<string, unknown>>;
+}
+
+export interface ToolResultMessage {
+  type: "tool_result";
+  tool_call_id?: string;
+  [key: string]: unknown;
+}
+
+export interface SystemStatsMessage {
+  type: "system_stats";
+  stats: Record<string, unknown>;
+}
+
+export interface ResourceChangeMessage {
+  type: "resource_change";
+  event: "created" | "updated" | "deleted";
+  resource_type: string;
+  resource: Record<string, unknown>;
+}
+
+export type WebSocketControlMessage =
+  | PingMessage
+  | ClientToolManifestMessage
+  | ToolResultMessage;
+
+export type WebSocketServerMessage =
+  | ProcessingMessage
+  | PongMessage
+  | SystemStatsMessage
+  | ResourceChangeMessage
+  | Record<string, unknown>;
+
+// ---------------------------------------------------------------------------
 // Discriminated union – matches Python ProcessingMessage
 // ---------------------------------------------------------------------------
 

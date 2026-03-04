@@ -1,4 +1,4 @@
-import type { NodeRegistry } from "@nodetool/node-sdk";
+import type { NodeClass, NodeRegistry } from "@nodetool/node-sdk";
 
 export {
   IfNode,
@@ -194,7 +194,7 @@ export {
   MessageDeconstructorNode,
   INPUT_NODES,
 } from "./nodes/input.js";
-export { OutputNode, OUTPUT_NODES } from "./nodes/output.js";
+export { OutputNode, PreviewNode, OUTPUT_NODES } from "./nodes/output.js";
 export {
   GetWorkspaceDirNode,
   ListWorkspaceFilesNode,
@@ -404,6 +404,160 @@ export {
   ImageTo3DNode,
   MODEL3D_NODES,
 } from "./nodes/model3d.js";
+export {
+  GenerateUUID4Node,
+  GenerateUUID1Node,
+  GenerateUUID3Node,
+  GenerateUUID5Node,
+  ParseUUIDNode,
+  FormatUUIDNode,
+  IsValidUUIDNode,
+  UUID_NODES,
+} from "./nodes/uuid.js";
+export { LIB_COMPAT_PY_NODES } from "./nodes/lib-compat.js";
+export {
+  AddLibNode,
+  SubtractLibNode,
+  MultiplyLibNode,
+  DivideLibNode,
+  ModulusLibNode,
+  MathFunctionLibNode,
+  SineLibNode,
+  CosineLibNode,
+  PowerLibNode,
+  SqrtLibNode,
+  LIB_MATH_NODES,
+} from "./nodes/lib-math.js";
+export {
+  ParseDictLibNode,
+  ParseListLibNode,
+  StringifyJSONLibNode,
+  GetJSONPathStrLibNode,
+  GetJSONPathIntLibNode,
+  GetJSONPathFloatLibNode,
+  GetJSONPathBoolLibNode,
+  GetJSONPathListLibNode,
+  GetJSONPathDictLibNode,
+  ValidateJSONLibNode,
+  FilterJSONLibNode,
+  JSONTemplateLibNode,
+  LoadJSONAssetsLibNode,
+  LIB_JSON_NODES,
+} from "./nodes/lib-json.js";
+export {
+  TodayLibNode,
+  NowLibNode,
+  ParseDateLibNode,
+  ParseDateTimeLibNode,
+  AddTimeDeltaLibNode,
+  DateDifferenceLibNode,
+  FormatDateTimeLibNode,
+  GetWeekdayLibNode,
+  DateRangeLibNode,
+  IsDateInRangeLibNode,
+  GetQuarterLibNode,
+  DateToDatetimeLibNode,
+  DatetimeToDateLibNode,
+  RelativeTimeLibNode,
+  BoundaryTimeLibNode,
+  LIB_DATE_NODES,
+} from "./nodes/lib-date.js";
+export {
+  WorkspaceDirectoryLibNode,
+  OpenWorkspaceDirectoryLibNode,
+  FileExistsLibNode,
+  ListFilesLibNode,
+  CopyFileLibNode,
+  MoveFileLibNode,
+  CreateDirectoryLibNode,
+  GetFileSizeLibNode,
+  CreatedTimeLibNode,
+  ModifiedTimeLibNode,
+  AccessedTimeLibNode,
+  IsFileLibNode,
+  IsDirectoryLibNode,
+  FileExtensionLibNode,
+  FileNameLibNode,
+  GetDirectoryLibNode,
+  FileNameMatchLibNode,
+  FilterFileNamesLibNode,
+  BasenameLibNode,
+  DirnameLibNode,
+  JoinPathsLibNode,
+  NormalizePathLibNode,
+  GetPathInfoLibNode,
+  AbsolutePathLibNode,
+  SplitPathLibNode,
+  SplitExtensionLibNode,
+  RelativePathLibNode,
+  PathToStringLibNode,
+  ShowNotificationLibNode,
+  LIB_OS_NODES,
+} from "./nodes/lib-os.js";
+export {
+  ExtractLinksMarkdownLibNode,
+  ExtractHeadersMarkdownLibNode,
+  ExtractBulletListsMarkdownLibNode,
+  ExtractNumberedListsMarkdownLibNode,
+  ExtractCodeBlocksMarkdownLibNode,
+  ExtractTablesMarkdownLibNode,
+  LIB_MARKDOWN_NODES,
+} from "./nodes/lib-markdown.js";
+export { GetSecretLibNode, LIB_SECRET_NODES } from "./nodes/lib-secret.js";
+export {
+  GetRequestLibNode,
+  PostRequestLibNode,
+  PutRequestLibNode,
+  DeleteRequestLibNode,
+  HeadRequestLibNode,
+  FetchPageLibNode,
+  ImageDownloaderLibNode,
+  GetRequestBinaryLibNode,
+  GetRequestDocumentLibNode,
+  PostRequestBinaryLibNode,
+  DownloadDataframeLibNode,
+  FilterValidURLsLibNode,
+  DownloadFilesLibNode,
+  JSONPostRequestLibNode,
+  JSONPutRequestLibNode,
+  JSONPatchRequestLibNode,
+  JSONGetRequestLibNode,
+  LIB_HTTP_NODES,
+} from "./nodes/lib-http.js";
+export {
+  ConvertFilePandocLibNode,
+  ConvertTextPandocLibNode,
+  LIB_PANDOC_NODES,
+} from "./nodes/lib-pandoc.js";
+export { YtDlpDownloadLibNode, LIB_YTDLP_NODES } from "./nodes/lib-ytdlp.js";
+export {
+  SliceImageGridLibNode,
+  CombineImageGridLibNode,
+  LIB_GRID_NODES,
+} from "./nodes/lib-grid.js";
+export {
+  RectLibNode,
+  CircleLibNode,
+  EllipseLibNode,
+  LineLibNode,
+  PolygonLibNode,
+  PathLibNode,
+  TextLibNode,
+  GaussianBlurLibNode,
+  DropShadowLibNode,
+  DocumentLibNode,
+  SVGToImageLibNode,
+  GradientLibNode,
+  TransformLibNode,
+  ClipPathLibNode,
+  LIB_SVG_NODES,
+} from "./nodes/lib-svg.js";
+export { LIB_PILLOW_NODES } from "./nodes/lib-pillow.js";
+export {
+  FetchRSSFeedLibNode,
+  ExtractFeedMetadataLibNode,
+  LIB_RSS_NODES,
+} from "./nodes/lib-rss.js";
 
 import { CONTROL_NODES } from "./nodes/control.js";
 import { BOOLEAN_NODES } from "./nodes/boolean.js";
@@ -428,8 +582,23 @@ import { VIDEO_NODES } from "./nodes/video.js";
 import { AGENT_NODES } from "./nodes/agents.js";
 import { GENERATOR_NODES } from "./nodes/generators.js";
 import { MODEL3D_NODES } from "./nodes/model3d.js";
+import { UUID_NODES } from "./nodes/uuid.js";
+import { LIB_COMPAT_PY_NODES } from "./nodes/lib-compat.js";
+import { LIB_MATH_NODES } from "./nodes/lib-math.js";
+import { LIB_JSON_NODES } from "./nodes/lib-json.js";
+import { LIB_DATE_NODES } from "./nodes/lib-date.js";
+import { LIB_OS_NODES } from "./nodes/lib-os.js";
+import { LIB_MARKDOWN_NODES } from "./nodes/lib-markdown.js";
+import { LIB_SECRET_NODES } from "./nodes/lib-secret.js";
+import { LIB_HTTP_NODES } from "./nodes/lib-http.js";
+import { LIB_PANDOC_NODES } from "./nodes/lib-pandoc.js";
+import { LIB_YTDLP_NODES } from "./nodes/lib-ytdlp.js";
+import { LIB_GRID_NODES } from "./nodes/lib-grid.js";
+import { LIB_SVG_NODES } from "./nodes/lib-svg.js";
+import { LIB_PILLOW_NODES } from "./nodes/lib-pillow.js";
+import { LIB_RSS_NODES } from "./nodes/lib-rss.js";
 
-export const ALL_BASE_NODES = [
+export const ALL_BASE_NODES: readonly NodeClass[] = [
   ...CONTROL_NODES,
   ...BOOLEAN_NODES,
   ...LIST_NODES,
@@ -453,10 +622,42 @@ export const ALL_BASE_NODES = [
   ...AGENT_NODES,
   ...GENERATOR_NODES,
   ...MODEL3D_NODES,
-] as const;
+  ...UUID_NODES,
+  ...LIB_COMPAT_PY_NODES,
+  ...LIB_MATH_NODES,
+  ...LIB_JSON_NODES,
+  ...LIB_DATE_NODES,
+  ...LIB_OS_NODES,
+  ...LIB_MARKDOWN_NODES,
+  ...LIB_SECRET_NODES,
+  ...LIB_HTTP_NODES,
+  ...LIB_PANDOC_NODES,
+  ...LIB_YTDLP_NODES,
+  ...LIB_GRID_NODES,
+  ...LIB_SVG_NODES,
+  ...LIB_PILLOW_NODES,
+  ...LIB_RSS_NODES,
+];
 
 export function registerBaseNodes(registry: NodeRegistry): void {
   for (const nodeClass of ALL_BASE_NODES) {
+    if (nodeClass.nodeType === "nodetool.workflows.base_node.Preview") {
+      registry.register(nodeClass, {
+        metadata: {
+          title: "Preview",
+          description: "Preview values inside the workflow graph",
+          namespace: "nodetool.workflows.base_node",
+          node_type: "nodetool.workflows.base_node.Preview",
+          properties: [
+            { name: "value", type: { type: "any" }, default: null },
+            { name: "name", type: { type: "str" }, default: "" },
+          ],
+          outputs: [{ name: "output", type: { type: "any" } }],
+          basic_fields: ["value"],
+        },
+      });
+      continue;
+    }
     registry.register(nodeClass);
   }
 }
