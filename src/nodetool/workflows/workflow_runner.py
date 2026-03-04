@@ -220,12 +220,16 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext) -> None:
 def release_gpu_lock():
     """
     Releases the global GPU lock.
+    Safe to call even if the lock was already released (e.g. by force_release_gpu_lock).
     """
     global _gpu_lock_holder, _gpu_lock_holder_time
     log.debug(f"Releasing GPU lock (was held by: {_gpu_lock_holder})")
     _gpu_lock_holder = None
     _gpu_lock_holder_time = 0.0
-    gpu_lock.release()
+    if gpu_lock.locked():
+        gpu_lock.release()
+    else:
+        log.debug("GPU lock was already released (likely force-released by another job)")
 
 
 def force_release_gpu_lock():
