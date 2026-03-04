@@ -497,7 +497,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         except RuntimeError:
             # Fallback if no scope is bound (shouldn't happen in normal operation)
             log.warning("No ResourceScope bound, creating fallback HTTP client for Llama")
-            http_client = httpx.AsyncClient(follow_redirects=True, timeout=600, verify=False)
+            http_client = httpx.AsyncClient(follow_redirects=True, timeout=600)
 
         # llama-server accepts any API key; None is fine when auth is disabled
         return openai.AsyncClient(
@@ -541,7 +541,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             return []
 
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(2.0, connect=0.5), verify=False) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(2.0, connect=0.5)) as client:
                 response = await client.get(f"{self._base_url}/v1/models")
                 response.raise_for_status()
                 payload = response.json()
