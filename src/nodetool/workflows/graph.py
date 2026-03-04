@@ -2,7 +2,7 @@ import logging
 from collections import defaultdict, deque
 from typing import Any, Sequence
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.typecheck import typecheck
@@ -57,19 +57,25 @@ class Graph(BaseModel):
 
     nodes: Sequence[BaseNode] = Field(default_factory=list)
     edges: Sequence[Edge] = Field(default_factory=list)
-    _node_index: dict[str, BaseNode] | None = None
-    _streaming_upstream_cache: set[str] | None = None
+    _node_index: dict[str, BaseNode] | None = PrivateAttr(default=None)
+    _streaming_upstream_cache: set[str] | None = PrivateAttr(default=None)
+    _outgoing_edges_cache: dict[tuple[str, str], list[Edge]] | None = PrivateAttr(default=None)
+    _cached_edges_len: int = PrivateAttr(default=-1)
 
     def __init__(self, **data):
         super().__init__(**data)
         # Build node ID index for O(1) lookup
         self._node_index = {node._id: node for node in self.nodes} if self.nodes else {}
         self._streaming_upstream_cache = None
+        self._outgoing_edges_cache = None
+        self._cached_edges_len = -1
 
     def model_post_init(self, __context: Any):
         # Build node ID index after model initialization
         self._node_index = {node._id: node for node in self.nodes} if self.nodes else {}
         self._streaming_upstream_cache = None
+        self._outgoing_edges_cache = None
+        self._cached_edges_len = -1
 
     def find_node(self, node_id: str) -> BaseNode | None:
         """
@@ -81,7 +87,13 @@ class Graph(BaseModel):
         """
         Find edges by their source and source_handle.
         """
-        return [edge for edge in self.edges if edge.source == source and edge.sourceHandle == source_handle]
+        if getattr(self, '_outgoing_edges_cache', None) is None or getattr(self, '_cached_edges_len', -1) != len(self.edges):
+            self._outgoing_edges_cache = defaultdict(list)
+            for edge in self.edges:
+                self._outgoing_edges_cache[(edge.source, edge.sourceHandle)].append(edge)
+            self._cached_edges_len = len(self.edges)
+
+        return self._outgoing_edges_cache.get((source, source_handle), [])
 
     @classmethod
     def from_dict(
