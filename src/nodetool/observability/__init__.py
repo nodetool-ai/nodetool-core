@@ -8,6 +8,7 @@ This module provides comprehensive observability features including:
 - Node execution tracing
 - Provider execution tracing with cost tracking
 - Agent execution tracing
+- Performance analysis for workflow optimization
 
 All tracing is implemented via Python context managers for unobtrusive
 instrumentation. See OBSERVABILITY.md for full documentation.
@@ -18,8 +19,21 @@ Example:
     async with trace_workflow(job_id="job-123") as span:
         async with trace_node("node-1", "ImageGenerate") as node_span:
             result = await node.process(inputs)
+
+    # Analyze performance after execution
+    from nodetool.observability import PerformanceAnalyzer
+    analyzer = PerformanceAnalyzer(tracer)
+    report = analyzer.analyze()
+    print(report.summary())
 """
 
+from .performance_analyzer import (
+    CriticalPathSegment,
+    OptimizationSuggestion,
+    PerformanceAnalyzer,
+    PerformanceReport,
+    SpanAnalysis,
+)
 from .tracing import (
     NoOpSpan,
     NoOpTracer,
@@ -47,9 +61,15 @@ from .tracing import (
 )
 
 __all__ = [
+    "CriticalPathSegment",
     "NoOpSpan",
     "NoOpTracer",
+    "OptimizationSuggestion",
+    # Performance analysis
+    "PerformanceAnalyzer",
+    "PerformanceReport",
     "Span",
+    "SpanAnalysis",
     "SpanContext",
     "SpanKind",
     "SpanStatus",
