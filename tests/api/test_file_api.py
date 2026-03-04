@@ -1,9 +1,12 @@
+from unittest.mock import patch
 import os
 
 from fastapi.testclient import TestClient
 
 
-def test_list_files_excludes_hidden(tmp_path, client: TestClient, headers: dict[str, str]):
+@patch("nodetool.api.file.SAFE_ROOTS", new_callable=list)
+def test_list_files_excludes_hidden(mock_safe_roots, tmp_path, client: TestClient, headers: dict[str, str]):
+    mock_safe_roots.append(str(tmp_path))
     directory = tmp_path / "files"
     directory.mkdir()
     (directory / "visible.txt").write_text("data")
@@ -16,7 +19,9 @@ def test_list_files_excludes_hidden(tmp_path, client: TestClient, headers: dict[
     assert ".hidden.txt" not in names
 
 
-def test_get_file_info(tmp_path, client: TestClient, headers: dict[str, str]):
+@patch("nodetool.api.file.SAFE_ROOTS", new_callable=list)
+def test_get_file_info(mock_safe_roots, tmp_path, client: TestClient, headers: dict[str, str]):
+    mock_safe_roots.append(str(tmp_path))
     file_path = tmp_path / "info.txt"
     file_path.write_text("hello")
     response = client.get("/api/files/info", params={"path": str(file_path)}, headers=headers)
@@ -26,7 +31,9 @@ def test_get_file_info(tmp_path, client: TestClient, headers: dict[str, str]):
     assert data["is_dir"] is False
 
 
-def test_upload_and_download_file(tmp_path, client: TestClient, headers: dict[str, str]):
+@patch("nodetool.api.file.SAFE_ROOTS", new_callable=list)
+def test_upload_and_download_file(mock_safe_roots, tmp_path, client: TestClient, headers: dict[str, str]):
+    mock_safe_roots.append(str(tmp_path))
     target = tmp_path / "upload.txt"
     content = b"hello world"
     response = client.post(
@@ -42,7 +49,9 @@ def test_upload_and_download_file(tmp_path, client: TestClient, headers: dict[st
     assert download.content == content
 
 
-def test_download_hidden_file_forbidden(tmp_path, client: TestClient, headers: dict[str, str]):
+@patch("nodetool.api.file.SAFE_ROOTS", new_callable=list)
+def test_download_hidden_file_forbidden(mock_safe_roots, tmp_path, client: TestClient, headers: dict[str, str]):
+    mock_safe_roots.append(str(tmp_path))
     # Create a hidden file
     hidden_file = tmp_path / ".secret"
     hidden_file.write_text("secret_data")
@@ -55,7 +64,9 @@ def test_download_hidden_file_forbidden(tmp_path, client: TestClient, headers: d
     assert response.json()["detail"] == "Access to this path is forbidden"
 
 
-def test_download_env_file_forbidden(tmp_path, client: TestClient, headers: dict[str, str]):
+@patch("nodetool.api.file.SAFE_ROOTS", new_callable=list)
+def test_download_env_file_forbidden(mock_safe_roots, tmp_path, client: TestClient, headers: dict[str, str]):
+    mock_safe_roots.append(str(tmp_path))
     # Create a .env file
     env_file = tmp_path / ".env"
     env_file.write_text("SECRET_KEY=12345")
@@ -68,7 +79,9 @@ def test_download_env_file_forbidden(tmp_path, client: TestClient, headers: dict
     assert response.json()["detail"] == "Access to this path is forbidden"
 
 
-def test_download_file_in_hidden_dir_forbidden(tmp_path, client: TestClient, headers: dict[str, str]):
+@patch("nodetool.api.file.SAFE_ROOTS", new_callable=list)
+def test_download_file_in_hidden_dir_forbidden(mock_safe_roots, tmp_path, client: TestClient, headers: dict[str, str]):
+    mock_safe_roots.append(str(tmp_path))
     # Create a hidden directory and a file inside
     hidden_dir = tmp_path / ".hidden_dir"
     hidden_dir.mkdir()
