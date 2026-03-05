@@ -1,9 +1,34 @@
+export {
+  CostType,
+  CostCalculator,
+  calculateChatCost,
+  calculateEmbeddingCost,
+  calculateSpeechCost,
+  calculateWhisperCost,
+  calculateImageCost,
+} from "./cost-calculator.js";
+export type { PricingTier, UsageInfo } from "./cost-calculator.js";
 export { BaseProvider } from "./base-provider.js";
 export { AnthropicProvider } from "./anthropic-provider.js";
 export { GeminiProvider } from "./gemini-provider.js";
 export { LlamaProvider } from "./llama-provider.js";
 export { OpenAIProvider } from "./openai-provider.js";
 export { OllamaProvider } from "./ollama-provider.js";
+export {
+  FakeProvider,
+  createFakeToolCall,
+  createSimpleFakeProvider,
+  createStreamingFakeProvider,
+  createToolCallingFakeProvider,
+} from "./fake-provider.js";
+export type { FakeProviderOptions } from "./fake-provider.js";
+export {
+  registerProvider,
+  getRegisteredProvider,
+  getProvider,
+  clearProviderCache,
+  listRegisteredProviderIds,
+} from "./provider-registry.js";
 export type {
   ProviderId,
   LanguageModel,
