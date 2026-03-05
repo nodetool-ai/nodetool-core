@@ -736,6 +736,10 @@ export {
   LIB_LIBROSA_SPECTRAL_NODES,
 } from "./nodes/lib-librosa-spectral.js";
 export { PaddleOCRLibNode, LIB_OCR_NODES } from "./nodes/lib-ocr.js";
+export { KIE_IMAGE_NODES } from "./nodes/kie-image.js";
+export { KIE_VIDEO_NODES } from "./nodes/kie-video.js";
+export { KIE_AUDIO_NODES } from "./nodes/kie-audio.js";
+export { KieAINode, KIE_DYNAMIC_NODES } from "./nodes/kie-dynamic.js";
 
 import { CONTROL_NODES } from "./nodes/control.js";
 import { BOOLEAN_NODES } from "./nodes/boolean.js";
@@ -791,6 +795,10 @@ import { LIB_PEDALBOARD_EXTRA_NODES } from "./nodes/lib-pedalboard-extra.js";
 import { LIB_PDF_NODES } from "./nodes/lib-pdf.js";
 import { LIB_LIBROSA_SPECTRAL_NODES } from "./nodes/lib-librosa-spectral.js";
 import { LIB_OCR_NODES } from "./nodes/lib-ocr.js";
+import { KIE_IMAGE_NODES } from "./nodes/kie-image.js";
+import { KIE_VIDEO_NODES } from "./nodes/kie-video.js";
+import { KIE_AUDIO_NODES } from "./nodes/kie-audio.js";
+import { KIE_DYNAMIC_NODES } from "./nodes/kie-dynamic.js";
 
 export const ALL_BASE_NODES: readonly NodeClass[] = [
   ...CONTROL_NODES,
@@ -847,6 +855,10 @@ export const ALL_BASE_NODES: readonly NodeClass[] = [
   ...LIB_PDF_NODES,
   ...LIB_LIBROSA_SPECTRAL_NODES,
   ...LIB_OCR_NODES,
+  ...KIE_IMAGE_NODES,
+  ...KIE_VIDEO_NODES,
+  ...KIE_AUDIO_NODES,
+  ...KIE_DYNAMIC_NODES,
 ];
 
 export function registerBaseNodes(registry: NodeRegistry): void {
