@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { MemoryAdapter } from "../src/memory-adapter.js";
-import { field } from "../src/condition-builder.js";
+import { Condition, ConditionBuilder, ConditionGroup, LogicalOperator, Operator, Variable, field } from "../src/condition-builder.js";
 import type { TableSchema } from "../src/database-adapter.js";
 
 const SCHEMA: TableSchema = {
@@ -168,6 +168,147 @@ describe("MemoryAdapter", () => {
       await adapter.save({ id: "1", name: "Alice", age: 31, status: "active" });
       const row = await adapter.get("1");
       expect(row!.age).toBe(31);
+    });
+  });
+
+  // ── CONTAINS and additional operator tests ─────────────────────────
+
+  describe("additional operators", () => {
+    beforeEach(async () => {
+      await adapter.save({ id: "1", name: "Alice", age: 30, status: "active", created_at: "2024-01-01" });
+      await adapter.save({ id: "2", name: "Bob", age: 25, status: "inactive", created_at: "2024-01-02" });
+      await adapter.save({ id: "3", name: "Charlie", age: 35, status: "active", created_at: "2024-01-03" });
+    });
+
+    it("query with CONTAINS operator", async () => {
+      const cond = new ConditionBuilder(
+        new Condition("name", Operator.CONTAINS, ["Alice", "Bob"]),
+      );
+      const [rows] = await adapter.query({ condition: cond });
+      expect(rows).toHaveLength(2);
+      expect(rows.map((r) => r.name).sort()).toEqual(["Alice", "Bob"]);
+    });
+
+    it("query with NE operator", async () => {
+      const cond = field("name").notEquals("Alice");
+      const [rows] = await adapter.query({ condition: cond });
+      expect(rows).toHaveLength(2);
+      expect(rows.every((r) => r.name !== "Alice")).toBe(true);
+    });
+
+    it("query with LT operator", async () => {
+      const cond = field("age").lessThan(30);
+      const [rows] = await adapter.query({ condition: cond });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].name).toBe("Bob");
+    });
+
+    it("query with GTE operator", async () => {
+      const cond = field("age").greaterThanOrEqual(30);
+      const [rows] = await adapter.query({ condition: cond });
+      expect(rows).toHaveLength(2);
+    });
+
+    it("query with LTE operator", async () => {
+      const cond = field("age").lessThanOrEqual(30);
+      const [rows] = await adapter.query({ condition: cond });
+      expect(rows).toHaveLength(2);
+    });
+
+    it("evaluateCondition with Variable value returns null comparison", async () => {
+      const cond = new ConditionBuilder(
+        new Condition("name", Operator.EQ, new Variable("some_var")),
+      );
+      const [rows] = await adapter.query({ condition: cond });
+      // Variable resolves to null, so only rows where name === null match
+      expect(rows).toHaveLength(0);
+    });
+
+    it("evaluateCondition returns false for unknown operator", async () => {
+      const cond = new ConditionBuilder(
+        new Condition("name", "UNKNOWN" as Operator, "Alice"),
+      );
+      const [rows] = await adapter.query({ condition: cond });
+      expect(rows).toHaveLength(0);
+    });
+
+    it("evaluateGroup with OR logic across groups", async () => {
+      const cond = field("name").equals("Alice").or(field("name").equals("Charlie"));
+      const [rows] = await adapter.query({ condition: cond });
+      expect(rows).toHaveLength(2);
+    });
+
+    it("matchesCondition returns false for non-matching row", async () => {
+      const cond = field("name").equals("Nonexistent");
+      const [rows] = await adapter.query({ condition: cond });
+      expect(rows).toHaveLength(0);
+    });
+
+    it("evaluateGroup with nested ConditionGroup (OR)", async () => {
+      const innerGroup = new ConditionGroup(
+        [
+          new Condition("name", Operator.EQ, "Alice"),
+          new Condition("name", Operator.EQ, "Bob"),
+        ],
+        LogicalOperator.OR,
+      );
+      const cond = new ConditionBuilder(innerGroup);
+      const [rows] = await adapter.query({ condition: cond });
+      expect(rows).toHaveLength(2);
+    });
+
+    it("LIKE with non-string value returns false", async () => {
+      // LIKE operator should return false when target or val is not a string
+      const cond = new ConditionBuilder(
+        new Condition("age", Operator.LIKE, "%30%"),
+      );
+      const [rows] = await adapter.query({ condition: cond });
+      // age is a number, not a string, so LIKE should not match
+      expect(rows).toHaveLength(0);
+    });
+
+    it("LIKE with non-string pattern returns false", async () => {
+      const cond = new ConditionBuilder(
+        new Condition("name", Operator.LIKE, 42),
+      );
+      const [rows] = await adapter.query({ condition: cond });
+      expect(rows).toHaveLength(0);
+    });
+
+    it("evaluateGroup returns false from nested ConditionGroup path", async () => {
+      // Test the else-if path for ConditionGroup inside evaluateGroup (line 63-64)
+      const innerGroup = new ConditionGroup(
+        [new Condition("name", Operator.EQ, "Nonexistent")],
+        LogicalOperator.AND,
+      );
+      const outerGroup = new ConditionGroup(
+        [innerGroup],
+        LogicalOperator.AND,
+      );
+      const cond = new ConditionBuilder(outerGroup);
+      const [rows] = await adapter.query({ condition: cond });
+      expect(rows).toHaveLength(0);
+    });
+  });
+
+  // ── Schema without explicit primary_key ─────────────────────────────
+
+  describe("schema without primary_key", () => {
+    it("defaults to 'id' when primary_key is not set", async () => {
+      const schemaNoKey: TableSchema = {
+        table_name: "no_pk",
+        columns: {
+          id: { type: "string" },
+          name: { type: "string" },
+        },
+      } as any;
+      const noPkAdapter = new MemoryAdapter(schemaNoKey);
+      expect(noPkAdapter.getPrimaryKey()).toBe("id");
+
+      await noPkAdapter.save({ id: "1", name: "Test" });
+      const row = await noPkAdapter.get("1");
+      expect(row).not.toBeNull();
+      expect(row!.name).toBe("Test");
     });
   });
 

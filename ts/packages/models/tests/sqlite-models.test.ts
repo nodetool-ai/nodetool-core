@@ -1,7 +1,13 @@
+/**
+ * Integration tests for domain models using SQLiteAdapter.
+ *
+ * Mirrors models.test.ts but uses SQLiteAdapterFactory with :memory:
+ * to validate that domain models work correctly with real SQL storage.
+ */
+
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { setGlobalAdapterResolver, ModelObserver } from "../src/base-model.js";
-import { MemoryAdapterFactory } from "../src/memory-adapter.js";
-import { field } from "../src/condition-builder.js";
+import { SQLiteAdapterFactory } from "../src/sqlite-adapter.js";
 import { Job } from "../src/job.js";
 import { Workflow } from "../src/workflow.js";
 import { Asset } from "../src/asset.js";
@@ -11,10 +17,10 @@ import type { ModelClass } from "../src/base-model.js";
 
 // ── Setup ────────────────────────────────────────────────────────────
 
-const factory = new MemoryAdapterFactory();
+let factory: SQLiteAdapterFactory;
 
 async function setup() {
-  factory.clear();
+  factory = new SQLiteAdapterFactory(":memory:");
   setGlobalAdapterResolver((schema) => factory.getAdapter(schema));
   await (Job as unknown as ModelClass).createTable();
   await (Workflow as unknown as ModelClass).createTable();
@@ -23,11 +29,16 @@ async function setup() {
   await (Thread as unknown as ModelClass).createTable();
 }
 
+function teardown() {
+  ModelObserver.clear();
+  factory.close();
+}
+
 // ── Job ──────────────────────────────────────────────────────────────
 
-describe("Job model", () => {
+describe("Job model (SQLite)", () => {
   beforeEach(setup);
-  afterEach(() => ModelObserver.clear());
+  afterEach(teardown);
 
   it("creates with defaults", async () => {
     const job = await (Job as unknown as ModelClass<Job>).create({
@@ -63,46 +74,6 @@ describe("Job model", () => {
 
     job.markCompleted();
     expect(job.status).toBe("completed");
-    expect(job.finished_at).toBeTruthy();
-  });
-
-  it("markPaused sets status to paused", async () => {
-    const job = await (Job as unknown as ModelClass<Job>).create({
-      user_id: "u1",
-      workflow_id: "w1",
-    });
-    job.markPaused();
-    expect(job.status).toBe("paused");
-  });
-
-  it("markRecovering sets status to recovering", async () => {
-    const job = await (Job as unknown as ModelClass<Job>).create({
-      user_id: "u1",
-      workflow_id: "w1",
-    });
-    job.markRecovering();
-    expect(job.status).toBe("recovering");
-  });
-
-  it("incrementRetry increases retry_count", async () => {
-    const job = await (Job as unknown as ModelClass<Job>).create({
-      user_id: "u1",
-      workflow_id: "w1",
-    });
-    expect(job.retry_count).toBe(0);
-    job.incrementRetry();
-    expect(job.retry_count).toBe(1);
-    job.incrementRetry();
-    expect(job.retry_count).toBe(2);
-  });
-
-  it("markCancelled sets status and finished_at", async () => {
-    const job = await (Job as unknown as ModelClass<Job>).create({
-      user_id: "u1",
-      workflow_id: "w1",
-    });
-    job.markCancelled();
-    expect(job.status).toBe("cancelled");
     expect(job.finished_at).toBeTruthy();
   });
 
@@ -150,12 +121,27 @@ describe("Job model", () => {
     const [runningForU1] = await Job.paginate("u1", { status: "running" });
     expect(runningForU1).toHaveLength(1);
   });
+
+  it("persists state transitions through save and reload", async () => {
+    const job = await (Job as unknown as ModelClass<Job>).create({
+      user_id: "u1",
+      workflow_id: "w1",
+    });
+    job.markRunning("worker-1");
+    await job.save();
+
+    const reloaded = await (Job as unknown as ModelClass<Job>).get(job.id);
+    expect(reloaded).not.toBeNull();
+    expect(reloaded!.status).toBe("running");
+    expect(reloaded!.worker_id).toBe("worker-1");
+  });
 });
 
 // ── Workflow ─────────────────────────────────────────────────────────
 
-describe("Workflow model", () => {
+describe("Workflow model (SQLite)", () => {
   beforeEach(setup);
+  afterEach(teardown);
 
   it("creates with defaults", async () => {
     const wf = await (Workflow as unknown as ModelClass<Workflow>).create({
@@ -175,11 +161,6 @@ describe("Workflow model", () => {
 
     expect(await Workflow.find("u1", wf.id)).not.toBeNull();
     expect(await Workflow.find("u2", wf.id)).toBeNull();
-  });
-
-  it("find returns null for nonexistent workflow", async () => {
-    const result = await Workflow.find("u1", "nonexistent-id");
-    expect(result).toBeNull();
   });
 
   it("find allows public access", async () => {
@@ -205,80 +186,48 @@ describe("Workflow model", () => {
     expect(results[0].name).toBe("WF1");
   });
 
-  it("paginate with access filter", async () => {
-    await (Workflow as unknown as ModelClass<Workflow>).create({
+  it("round-trips graph JSON through SQLite", async () => {
+    const graph = {
+      nodes: [
+        { id: "n1", type: "input", data: { value: 42 } },
+        { id: "n2", type: "output", data: { label: "result" } },
+      ],
+      edges: [{ source: "n1", target: "n2", sourceHandle: "out" }],
+    };
+    const wf = await (Workflow as unknown as ModelClass<Workflow>).create({
       user_id: "u1",
-      name: "Private",
-      access: "private",
+      name: "Graph WF",
+      graph,
     });
-    await (Workflow as unknown as ModelClass<Workflow>).create({
-      user_id: "u1",
-      name: "Public",
-      access: "public",
-    });
-    const [results] = await Workflow.paginate("u1", { access: "public" });
-    expect(results).toHaveLength(1);
-    expect(results[0].name).toBe("Public");
+
+    const reloaded = await (Workflow as unknown as ModelClass<Workflow>).get(
+      wf.id,
+    );
+    expect(reloaded).not.toBeNull();
+    expect(reloaded!.graph).toEqual(graph);
   });
 
-  it("paginate with runMode filter", async () => {
-    await (Workflow as unknown as ModelClass<Workflow>).create({
+  it("round-trips tags JSON array through SQLite", async () => {
+    const tags = ["ai", "image", "generation"];
+    const wf = await (Workflow as unknown as ModelClass<Workflow>).create({
       user_id: "u1",
-      name: "Workflow Mode",
-      run_mode: "workflow",
-    });
-    await (Workflow as unknown as ModelClass<Workflow>).create({
-      user_id: "u1",
-      name: "App Mode",
-      run_mode: "app",
-    });
-    const [results] = await Workflow.paginate("u1", { runMode: "app" });
-    expect(results).toHaveLength(1);
-    expect(results[0].name).toBe("App Mode");
-  });
-
-  it("paginatePublic returns only public workflows", async () => {
-    await (Workflow as unknown as ModelClass<Workflow>).create({
-      user_id: "u1",
-      name: "Private WF",
-      access: "private",
-    });
-    await (Workflow as unknown as ModelClass<Workflow>).create({
-      user_id: "u1",
-      name: "Public WF 1",
-      access: "public",
-    });
-    await (Workflow as unknown as ModelClass<Workflow>).create({
-      user_id: "u2",
-      name: "Public WF 2",
-      access: "public",
+      name: "Tagged WF",
+      tags,
     });
 
-    const [results] = await Workflow.paginatePublic();
-    expect(results).toHaveLength(2);
-    expect(results.every((w) => w.access === "public")).toBe(true);
-  });
-
-  it("paginatePublic respects limit", async () => {
-    await (Workflow as unknown as ModelClass<Workflow>).create({
-      user_id: "u1",
-      name: "Public 1",
-      access: "public",
-    });
-    await (Workflow as unknown as ModelClass<Workflow>).create({
-      user_id: "u1",
-      name: "Public 2",
-      access: "public",
-    });
-    const [results] = await Workflow.paginatePublic({ limit: 1 });
-    expect(results).toHaveLength(1);
+    const reloaded = await (Workflow as unknown as ModelClass<Workflow>).get(
+      wf.id,
+    );
+    expect(reloaded).not.toBeNull();
+    expect(reloaded!.tags).toEqual(tags);
   });
 });
 
 // ── Asset ────────────────────────────────────────────────────────────
 
-describe("Asset model", () => {
+describe("Asset model (SQLite)", () => {
   beforeEach(setup);
+  afterEach(teardown);
 
   it("creates with defaults", async () => {
     const asset = await (Asset as unknown as ModelClass<Asset>).create({
@@ -309,37 +258,6 @@ describe("Asset model", () => {
     expect(folder.hasThumbnail).toBe(false);
   });
 
-  it("paginate with contentType filter", async () => {
-    await (Asset as unknown as ModelClass<Asset>).create({
-      user_id: "u1",
-      name: "photo.jpg",
-      content_type: "image/jpeg",
-    });
-    await (Asset as unknown as ModelClass<Asset>).create({
-      user_id: "u1",
-      name: "doc.txt",
-      content_type: "text/plain",
-    });
-    await (Asset as unknown as ModelClass<Asset>).create({
-      user_id: "u1",
-      name: "photo2.png",
-      content_type: "image/png",
-    });
-
-    const [images] = await Asset.paginate("u1", { contentType: "image/jpeg" });
-    expect(images).toHaveLength(1);
-    expect(images[0].name).toBe("photo.jpg");
-  });
-
-  it("fileExtension returns empty for no extension", async () => {
-    const asset = await (Asset as unknown as ModelClass<Asset>).create({
-      user_id: "u1",
-      name: "noextension",
-      content_type: "application/octet-stream",
-    });
-    expect(asset.fileExtension).toBe("");
-  });
-
   it("paginate and getChildren", async () => {
     const folder = await (Asset as unknown as ModelClass<Asset>).create({
       user_id: "u1",
@@ -362,12 +280,29 @@ describe("Asset model", () => {
     const children = await Asset.getChildren("u1", folder.id);
     expect(children).toHaveLength(2);
   });
+
+  it("round-trips metadata JSON through SQLite", async () => {
+    const metadata = { width: 1920, height: 1080, format: "jpeg" };
+    const asset = await (Asset as unknown as ModelClass<Asset>).create({
+      user_id: "u1",
+      name: "photo.jpg",
+      content_type: "image/jpeg",
+      metadata,
+    });
+
+    const reloaded = await (Asset as unknown as ModelClass<Asset>).get(
+      asset.id,
+    );
+    expect(reloaded).not.toBeNull();
+    expect(reloaded!.metadata).toEqual(metadata);
+  });
 });
 
 // ── Message ──────────────────────────────────────────────────────────
 
-describe("Message model", () => {
+describe("Message model (SQLite)", () => {
   beforeEach(setup);
+  afterEach(teardown);
 
   it("creates with defaults", async () => {
     const msg = await (Message as unknown as ModelClass<Message>).create({
@@ -399,12 +334,60 @@ describe("Message model", () => {
     const [msgs] = await Message.paginate("t1");
     expect(msgs).toHaveLength(2);
   });
+
+  it("round-trips tool_calls JSON through SQLite", async () => {
+    const toolCalls = [
+      {
+        id: "call_1",
+        type: "function",
+        function: { name: "get_weather", arguments: '{"city":"NYC"}' },
+      },
+      {
+        id: "call_2",
+        type: "function",
+        function: { name: "search", arguments: '{"q":"test"}' },
+      },
+    ];
+    const msg = await (Message as unknown as ModelClass<Message>).create({
+      user_id: "u1",
+      thread_id: "t1",
+      role: "assistant",
+      content: null,
+      tool_calls: toolCalls,
+    });
+
+    const reloaded = await (Message as unknown as ModelClass<Message>).get(
+      msg.id,
+    );
+    expect(reloaded).not.toBeNull();
+    expect(reloaded!.tool_calls).toEqual(toolCalls);
+  });
+
+  it("round-trips input_files and output_files JSON through SQLite", async () => {
+    const inputFiles = [{ name: "input.txt", uri: "file:///tmp/input.txt" }];
+    const outputFiles = [{ name: "output.png", uri: "file:///tmp/output.png" }];
+    const msg = await (Message as unknown as ModelClass<Message>).create({
+      user_id: "u1",
+      thread_id: "t1",
+      content: "process files",
+      input_files: inputFiles,
+      output_files: outputFiles,
+    });
+
+    const reloaded = await (Message as unknown as ModelClass<Message>).get(
+      msg.id,
+    );
+    expect(reloaded).not.toBeNull();
+    expect(reloaded!.input_files).toEqual(inputFiles);
+    expect(reloaded!.output_files).toEqual(outputFiles);
+  });
 });
 
 // ── Thread ───────────────────────────────────────────────────────────
 
-describe("Thread model", () => {
+describe("Thread model (SQLite)", () => {
   beforeEach(setup);
+  afterEach(teardown);
 
   it("creates with defaults", async () => {
     const thread = await (Thread as unknown as ModelClass<Thread>).create({
@@ -413,11 +396,6 @@ describe("Thread model", () => {
     });
     expect(thread.title).toBe("Test Thread");
     expect(thread.created_at).toBeTruthy();
-  });
-
-  it("find returns null for nonexistent thread", async () => {
-    const result = await Thread.find("u1", "nonexistent-id");
-    expect(result).toBeNull();
   });
 
   it("find scoped to user", async () => {

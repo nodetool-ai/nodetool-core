@@ -51,6 +51,22 @@ describe("countMessageTokens", () => {
     expect(countMessageTokens(msg)).toBeGreaterThan(0);
   });
 
+  it("handles tool calls with un-stringifiable args (circular reference)", () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const msg: Message = {
+      role: "assistant",
+      content: "",
+      toolCalls: [{ id: "tc1", name: "test_tool", args: circular as any }],
+    };
+    // Should not throw; should still count the name tokens
+    const count = countMessageTokens(msg);
+    expect(count).toBeGreaterThan(0);
+    // The count should equal just the name tokens since args serialization fails
+    const nameOnly = countTextTokens("test_tool");
+    expect(count).toBe(nameOnly);
+  });
+
   it("returns 0 for an empty message", () => {
     const msg: Message = { role: "assistant", content: "" };
     expect(countMessageTokens(msg)).toBe(0);

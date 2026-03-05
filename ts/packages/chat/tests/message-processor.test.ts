@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { processChat, runTool } from "../src/message-processor.js";
+import { processChat, runTool, defaultSerializer } from "../src/message-processor.js";
 import type { Message, ToolCall, ProviderStreamItem, ProviderTool } from "@nodetool/runtime";
 import type { ProcessingContext } from "@nodetool/runtime";
 import type { Chunk } from "@nodetool/protocol";
@@ -93,6 +93,28 @@ function chunk(content: string): Chunk {
 function toolCall(id: string, name: string, args: Record<string, unknown>): ToolCall {
   return { id, name, args };
 }
+
+// ---------------------------------------------------------------------------
+// defaultSerializer tests
+// ---------------------------------------------------------------------------
+
+describe("defaultSerializer", () => {
+  it("calls toJSON on objects that have it", () => {
+    const value = { toJSON: () => ({ serialized: true }) };
+    expect(defaultSerializer("key", value)).toEqual({ serialized: true });
+  });
+
+  it("returns primitive values unchanged", () => {
+    expect(defaultSerializer("key", 42)).toBe(42);
+    expect(defaultSerializer("key", "hello")).toBe("hello");
+    expect(defaultSerializer("key", null)).toBeNull();
+  });
+
+  it("returns objects without toJSON unchanged", () => {
+    const obj = { a: 1 };
+    expect(defaultSerializer("key", obj)).toBe(obj);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // runTool tests
@@ -243,6 +265,26 @@ describe("processChat", () => {
     const lastMsg = result[result.length - 1];
     expect(lastMsg.role).toBe("assistant");
     expect(lastMsg.content).toBe("All done");
+  });
+
+  it("handles chunks with null/undefined content", async () => {
+    const provider = createMockProvider([
+      [
+        { type: "chunk", content: undefined, done: false } as unknown as Chunk,
+        chunk("hello"),
+      ],
+    ]);
+
+    const result = await processChat({
+      userInput: "Hi",
+      messages: [],
+      model: "test-model",
+      provider,
+      context: createMockContext(),
+    });
+
+    expect(result).toHaveLength(2);
+    expect(result[1]).toEqual({ role: "assistant", content: "hello" });
   });
 
   it("works with no tools provided", async () => {

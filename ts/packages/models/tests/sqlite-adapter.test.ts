@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { SQLiteAdapter, SQLiteAdapterFactory } from "../src/sqlite-adapter.js";
-import { Condition, Operator, field } from "../src/condition-builder.js";
+import { Condition, ConditionBuilder, ConditionGroup, LogicalOperator, Operator, Variable, field } from "../src/condition-builder.js";
 import type { TableSchema } from "../src/database-adapter.js";
 
 // ── Test Schema ───────────────────────────────────────────────────────
@@ -316,6 +316,168 @@ describe("SQLiteAdapter", () => {
         new Condition("robert'; DROP TABLE students;--", Operator.EQ, "x"),
       );
     }).toThrow("Invalid column name");
+  });
+
+  // ── Variable condition ──────────────────────────────────────────────
+
+  it("should return 1=1 for Variable value in condition", async () => {
+    await adapter.save({ id: "1", name: "Alice", age: 30, active: true, metadata: {}, created_at: "2024-01-01" });
+    await adapter.save({ id: "2", name: "Bob", age: 25, active: false, metadata: {}, created_at: "2024-01-02" });
+
+    const cond = new ConditionBuilder(
+      new Condition("name", Operator.EQ, new Variable("some_var")),
+    );
+    const [rows] = await adapter.query({ condition: cond });
+    // Variable conditions resolve to "1=1", so all rows match
+    expect(rows).toHaveLength(2);
+  });
+
+  // ── Empty ConditionGroup ─────────────────────────────────────────────
+
+  it("should return 1=1 for empty ConditionGroup", () => {
+    const emptyGroup = new ConditionGroup([], LogicalOperator.AND);
+    const [sql, params] = adapter._buildCondition(emptyGroup);
+    expect(sql).toBe("1=1");
+    expect(params).toEqual([]);
+  });
+
+  // ── Default case in operator switch ──────────────────────────────────
+
+  it("should return 1=1 for unknown operator in _buildCondition", () => {
+    // Force an unknown operator by casting
+    const cond = new Condition("name", "UNKNOWN_OP" as Operator, "x");
+    const [sql, params] = adapter._buildCondition(cond);
+    expect(sql).toBe("1=1");
+    expect(params).toEqual([]);
+  });
+
+  // ── CONTAINS operator in SQL ─────────────────────────────────────────
+
+  it("should handle CONTAINS operator as IN", async () => {
+    await adapter.save({ id: "1", name: "Alice", age: 30, active: true, metadata: {}, created_at: "2024-01-01" });
+    await adapter.save({ id: "2", name: "Bob", age: 25, active: false, metadata: {}, created_at: "2024-01-02" });
+
+    const cond = new ConditionBuilder(
+      new Condition("name", Operator.CONTAINS, ["Alice"]),
+    );
+    const [rows] = await adapter.query({ condition: cond });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].name).toBe("Alice");
+  });
+
+  // ── IN/CONTAINS with non-array value ─────────────────────────────────
+
+  it("should handle IN operator with non-array value (wraps in array)", async () => {
+    await adapter.save({ id: "1", name: "Alice", age: 30, active: true, metadata: {}, created_at: "2024-01-01" });
+    await adapter.save({ id: "2", name: "Bob", age: 25, active: false, metadata: {}, created_at: "2024-01-02" });
+
+    const cond = new ConditionBuilder(
+      new Condition("name", Operator.IN, "Alice"),
+    );
+    const [rows] = await adapter.query({ condition: cond });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].name).toBe("Alice");
+  });
+
+  // ── Column wildcard * in query ───────────────────────────────────────
+
+  it("should handle * in column projection", async () => {
+    await adapter.save({ id: "1", name: "Alice", age: 30, active: true, metadata: {}, created_at: "2024-01-01" });
+
+    const [rows] = await adapter.query({ columns: ["*"] });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].name).toBe("Alice");
+  });
+
+  // ── Deserialization edge cases ───────────────────────────────────────
+
+  it("should handle malformed JSON by returning raw string", async () => {
+    // Insert a row with invalid JSON directly via raw SQL
+    db.prepare(
+      'INSERT INTO "test_items" (id, name, age, active, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run("bad_json", "Test", 0, 1, "not{valid}json", "2024-01-01");
+
+    const item = await adapter.get("bad_json");
+    expect(item).not.toBeNull();
+    // Should return the raw string since JSON.parse fails
+    expect(item!.metadata).toBe("not{valid}json");
+  });
+
+  it("should handle non-string JSON value (already parsed)", async () => {
+    // Insert a row where metadata is a number (not a string) in raw SQL
+    db.prepare(
+      'INSERT INTO "test_items" (id, name, age, active, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run("num_json", "Test", 0, 1, 42, "2024-01-01");
+
+    const item = await adapter.get("num_json");
+    expect(item).not.toBeNull();
+    // Should return the number as-is
+    expect(item!.metadata).toBe(42);
+  });
+
+  it("should handle extra columns not in schema (deserializeRow else branch)", async () => {
+    // Insert a row with an extra column via raw SQL
+    db.exec('ALTER TABLE "test_items" ADD COLUMN extra_col TEXT');
+    db.prepare(
+      'INSERT INTO "test_items" (id, name, age, active, metadata, created_at, extra_col) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run("extra", "Test", 0, 1, '{}', "2024-01-01", "extra_value");
+
+    const item = await adapter.get("extra");
+    expect(item).not.toBeNull();
+    // The extra column should be preserved as-is
+    expect(item!.extra_col).toBe("extra_value");
+  });
+
+  it("should handle number field with string value (Number conversion)", async () => {
+    // Insert a row where age is a string via raw SQL
+    db.prepare(
+      'INSERT INTO "test_items" (id, name, age, active, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run("str_num", "Test", "42", 1, '{}', "2024-01-01");
+
+    const item = await adapter.get("str_num");
+    expect(item).not.toBeNull();
+    // Should convert string to number
+    expect(item!.age).toBe(42);
+  });
+
+  // ── Default branches in sqliteType/serializeValue/deserializeValue ──
+
+  it("should handle unknown field type in schema", async () => {
+    const customSchema: TableSchema = {
+      table_name: "custom_items",
+      primary_key: "id",
+      columns: {
+        id: { type: "string" },
+        data: { type: "custom_type" as any },
+      },
+    };
+    const customAdapter = new SQLiteAdapter(db, customSchema);
+    await customAdapter.createTable();
+
+    await customAdapter.save({ id: "1", data: "hello" });
+    const item = await customAdapter.get("1");
+    expect(item).not.toBeNull();
+    expect(item!.data).toBe("hello");
+  });
+
+  // ── Schema without explicit primary_key ───────────────────────────
+
+  it("should default to 'id' when primary_key is not set", async () => {
+    const schemaNoKey: TableSchema = {
+      table_name: "no_pk_items",
+      columns: {
+        id: { type: "string" },
+        name: { type: "string" },
+      },
+    } as any;
+    const noPkAdapter = new SQLiteAdapter(db, schemaNoKey);
+    expect(noPkAdapter.getPrimaryKey()).toBe("id");
+
+    await noPkAdapter.createTable();
+    await noPkAdapter.save({ id: "1", name: "Test" });
+    const item = await noPkAdapter.get("1");
+    expect(item).not.toBeNull();
+    expect(item!.name).toBe("Test");
   });
 });
 

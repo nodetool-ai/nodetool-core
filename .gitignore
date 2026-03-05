@@ -149,3 +149,7 @@ __plans__/
 # Node.js / TypeScript
 node_modules/
 ts/packages/*/dist/
+coverage/
+ts/coverage/
+ts/packages/*/coverage/
+*.traineddata

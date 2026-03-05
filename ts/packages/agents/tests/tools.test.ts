@@ -43,6 +43,32 @@ describe("CalculatorTool", () => {
     expect(pt.description).toBeTruthy();
     expect(pt.inputSchema).toBeDefined();
   });
+
+  it("returns error for non-finite number (Infinity)", async () => {
+    const result = (await calc.process(mockContext, {
+      expression: "1/0",
+    })) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+    expect(result.error).toContain("finite number");
+  });
+
+  it("returns error for NaN", async () => {
+    const result = (await calc.process(mockContext, {
+      expression: "sqrt(-1)",
+    })) as Record<string, unknown>;
+    expect(result).toHaveProperty("error");
+    expect(result.error).toContain("finite number");
+  });
+
+  it("userMessage returns descriptive string", () => {
+    const msg = calc.userMessage({ expression: "2+2" });
+    expect(msg).toBe("Calculating: 2+2");
+  });
+
+  it("userMessage handles missing expression", () => {
+    const msg = calc.userMessage({});
+    expect(msg).toBe("Calculating: ");
+  });
 });
 
 describe("extractJSON", () => {

@@ -116,6 +116,35 @@ describe("SimpleAgent", () => {
     expect(agent.task!.steps[0].completed).toBe(true);
   });
 
+  it("works with default tools when none provided", async () => {
+    const provider = createMockProvider([
+      [
+        { type: "chunk", content: "ok" },
+        {
+          id: "tc_1",
+          name: "finish_step",
+          args: { result: { v: 1 } },
+        },
+      ],
+    ]);
+
+    const agent = new SimpleAgent({
+      name: "no-tools-agent",
+      objective: "Do nothing",
+      provider,
+      model: "test-model",
+      // tools not provided, should default to []
+      outputSchema: { type: "object", properties: { v: { type: "number" } } },
+    });
+
+    const context = createMockContext();
+    for await (const _msg of agent.execute(context)) {
+      // consume
+    }
+
+    expect(agent.getResults()).toEqual({ v: 1 });
+  });
+
   it("yields processing messages during execution", async () => {
     const provider = createMockProvider([
       [
@@ -256,6 +285,349 @@ describe("TaskPlanner", () => {
         (m as any).content.includes("circular"),
     );
     expect(errorChunks.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("includes outputSchema in planner prompt when provided", async () => {
+    const taskPayload = {
+      title: "Schema Plan",
+      steps: [
+        { id: "step_a", instructions: "Do A", depends_on: [] },
+      ],
+    };
+
+    const provider = createMockProvider([
+      [
+        {
+          id: "tc_plan",
+          name: "create_task",
+          args: taskPayload,
+        },
+      ],
+    ]);
+
+    const planner = new TaskPlanner({
+      provider,
+      model: "test-model",
+      outputSchema: { type: "object", properties: { answer: { type: "string" } } },
+    });
+
+    const context = createMockContext();
+    const gen = planner.plan("Plan with schema", context);
+    let result = await gen.next();
+    while (!result.done) {
+      result = await gen.next();
+    }
+    const task = result.value;
+
+    expect(task).not.toBeNull();
+  });
+
+  it("includes tool info when tools are provided", async () => {
+    const taskPayload = {
+      title: "Tools Task",
+      steps: [
+        { id: "step_a", instructions: "Use tool", depends_on: [] },
+      ],
+    };
+
+    const provider = createMockProvider([
+      [
+        {
+          id: "tc_plan",
+          name: "create_task",
+          args: taskPayload,
+        },
+      ],
+    ]);
+
+    const mockTool = {
+      name: "my_tool",
+      description: "A test tool",
+      inputSchema: { type: "object" as const, properties: {}, required: [] },
+      process: async () => ({}),
+      userMessage: () => "Using my_tool",
+      toProviderTool: () => ({
+        name: "my_tool",
+        description: "A test tool",
+        inputSchema: { type: "object", properties: {}, required: [] },
+      }),
+    };
+
+    const planner = new TaskPlanner({
+      provider,
+      model: "test-model",
+      tools: [mockTool as any],
+    });
+
+    const context = createMockContext();
+    const gen = planner.plan("Use tools", context);
+    let result = await gen.next();
+    while (!result.done) {
+      result = await gen.next();
+    }
+    const task = result.value;
+
+    expect(task).not.toBeNull();
+    expect(task!.title).toBe("Tools Task");
+  });
+
+  it("extracts task from text when no tool call is made", async () => {
+    const taskPayload = {
+      title: "Text Task",
+      steps: [
+        { id: "step_a", instructions: "Do A", depends_on: [] },
+      ],
+    };
+
+    // Provider returns JSON in text, not as a tool call
+    const provider = createMockProvider([
+      [
+        { type: "chunk", content: `Here is the plan: ${JSON.stringify(taskPayload)}` },
+      ],
+    ]);
+
+    const planner = new TaskPlanner({
+      provider,
+      model: "test-model",
+    });
+
+    const context = createMockContext();
+    const gen = planner.plan("Text extraction test", context);
+    let result = await gen.next();
+    while (!result.done) {
+      result = await gen.next();
+    }
+    const task = result.value;
+
+    expect(task).not.toBeNull();
+    expect(task!.title).toBe("Text Task");
+    expect(task!.steps).toHaveLength(1);
+  });
+
+  it("handles dependsOn camelCase field name and missing depends fields", async () => {
+    const taskPayload = {
+      title: "CamelCase Task",
+      steps: [
+        { id: "step_a", instructions: "Do A", dependsOn: [] },
+        { id: "step_b", instructions: "Do B", dependsOn: ["step_a"] },
+        { id: "step_c", instructions: "Do C" }, // no depends_on or dependsOn => fallback to []
+      ],
+    };
+
+    const provider = createMockProvider([
+      [
+        {
+          id: "tc_plan",
+          name: "create_task",
+          args: taskPayload,
+        },
+      ],
+    ]);
+
+    const planner = new TaskPlanner({
+      provider,
+      model: "test-model",
+    });
+
+    const context = createMockContext();
+    const gen = planner.plan("Test camelCase deps", context);
+    let result = await gen.next();
+    while (!result.done) {
+      result = await gen.next();
+    }
+    const task = result.value;
+
+    expect(task).not.toBeNull();
+    expect(task!.steps[0].dependsOn).toEqual([]);
+    expect(task!.steps[1].dependsOn).toEqual(["step_a"]);
+    // step_c has no depends_on or dependsOn, should default to []
+    expect(task!.steps[2].dependsOn).toEqual([]);
+  });
+
+  it("returns null when LLM provides no task data", async () => {
+    // Provider that returns no tool call and no extractable JSON
+    const provider = createMockProvider([
+      [
+        { type: "chunk", content: "I don't know how to plan this." },
+      ],
+    ]);
+
+    const planner = new TaskPlanner({
+      provider,
+      model: "test-model",
+    });
+
+    const context = createMockContext();
+    const messages: ProcessingMessage[] = [];
+    const gen = planner.plan("Impossible objective", context);
+    let result = await gen.next();
+    while (!result.done) {
+      messages.push(result.value);
+      result = await gen.next();
+    }
+    const task = result.value;
+
+    expect(task).toBeNull();
+    // Should have a failure chunk
+    const failChunks = messages.filter(
+      (m) =>
+        m.type === "chunk" &&
+        typeof (m as any).content === "string" &&
+        (m as any).content.includes("Failed"),
+    );
+    expect(failChunks).toHaveLength(1);
+  });
+
+  it("handles output_schema snake_case field name", async () => {
+    const taskPayload = {
+      title: "Snake Schema Task",
+      steps: [
+        {
+          id: "step_a",
+          instructions: "Do A",
+          depends_on: [],
+          output_schema: '{"type": "string"}',
+        },
+      ],
+    };
+
+    const provider = createMockProvider([
+      [
+        {
+          id: "tc_plan",
+          name: "create_task",
+          args: taskPayload,
+        },
+      ],
+    ]);
+
+    const planner = new TaskPlanner({
+      provider,
+      model: "test-model",
+    });
+
+    const context = createMockContext();
+    const gen = planner.plan("Test snake_case output_schema", context);
+    let result = await gen.next();
+    while (!result.done) {
+      result = await gen.next();
+    }
+    const task = result.value;
+
+    expect(task).not.toBeNull();
+    expect(task!.steps[0].outputSchema).toBe('{"type": "string"}');
+  });
+
+  it("handles malformed step data with missing fields and tools array", async () => {
+    const taskPayload = {
+      title: "Malformed Task",
+      steps: [
+        { depends_on: [] }, // missing id and instructions
+        { id: "step_b", instructions: "Do B", depends_on: [], tools: ["my_tool"] },
+      ],
+    };
+
+    const provider = createMockProvider([
+      [
+        {
+          id: "tc_plan",
+          name: "create_task",
+          args: taskPayload,
+        },
+      ],
+    ]);
+
+    const planner = new TaskPlanner({
+      provider,
+      model: "test-model",
+    });
+
+    const context = createMockContext();
+    const gen = planner.plan("Malformed step test", context);
+    let result = await gen.next();
+    while (!result.done) {
+      result = await gen.next();
+    }
+    const task = result.value;
+
+    expect(task).not.toBeNull();
+    expect(task!.steps).toHaveLength(2);
+    // First step: id should be a UUID (generated), instructions empty
+    expect(task!.steps[0].id).toBeTruthy();
+    expect(task!.steps[0].instructions).toBe("");
+    // Second step: should have tools array
+    expect(task!.steps[1].tools).toEqual(["my_tool"]);
+  });
+
+  it("handles missing title and steps in task data", async () => {
+    const taskPayload = {}; // No title, no steps
+
+    const provider = createMockProvider([
+      [
+        {
+          id: "tc_plan",
+          name: "create_task",
+          args: taskPayload,
+        },
+      ],
+    ]);
+
+    const planner = new TaskPlanner({
+      provider,
+      model: "test-model",
+    });
+
+    const context = createMockContext();
+    const gen = planner.plan("Empty task data", context);
+    let result = await gen.next();
+    while (!result.done) {
+      result = await gen.next();
+    }
+    const task = result.value;
+
+    expect(task).not.toBeNull();
+    expect(task!.title).toBe("Untitled Task");
+    expect(task!.steps).toHaveLength(0);
+  });
+
+  it("handles outputSchema camelCase field name", async () => {
+    const taskPayload = {
+      title: "Schema Task",
+      steps: [
+        {
+          id: "step_a",
+          instructions: "Do A",
+          depends_on: [],
+          outputSchema: '{"type": "object"}',
+        },
+      ],
+    };
+
+    const provider = createMockProvider([
+      [
+        {
+          id: "tc_plan",
+          name: "create_task",
+          args: taskPayload,
+        },
+      ],
+    ]);
+
+    const planner = new TaskPlanner({
+      provider,
+      model: "test-model",
+    });
+
+    const context = createMockContext();
+    const gen = planner.plan("Test camelCase outputSchema", context);
+    let result = await gen.next();
+    while (!result.done) {
+      result = await gen.next();
+    }
+    const task = result.value;
+
+    expect(task).not.toBeNull();
+    expect(task!.steps[0].outputSchema).toBe('{"type": "object"}');
   });
 });
 
@@ -439,5 +811,102 @@ describe("TaskExecutor", () => {
     expect(resultIds.indexOf("d")).toBeGreaterThan(resultIds.indexOf("a"));
     expect(resultIds.indexOf("d")).toBeGreaterThan(resultIds.indexOf("b"));
     expect(resultIds.indexOf("d")).toBeGreaterThan(resultIds.indexOf("c"));
+  });
+
+  it("detects dependency deadlock when step depends on non-existent ID", async () => {
+    const stepA: Step = {
+      id: "step_a",
+      instructions: "Depends on missing step",
+      completed: false,
+      dependsOn: ["nonexistent_step"],
+      outputSchema: JSON.stringify({ type: "object", properties: {} }),
+      logs: [],
+    };
+
+    const task: Task = {
+      id: "deadlock_task",
+      title: "Deadlock Task",
+      steps: [stepA],
+    };
+
+    const provider = createMockProvider([]);
+    const context = createMockContext();
+
+    const executor = new TaskExecutor({
+      provider,
+      model: "test-model",
+      context,
+      tools: [],
+      task,
+    });
+
+    const messages: ProcessingMessage[] = [];
+    for await (const msg of executor.executeTasks()) {
+      messages.push(msg);
+    }
+
+    // Step should NOT be completed (deadlocked)
+    expect(stepA.completed).toBe(false);
+
+    // Should have a chunk message about dependency issues
+    const deadlockMsgs = messages.filter(
+      (m) =>
+        m.type === "chunk" &&
+        typeof (m as any).content === "string" &&
+        (m as any).content.includes("dependency"),
+    );
+    expect(deadlockMsgs).toHaveLength(1);
+  });
+
+  it("treats input keys as satisfied dependencies", async () => {
+    const stepA: Step = {
+      id: "step_a",
+      instructions: "Uses input data",
+      completed: false,
+      dependsOn: ["user_input"],
+      outputSchema: JSON.stringify({
+        type: "object",
+        properties: { v: { type: "string" } },
+      }),
+      logs: [],
+    };
+
+    const task: Task = {
+      id: "input_dep_task",
+      title: "Input Dependency Task",
+      steps: [stepA],
+    };
+
+    // Provider returns finish_step immediately
+    const provider = createMockProvider([
+      [
+        { type: "chunk", content: "Using input" },
+        {
+          id: "tc_a",
+          name: "finish_step",
+          args: { result: { v: "done" } },
+        },
+      ],
+    ]);
+
+    const context = createMockContext();
+
+    const executor = new TaskExecutor({
+      provider,
+      model: "test-model",
+      context,
+      tools: [],
+      task,
+      inputs: { user_input: "some data" },
+    });
+
+    const messages: ProcessingMessage[] = [];
+    for await (const msg of executor.executeTasks()) {
+      messages.push(msg);
+    }
+
+    // Step should complete because "user_input" is in inputs
+    expect(stepA.completed).toBe(true);
+    expect(context.storeStepResult).toHaveBeenCalledWith("step_a", { v: "done" });
   });
 });

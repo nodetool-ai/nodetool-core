@@ -131,4 +131,65 @@ describe("ConditionBuilder", () => {
       expect(group.conditions[0]).toBeInstanceOf(ConditionGroup);
     });
   });
+
+  // ── ConditionBuilder constructor with ConditionGroup ──────────────
+
+  describe("ConditionBuilder constructor", () => {
+    it("accepts a ConditionGroup directly", () => {
+      const group = new ConditionGroup(
+        [new Condition("x", Operator.EQ, 1)],
+        LogicalOperator.OR,
+      );
+      const builder = new ConditionBuilder(group);
+      expect(builder.root).toBe(group);
+      expect(builder.root.operator).toBe(LogicalOperator.OR);
+    });
+  });
+
+  // ── _add method branches ──────────────────────────────────────────
+
+  describe("_add method branches", () => {
+    it("otherIsSingle but selfIsNotSingle (line 144-148)", () => {
+      // Build a multi-condition self (not single)
+      const self = field("a").equals(1).and(field("b").equals(2));
+      // Build a single other
+      const other = field("c").equals(3);
+      // Chain: selfIsNotSingle AND otherIsSingle
+      const result = self.and(other);
+      const root = result.build();
+      expect(root.operator).toBe(LogicalOperator.AND);
+      expect(root.conditions).toHaveLength(2);
+      // The second condition should be a Condition (unwrapped from single)
+      expect(root.conditions[1]).toBeInstanceOf(Condition);
+    });
+
+    it("neither self nor other is single (line 150-151)", () => {
+      // Build multi-condition self
+      const self = field("a").equals(1).and(field("b").equals(2));
+      // Build multi-condition other
+      const other = field("c").equals(3).and(field("d").equals(4));
+      // Chain: both are groups
+      const result = self.and(other);
+      const root = result.build();
+      expect(root.operator).toBe(LogicalOperator.AND);
+      expect(root.conditions).toHaveLength(2);
+      // Both conditions should be ConditionGroups
+      expect(root.conditions[0]).toBeInstanceOf(ConditionGroup);
+      expect(root.conditions[1]).toBeInstanceOf(ConditionGroup);
+    });
+
+    it("selfIsSingle with other being a non-single group (line 137-143 otherCond = other.root)", () => {
+      // Self is single
+      const self = field("a").equals(1);
+      // Other is a multi-condition group (not single)
+      const other = field("b").equals(2).and(field("c").equals(3));
+      const result = self.and(other);
+      const root = result.build();
+      expect(root.operator).toBe(LogicalOperator.AND);
+      expect(root.conditions).toHaveLength(2);
+      // First is the single Condition, second is the ConditionGroup from other.root
+      expect(root.conditions[0]).toBeInstanceOf(Condition);
+      expect(root.conditions[1]).toBeInstanceOf(ConditionGroup);
+    });
+  });
 });
