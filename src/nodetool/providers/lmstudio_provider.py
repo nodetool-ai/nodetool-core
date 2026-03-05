@@ -213,7 +213,8 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
         if response_format:
             params["response_format"] = response_format
 
-        # Add any additional kwargs
+        # Add any additional kwargs (exclude non-API params)
+        kwargs.pop("context", None)
         params.update(kwargs)
 
         log.debug(f"Making non-streaming chat request with params: {list(params.keys())}")
@@ -299,7 +300,8 @@ class LMStudioProvider(BaseProvider, OpenAICompat):
         if response_format:
             params["response_format"] = response_format
 
-        # Add any additional kwargs
+        # Add any additional kwargs (exclude non-API params)
+        kwargs.pop("context", None)
         params.update(kwargs)
 
         log.debug("Starting streaming chat request")

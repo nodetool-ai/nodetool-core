@@ -313,6 +313,18 @@ describe("EditImageNode", () => {
     });
   });
 
+  it("refToBlob throws when ref has no data or uri (via TranslateNode audio)", async () => {
+    // TranslateNode calls refToBlob on audio. We pass an audio ref with numeric data (not string)
+    // and no uri to trigger the "Cannot convert ref to blob" error
+    const node = new TranslateNode();
+    await expect(
+      node.process({
+        audio: { data: 123, uri: 456 },
+        ...secrets,
+      })
+    ).rejects.toThrow();
+  });
+
   it("throws on empty prompt", async () => {
     const node = new EditImageNode();
     await expect(
@@ -500,6 +512,68 @@ describe("TranscribeNode", () => {
   });
 });
 
+// ── defaults coverage ────────────────────────────────────────────────────
+
+describe("Node defaults coverage", () => {
+  it("EmbeddingNode defaults", () => {
+    const node = new EmbeddingNode();
+    const d = node.defaults();
+    expect(d.input).toBe("");
+    expect(d.model).toBe("text-embedding-3-small");
+    expect(d.chunk_size).toBe(4096);
+  });
+
+  it("WebSearchNode defaults", () => {
+    const node = new WebSearchNode();
+    expect(node.defaults()).toEqual({ query: "" });
+  });
+
+  it("ModerationNode defaults", () => {
+    const node = new ModerationNode();
+    const d = node.defaults();
+    expect(d.input).toBe("");
+    expect(d.model).toBe("omni-moderation-latest");
+  });
+
+  it("CreateImageNode defaults", () => {
+    const node = new CreateImageNode();
+    const d = node.defaults();
+    expect(d.prompt).toBe("");
+    expect(d.model).toBe("gpt-image-1");
+    expect(d.size).toBe("1024x1024");
+    expect(d.background).toBe("auto");
+    expect(d.quality).toBe("high");
+  });
+
+  it("EditImageNode defaults", () => {
+    const node = new EditImageNode();
+    const d = node.defaults();
+    expect(d.prompt).toBe("");
+    expect(d.model).toBe("gpt-image-1");
+  });
+
+  it("TextToSpeechNode defaults", () => {
+    const node = new TextToSpeechNode();
+    const d = node.defaults();
+    expect(d.model).toBe("tts-1");
+    expect(d.voice).toBe("alloy");
+    expect(d.speed).toBe(1.0);
+  });
+
+  it("TranslateNode defaults", () => {
+    const node = new TranslateNode();
+    expect(node.defaults().temperature).toBe(0.0);
+  });
+
+  it("TranscribeNode defaults", () => {
+    const node = new TranscribeNode();
+    const d = node.defaults();
+    expect(d.model).toBe("whisper-1");
+    expect(d.language).toBe("auto_detect");
+    expect(d.timestamps).toBe(false);
+  });
+});
+
 // ── RealtimeAgentNode ──────────────────────────────────────────────────────
 
 describe("RealtimeAgentNode", () => {
@@ -512,6 +586,16 @@ describe("RealtimeAgentNode", () => {
 
   it("has correct nodeType", () => {
     expect(RealtimeAgentNode.nodeType).toBe("openai.agents.RealtimeAgent");
+  });
+
+  it("returns correct defaults", () => {
+    const node = new RealtimeAgentNode();
+    const d = node.defaults();
+    expect(d.model).toBe("gpt-4o-mini-realtime-preview");
+    expect(d.system).toBe("");
+    expect(d.voice).toBe("alloy");
+    expect(d.speed).toBe(1.0);
+    expect(d.temperature).toBe(0.8);
   });
 });
 
@@ -529,5 +613,12 @@ describe("RealtimeTranscriptionNode", () => {
     expect(RealtimeTranscriptionNode.nodeType).toBe(
       "openai.agents.RealtimeTranscription"
     );
+  });
+
+  it("returns correct defaults", () => {
+    const node = new RealtimeTranscriptionNode();
+    const d = node.defaults();
+    expect(d.system).toBe("");
+    expect(d.temperature).toBe(0.8);
   });
 });

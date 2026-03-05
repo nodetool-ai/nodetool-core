@@ -445,3 +445,112 @@ describe("GoogleShoppingNode", () => {
     expect(url).toContain("sort%3Aprice_low_to_high");
   });
 });
+
+// ── Defaults coverage ────────────────────────────────────────────────────
+
+describe("Node defaults coverage", () => {
+  it("GoogleSearchNode defaults", () => {
+    const node = new GoogleSearchNode();
+    const d = node.defaults();
+    expect(d.keyword).toBe("");
+    expect(d.num_results).toBe(10);
+  });
+
+  it("GoogleNewsNode defaults", () => {
+    const node = new GoogleNewsNode();
+    const d = node.defaults();
+    expect(d.keyword).toBe("");
+    expect(d.num_results).toBe(10);
+  });
+
+  it("GoogleImagesNode defaults", () => {
+    const node = new GoogleImagesNode();
+    const d = node.defaults();
+    expect(d.keyword).toBe("");
+    expect(d.image_url).toBe("");
+    expect(d.num_results).toBe(20);
+  });
+
+  it("GoogleFinanceNode defaults", () => {
+    const node = new GoogleFinanceNode();
+    const d = node.defaults();
+    expect(d.query).toBe("");
+    expect(d.window).toBe("");
+  });
+
+  it("GoogleJobsNode defaults", () => {
+    const node = new GoogleJobsNode();
+    const d = node.defaults();
+    expect(d.query).toBe("");
+    expect(d.location).toBe("");
+    expect(d.num_results).toBe(10);
+  });
+
+  it("GoogleLensNode defaults", () => {
+    const node = new GoogleLensNode();
+    const d = node.defaults();
+    expect(d.image_url).toBe("");
+    expect(d.num_results).toBe(10);
+  });
+
+  it("GoogleMapsNode defaults", () => {
+    const node = new GoogleMapsNode();
+    const d = node.defaults();
+    expect(d.query).toBe("");
+    expect(d.num_results).toBe(10);
+  });
+
+  it("GoogleShoppingNode defaults", () => {
+    const node = new GoogleShoppingNode();
+    const d = node.defaults();
+    expect(d.query).toBe("");
+    expect(d.country).toBe("us");
+    expect(d.min_price).toBe(0);
+    expect(d.max_price).toBe(0);
+    expect(d.condition).toBe("");
+    expect(d.sort_by).toBe("");
+    expect(d.num_results).toBe(10);
+  });
+
+  it("GoogleShoppingNode with only min_price", async () => {
+    const node = new GoogleShoppingNode();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ shopping_results: [] })
+    );
+    await node.process({
+      query: "laptop",
+      min_price: 100,
+      ...secrets,
+    });
+    const url = String(mockFetch.mock.calls[0][0]);
+    expect(url).toContain("ppr_min%3A100");
+  });
+
+  it("GoogleShoppingNode with only max_price", async () => {
+    const node = new GoogleShoppingNode();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ shopping_results: [] })
+    );
+    await node.process({
+      query: "laptop",
+      max_price: 500,
+      ...secrets,
+    });
+    const url = String(mockFetch.mock.calls[0][0]);
+    expect(url).toContain("ppr_max%3A500");
+  });
+
+  it("GoogleShoppingNode with refurbished condition", async () => {
+    const node = new GoogleShoppingNode();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ shopping_results: [] })
+    );
+    await node.process({
+      query: "phone",
+      condition: "refurbished",
+      ...secrets,
+    });
+    const url = String(mockFetch.mock.calls[0][0]);
+    expect(url).toContain("p_cond%3Aused");
+  });
+});

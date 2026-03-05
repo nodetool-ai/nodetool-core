@@ -327,4 +327,43 @@ describe("MemoryAdapter", () => {
       expect(indexes).toHaveLength(0);
     });
   });
+
+  describe("nested ConditionGroup evaluation", () => {
+    it("evaluates nested ConditionGroup within a query", async () => {
+      await adapter.save({ id: "1", name: "Alice", age: 30, status: "active" });
+      await adapter.save({ id: "2", name: "Bob", age: 25, status: "inactive" });
+      await adapter.save({ id: "3", name: "Carol", age: 35, status: "active" });
+
+      // Build a nested condition: (age > 20 AND (status = "active" OR name = "Bob"))
+      const inner = new ConditionGroup([
+        new Condition("status", Operator.EQ, "active"),
+        new Condition("name", Operator.EQ, "Bob"),
+      ], LogicalOperator.OR);
+      const outer = new ConditionGroup([
+        new Condition("age", Operator.GT, 20),
+        inner,
+      ], LogicalOperator.AND);
+      const builder = new ConditionBuilder(outer);
+
+      const [rows] = await adapter.query({ condition: builder });
+      expect(rows).toHaveLength(3); // All three match
+    });
+
+    it("handles unknown condition type in group (returns false)", async () => {
+      await adapter.save({ id: "1", name: "Alice", age: 30, status: "active" });
+
+      // Create a group with an invalid condition type - we need to bypass
+      // the ConditionGroup constructor's type checking by modifying after creation
+      const group = new ConditionGroup([
+        new Condition("name", Operator.EQ, "Alice"),
+      ], LogicalOperator.AND);
+      // Force an invalid condition into the array
+      (group.conditions as any).push("not-a-condition");
+      const builder = new ConditionBuilder(group);
+
+      const [rows] = await adapter.query({ condition: builder });
+      // The AND group requires all conditions to be true; the invalid one returns false
+      expect(rows).toHaveLength(0);
+    });
+  });
 });

@@ -204,4 +204,42 @@ describe("BaseProvider – default method behaviors", () => {
       provider.generateEmbedding({ text: "hi", model: "m" })
     ).rejects.toThrow("does not support");
   });
+
+  it("getAvailableImageModels() returns []", async () => {
+    await expect(provider.getAvailableImageModels()).resolves.toEqual([]);
+  });
+
+  it("getAvailableVideoModels() returns []", async () => {
+    await expect(provider.getAvailableVideoModels()).resolves.toEqual([]);
+  });
+
+  it("getAvailableTTSModels() returns []", async () => {
+    await expect(provider.getAvailableTTSModels()).resolves.toEqual([]);
+  });
+
+  it("getAvailableASRModels() returns []", async () => {
+    await expect(provider.getAvailableASRModels()).resolves.toEqual([]);
+  });
+
+  it("getAvailableEmbeddingModels() returns []", async () => {
+    await expect(provider.getAvailableEmbeddingModels()).resolves.toEqual([]);
+  });
+
+  it("textToVideo() throws 'does not support'", async () => {
+    await expect(
+      provider.textToVideo({
+        model: { id: "m", name: "m", provider: "test" },
+        prompt: "test",
+      })
+    ).rejects.toThrow("does not support");
+  });
+
+  it("imageToVideo() throws 'does not support'", async () => {
+    await expect(
+      provider.imageToVideo(new Uint8Array(), {
+        model: { id: "m", name: "m", provider: "test" },
+        prompt: "test",
+      })
+    ).rejects.toThrow("does not support");
+  });
 });

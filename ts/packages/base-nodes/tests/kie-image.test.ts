@@ -863,6 +863,31 @@ describe("IdeogramCharacterEditNode", () => {
       n.process({ prompt: "", image: fakeImage, ...secrets })
     ).rejects.toThrow("Prompt cannot be empty");
   });
+
+  it("process with reference images uploads them", async () => {
+    const n = new (IdeogramCharacterEditNode as any)();
+    const result = await n.process({
+      prompt: "Edit character",
+      image: fakeImage,
+      images: [fakeImage, fakeImage],
+      character_description: "A warrior",
+      ...secrets,
+    });
+    expect(result.output).toEqual({ data: "base64data" });
+    // image + 2 ref images = 3 uploadImageInput calls
+    expect(uploadImageInput).toHaveBeenCalledTimes(3);
+  });
+
+  it("process skips null/invalid reference images", async () => {
+    const n = new (IdeogramCharacterEditNode as any)();
+    const result = await n.process({
+      prompt: "Edit character",
+      image: fakeImage,
+      images: [null, {}, "not-an-object", fakeImage],
+      ...secrets,
+    });
+    expect(result.output).toEqual({ data: "base64data" });
+  });
 });
 
 // ============================================================================
@@ -911,6 +936,31 @@ describe("IdeogramCharacterRemixNode", () => {
     await expect(
       n.process({ prompt: "", image: fakeImage, ...secrets })
     ).rejects.toThrow("Prompt cannot be empty");
+  });
+
+  it("process with reference images uploads them", async () => {
+    const n = new (IdeogramCharacterRemixNode as any)();
+    const result = await n.process({
+      prompt: "Remix character",
+      image: fakeImage,
+      images: [fakeImage, fakeImage],
+      character_description: "A wizard",
+      ...secrets,
+    });
+    expect(result.output).toEqual({ data: "base64data" });
+    // image + 2 ref images = 3 uploadImageInput calls
+    expect(uploadImageInput).toHaveBeenCalledTimes(3);
+  });
+
+  it("process skips null/invalid reference images in remix", async () => {
+    const n = new (IdeogramCharacterRemixNode as any)();
+    const result = await n.process({
+      prompt: "Remix",
+      image: fakeImage,
+      images: [null, {}, fakeImage],
+      ...secrets,
+    });
+    expect(result.output).toEqual({ data: "base64data" });
   });
 });
 

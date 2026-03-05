@@ -505,3 +505,34 @@ describe("SQLiteAdapterFactory", () => {
     factory.close();
   });
 });
+
+describe("SQLiteAdapter – castValue for json column with non-string value", () => {
+  let db: Database.Database;
+  let adapter: SQLiteAdapter;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    adapter = new SQLiteAdapter(db, testSchema);
+    await adapter.createTable();
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it("returns null metadata when stored as null in json column", async () => {
+    // Insert a row with null metadata (json column)
+    await adapter.save({
+      id: "1",
+      name: "Test",
+      age: 25,
+      active: true,
+      metadata: null,
+      created_at: new Date().toISOString(),
+    });
+
+    const row = await adapter.get("1");
+    expect(row).not.toBeNull();
+    expect(row!.metadata).toBeNull();
+  });
+});

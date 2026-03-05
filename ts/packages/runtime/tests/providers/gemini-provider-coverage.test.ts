@@ -421,6 +421,60 @@ describe("GeminiProvider – getAvailableLanguageModels with network error", () 
   });
 });
 
+describe("GeminiProvider – streaming with systemInstruction", () => {
+  it("includes systemInstruction in streaming request body", async () => {
+    const events = [
+      {
+        candidates: [{ content: { parts: [{ text: "ok" }] } }],
+      },
+    ];
+
+    const fetchFn = vi.fn().mockResolvedValue(makeSSEStream(events));
+
+    const provider = new GeminiProvider({ GEMINI_API_KEY: "k" }, { fetchFn });
+
+    const out: unknown[] = [];
+    for await (const item of provider.generateMessages({
+      model: "gemini-2.0-flash",
+      messages: [
+        { role: "system", content: "You are helpful" },
+        { role: "user", content: "hi" },
+      ],
+    })) {
+      out.push(item);
+    }
+
+    const body = JSON.parse(fetchFn.mock.calls[0][1].body);
+    expect(body.systemInstruction).toEqual({ parts: [{ text: "You are helpful" }] });
+  });
+});
+
+describe("GeminiProvider – streaming with tools", () => {
+  it("includes tools in streaming request body", async () => {
+    const events = [
+      {
+        candidates: [{ content: { parts: [{ text: "ok" }] } }],
+      },
+    ];
+
+    const fetchFn = vi.fn().mockResolvedValue(makeSSEStream(events));
+
+    const provider = new GeminiProvider({ GEMINI_API_KEY: "k" }, { fetchFn });
+
+    const out: unknown[] = [];
+    for await (const item of provider.generateMessages({
+      model: "gemini-2.0-flash",
+      messages: [{ role: "user", content: "hi" }],
+      tools: [{ name: "search", description: "Search" }],
+    })) {
+      out.push(item);
+    }
+
+    const body = JSON.parse(fetchFn.mock.calls[0][1].body);
+    expect(body.tools).toBeDefined();
+  });
+});
+
 describe("GeminiProvider – streaming with tool name reverse mapping", () => {
   it("maps sanitized tool names back to original", async () => {
     const events = [

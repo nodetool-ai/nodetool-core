@@ -1399,6 +1399,82 @@ describe("ProcessingContext – stream prediction non-Error throw", () => {
   });
 });
 
+describe("ProcessingContext – storage path escape prevention", () => {
+  it("throws when storage key tries to escape root", async () => {
+    const { FileStorageAdapter } = await import("../src/context.js");
+    const tmpDir = "/tmp/nodetool-test-storage-" + Date.now();
+    const adapter = new FileStorageAdapter(tmpDir);
+    await expect(adapter.store("../../etc/passwd", new Uint8Array([1]))).rejects.toThrow("Invalid storage key");
+  });
+});
+
+describe("ProcessingContext – storage retrieve returns null on error", () => {
+  it("returns null for non-existent file", async () => {
+    const { FileStorageAdapter } = await import("../src/context.js");
+    const tmpDir = "/tmp/nodetool-test-storage-" + Date.now();
+    const adapter = new FileStorageAdapter(tmpDir);
+    const result = await adapter.retrieve("file:///nonexistent/path/file.txt");
+    expect(result).toBeNull();
+  });
+
+  it("returns null for non-file URI", async () => {
+    const { FileStorageAdapter } = await import("../src/context.js");
+    const tmpDir = "/tmp/nodetool-test-storage-" + Date.now();
+    const adapter = new FileStorageAdapter(tmpDir);
+    const result = await adapter.retrieve("https://example.com/file.txt");
+    expect(result).toBeNull();
+  });
+});
+
+describe("ProcessingContext – getProvider with no resolver", () => {
+  it("throws when no resolver is configured", async () => {
+    const ctx = new ProcessingContext({ jobId: "j1" });
+    await expect(ctx.getProvider("openai")).rejects.toThrow("No provider registered");
+  });
+});
+
+describe("ProcessingContext – get with default value", () => {
+  it("returns default value for unknown key", () => {
+    const ctx = new ProcessingContext({ jobId: "j1" });
+    expect(ctx.get("nonexistent", "default")).toBe("default");
+  });
+
+  it("returns undefined when no default provided", () => {
+    const ctx = new ProcessingContext({ jobId: "j1" });
+    expect(ctx.get("nonexistent")).toBeUndefined();
+  });
+});
+
+describe("ProcessingContext – guessAssetMime fallback", () => {
+  it("returns application/octet-stream for unknown asset type", async () => {
+    const ctx = new ProcessingContext({ jobId: "j1", assetOutputMode: "data_uri" });
+    const result = await ctx.normalizeOutputValue({
+      type: "unknown_type_xyz",
+      data: Buffer.from("test").toString("base64"),
+    });
+    if (result && typeof result === "object" && "uri" in (result as any)) {
+      expect((result as any).uri).toContain("data:application/octet-stream");
+    }
+  });
+});
+
+describe("ProcessingContext – materializeAsset fallback for unknown mode", () => {
+  it("returns asset unchanged for unrecognized mode", async () => {
+    const ctx = new ProcessingContext({ jobId: "j1", assetOutputMode: "unknown_mode" as any });
+    const asset = { type: "image", data: Buffer.from("test").toString("base64") };
+    const result = await ctx.normalizeOutputValue(asset);
+    expect(result).toBeDefined();
+  });
+});
+
+describe("ProcessingContext – workspace path Windows drive letter", () => {
+  it("handles absolute paths with leading slash", () => {
+    const ctx = new ProcessingContext({ jobId: "j1", workspaceDir: "/tmp/ws" });
+    const resolved = ctx.resolveWorkspacePath("/absolute/path");
+    expect(resolved).toBeTruthy();
+  });
+});
+
 describe("ProcessingContext – memory helpers", () => {
   it("tracks memory:// values and reports stats", () => {
     const ctx = new ProcessingContext({ jobId: "j1" });

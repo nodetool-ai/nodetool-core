@@ -1001,3 +1001,426 @@ describe("OpenAIProvider – isContextLengthError", () => {
     expect(provider.isContextLengthError("rate limit")).toBe(false);
   });
 });
+
+describe("OpenAIProvider – asUint8Array edge cases", () => {
+  const provider = new OpenAIProvider(
+    { OPENAI_API_KEY: "k" },
+    { client: {} as any }
+  );
+
+  it("converts integer array to Uint8Array in convertMessage", async () => {
+    // This exercises the Array.isArray branch of asUint8Array via image data
+    const result = await provider.convertMessage({
+      role: "user",
+      content: [
+        { type: "image", image: { data: [1, 2, 3] as any } },
+      ],
+    });
+    expect((result as any).content[0].type).toBe("image_url");
+  });
+
+  it("converts string base64 to Uint8Array in convertMessage", async () => {
+    // This exercises the typeof data === "string" branch of asUint8Array via audio data
+    const base64 = Buffer.from("test").toString("base64");
+    const result = await provider.convertMessage({
+      role: "user",
+      content: [
+        { type: "audio", audio: { data: base64 } },
+      ],
+    });
+    expect((result as any).content[0].type).toBe("input_audio");
+  });
+});
+
+describe("OpenAIProvider – image content with no uri (data only)", () => {
+  it("uses makeDataUri for image with Uint8Array data and no uri", async () => {
+    const provider = new OpenAIProvider(
+      { OPENAI_API_KEY: "k" },
+      { client: {} as any }
+    );
+    const result = await provider.convertMessage({
+      role: "user",
+      content: [
+        { type: "image", image: { data: new Uint8Array([1, 2, 3]), mimeType: "image/png" } },
+      ],
+    });
+    expect((result as any).content[0].image_url.url).toContain("data:image/png;base64,");
+  });
+});
+
+describe("OpenAIProvider – textToVideo", () => {
+  it("generates video and polls until completed", async () => {
+    const videoId = "vid_123";
+    const videosCreate = vi.fn().mockResolvedValue({
+      id: videoId,
+      status: "completed",
+    });
+    const videosRetrieve = vi.fn();
+    const getContent = vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]));
+
+    const mockClient = {
+      videos: {
+        create: videosCreate,
+        retrieve: videosRetrieve,
+      },
+      get: getContent,
+    };
+
+    const provider = new OpenAIProvider(
+      { OPENAI_API_KEY: "k" },
+      { client: mockClient as any }
+    );
+
+    const result = await provider.textToVideo({
+      prompt: "A cat",
+      model: { id: "sora", name: "sora", provider: "openai" },
+      aspectRatio: "16:9",
+      resolution: "720p",
+      numFrames: 100,
+    });
+
+    expect(result).toBeInstanceOf(Uint8Array);
+    expect(videosCreate).toHaveBeenCalled();
+  });
+
+  it("throws on empty prompt", async () => {
+    const provider = new OpenAIProvider(
+      { OPENAI_API_KEY: "k" },
+      { client: {} as any }
+    );
+
+    await expect(
+      provider.textToVideo({
+        prompt: "",
+        model: { id: "sora", name: "sora", provider: "openai" },
+      })
+    ).rejects.toThrow("cannot be empty");
+  });
+
+  it("throws when video create returns no id", async () => {
+    const mockClient = {
+      videos: { create: vi.fn().mockResolvedValue({}) },
+    };
+    const provider = new OpenAIProvider(
+      { OPENAI_API_KEY: "k" },
+      { client: mockClient as any }
+    );
+
+    await expect(
+      provider.textToVideo({
+        prompt: "test",
+        model: { id: "sora", name: "sora", provider: "openai" },
+      })
+    ).rejects.toThrow("did not contain a video id");
+  });
+
+  it("throws on non-completed status", async () => {
+    const mockClient = {
+      videos: {
+        create: vi.fn().mockResolvedValue({ id: "v1", status: "failed", error: "bad" }),
+        retrieve: vi.fn(),
+      },
+    };
+    const provider = new OpenAIProvider(
+      { OPENAI_API_KEY: "k" },
+      { client: mockClient as any }
+    );
+
+    await expect(
+      provider.textToVideo({
+        prompt: "test",
+        model: { id: "sora", name: "sora", provider: "openai" },
+      })
+    ).rejects.toThrow("bad");
+  });
+
+  it("polls in_progress status until completed", async () => {
+    let callCount = 0;
+    const mockClient = {
+      videos: {
+        create: vi.fn().mockResolvedValue({ id: "v1", status: "in_progress" }),
+        retrieve: vi.fn().mockImplementation(async () => {
+          callCount++;
+          return callCount >= 2
+            ? { id: "v1", status: "completed" }
+            : { id: "v1", status: "in_progress" };
+        }),
+      },
+      get: vi.fn().mockResolvedValue(new Uint8Array([1, 2])),
+    };
+
+    const provider = new OpenAIProvider(
+      { OPENAI_API_KEY: "k" },
+      { client: mockClient as any }
+    );
+
+    const result = await provider.textToVideo({
+      prompt: "test",
+      model: { id: "sora", name: "sora", provider: "openai" },
+    });
+
+    expect(result).toBeInstanceOf(Uint8Array);
+    expect(mockClient.videos.retrieve).toHaveBeenCalled();
+  });
+});
+
+describe("OpenAIProvider – imageToVideo", () => {
+  it("generates video from image", async () => {
+    // Minimal PNG
+    const png = new Uint8Array(24);
+    png[0] = 0x89; png[1] = 0x50; png[2] = 0x4e; png[3] = 0x47;
+    const view = new DataView(png.buffer);
+    view.setUint32(16, 640, false);
+    view.setUint32(20, 480, false);
+
+    const mockClient = {
+      videos: {
+        create: vi.fn().mockResolvedValue({ id: "v1", status: "completed" }),
+        retrieve: vi.fn(),
+      },
+      get: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+    };
+
+    const provider = new OpenAIProvider(
+      { OPENAI_API_KEY: "k" },
+      { client: mockClient as any }
+    );
+
+    const result = await provider.imageToVideo(png, {
+      prompt: "make it move",
+      model: { id: "sora", name: "sora", provider: "openai" },
+    });
+
+    expect(result).toBeInstanceOf(Uint8Array);
+  });
+
+  it("throws on empty image", async () => {
+    const provider = new OpenAIProvider(
+      { OPENAI_API_KEY: "k" },
+      { client: {} as any }
+    );
+
+    await expect(
+      provider.imageToVideo(new Uint8Array(), {
+        prompt: "test",
+        model: { id: "sora", name: "sora", provider: "openai" },
+      })
+    ).rejects.toThrow("cannot be empty");
+  });
+
+  it("throws on no video id", async () => {
+    const png = new Uint8Array(24);
+    png[0] = 0x89; png[1] = 0x50; png[2] = 0x4e; png[3] = 0x47;
+    const view = new DataView(png.buffer);
+    view.setUint32(16, 640, false);
+    view.setUint32(20, 480, false);
+
+    const mockClient = {
+      videos: { create: vi.fn().mockResolvedValue({}) },
+    };
+    const provider = new OpenAIProvider(
+      { OPENAI_API_KEY: "k" },
+      { client: mockClient as any }
+    );
+
+    await expect(
+      provider.imageToVideo(png, {
+        prompt: "test",
+        model: { id: "sora", name: "sora", provider: "openai" },
+      })
+    ).rejects.toThrow("did not contain a video id");
+  });
+
+  it("throws on failed status", async () => {
+    const png = new Uint8Array(24);
+    png[0] = 0x89; png[1] = 0x50; png[2] = 0x4e; png[3] = 0x47;
+    const view = new DataView(png.buffer);
+    view.setUint32(16, 640, false);
+    view.setUint32(20, 480, false);
+
+    const mockClient = {
+      videos: {
+        create: vi.fn().mockResolvedValue({ id: "v1", status: "failed", error: "err" }),
+        retrieve: vi.fn(),
+      },
+    };
+    const provider = new OpenAIProvider(
+      { OPENAI_API_KEY: "k" },
+      { client: mockClient as any }
+    );
+
+    await expect(
+      provider.imageToVideo(png, {
+        prompt: "test",
+        model: { id: "sora", name: "sora", provider: "openai" },
+      })
+    ).rejects.toThrow("err");
+  });
+
+  it("polls queued then completed", async () => {
+    const png = new Uint8Array(24);
+    png[0] = 0x89; png[1] = 0x50; png[2] = 0x4e; png[3] = 0x47;
+    const view = new DataView(png.buffer);
+    view.setUint32(16, 640, false);
+    view.setUint32(20, 480, false);
+
+    const mockClient = {
+      videos: {
+        create: vi.fn().mockResolvedValue({ id: "v1", status: "queued" }),
+        retrieve: vi.fn().mockResolvedValue({ id: "v1", status: "completed" }),
+      },
+      get: vi.fn().mockResolvedValue(new Uint8Array([4, 5])),
+    };
+
+    const provider = new OpenAIProvider(
+      { OPENAI_API_KEY: "k" },
+      { client: mockClient as any }
+    );
+
+    const result = await provider.imageToVideo(png, {
+      prompt: "test",
+      model: { id: "sora", name: "sora", provider: "openai" },
+    });
+
+    expect(result).toBeInstanceOf(Uint8Array);
+  });
+});
+
+describe("OpenAIProvider – JPEG SOF scan edge cases", () => {
+  it("handles JPEG with non-FF bytes before SOF marker", () => {
+    const jpeg = new Uint8Array(30);
+    jpeg[0] = 0xff; jpeg[1] = 0xd8;
+    // Insert non-0xFF byte (skip branch)
+    jpeg[2] = 0x00;
+    // Then a valid marker
+    jpeg[3] = 0xff; jpeg[4] = 0xc0;
+    jpeg[5] = 0x00; jpeg[6] = 0x11;
+    jpeg[7] = 0x08;
+    jpeg[8] = 0x00; jpeg[9] = 0xf0; // height=240
+    jpeg[10] = 0x01; jpeg[11] = 0x40; // width=320
+    expect(OpenAIProvider.extractImageDimensions(jpeg)).toEqual([320, 240]);
+  });
+
+  it("handles JPEG with non-SOF marker before SOF (skips segment)", () => {
+    const jpeg = new Uint8Array(30);
+    jpeg[0] = 0xff; jpeg[1] = 0xd8;
+    // APP0 marker (not SOF)
+    jpeg[2] = 0xff; jpeg[3] = 0xe0;
+    jpeg[4] = 0x00; jpeg[5] = 0x04; // size=4
+    jpeg[6] = 0x00; jpeg[7] = 0x00;
+    // SOF0 marker
+    jpeg[8] = 0xff; jpeg[9] = 0xc0;
+    jpeg[10] = 0x00; jpeg[11] = 0x11;
+    jpeg[12] = 0x08;
+    jpeg[13] = 0x01; jpeg[14] = 0xe0; // height=480
+    jpeg[15] = 0x02; jpeg[16] = 0x80; // width=640
+    expect(OpenAIProvider.extractImageDimensions(jpeg)).toEqual([640, 480]);
+  });
+
+  it("throws for JPEG with size < 2 in segment", () => {
+    const jpeg = new Uint8Array(10);
+    jpeg[0] = 0xff; jpeg[1] = 0xd8;
+    jpeg[2] = 0xff; jpeg[3] = 0xe0;
+    jpeg[4] = 0x00; jpeg[5] = 0x01; // size=1 (< 2, triggers break)
+    expect(() => OpenAIProvider.extractImageDimensions(jpeg)).toThrow("Unsupported image format");
+  });
+});
+
+describe("OpenAIProvider – resolveVideoSize invalid aspect", () => {
+  it("returns null for aspect ratio that produces non-finite values", () => {
+    expect(OpenAIProvider.resolveVideoSize("abc:def", "720p")).toBeNull();
+  });
+
+  it("falls back to 1:1 when aspect has no colon", () => {
+    const result = OpenAIProvider.resolveVideoSize("square", "720p");
+    expect(result).toBeTruthy();
+  });
+});
+
+describe("OpenAIProvider – generateMessages with tools and responseFormat", () => {
+  it("includes tools in streaming request", async () => {
+    const stream = makeAsyncIterable([
+      {
+        choices: [{
+          delta: {
+            tool_calls: [{
+              index: 0,
+              id: "tc1",
+              function: { name: "search", arguments: '{"q":"x"}' },
+            }],
+          },
+          finish_reason: null,
+        }],
+      },
+      { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+    ]);
+    const create = vi.fn().mockResolvedValue(stream);
+
+    const provider = new OpenAIProvider(
+      { OPENAI_API_KEY: "k" },
+      { client: { chat: { completions: { create } } } as any }
+    );
+
+    const out: unknown[] = [];
+    for await (const item of provider.generateMessages({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: "search" }],
+      tools: [{ name: "search", description: "Search" }],
+    })) {
+      out.push(item);
+    }
+
+    expect(create.mock.calls[0][0].tools).toBeDefined();
+    expect(out.length).toBeGreaterThan(0);
+  });
+
+  it("sets response_format when responseFormat is provided", async () => {
+    const stream = makeAsyncIterable([
+      { choices: [{ delta: { content: "{}" }, finish_reason: "stop" }] },
+    ]);
+    const create = vi.fn().mockResolvedValue(stream);
+
+    const provider = new OpenAIProvider(
+      { OPENAI_API_KEY: "k" },
+      { client: { chat: { completions: { create } } } as any }
+    );
+
+    const out: unknown[] = [];
+    for await (const item of provider.generateMessages({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: "json" }],
+      responseFormat: { type: "json_object" },
+    })) {
+      out.push(item);
+    }
+
+    expect(create.mock.calls[0][0].response_format).toEqual({ type: "json_object" });
+  });
+
+  it("passes temperature/topP/presencePenalty/frequencyPenalty in streaming", async () => {
+    const stream = makeAsyncIterable([
+      { choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] },
+    ]);
+    const create = vi.fn().mockResolvedValue(stream);
+
+    const provider = new OpenAIProvider(
+      { OPENAI_API_KEY: "k" },
+      { client: { chat: { completions: { create } } } as any }
+    );
+
+    for await (const _ of provider.generateMessages({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: "hi" }],
+      temperature: 0.5,
+      topP: 0.9,
+      presencePenalty: 0.1,
+      frequencyPenalty: 0.2,
+    })) {}
+
+    const req = create.mock.calls[0][0];
+    expect(req.temperature).toBe(0.5);
+    expect(req.top_p).toBe(0.9);
+    expect(req.presence_penalty).toBe(0.1);
+    expect(req.frequency_penalty).toBe(0.2);
+  });
+});

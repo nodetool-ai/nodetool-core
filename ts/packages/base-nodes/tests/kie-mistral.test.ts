@@ -345,3 +345,56 @@ describe("OCR", () => {
     ).rejects.toThrow("Mistral API error 500");
   });
 });
+
+// ── Defaults coverage ────────────────────────────────────────────────────
+
+describe("Node defaults coverage", () => {
+  it("ChatComplete defaults", () => {
+    const node = new ChatComplete();
+    const d = node.defaults();
+    expect(d.model).toBe("mistral-small-latest");
+    expect(d.prompt).toBe("");
+    expect(d.system_prompt).toBe("");
+    expect(d.temperature).toBe(0.7);
+    expect(d.max_tokens).toBe(1024);
+  });
+
+  it("CodeComplete defaults", () => {
+    const node = new CodeComplete();
+    const d = node.defaults();
+    expect(d.prompt).toBe("");
+    expect(d.suffix).toBe("");
+    expect(d.temperature).toBe(0.0);
+    expect(d.max_tokens).toBe(2048);
+  });
+
+  it("Embedding defaults", () => {
+    const node = new Embedding();
+    const d = node.defaults();
+    expect(d.input).toBe("");
+    expect(d.model).toBe("mistral-embed");
+    expect(d.chunk_size).toBe(4096);
+  });
+
+  it("ImageToText defaults", () => {
+    const node = new ImageToText();
+    const d = node.defaults();
+    expect(d.prompt).toBe("Describe this image in detail.");
+    expect(d.model).toBe("pixtral-large-latest");
+    expect(d.temperature).toBe(0.3);
+    expect(d.max_tokens).toBe(1024);
+  });
+
+  it("OCR defaults", () => {
+    const node = new OCR();
+    const d = node.defaults();
+    expect(d.model).toBe("pixtral-large-latest");
+  });
+
+  it("imageToDataUri throws when image has no data or uri", async () => {
+    const node = new ImageToText();
+    await expect(
+      node.process({ image: { data: 42 }, prompt: "desc", ...secrets })
+    ).rejects.toThrow("Image must include data or uri");
+  });
+});

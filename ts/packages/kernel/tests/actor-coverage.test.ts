@@ -383,6 +383,71 @@ describe("NodeActor – zip_all: inbox closed while waiting (lines 324-326)", ()
   });
 });
 
+describe("NodeActor – on_any mode via async iteration (lines 274-281)", () => {
+  it("uses async iterAny when no buffered items available initially", async () => {
+    const node = makeNode({ sync_mode: "on_any" });
+    const inbox = new NodeInbox();
+    inbox.addUpstream("a", 1);
+    inbox.addUpstream("b", 1);
+
+    const calls: Array<Record<string, unknown>> = [];
+    const executor: NodeExecutor = {
+      async process(inputs) {
+        calls.push({ ...inputs });
+        return { out: "ok" };
+      },
+    };
+
+    const { actor, sentOutputs } = createActor(node, inbox, executor);
+
+    // Don't put data before actor.run() - force async iteration path
+    setTimeout(async () => {
+      await inbox.put("a", 1);
+      await inbox.put("b", 2);
+      inbox.markSourceDone("a");
+      inbox.markSourceDone("b");
+    }, 10);
+
+    await actor.run();
+
+    expect(calls.length).toBeGreaterThanOrEqual(1);
+    expect(sentOutputs.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("NodeActor – zip_all closed handle no sticky (lines 340-341)", () => {
+  it("uses sticky value from first iteration when handle closes", async () => {
+    const node = makeNode({ sync_mode: "zip_all" });
+    const inbox = new NodeInbox();
+    inbox.addUpstream("a", 1);
+    inbox.addUpstream("b", 1);
+
+    const calls: Array<Record<string, unknown>> = [];
+    const executor: NodeExecutor = {
+      async process(inputs) {
+        calls.push({ ...inputs });
+        return { out: "ok" };
+      },
+    };
+
+    const { actor } = createActor(node, inbox, executor);
+
+    // Both handles have data for first iteration
+    await inbox.put("a", 10);
+    await inbox.put("b", 20);
+    // "a" has second value, "b" is done
+    await inbox.put("a", 30);
+    inbox.markSourceDone("a");
+    inbox.markSourceDone("b");
+
+    await actor.run();
+
+    expect(calls[0]).toEqual({ a: 10, b: 20 });
+    // Second iteration: a=30, b=sticky(20)
+    expect(calls[1]).toEqual({ a: 30, b: 20 });
+  });
+});
+
 describe("NodeActor – controlled mode edge cases", () => {
   it("caches data inputs for replay in controlled mode", async () => {
     const node = makeNode({ is_controlled: true });

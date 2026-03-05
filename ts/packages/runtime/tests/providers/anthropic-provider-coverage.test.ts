@@ -498,6 +498,130 @@ describe("AnthropicProvider – asHttpStatusError", () => {
   });
 });
 
+describe("AnthropicProvider – parseDataUri non-base64 path", () => {
+  it("converts user image with non-base64 data URI", async () => {
+    const provider = new AnthropicProvider(
+      { ANTHROPIC_API_KEY: "k" },
+      { client: {} as any }
+    );
+
+    const result = await provider.convertMessage({
+      role: "user",
+      content: [
+        {
+          type: "image",
+          image: { uri: "data:image/png,hello%20world" },
+        },
+      ],
+    });
+    expect((result as any).content[0].type).toBe("image");
+    expect((result as any).content[0].source.type).toBe("base64");
+  });
+});
+
+describe("AnthropicProvider – bytesToBase64 with Uint8Array", () => {
+  it("converts user image with Uint8Array data", async () => {
+    const provider = new AnthropicProvider(
+      { ANTHROPIC_API_KEY: "k" },
+      { client: {} as any }
+    );
+
+    const result = await provider.convertMessage({
+      role: "user",
+      content: [
+        { type: "image", image: { data: new Uint8Array([1, 2, 3]) } },
+      ],
+    });
+    expect((result as any).content[0].source.data).toBeTruthy();
+  });
+});
+
+describe("AnthropicProvider – image fetch from remote URI", () => {
+  it("fetches image from HTTP URI", async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: { get: () => "image/jpeg" },
+      arrayBuffer: async () => Uint8Array.from([1, 2]).buffer,
+    });
+
+    const provider = new AnthropicProvider(
+      { ANTHROPIC_API_KEY: "k" },
+      { client: {} as any, fetchFn: fetchFn as any }
+    );
+
+    const result = await provider.convertMessage({
+      role: "user",
+      content: [
+        { type: "image", image: { uri: "https://example.com/img.jpg" } },
+      ],
+    });
+    expect((result as any).content[0].source.media_type).toBe("image/jpeg");
+    expect(fetchFn).toHaveBeenCalledWith("https://example.com/img.jpg");
+  });
+
+  it("throws when fetch fails", async () => {
+    const fetchFn = vi.fn().mockResolvedValue({ ok: false, status: 404 });
+
+    const provider = new AnthropicProvider(
+      { ANTHROPIC_API_KEY: "k" },
+      { client: {} as any, fetchFn: fetchFn as any }
+    );
+
+    await expect(
+      provider.convertMessage({
+        role: "user",
+        content: [
+          { type: "image", image: { uri: "https://example.com/missing.jpg" } },
+        ],
+      })
+    ).rejects.toThrow("Failed to fetch URI");
+  });
+});
+
+describe("AnthropicProvider – extractSystemMessage non-string non-array content", () => {
+  it("falls back to String() for non-string non-array system content", async () => {
+    const create = vi.fn().mockResolvedValue({
+      content: [{ type: "text", text: "ok" }],
+    });
+
+    const provider = new AnthropicProvider(
+      { ANTHROPIC_API_KEY: "k" },
+      { client: { messages: { create } } as any }
+    );
+
+    await provider.generateMessage({
+      model: "claude-sonnet",
+      messages: [
+        { role: "system", content: 42 as any },
+        { role: "user", content: "hi" },
+      ],
+    });
+
+    expect(create.mock.calls[0][0].system).toBe("42");
+  });
+
+  it("uses default for system with null content", async () => {
+    const create = vi.fn().mockResolvedValue({
+      content: [{ type: "text", text: "ok" }],
+    });
+
+    const provider = new AnthropicProvider(
+      { ANTHROPIC_API_KEY: "k" },
+      { client: { messages: { create } } as any }
+    );
+
+    await provider.generateMessage({
+      model: "claude-sonnet",
+      messages: [
+        { role: "system", content: null },
+        { role: "user", content: "hi" },
+      ],
+    });
+
+    expect(create.mock.calls[0][0].system).toBe("You are a helpful assistant.");
+  });
+});
+
 describe("AnthropicProvider – streaming content_block_stop suppresses structured tool calls", () => {
   it("does not emit structured tool call in stream", async () => {
     const stream = vi.fn().mockResolvedValue(

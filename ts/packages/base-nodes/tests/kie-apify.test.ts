@@ -359,3 +359,81 @@ describe("ApifyLinkedInScraperNode", () => {
     );
   });
 });
+
+// ── Defaults coverage ────────────────────────────────────────────────────
+
+describe("Node defaults coverage", () => {
+  it("ApifyWebScraperNode defaults", () => {
+    const node = new ApifyWebScraperNode();
+    const d = node.defaults();
+    expect(d.start_urls).toEqual([]);
+    expect(d.link_selector).toBe("a[href]");
+    expect(d.page_function).toBe("");
+    expect(d.max_pages).toBe(10);
+    expect(d.wait_for_finish).toBe(300);
+  });
+
+  it("ApifyGoogleSearchScraperNode defaults", () => {
+    const node = new ApifyGoogleSearchScraperNode();
+    const d = node.defaults();
+    expect(d.queries).toEqual([]);
+    expect(d.country_code).toBe("us");
+    expect(d.language_code).toBe("en");
+    expect(d.max_pages).toBe(1);
+    expect(d.results_per_page).toBe(100);
+    expect(d.wait_for_finish).toBe(300);
+  });
+
+  it("ApifyInstagramScraperNode defaults", () => {
+    const node = new ApifyInstagramScraperNode();
+    const d = node.defaults();
+    expect(d.usernames).toEqual([]);
+    expect(d.hashtags).toEqual([]);
+    expect(d.results_limit).toBe(50);
+    expect(d.scrape_comments).toBe(false);
+    expect(d.scrape_likes).toBe(false);
+    expect(d.wait_for_finish).toBe(600);
+  });
+
+  it("ApifyAmazonScraperNode defaults", () => {
+    const node = new ApifyAmazonScraperNode();
+    const d = node.defaults();
+    expect(d.search_queries).toEqual([]);
+    expect(d.product_urls).toEqual([]);
+    expect(d.country_code).toBe("US");
+    expect(d.max_items).toBe(20);
+    expect(d.scrape_reviews).toBe(false);
+    expect(d.wait_for_finish).toBe(600);
+  });
+
+  it("ApifyYouTubeScraperNode defaults", () => {
+    const node = new ApifyYouTubeScraperNode();
+    const d = node.defaults();
+    expect(d.search_queries).toEqual([]);
+    expect(d.video_urls).toEqual([]);
+    expect(d.channel_urls).toEqual([]);
+    expect(d.max_results).toBe(50);
+    expect(d.scrape_comments).toBe(false);
+    expect(d.wait_for_finish).toBe(600);
+  });
+
+  it("ApifyTwitterScraperNode defaults", () => {
+    const node = new ApifyTwitterScraperNode();
+    const d = node.defaults();
+    expect(d.search_terms).toEqual([]);
+    expect(d.usernames).toEqual([]);
+    expect(d.tweet_urls).toEqual([]);
+    expect(d.max_tweets).toBe(100);
+    expect(d.wait_for_finish).toBe(600);
+  });
+
+  it("ApifyLinkedInScraperNode defaults", () => {
+    const node = new ApifyLinkedInScraperNode();
+    const d = node.defaults();
+    expect(d.profile_urls).toEqual([]);
+    expect(d.company_urls).toEqual([]);
+    expect(d.job_search_urls).toEqual([]);
+    expect(d.max_results).toBe(50);
+    expect(d.wait_for_finish).toBe(600);
+  });
+});
