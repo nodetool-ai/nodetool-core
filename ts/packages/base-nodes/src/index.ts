@@ -416,6 +416,47 @@ export {
 } from "./nodes/uuid.js";
 export { LIB_COMPAT_PY_NODES } from "./nodes/lib-compat.js";
 export {
+  AddArrayNode,
+  SubtractArrayNode,
+  MultiplyArrayNode,
+  DivideArrayNode,
+  ModulusArrayNode,
+  AbsArrayNode,
+  SineArrayNode,
+  CosineArrayNode,
+  ExpArrayNode,
+  LogArrayNode,
+  SqrtArrayNode,
+  PowerArrayNode,
+  SumArrayNode,
+  MeanArrayNode,
+  MinArrayNode,
+  MaxArrayNode,
+  ArgMinArrayNode,
+  ArgMaxArrayNode,
+  SliceArrayNode,
+  IndexArrayNode,
+  TransposeArrayNode,
+  MatMulNode,
+  StackNode,
+  SplitArrayNode,
+  Reshape1DNode,
+  Reshape2DNode,
+  Reshape3DNode,
+  Reshape4DNode,
+  ListToArrayNode,
+  ArrayToListNode,
+  ScalarToArrayNode,
+  ArrayToScalarNode,
+  ConvertToImageNode as NumpyConvertToImageNode,
+  ConvertToAudioNode as NumpyConvertToAudioNode,
+  ConvertToArrayNumpyNode,
+  SaveArrayNode,
+  BinaryOperationNode,
+  PlotArrayNode,
+  LIB_NUMPY_NODES,
+} from "./nodes/lib-numpy.js";
+export {
   AddLibNode,
   SubtractLibNode,
   MultiplyLibNode,
@@ -554,10 +595,147 @@ export {
 } from "./nodes/lib-svg.js";
 export { LIB_PILLOW_NODES } from "./nodes/lib-pillow.js";
 export {
+  WebFetchLibNode,
+  DownloadFileLibNode,
+  BrowserLibNode,
+  ScreenshotLibNode,
+  BrowserNavigationLibNode,
+  SpiderCrawlLibNode,
+  LIB_BROWSER_NODES,
+} from "./nodes/lib-browser.js";
+export {
+  SendEmailLibNode,
+  GmailSearchLibNode,
+  AddLabelLibNode,
+  MoveToArchiveLibNode,
+  LIB_MAIL_NODES,
+} from "./nodes/lib-mail.js";
+export {
+  ConvertToMarkdownLibNode,
+  LIB_MARKITDOWN_NODES,
+} from "./nodes/lib-markitdown.js";
+export {
+  ChartRendererLibNode,
+  LIB_SEABORN_NODES,
+} from "./nodes/lib-seaborn.js";
+export {
+  BaseUrlLibNode,
+  ExtractLinksLibNode,
+  ExtractImagesLibNode,
+  ExtractAudioLibNode,
+  ExtractVideosLibNode,
+  ExtractMetadataLibNode,
+  HTMLToTextLibNode,
+  WebsiteContentExtractorLibNode,
+  LIB_BEAUTIFULSOUP_NODES,
+} from "./nodes/lib-beautifulsoup.js";
+export {
   FetchRSSFeedLibNode,
   ExtractFeedMetadataLibNode,
   LIB_RSS_NODES,
 } from "./nodes/lib-rss.js";
+export {
+  OscillatorLibNode,
+  WhiteNoiseLibNode,
+  PinkNoiseLibNode,
+  FM_SynthesisLibNode,
+  EnvelopeLibNode,
+  LIB_SYNTHESIS_NODES,
+} from "./nodes/lib-synthesis.js";
+export {
+  AmplitudeToDBNode,
+  DBToAmplitudeNode,
+  DBToPowerNode,
+  PowerToDBNode,
+  PlotSpectrogramNode,
+  GainNode_,
+  DelayNode_,
+  HighPassFilterNode,
+  LowPassFilterNode,
+  HighShelfFilterNode,
+  LowShelfFilterNode,
+  PeakFilterNode,
+  LIB_AUDIO_DSP_NODES,
+} from "./nodes/lib-audio-dsp.js";
+export {
+  CreateTableLibNode,
+  InsertLibNode as SqliteInsertLibNode,
+  QueryLibNode,
+  UpdateLibNode as SqliteUpdateLibNode,
+  DeleteLibNode as SqliteDeleteLibNode,
+  ExecuteSQLLibNode,
+  GetDatabasePathLibNode,
+  LIB_SQLITE_NODES,
+} from "./nodes/lib-sqlite.js";
+export {
+  SelectLibNode,
+  InsertLibNode as SupabaseInsertLibNode,
+  UpdateLibNode as SupabaseUpdateLibNode,
+  DeleteLibNode as SupabaseDeleteLibNode,
+  UpsertLibNode,
+  RPCLibNode,
+  LIB_SUPABASE_NODES,
+} from "./nodes/lib-supabase.js";
+export {
+  CreateWorkbookLibNode,
+  ExcelToDataFrameLibNode,
+  DataFrameToExcelLibNode,
+  FormatCellsLibNode,
+  AutoFitColumnsLibNode,
+  SaveWorkbookLibNode,
+  LIB_EXCEL_NODES,
+} from "./nodes/lib-excel.js";
+export {
+  CreateDocumentLibNode,
+  LoadWordDocumentLibNode,
+  AddHeadingLibNode,
+  AddParagraphLibNode,
+  AddTableLibNode,
+  AddImageLibNode,
+  AddPageBreakLibNode,
+  SetDocumentPropertiesLibNode,
+  SaveDocumentLibNode,
+  LIB_DOCX_NODES,
+} from "./nodes/lib-docx.js";
+export {
+  BitcrushNode,
+  CompressNode,
+  DistortionNode,
+  LimiterNode,
+  ReverbNode,
+  PitchShiftNode,
+  TimeStretchNode,
+  NoiseGateNode,
+  PhaserNode,
+  LIB_PEDALBOARD_EXTRA_NODES,
+} from "./nodes/lib-pedalboard-extra.js";
+export {
+  GetPageCountPdfPlumberNode,
+  ExtractTextPdfPlumberNode,
+  ExtractPageMetadataPdfPlumberNode,
+  ExtractTablesPdfPlumberNode,
+  ExtractImagesPdfPlumberNode,
+  ExtractTextPyMuPdfNode,
+  ExtractMarkdownPyMuPdfNode,
+  ExtractTextBlocksPyMuPdfNode,
+  ExtractTextWithStylePyMuPdfNode,
+  ExtractTablesPyMuPdfNode,
+  LIB_PDF_NODES,
+} from "./nodes/lib-pdf.js";
+export {
+  STFTNode,
+  MelSpectrogramNode,
+  MFCCNode,
+  ChromaSTFTNode,
+  SpectralCentroidNode,
+  SpectralContrastNode,
+  GriffinLimNode,
+  DetectOnsetsNode,
+  SegmentAudioByOnsetsNode,
+  SaveAudioSegmentsNode,
+  LIB_LIBROSA_SPECTRAL_NODES,
+} from "./nodes/lib-librosa-spectral.js";
+export { PaddleOCRLibNode, LIB_OCR_NODES } from "./nodes/lib-ocr.js";
 
 import { CONTROL_NODES } from "./nodes/control.js";
 import { BOOLEAN_NODES } from "./nodes/boolean.js";
@@ -584,6 +762,7 @@ import { GENERATOR_NODES } from "./nodes/generators.js";
 import { MODEL3D_NODES } from "./nodes/model3d.js";
 import { UUID_NODES } from "./nodes/uuid.js";
 import { LIB_COMPAT_PY_NODES } from "./nodes/lib-compat.js";
+import { LIB_NUMPY_NODES } from "./nodes/lib-numpy.js";
 import { LIB_MATH_NODES } from "./nodes/lib-math.js";
 import { LIB_JSON_NODES } from "./nodes/lib-json.js";
 import { LIB_DATE_NODES } from "./nodes/lib-date.js";
@@ -597,6 +776,21 @@ import { LIB_GRID_NODES } from "./nodes/lib-grid.js";
 import { LIB_SVG_NODES } from "./nodes/lib-svg.js";
 import { LIB_PILLOW_NODES } from "./nodes/lib-pillow.js";
 import { LIB_RSS_NODES } from "./nodes/lib-rss.js";
+import { LIB_SYNTHESIS_NODES } from "./nodes/lib-synthesis.js";
+import { LIB_AUDIO_DSP_NODES } from "./nodes/lib-audio-dsp.js";
+import { LIB_SQLITE_NODES } from "./nodes/lib-sqlite.js";
+import { LIB_SUPABASE_NODES } from "./nodes/lib-supabase.js";
+import { LIB_EXCEL_NODES } from "./nodes/lib-excel.js";
+import { LIB_DOCX_NODES } from "./nodes/lib-docx.js";
+import { LIB_BEAUTIFULSOUP_NODES } from "./nodes/lib-beautifulsoup.js";
+import { LIB_BROWSER_NODES } from "./nodes/lib-browser.js";
+import { LIB_MAIL_NODES } from "./nodes/lib-mail.js";
+import { LIB_MARKITDOWN_NODES } from "./nodes/lib-markitdown.js";
+import { LIB_SEABORN_NODES } from "./nodes/lib-seaborn.js";
+import { LIB_PEDALBOARD_EXTRA_NODES } from "./nodes/lib-pedalboard-extra.js";
+import { LIB_PDF_NODES } from "./nodes/lib-pdf.js";
+import { LIB_LIBROSA_SPECTRAL_NODES } from "./nodes/lib-librosa-spectral.js";
+import { LIB_OCR_NODES } from "./nodes/lib-ocr.js";
 
 export const ALL_BASE_NODES: readonly NodeClass[] = [
   ...CONTROL_NODES,
@@ -624,6 +818,7 @@ export const ALL_BASE_NODES: readonly NodeClass[] = [
   ...MODEL3D_NODES,
   ...UUID_NODES,
   ...LIB_COMPAT_PY_NODES,
+  ...LIB_NUMPY_NODES,
   ...LIB_MATH_NODES,
   ...LIB_JSON_NODES,
   ...LIB_DATE_NODES,
@@ -637,6 +832,21 @@ export const ALL_BASE_NODES: readonly NodeClass[] = [
   ...LIB_SVG_NODES,
   ...LIB_PILLOW_NODES,
   ...LIB_RSS_NODES,
+  ...LIB_SYNTHESIS_NODES,
+  ...LIB_AUDIO_DSP_NODES,
+  ...LIB_SQLITE_NODES,
+  ...LIB_SUPABASE_NODES,
+  ...LIB_EXCEL_NODES,
+  ...LIB_DOCX_NODES,
+  ...LIB_BEAUTIFULSOUP_NODES,
+  ...LIB_BROWSER_NODES,
+  ...LIB_MAIL_NODES,
+  ...LIB_MARKITDOWN_NODES,
+  ...LIB_SEABORN_NODES,
+  ...LIB_PEDALBOARD_EXTRA_NODES,
+  ...LIB_PDF_NODES,
+  ...LIB_LIBROSA_SPECTRAL_NODES,
+  ...LIB_OCR_NODES,
 ];
 
 export function registerBaseNodes(registry: NodeRegistry): void {
