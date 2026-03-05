@@ -15,6 +15,21 @@ export {
   ListDirectoryTool,
 } from "./tools/filesystem-tools.js";
 export {
+  DownloadFileTool,
+  HttpRequestTool,
+} from "./tools/http-tools.js";
+export { RunCodeTool } from "./tools/code-tools.js";
+export {
+  GoogleSearchTool,
+  GoogleNewsTool,
+  GoogleImagesTool,
+} from "./tools/search-tools.js";
+export {
+  BrowserTool,
+  ScreenshotTool,
+  htmlToText,
+} from "./tools/browser-tools.js";
+export {
   registerTool,
   resolveTool,
   listTools,
