@@ -23,6 +23,7 @@ from nodetool.metadata.types import (
     DocumentRef,
     ExcelRef,
     FolderRef,
+    HtmlRef,
     ImageRef,
     JSONRef,
     Model3DRef,
@@ -79,6 +80,8 @@ def get_content_type_for_asset_ref(asset_ref: AssetRef) -> str:
         return "audio/wav"
     elif isinstance(asset_ref, VideoRef):
         return "video/mp4"
+    elif isinstance(asset_ref, HtmlRef):
+        return "text/html"
     elif isinstance(asset_ref, TextRef):
         return "text/plain"
     elif isinstance(asset_ref, DocumentRef):

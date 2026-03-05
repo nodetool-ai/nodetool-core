@@ -63,6 +63,7 @@ from nodetool.metadata.types import (
     HFZeroShotClassification,
     HFZeroShotImageClassification,
     HFZeroShotObjectDetection,
+    HtmlRef,
     HuggingFaceModel,
     ImageRef,
     InferenceProvider,
@@ -113,6 +114,7 @@ UnionType = (
     | FilePath
     | FolderRef
     | ImageRef
+    | HtmlRef
     | NPArray
     | VideoRef
     | ModelRef

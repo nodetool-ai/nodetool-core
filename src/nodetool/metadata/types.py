@@ -351,6 +351,12 @@ class TextRef(AssetRef):
     type: Literal["text"] = "text"
 
 
+class HtmlRef(TextRef):
+    """A reference to an HTML asset."""
+
+    type: Literal["html"] = "html"
+
+
 class AudioRef(AssetRef):
     """A reference to an audio asset."""
 
