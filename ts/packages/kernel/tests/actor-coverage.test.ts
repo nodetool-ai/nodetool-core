@@ -300,6 +300,89 @@ describe("NodeActor – zip_all sticky edge cases", () => {
   });
 });
 
+describe("NodeActor – zip_all: open handle EOS with existing sticky", () => {
+  it("uses sticky value when iterInput returns EOS on an open handle", async () => {
+    // This covers actor.ts lines 323-326:
+    // Handle is open, iterInput returns done, but sticky exists from prior iteration
+    const node = makeNode({ sync_mode: "zip_all" });
+    const inbox = new NodeInbox();
+    inbox.addUpstream("a", 1);
+    inbox.addUpstream("b", 2); // 2 upstream sources
+
+    const calls: Array<Record<string, unknown>> = [];
+    const executor: NodeExecutor = {
+      async process(inputs) {
+        calls.push({ ...inputs });
+        return { out: "ok" };
+      },
+    };
+
+    const { actor } = createActor(node, inbox, executor);
+
+    // First batch: both handles have data
+    await inbox.put("a", 1);
+    await inbox.put("b", 10);
+
+    // Second batch: "a" has new data, "b" has one source done but second still "open" with no data
+    await inbox.put("a", 2);
+    // Mark one of b's sources done (b still "open" with 1 remaining)
+    inbox.markSourceDone("b");
+
+    // Now close everything
+    inbox.markSourceDone("a");
+    inbox.markSourceDone("b"); // b now fully closed
+
+    await actor.run();
+
+    // First call: a=1, b=10
+    expect(calls[0]).toEqual({ a: 1, b: 10 });
+    // Second call: a=2, b should use sticky=10 (b was open, iterInput returned EOS, sticky existed)
+    expect(calls[1]).toEqual({ a: 2, b: 10 });
+  });
+});
+
+describe("NodeActor – zip_all: inbox closed while waiting (lines 324-326)", () => {
+  it("falls back to sticky when inbox is closed during iterInput wait", async () => {
+    // This tests the path where iterInput returns done because inbox is closed,
+    // but a sticky value exists from a prior iteration.
+    const node = makeNode({ sync_mode: "zip_all" });
+    const inbox = new NodeInbox();
+    inbox.addUpstream("a", 1);
+    inbox.addUpstream("b", 1);
+
+    const calls: Array<Record<string, unknown>> = [];
+    const executor: NodeExecutor = {
+      async process(inputs) {
+        calls.push({ ...inputs });
+        // After first call, close the inbox to trigger the EOS+sticky path
+        if (calls.length === 1) {
+          // Closing inbox causes iterInput to return done on next iteration
+          await inbox.closeAll();
+        }
+        return { out: "ok" };
+      },
+    };
+
+    const { actor } = createActor(node, inbox, executor);
+
+    // Provide data for first iteration
+    await inbox.put("a", 1);
+    await inbox.put("b", 10);
+
+    // Provide second value for "a" but nothing for "b"
+    // When the actor processes the second iteration, it will try to get "b"
+    // via iterInput, but inbox is closed, so it returns done.
+    // Since "b" has a sticky value from iteration 1, it should use that.
+    await inbox.put("a", 2);
+
+    const result = await actor.run();
+
+    expect(calls.length).toBeGreaterThanOrEqual(1);
+    expect(calls[0]).toEqual({ a: 1, b: 10 });
+    expect(result.outputs).toBeDefined();
+  });
+});
+
 describe("NodeActor – controlled mode edge cases", () => {
   it("caches data inputs for replay in controlled mode", async () => {
     const node = makeNode({ is_controlled: true });

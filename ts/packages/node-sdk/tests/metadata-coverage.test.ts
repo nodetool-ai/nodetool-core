@@ -211,6 +211,22 @@ describe("loadPythonPackageMetadata – edge cases", () => {
     expect(result.files).toHaveLength(1);
   });
 
+  it("warns when metadata dir at root level fails to read (lines 97-98)", () => {
+    const root = makeTmpRoot();
+    // Create a dir that ends with /nodetool/package_metadata
+    const metadataDir = path.join(root, "nodetool", "package_metadata");
+    fs.mkdirSync(metadataDir, { recursive: true });
+    fs.writeFileSync(path.join(metadataDir, "test.json"), JSON.stringify({ name: "test" }));
+    // Make it unreadable - this triggers the catch at lines 97-98
+    // because walkForMetadataFiles enters the first branch (root ends with package_metadata)
+    fs.chmodSync(metadataDir, 0o000);
+
+    const result = loadPythonPackageMetadata({ roots: [root] });
+    fs.chmodSync(metadataDir, 0o755);
+
+    expect(result.warnings.some((w) => w.includes("Failed to scan metadata dir"))).toBe(true);
+  });
+
   it("warns when directory read fails", () => {
     const root = makeTmpRoot();
     // Create a file named like a directory that will fail readdir
@@ -235,6 +251,20 @@ describe("loadPythonPackageMetadata – edge cases", () => {
 
     // Should have a warning about failed scan
     expect(result.warnings.some((w) => w.includes("Failed to scan metadata dir"))).toBe(true);
+  });
+
+  it("warns when a non-metadata directory read fails (lines 106-108)", () => {
+    const root = makeTmpRoot();
+    // Create a regular subdirectory but make it unreadable
+    const subDir = path.join(root, "some-package");
+    fs.mkdirSync(subDir, { recursive: true });
+    fs.chmodSync(subDir, 0o000);
+
+    const result = loadPythonPackageMetadata({ roots: [root] });
+    // Restore permissions for cleanup
+    fs.chmodSync(subDir, 0o755);
+
+    expect(result.warnings.some((w) => w.includes("Failed to read directory"))).toBe(true);
   });
 
   it("deduplicates files found via multiple roots", () => {

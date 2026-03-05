@@ -192,6 +192,76 @@ describe("NodeInbox – markSourceDone edge cases", () => {
   });
 });
 
+describe("NodeInbox – iterAny waiting for async data (lines 228-229)", () => {
+  it("waits for data when nothing is buffered in iterAny", async () => {
+    const inbox = new NodeInbox();
+    inbox.addUpstream("a", 1);
+
+    const items: Array<[string, unknown]> = [];
+    const consumePromise = (async () => {
+      for await (const [handle, data] of inbox.iterAny()) {
+        items.push([handle, data]);
+      }
+    })();
+
+    // Wait a tick then provide data
+    await new Promise((r) => setTimeout(r, 10));
+    await inbox.put("a", "delayed");
+    inbox.markSourceDone("a");
+
+    await consumePromise;
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toEqual(["a", "delayed"]);
+  });
+});
+
+describe("NodeInbox – iterInputWithEnvelope waiting for async data (lines 210-211)", () => {
+  it("waits for data when nothing is buffered in iterInputWithEnvelope", async () => {
+    const inbox = new NodeInbox();
+    inbox.addUpstream("a", 1);
+
+    const items: Array<{ data: unknown }> = [];
+    const consumePromise = (async () => {
+      for await (const env of inbox.iterInputWithEnvelope("a")) {
+        items.push({ data: env.data });
+      }
+    })();
+
+    await new Promise((r) => setTimeout(r, 10));
+    await inbox.put("a", "delayed-envelope");
+    inbox.markSourceDone("a");
+
+    await consumePromise;
+
+    expect(items).toHaveLength(1);
+    expect(items[0].data).toBe("delayed-envelope");
+  });
+});
+
+describe("NodeInbox – tryPopAnyWithEnvelope stale arrival skip (lines 276-278)", () => {
+  it("skips stale arrival entries when buffer was consumed by iterInput", async () => {
+    const inbox = new NodeInbox();
+    inbox.addUpstream("a", 1);
+    inbox.addUpstream("b", 1);
+
+    await inbox.put("a", "a1");
+    await inbox.put("b", "b1");
+
+    // Consume "a" via iterInput (drains buffer but leaves stale arrival entry)
+    const gen = inbox.iterInput("a");
+    const next = await gen.next();
+    expect(next.value).toBe("a1");
+    inbox.markSourceDone("a");
+
+    // Now tryPopAnyWithEnvelope should skip stale "a" entry and find "b"
+    const result = inbox.tryPopAnyWithEnvelope();
+    expect(result).not.toBeNull();
+    expect(result![0]).toBe("b");
+    expect(result![1].data).toBe("b1");
+  });
+});
+
 describe("NodeInbox – hasBuffered for unregistered handle", () => {
   it("returns false for handle with no buffer", () => {
     const inbox = new NodeInbox();

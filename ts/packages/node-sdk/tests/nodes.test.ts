@@ -126,6 +126,13 @@ describe("StreamingCounter", () => {
     }
     expect(values).toEqual([2, 3, 4, 5]);
   });
+
+  it("process() returns empty object (lines 157-160)", async () => {
+    const node = new StreamingCounter();
+    node.assign({ count: 3, start: 0 });
+    const result = await node.process({});
+    expect(result).toEqual({});
+  });
 });
 
 describe("IntAccumulator", () => {
@@ -137,5 +144,14 @@ describe("IntAccumulator", () => {
     expect(r1.value).toBe(10);
     expect(r2.count).toBe(2);
     expect(r2.values).toEqual([10, 20]);
+  });
+
+  it("uses default value 0 when no input provided (lines 183-184)", async () => {
+    const node = new IntAccumulator();
+    node.assign({});
+    const result = await node.process({});
+    expect(result.value).toBe(0);
+    expect(result.count).toBe(1);
+    expect(result.values).toEqual([0]);
   });
 });

@@ -200,6 +200,21 @@ describe("Graph – streaming upstream", () => {
   });
 });
 
+describe("Graph – control edge adjacency with multiple targets", () => {
+  it("handles controller with multiple control edges (adjacency append)", () => {
+    const nodes = [makeNode("a"), makeNode("b"), makeNode("c")];
+    const edges = [
+      makeEdge("a", "__control__", "b", "__control__", { edge_type: "control" }),
+      makeEdge("a", "__control__", "c", "__control__", { edge_type: "control" }),
+    ];
+    const graph = new Graph({ nodes, edges });
+    // This exercises the adj.get(edge.source) truthy branch (line 330)
+    expect(() => graph.validate()).not.toThrow();
+    expect(graph.getControllerNodes()).toHaveLength(1);
+    expect(graph.getControlledNodes()).toHaveLength(2);
+  });
+});
+
 describe("Graph – control node queries", () => {
   it("getControllerNodes returns nodes with outgoing control edges", () => {
     const nodes = [makeNode("a"), makeNode("b"), makeNode("c")];
