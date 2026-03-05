@@ -1,12 +1,19 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import {
   Workflow,
+  Job,
+  Message,
+  Thread,
+  Asset,
+  Secret,
   MemoryAdapterFactory,
   getGlobalAdapterResolver,
   setGlobalAdapterResolver,
 } from "@nodetool/models";
 import { loadPythonPackageMetadata, type NodeMetadata } from "@nodetool/node-sdk";
 import { handleModelsApiRequest } from "./models-api.js";
+import { handleOpenAIRequest, type OpenAIApiOptions } from "./openai-api.js";
+import { handleOAuthRequest } from "./oauth-api.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -15,6 +22,7 @@ export interface HttpApiOptions {
   metadataMaxDepth?: number;
   userIdHeader?: string;
   baseUrl?: string;
+  openai?: OpenAIApiOptions;
 }
 
 export interface WorkflowRequestBody {
@@ -39,6 +47,11 @@ export interface WorkflowRequestBody {
 
 const defaultMemoryFactory = new MemoryAdapterFactory();
 let workflowTableInitialized = false;
+let messageTableInitialized = false;
+let threadTableInitialized = false;
+let jobTableInitialized = false;
+let assetTableInitialized = false;
+let secretTableInitialized = false;
 
 function ensureAdapterResolver(): void {
   if (!getGlobalAdapterResolver()) {
@@ -51,6 +64,41 @@ async function ensureWorkflowTable(): Promise<void> {
   ensureAdapterResolver();
   await Workflow.createTable();
   workflowTableInitialized = true;
+}
+
+async function ensureMessageTable(): Promise<void> {
+  if (messageTableInitialized) return;
+  ensureAdapterResolver();
+  await Message.createTable();
+  messageTableInitialized = true;
+}
+
+async function ensureThreadTable(): Promise<void> {
+  if (threadTableInitialized) return;
+  ensureAdapterResolver();
+  await Thread.createTable();
+  threadTableInitialized = true;
+}
+
+async function ensureJobTable(): Promise<void> {
+  if (jobTableInitialized) return;
+  ensureAdapterResolver();
+  await Job.createTable();
+  jobTableInitialized = true;
+}
+
+async function ensureSecretTable(): Promise<void> {
+  if (secretTableInitialized) return;
+  ensureAdapterResolver();
+  await Secret.createTable();
+  secretTableInitialized = true;
+}
+
+async function ensureAssetTable(): Promise<void> {
+  if (assetTableInitialized) return;
+  ensureAdapterResolver();
+  await Asset.createTable();
+  assetTableInitialized = true;
 }
 
 function normalizePath(pathname: string): string {
@@ -303,12 +351,568 @@ async function handleWorkflowById(
   return errorResponse(405, "Method not allowed");
 }
 
+// ── Message types & helpers ────────────────────────────────────────
+
+interface MessageCreateBody {
+  thread_id?: string | null;
+  role: string;
+  name?: string | null;
+  content: string;
+  tool_call_id?: string | null;
+  tool_calls?: unknown[] | null;
+}
+
+function toMessageResponse(msg: Message): JsonObject {
+  return {
+    id: msg.id,
+    user_id: msg.user_id,
+    thread_id: msg.thread_id,
+    role: msg.role,
+    content: msg.content,
+    tool_calls: msg.tool_calls,
+    created_at: msg.created_at,
+    updated_at: msg.updated_at,
+  };
+}
+
+async function handleMessagesRoot(request: Request, options: HttpApiOptions): Promise<Response> {
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+
+  if (request.method === "POST") {
+    await ensureThreadTable();
+    await ensureMessageTable();
+    const body = await parseJsonBody<MessageCreateBody>(request);
+    if (!body || typeof body.role !== "string" || typeof body.content !== "string") {
+      return errorResponse(400, "Invalid JSON body");
+    }
+    let threadId = body.thread_id;
+    if (!threadId) {
+      const thread = (await Thread.create({
+        user_id: userId,
+        title: "New Thread",
+      })) as Thread;
+      threadId = thread.id;
+    }
+    const msg = (await Message.create({
+      user_id: userId,
+      thread_id: threadId,
+      role: body.role,
+      content: body.content,
+      tool_calls: body.tool_calls ?? null,
+    })) as Message;
+    return jsonResponse(toMessageResponse(msg));
+  }
+
+  if (request.method === "GET") {
+    await ensureMessageTable();
+    const url = new URL(request.url);
+    const threadId = url.searchParams.get("thread_id");
+    if (!threadId) {
+      return errorResponse(400, "thread_id is required");
+    }
+    const limit = parseLimit(url, 100);
+    const [messages, cursor] = await Message.paginate(threadId, { limit });
+    // Verify user ownership
+    for (const msg of messages) {
+      if (msg.user_id !== userId) {
+        return errorResponse(404, "Message not found");
+      }
+    }
+    return jsonResponse({
+      messages: messages.map((m) => toMessageResponse(m)),
+      next: cursor || null,
+    });
+  }
+
+  return errorResponse(405, "Method not allowed");
+}
+
+async function handleMessageById(
+  request: Request,
+  messageId: string,
+  options: HttpApiOptions
+): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureMessageTable();
+  const msg = (await Message.get(messageId)) as Message | null;
+  if (!msg || msg.user_id !== userId) {
+    return errorResponse(404, "Message not found");
+  }
+  return jsonResponse(toMessageResponse(msg));
+}
+
+// ── Thread types & helpers ────────────────────────────────────────
+
+interface ThreadCreateBody {
+  title?: string | null;
+}
+
+interface ThreadUpdateBody {
+  title: string;
+}
+
+function toThreadResponse(thread: Thread): JsonObject {
+  return {
+    id: thread.id,
+    user_id: thread.user_id,
+    title: thread.title,
+    created_at: thread.created_at,
+    updated_at: thread.updated_at,
+  };
+}
+
+async function handleThreadsRoot(request: Request, options: HttpApiOptions): Promise<Response> {
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+
+  if (request.method === "POST") {
+    await ensureThreadTable();
+    const body = await parseJsonBody<ThreadCreateBody>(request);
+    const title = body?.title ?? "New Thread";
+    const thread = (await Thread.create({
+      user_id: userId,
+      title,
+    })) as Thread;
+    return jsonResponse(toThreadResponse(thread));
+  }
+
+  if (request.method === "GET") {
+    await ensureThreadTable();
+    const url = new URL(request.url);
+    const limit = parseLimit(url, 10);
+    const [threads, cursor] = await Thread.paginate(userId, { limit });
+    return jsonResponse({
+      threads: threads.map((t) => toThreadResponse(t)),
+      next: cursor || null,
+    });
+  }
+
+  return errorResponse(405, "Method not allowed");
+}
+
+async function handleThreadById(
+  request: Request,
+  threadId: string,
+  options: HttpApiOptions
+): Promise<Response> {
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureThreadTable();
+
+  if (request.method === "GET") {
+    const thread = await Thread.find(userId, threadId);
+    if (!thread) return errorResponse(404, "Thread not found");
+    return jsonResponse(toThreadResponse(thread));
+  }
+
+  if (request.method === "PUT") {
+    const body = await parseJsonBody<ThreadUpdateBody>(request);
+    if (!body || typeof body.title !== "string") {
+      return errorResponse(400, "Invalid JSON body");
+    }
+    const thread = await Thread.find(userId, threadId);
+    if (!thread) return errorResponse(404, "Thread not found");
+    thread.title = body.title;
+    await thread.save();
+    return jsonResponse(toThreadResponse(thread));
+  }
+
+  if (request.method === "DELETE") {
+    const thread = await Thread.find(userId, threadId);
+    if (!thread) return errorResponse(404, "Thread not found");
+    // Delete all messages in the thread
+    await ensureMessageTable();
+    while (true) {
+      const [messages] = await Message.paginate(threadId, { limit: 100 });
+      if (!messages.length) break;
+      for (const msg of messages) {
+        if (msg.user_id === userId) {
+          await msg.delete();
+        }
+      }
+      if (messages.length < 100) break;
+    }
+    await thread.delete();
+    return new Response(null, { status: 204 });
+  }
+
+  return errorResponse(405, "Method not allowed");
+}
+
+// ── Job types & helpers ───────────────────────────────────────────
+
+function toJobResponse(job: Job): JsonObject {
+  return {
+    id: job.id,
+    user_id: job.user_id,
+    job_type: "workflow",
+    status: job.status,
+    workflow_id: job.workflow_id,
+    started_at: job.started_at ?? null,
+    finished_at: job.finished_at ?? null,
+    error: job.error ?? null,
+    cost: null,
+  };
+}
+
+async function handleJobsRoot(request: Request, options: HttpApiOptions): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
+
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureJobTable();
+
+  const url = new URL(request.url);
+  const limit = parseLimit(url, 100);
+  const workflowId = url.searchParams.get("workflow_id") ?? undefined;
+
+  const [jobs, nextStartKey] = await Job.paginate(userId, { limit, workflowId });
+
+  return jsonResponse({
+    jobs: jobs.map((j) => toJobResponse(j)),
+    next_start_key: nextStartKey || null,
+  });
+}
+
+async function handleJobById(
+  request: Request,
+  jobId: string,
+  options: HttpApiOptions
+): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
+
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureJobTable();
+
+  const job = (await Job.get(jobId)) as Job | null;
+  if (!job || job.user_id !== userId) {
+    return errorResponse(404, "Job not found");
+  }
+
+  return jsonResponse(toJobResponse(job));
+}
+
+async function handleJobCancel(
+  request: Request,
+  jobId: string,
+  options: HttpApiOptions
+): Promise<Response> {
+  if (request.method !== "POST") {
+    return errorResponse(405, "Method not allowed");
+  }
+
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureJobTable();
+
+  const job = (await Job.get(jobId)) as Job | null;
+  if (!job || job.user_id !== userId) {
+    return errorResponse(404, "Job not found");
+  }
+
+  job.markCancelled();
+  await job.save();
+
+  return jsonResponse(toJobResponse(job));
+}
+
+// ── Secrets types & helpers ────────────────────────────────────────
+
+interface SecretUpdateBody {
+  value: string;
+  description?: string;
+}
+
+function toSecretResponse(secret: Secret): JsonObject {
+  return {
+    ...secret.toSafeObject(),
+    is_configured: true,
+  };
+}
+
+async function handleSecretsRoot(request: Request, options: HttpApiOptions): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureSecretTable();
+
+  const url = new URL(request.url);
+  const limit = parseLimit(url, 100);
+  const [secrets] = await Secret.listForUser(userId, limit);
+
+  return jsonResponse({
+    secrets: secrets.map((s) => toSecretResponse(s)),
+    next_key: null,
+  });
+}
+
+async function handleSecretByKey(
+  request: Request,
+  key: string,
+  options: HttpApiOptions
+): Promise<Response> {
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureSecretTable();
+
+  if (request.method === "GET") {
+    const secret = await Secret.find(userId, key);
+    if (!secret) return errorResponse(404, "Secret not found");
+
+    const response = toSecretResponse(secret) as Record<string, unknown>;
+    const url = new URL(request.url);
+    if (url.searchParams.get("decrypt") === "true") {
+      try {
+        response.value = await secret.getDecryptedValue();
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : "Failed to decrypt secret";
+        return errorResponse(500, detail);
+      }
+    }
+    return jsonResponse(response);
+  }
+
+  if (request.method === "PUT") {
+    const body = await parseJsonBody<SecretUpdateBody>(request);
+    if (!body || typeof body.value !== "string") {
+      return errorResponse(400, "Invalid JSON body");
+    }
+    try {
+      const secret = await Secret.upsert({
+        userId,
+        key,
+        value: body.value,
+        description: body.description,
+      });
+      return jsonResponse(toSecretResponse(secret));
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "Failed to update secret";
+      return errorResponse(500, detail);
+    }
+  }
+
+  if (request.method === "DELETE") {
+    const deleted = await Secret.deleteSecret(userId, key);
+    if (!deleted) return errorResponse(404, "Secret not found");
+    return jsonResponse({ message: "Secret deleted successfully" });
+  }
+
+  return errorResponse(405, "Method not allowed");
+}
+
+// ── Asset types & helpers ──────────────────────────────────────────
+
+interface AssetCreateBody {
+  name: string;
+  content_type: string;
+  parent_id: string;
+  workflow_id?: string | null;
+  node_id?: string | null;
+  job_id?: string | null;
+  metadata?: Record<string, unknown> | null;
+  size?: number | null;
+}
+
+interface AssetUpdateBody {
+  name?: string;
+  content_type?: string;
+  parent_id?: string;
+  metadata?: Record<string, unknown>;
+  size?: number;
+}
+
+function toAssetResponse(asset: Asset): JsonObject {
+  return {
+    id: asset.id,
+    user_id: asset.user_id,
+    workflow_id: asset.workflow_id ?? null,
+    parent_id: asset.parent_id ?? null,
+    name: asset.name,
+    content_type: asset.content_type,
+    size: asset.size ?? null,
+    metadata: asset.metadata ?? null,
+    created_at: asset.created_at,
+    get_url: null,
+    thumb_url: null,
+    duration: asset.duration ?? null,
+    node_id: asset.node_id ?? null,
+    job_id: asset.job_id ?? null,
+  };
+}
+
+async function deleteFolderRecursive(userId: string, folderId: string): Promise<string[]> {
+  const deletedIds: string[] = [];
+  const children = await Asset.getChildren(userId, folderId, 10000);
+  for (const child of children) {
+    if (child.content_type === "folder") {
+      const subDeleted = await deleteFolderRecursive(userId, child.id);
+      deletedIds.push(...subDeleted);
+    } else {
+      await child.delete();
+      deletedIds.push(child.id);
+    }
+  }
+  const folder = await Asset.find(userId, folderId);
+  if (folder) {
+    await folder.delete();
+    deletedIds.push(folderId);
+  }
+  return deletedIds;
+}
+
+async function handleAssetsRoot(request: Request, options: HttpApiOptions): Promise<Response> {
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureAssetTable();
+
+  if (request.method === "GET") {
+    const url = new URL(request.url);
+    const parentId = url.searchParams.get("parent_id") ?? undefined;
+    const contentType = url.searchParams.get("content_type") ?? undefined;
+    const workflowId = url.searchParams.get("workflow_id") ?? undefined;
+    const nodeId = url.searchParams.get("node_id") ?? undefined;
+    const jobId = url.searchParams.get("job_id") ?? undefined;
+    const pageSizeRaw = url.searchParams.get("page_size");
+    const pageSize = pageSizeRaw
+      ? Math.min(Math.max(Number.parseInt(pageSizeRaw, 10) || 10000, 1), 10000)
+      : 10000;
+
+    // Default to home folder if no filters specified
+    const effectiveParentId =
+      parentId === undefined && !contentType && !workflowId && !nodeId && !jobId
+        ? userId
+        : parentId;
+
+    const [assets, cursor] = await Asset.paginate(userId, {
+      parentId: effectiveParentId,
+      contentType,
+      workflowId,
+      nodeId,
+      jobId,
+      limit: pageSize,
+    });
+
+    return jsonResponse({
+      assets: assets.map((a) => toAssetResponse(a)),
+      next: cursor || null,
+    });
+  }
+
+  if (request.method === "POST") {
+    const body = await parseJsonBody<AssetCreateBody>(request);
+    if (
+      !body ||
+      typeof body.name !== "string" ||
+      typeof body.content_type !== "string" ||
+      typeof body.parent_id !== "string"
+    ) {
+      return errorResponse(400, "Invalid JSON body: name, content_type, and parent_id are required");
+    }
+
+    const asset = (await Asset.create({
+      user_id: userId,
+      name: body.name,
+      content_type: body.content_type,
+      parent_id: body.parent_id,
+      workflow_id: body.workflow_id ?? null,
+      node_id: body.node_id ?? null,
+      job_id: body.job_id ?? null,
+      metadata: body.metadata ?? null,
+      size: body.size ?? null,
+    })) as Asset;
+
+    return jsonResponse(toAssetResponse(asset));
+  }
+
+  return errorResponse(405, "Method not allowed");
+}
+
+async function handleAssetById(
+  request: Request,
+  assetId: string,
+  options: HttpApiOptions
+): Promise<Response> {
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureAssetTable();
+
+  if (request.method === "GET") {
+    // Special case: home folder
+    if (assetId === userId) {
+      return jsonResponse({
+        id: userId,
+        user_id: userId,
+        workflow_id: null,
+        parent_id: "",
+        name: "Home",
+        content_type: "folder",
+        size: null,
+        metadata: null,
+        created_at: "",
+        get_url: null,
+        thumb_url: null,
+        duration: null,
+        node_id: null,
+        job_id: null,
+      });
+    }
+
+    const asset = await Asset.find(userId, assetId);
+    if (!asset) return errorResponse(404, "Asset not found");
+    return jsonResponse(toAssetResponse(asset));
+  }
+
+  if (request.method === "PUT") {
+    const asset = await Asset.find(userId, assetId);
+    if (!asset) return errorResponse(404, "Asset not found");
+
+    const body = await parseJsonBody<AssetUpdateBody>(request);
+    if (!body) return errorResponse(400, "Invalid JSON body");
+
+    if (body.name !== undefined) asset.name = body.name;
+    if (body.content_type !== undefined) asset.content_type = body.content_type;
+    if (body.parent_id !== undefined) asset.parent_id = body.parent_id;
+    if (body.metadata !== undefined) asset.metadata = body.metadata;
+    if (body.size !== undefined) asset.size = body.size;
+    await asset.save();
+    return jsonResponse(toAssetResponse(asset));
+  }
+
+  if (request.method === "DELETE") {
+    const asset = await Asset.find(userId, assetId);
+    if (!asset) return errorResponse(404, "Asset not found");
+
+    let deletedAssetIds: string[];
+    if (asset.content_type === "folder") {
+      deletedAssetIds = await deleteFolderRecursive(userId, assetId);
+    } else {
+      await asset.delete();
+      deletedAssetIds = [assetId];
+    }
+    return jsonResponse({ deleted_asset_ids: deletedAssetIds });
+  }
+
+  return errorResponse(405, "Method not allowed");
+}
+
 export async function handleApiRequest(
   request: Request,
   options: HttpApiOptions = {}
 ): Promise<Response> {
   const url = new URL(request.url);
   const pathname = normalizePath(url.pathname);
+
+  if (pathname.startsWith("/v1/")) {
+    const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+    const response = await handleOpenAIRequest(request, pathname, userId, options.openai);
+    if (response) return response;
+  }
+
+  if (pathname.startsWith("/api/oauth/")) {
+    const response = await handleOAuthRequest(request, pathname, () => getUserId(request, options.userIdHeader ?? "x-user-id"));
+    if (response) return response;
+  }
 
   if (pathname === "/api/models" || pathname.startsWith("/api/models/")) {
     const response = await handleModelsApiRequest(request);
@@ -317,6 +921,62 @@ export async function handleApiRequest(
 
   if (pathname === "/api/nodes/metadata" || pathname === "/api/node/metadata") {
     return handleNodeMetadata(request, options);
+  }
+
+  if (pathname === "/api/settings/secrets") {
+    return handleSecretsRoot(request, options);
+  }
+
+  if (pathname.startsWith("/api/settings/secrets/")) {
+    const secretKey = decodeURIComponent(pathname.slice("/api/settings/secrets/".length));
+    if (!secretKey) return errorResponse(404, "Not found");
+    return handleSecretByKey(request, secretKey, options);
+  }
+
+  if (pathname === "/api/assets") {
+    return handleAssetsRoot(request, options);
+  }
+
+  if (pathname.startsWith("/api/assets/")) {
+    const assetId = decodeURIComponent(pathname.slice("/api/assets/".length));
+    if (!assetId) return errorResponse(404, "Not found");
+    return handleAssetById(request, assetId, options);
+  }
+
+  if (pathname === "/api/jobs") {
+    return handleJobsRoot(request, options);
+  }
+
+  if (pathname.match(/^\/api\/jobs\/[^/]+\/cancel$/)) {
+    const jobId = decodeURIComponent(pathname.slice("/api/jobs/".length, pathname.length - "/cancel".length));
+    if (!jobId) return errorResponse(404, "Not found");
+    return handleJobCancel(request, jobId, options);
+  }
+
+  if (pathname.startsWith("/api/jobs/")) {
+    const jobId = decodeURIComponent(pathname.slice("/api/jobs/".length));
+    if (!jobId) return errorResponse(404, "Not found");
+    return handleJobById(request, jobId, options);
+  }
+
+  if (pathname === "/api/messages") {
+    return handleMessagesRoot(request, options);
+  }
+
+  if (pathname.startsWith("/api/messages/")) {
+    const messageId = decodeURIComponent(pathname.slice("/api/messages/".length));
+    if (!messageId) return errorResponse(404, "Not found");
+    return handleMessageById(request, messageId, options);
+  }
+
+  if (pathname === "/api/threads") {
+    return handleThreadsRoot(request, options);
+  }
+
+  if (pathname.startsWith("/api/threads/")) {
+    const threadId = decodeURIComponent(pathname.slice("/api/threads/".length));
+    if (!threadId) return errorResponse(404, "Not found");
+    return handleThreadById(request, threadId, options);
   }
 
   if (pathname === "/api/workflows") {

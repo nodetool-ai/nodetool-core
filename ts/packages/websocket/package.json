@@ -21,6 +21,7 @@
     "@nodetool/node-sdk": "*",
     "@nodetool/protocol": "*",
     "@nodetool/runtime": "*",
+    "@nodetool/security": "*",
     "msgpackr": "^1.11.2",
     "ws": "^8.18.3"
   },
