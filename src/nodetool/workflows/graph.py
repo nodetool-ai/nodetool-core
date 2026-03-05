@@ -60,6 +60,8 @@ class Graph(BaseModel):
     _node_index: dict[str, BaseNode] | None = PrivateAttr(default=None)
     _streaming_upstream_cache: set[str] | None = PrivateAttr(default=None)
     _outgoing_edges_cache: dict[tuple[str, str], list[Edge]] | None = PrivateAttr(default=None)
+    _incoming_control_edges_cache: dict[str, list[Edge]] | None = PrivateAttr(default=None)
+    _outgoing_control_edges_cache: dict[str, list[str]] | None = PrivateAttr(default=None)
     _cached_edges_len: int = PrivateAttr(default=-1)
 
     def __init__(self, **data):
@@ -68,6 +70,8 @@ class Graph(BaseModel):
         self._node_index = {node._id: node for node in self.nodes} if self.nodes else {}
         self._streaming_upstream_cache = None
         self._outgoing_edges_cache = None
+        self._incoming_control_edges_cache = None
+        self._outgoing_control_edges_cache = None
         self._cached_edges_len = -1
 
     def model_post_init(self, __context: Any):
@@ -75,6 +79,8 @@ class Graph(BaseModel):
         self._node_index = {node._id: node for node in self.nodes} if self.nodes else {}
         self._streaming_upstream_cache = None
         self._outgoing_edges_cache = None
+        self._incoming_control_edges_cache = None
+        self._outgoing_control_edges_cache = None
         self._cached_edges_len = -1
 
     def find_node(self, node_id: str) -> BaseNode | None:
@@ -82,18 +88,6 @@ class Graph(BaseModel):
         Find a node by its id using O(1) dictionary lookup.
         """
         return self._node_index.get(node_id) if self._node_index else None
-
-    def find_edges(self, source: str, source_handle: str) -> list[Edge]:
-        """
-        Find edges by their source and source_handle.
-        """
-        if getattr(self, '_outgoing_edges_cache', None) is None or getattr(self, '_cached_edges_len', -1) != len(self.edges):
-            self._outgoing_edges_cache = defaultdict(list)
-            for edge in self.edges:
-                self._outgoing_edges_cache[(edge.source, edge.sourceHandle)].append(edge)
-            self._cached_edges_len = len(self.edges)
-
-        return self._outgoing_edges_cache.get((source, source_handle), [])
 
     @classmethod
     def from_dict(
@@ -313,9 +307,34 @@ class Graph(BaseModel):
 
         return sorted_nodes
 
+    def _rebuild_edge_caches(self):
+        """Rebuild all edge-related caches for O(1) lookups."""
+        if getattr(self, '_cached_edges_len', -1) == len(self.edges):
+            return
+
+        self._outgoing_edges_cache = defaultdict(list)
+        self._incoming_control_edges_cache = defaultdict(list)
+        self._outgoing_control_edges_cache = defaultdict(list)
+
+        for edge in self.edges:
+            self._outgoing_edges_cache[(edge.source, edge.sourceHandle)].append(edge)
+            if edge.edge_type == "control":
+                self._incoming_control_edges_cache[edge.target].append(edge)
+                self._outgoing_control_edges_cache[edge.source].append(edge.target)
+
+        self._cached_edges_len = len(self.edges)
+
+    def find_edges(self, source: str, source_handle: str) -> list[Edge]:
+        """
+        Find edges by their source and source_handle.
+        """
+        self._rebuild_edge_caches()
+        return self._outgoing_edges_cache.get((source, source_handle), [])
+
     def get_control_edges(self, target_id: str) -> list[Edge]:
         """Return all control edges targeting the given node."""
-        return [edge for edge in self.edges if edge.target == target_id and edge.edge_type == "control"]
+        self._rebuild_edge_caches()
+        return self._incoming_control_edges_cache.get(target_id, [])
 
     def get_controller_nodes(self, target_id: str) -> list[BaseNode]:
         """Return all nodes that control the given target node."""
@@ -329,7 +348,8 @@ class Graph(BaseModel):
 
     def get_controlled_nodes(self, source_id: str) -> list[str]:
         """Return IDs of all nodes controlled by the given source."""
-        return [edge.target for edge in self.edges if edge.source == source_id and edge.edge_type == "control"]
+        self._rebuild_edge_caches()
+        return self._outgoing_control_edges_cache.get(source_id, [])
 
     def validate_control_edges(self) -> list[str]:
         """
