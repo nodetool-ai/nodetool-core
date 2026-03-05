@@ -13,8 +13,7 @@
     "packages/agents",
     "packages/chat",
     "packages/security",
-    "packages/auth",
-    "packages/dsl"
+    "packages/auth"
   ],
   "scripts": {
     "build": "npm run build --workspaces",

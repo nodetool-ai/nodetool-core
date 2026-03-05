@@ -740,6 +740,32 @@ export { KIE_IMAGE_NODES } from "./nodes/kie-image.js";
 export { KIE_VIDEO_NODES } from "./nodes/kie-video.js";
 export { KIE_AUDIO_NODES } from "./nodes/kie-audio.js";
 export { KieAINode, KIE_DYNAMIC_NODES } from "./nodes/kie-dynamic.js";
+export {
+  CollectionNode,
+  CountNode,
+  GetDocumentsNode,
+  PeekNode,
+  IndexImageNode,
+  IndexEmbeddingNode,
+  IndexTextChunkNode,
+  IndexAggregatedTextNode,
+  IndexStringNode,
+  QueryImageNode,
+  QueryTextNode,
+  RemoveOverlapNode,
+  HybridSearchNode,
+  VECTOR_CHROMA_NODES,
+} from "./nodes/vector-chroma.js";
+export {
+  CreateIndexFlatL2Node,
+  CreateIndexFlatIPNode,
+  CreateIndexIVFFlatNode,
+  TrainIndexNode,
+  AddVectorsNode,
+  AddWithIdsNode,
+  SearchNode as FaissSearchNode,
+  VECTOR_FAISS_NODES,
+} from "./nodes/vector-faiss.js";
 
 import { CONTROL_NODES } from "./nodes/control.js";
 import { BOOLEAN_NODES } from "./nodes/boolean.js";
@@ -799,6 +825,8 @@ import { KIE_IMAGE_NODES } from "./nodes/kie-image.js";
 import { KIE_VIDEO_NODES } from "./nodes/kie-video.js";
 import { KIE_AUDIO_NODES } from "./nodes/kie-audio.js";
 import { KIE_DYNAMIC_NODES } from "./nodes/kie-dynamic.js";
+import { VECTOR_CHROMA_NODES } from "./nodes/vector-chroma.js";
+import { VECTOR_FAISS_NODES } from "./nodes/vector-faiss.js";
 
 export const ALL_BASE_NODES: readonly NodeClass[] = [
   ...CONTROL_NODES,
@@ -859,6 +887,8 @@ export const ALL_BASE_NODES: readonly NodeClass[] = [
   ...KIE_VIDEO_NODES,
   ...KIE_AUDIO_NODES,
   ...KIE_DYNAMIC_NODES,
+  ...VECTOR_CHROMA_NODES,
+  ...VECTOR_FAISS_NODES,
 ];
 
 export function registerBaseNodes(registry: NodeRegistry): void {
