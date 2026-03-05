@@ -12,7 +12,8 @@
     "packages/websocket",
     "packages/agents",
     "packages/chat",
-    "packages/security"
+    "packages/security",
+    "packages/auth"
   ],
   "scripts": {
     "build": "npm run build --workspaces",

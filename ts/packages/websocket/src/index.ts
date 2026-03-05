@@ -16,3 +16,11 @@ export {
   createTestUiServer,
   type TestUiServerOptions,
 } from "./test-ui-server.js";
+export {
+  handleOpenAIRequest,
+  createSSEStream,
+  convertMessages,
+  convertTools,
+  resolveProvider,
+  type OpenAIApiOptions,
+} from "./openai-api.js";
