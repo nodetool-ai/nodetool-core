@@ -9,7 +9,9 @@
     "packages/node-sdk",
     "packages/base-nodes",
     "packages/parity-harness",
-    "packages/websocket"
+    "packages/websocket",
+    "packages/agents",
+    "packages/chat"
   ],
   "scripts": {
     "build": "npm run build --workspaces",

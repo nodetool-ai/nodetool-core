@@ -937,10 +937,11 @@ export class OpenAIProvider extends BaseProvider {
 
     const temperature = Math.max(0, Math.min(1, args.temperature ?? 0));
 
+    const audioPart = new Uint8Array(args.audio) as BlobPart;
     const fileLike =
       typeof File !== "undefined"
-        ? new File([args.audio], "audio.mp3", { type: "audio/mpeg" })
-        : Object.assign(new Blob([args.audio], { type: "audio/mpeg" }), {
+        ? new File([audioPart], "audio.mp3", { type: "audio/mpeg" })
+        : Object.assign(new Blob([audioPart], { type: "audio/mpeg" }), {
             name: "audio.mp3",
           });
 
