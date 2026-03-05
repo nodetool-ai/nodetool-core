@@ -106,22 +106,44 @@ export class Asset extends DBModel {
 
   // ── Static queries ───────────────────────────────────────────────
 
+  /** Find an asset by id, scoped to the user. */
+  static async find(
+    userId: string,
+    assetId: string,
+  ): Promise<Asset | null> {
+    const asset = (await (Asset as unknown as ModelClass<Asset>).get(assetId)) as Asset | null;
+    if (!asset || asset.user_id !== userId) return null;
+    return asset;
+  }
+
   /** List assets in a folder. */
   static async paginate(
     userId: string,
     opts: {
       parentId?: string | null;
       contentType?: string;
+      workflowId?: string;
+      nodeId?: string;
+      jobId?: string;
       limit?: number;
     } = {},
   ): Promise<[Asset[], string]> {
-    const { parentId, contentType, limit = 50 } = opts;
+    const { parentId, contentType, workflowId, nodeId, jobId, limit = 50 } = opts;
     let cond = field("user_id").equals(userId);
     if (parentId !== undefined) {
       cond = cond.and(field("parent_id").equals(parentId));
     }
     if (contentType) {
       cond = cond.and(field("content_type").equals(contentType));
+    }
+    if (workflowId) {
+      cond = cond.and(field("workflow_id").equals(workflowId));
+    }
+    if (nodeId) {
+      cond = cond.and(field("node_id").equals(nodeId));
+    }
+    if (jobId) {
+      cond = cond.and(field("job_id").equals(jobId));
     }
 
     return (Asset as unknown as ModelClass<Asset>).query({

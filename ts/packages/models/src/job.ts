@@ -176,11 +176,13 @@ export class Job extends DBModel {
       cursor?: string;
       limit?: number;
       status?: JobStatus;
+      workflowId?: string;
     } = {},
   ): Promise<[Job[], string]> {
-    const { limit = 50, status } = opts;
+    const { limit = 50, status, workflowId } = opts;
     let cond = field("user_id").equals(userId);
     if (status) cond = cond.and(field("status").equals(status));
+    if (workflowId) cond = cond.and(field("workflow_id").equals(workflowId));
 
     return (Job as unknown as ModelClass<Job>).query({
       condition: cond,

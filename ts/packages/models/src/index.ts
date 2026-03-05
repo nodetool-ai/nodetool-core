@@ -62,3 +62,7 @@ export { Asset } from "./asset.js";
 export { Message } from "./message.js";
 
 export { Thread } from "./thread.js";
+
+export { Secret } from "./secret.js";
+
+export { OAuthCredential } from "./oauth-credential.js";
