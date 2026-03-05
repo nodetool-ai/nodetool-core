@@ -472,3 +472,138 @@ describe("OllamaProvider – hasToolSupport", () => {
     expect(provider.hasToolSupport("any-model")).toBe(true);
   });
 });
+
+describe("OllamaProvider – parseDataUri non-base64 path", () => {
+  it("converts image with non-base64 data URI in data field", async () => {
+    const provider = new OllamaProvider(
+      { OLLAMA_API_URL: "http://localhost:11434" },
+      { fetchFn: vi.fn() as unknown as typeof fetch }
+    );
+
+    const result = await provider.convertMessage({
+      role: "user",
+      content: [
+        {
+          type: "image",
+          image: { data: "data:image/png,hello%20world" },
+        },
+      ],
+    });
+    expect((result as any).images[0]).toBeTruthy();
+  });
+
+  it("converts image with non-base64 data URI in uri field", async () => {
+    const provider = new OllamaProvider(
+      { OLLAMA_API_URL: "http://localhost:11434" },
+      { fetchFn: vi.fn() as unknown as typeof fetch }
+    );
+
+    const result = await provider.convertMessage({
+      role: "user",
+      content: [
+        {
+          type: "image",
+          image: { uri: "data:image/png,hello%20world" },
+        },
+      ],
+    });
+    expect((result as any).images[0]).toBeTruthy();
+  });
+});
+
+describe("OllamaProvider – normalizeToolArgs edge cases", () => {
+  it("handles string JSON array arguments as empty object", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        message: {
+          content: "",
+          tool_calls: [
+            { function: { name: "calc", arguments: "[1,2,3]" } },
+          ],
+        },
+      })
+    );
+
+    const provider = new OllamaProvider(
+      { OLLAMA_API_URL: "http://localhost:11434" },
+      { fetchFn: fetchFn as unknown as typeof fetch }
+    );
+
+    const result = await provider.generateMessage({
+      model: "test",
+      messages: [{ role: "user", content: "calc" }],
+      tools: [{ name: "calc" }],
+    });
+
+    expect(result.toolCalls![0].args).toEqual({});
+  });
+
+  it("handles invalid JSON string arguments as empty object", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        message: {
+          content: "",
+          tool_calls: [
+            { function: { name: "calc", arguments: "not json" } },
+          ],
+        },
+      })
+    );
+
+    const provider = new OllamaProvider(
+      { OLLAMA_API_URL: "http://localhost:11434" },
+      { fetchFn: fetchFn as unknown as typeof fetch }
+    );
+
+    const result = await provider.generateMessage({
+      model: "test",
+      messages: [{ role: "user", content: "calc" }],
+      tools: [{ name: "calc" }],
+    });
+
+    expect(result.toolCalls![0].args).toEqual({});
+  });
+
+  it("handles array arguments as empty object", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        message: {
+          content: "",
+          tool_calls: [
+            { function: { name: "calc", arguments: [1, 2, 3] } },
+          ],
+        },
+      })
+    );
+
+    const provider = new OllamaProvider(
+      { OLLAMA_API_URL: "http://localhost:11434" },
+      { fetchFn: fetchFn as unknown as typeof fetch }
+    );
+
+    const result = await provider.generateMessage({
+      model: "test",
+      messages: [{ role: "user", content: "calc" }],
+      tools: [{ name: "calc" }],
+    });
+
+    expect(result.toolCalls![0].args).toEqual({});
+  });
+});
+
+describe("OllamaProvider – postJson error path", () => {
+  it("throws when postJson receives non-OK response", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({}, false, 500)
+    );
+
+    const provider = new OllamaProvider(
+      { OLLAMA_API_URL: "http://localhost:11434" },
+      { fetchFn: fetchFn as unknown as typeof fetch }
+    );
+
+    await expect(
+      provider.generateEmbedding({ text: "hello", model: "test" })
+    ).rejects.toThrow("API request failed");
+  });
+});

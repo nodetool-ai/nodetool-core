@@ -262,6 +262,34 @@ describe("NodeInbox – tryPopAnyWithEnvelope stale arrival skip (lines 276-278)
   });
 });
 
+describe("NodeInbox – tryPopAnyWithEnvelope stale skip via iterInput drain", () => {
+  it("skips stale arrivals after iterInput consumed buffer items", async () => {
+    const inbox = new NodeInbox();
+    inbox.addUpstream("a", 1);
+    inbox.addUpstream("b", 1);
+
+    // Put items to both handles (creates arrival entries for both)
+    await inbox.put("a", "val-a");
+    await inbox.put("b", "val-b");
+
+    // Drain "a" buffer via iterInput (but stale "a" arrival entry remains)
+    const gen = inbox.iterInput("a");
+    const first = await gen.next();
+    expect(first.value).toBe("val-a");
+    inbox.markSourceDone("a");
+
+    // Now tryPopAnyWithEnvelope should encounter stale "a" (buffer empty)
+    // and skip to "b"
+    const result = inbox.tryPopAnyWithEnvelope();
+    expect(result).not.toBeNull();
+    expect(result![0]).toBe("b");
+    expect(result![1].data).toBe("val-b");
+
+    // No more items
+    expect(inbox.tryPopAnyWithEnvelope()).toBeNull();
+  });
+});
+
 describe("NodeInbox – hasBuffered for unregistered handle", () => {
   it("returns false for handle with no buffer", () => {
     const inbox = new NodeInbox();

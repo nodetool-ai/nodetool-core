@@ -326,3 +326,220 @@ describe("LlamaProvider – getAvailableLanguageModels fallback", () => {
     expect(await provider.getAvailableLanguageModels()).toEqual([]);
   });
 });
+
+describe("LlamaProvider – emulated tool calls in streaming (hasToolSupport=false)", () => {
+  it("parses emulated tool calls on stop when tools are provided", async () => {
+    const stream = makeAsyncIterable([
+      {
+        choices: [{
+          delta: { content: "search(q=\"test\")" },
+          finish_reason: null,
+        }],
+      },
+      {
+        choices: [{ delta: { content: "" }, finish_reason: "stop" }],
+      },
+    ]);
+
+    const create = vi.fn().mockResolvedValue(stream);
+    const provider = new LlamaProvider(
+      { LLAMA_CPP_URL: "http://localhost:8080" },
+      { client: { chat: { completions: { create } } } as any }
+    );
+
+    const out: unknown[] = [];
+    for await (const item of provider.generateMessages({
+      model: "test",
+      messages: [{ role: "user", content: "search for test" }],
+      tools: [{ name: "search", description: "Search", inputSchema: { type: "object" } }],
+    })) {
+      out.push(item);
+    }
+
+    // Should have both chunk outputs and the emulated tool call
+    const toolCalls = out.filter((o: any) => o.name === "search");
+    expect(toolCalls.length).toBe(1);
+  });
+});
+
+describe("LlamaProvider – emulated tool calls in generateMessage (non-streaming)", () => {
+  it("parses emulated tool calls when no native tool_calls", async () => {
+    const create = vi.fn().mockResolvedValue({
+      choices: [{
+        message: { content: "search(q=\"test\")" },
+      }],
+    });
+
+    const provider = new LlamaProvider(
+      { LLAMA_CPP_URL: "http://localhost:8080" },
+      { client: { chat: { completions: { create } } } as any }
+    );
+
+    const result = await provider.generateMessage({
+      model: "test",
+      messages: [{ role: "user", content: "search" }],
+      tools: [{ name: "search", description: "Search" }],
+    });
+
+    expect(result.toolCalls).toBeDefined();
+    expect(result.toolCalls!.length).toBe(1);
+    expect(result.toolCalls![0].name).toBe("search");
+  });
+});
+
+describe("LlamaProvider – parseKeywordArgs edge cases", () => {
+  it("parses JSON objects and arrays in arguments", async () => {
+    const stream = makeAsyncIterable([
+      {
+        choices: [{
+          delta: { content: 'calc(data={"x":1}, items=[1,2])' },
+          finish_reason: null,
+        }],
+      },
+      {
+        choices: [{ delta: { content: "" }, finish_reason: "stop" }],
+      },
+    ]);
+
+    const create = vi.fn().mockResolvedValue(stream);
+    const provider = new LlamaProvider(
+      { LLAMA_CPP_URL: "http://localhost:8080" },
+      { client: { chat: { completions: { create } } } as any }
+    );
+
+    const out: unknown[] = [];
+    for await (const item of provider.generateMessages({
+      model: "test",
+      messages: [{ role: "user", content: "calc" }],
+      tools: [{ name: "calc" }],
+    })) {
+      out.push(item);
+    }
+
+    const tc = out.find((o: any) => o.name === "calc") as any;
+    expect(tc).toBeDefined();
+    expect(tc.args.data).toEqual({ x: 1 });
+    expect(tc.args.items).toEqual([1, 2]);
+  });
+
+  it("parses quoted strings, booleans, nulls, numbers", async () => {
+    const stream = makeAsyncIterable([
+      {
+        choices: [{
+          delta: { content: 'fn(a="hello", b=true, c=false, d=null, e=42.5, f=plain)' },
+          finish_reason: null,
+        }],
+      },
+      {
+        choices: [{ delta: { content: "" }, finish_reason: "stop" }],
+      },
+    ]);
+
+    const create = vi.fn().mockResolvedValue(stream);
+    const provider = new LlamaProvider(
+      { LLAMA_CPP_URL: "http://localhost:8080" },
+      { client: { chat: { completions: { create } } } as any }
+    );
+
+    const out: unknown[] = [];
+    for await (const item of provider.generateMessages({
+      model: "test",
+      messages: [{ role: "user", content: "fn" }],
+      tools: [{ name: "fn" }],
+    })) {
+      out.push(item);
+    }
+
+    const tc = out.find((o: any) => o.name === "fn") as any;
+    expect(tc.args.a).toBe("hello");
+    expect(tc.args.b).toBe(true);
+    expect(tc.args.c).toBe(false);
+    expect(tc.args.d).toBeNull();
+    expect(tc.args.e).toBe(42.5);
+    expect(tc.args.f).toBe("plain");
+  });
+
+  it("handles single-quoted strings", async () => {
+    const stream = makeAsyncIterable([
+      {
+        choices: [{
+          delta: { content: "fn(a='hello')" },
+          finish_reason: null,
+        }],
+      },
+      {
+        choices: [{ delta: { content: "" }, finish_reason: "stop" }],
+      },
+    ]);
+
+    const create = vi.fn().mockResolvedValue(stream);
+    const provider = new LlamaProvider(
+      { LLAMA_CPP_URL: "http://localhost:8080" },
+      { client: { chat: { completions: { create } } } as any }
+    );
+
+    const out: unknown[] = [];
+    for await (const item of provider.generateMessages({
+      model: "test",
+      messages: [{ role: "user", content: "fn" }],
+      tools: [{ name: "fn" }],
+    })) {
+      out.push(item);
+    }
+
+    const tc = out.find((o: any) => o.name === "fn") as any;
+    expect(tc.args.a).toBe("hello");
+  });
+});
+
+describe("LlamaProvider – generateMessages with responseFormat", () => {
+  it("passes responseFormat in streaming request", async () => {
+    const stream = makeAsyncIterable([
+      { choices: [{ delta: { content: "{}" }, finish_reason: "stop" }] },
+    ]);
+    const create = vi.fn().mockResolvedValue(stream);
+
+    const provider = new LlamaProvider(
+      { LLAMA_CPP_URL: "http://localhost:8080" },
+      { client: { chat: { completions: { create } } } as any }
+    );
+
+    const out: unknown[] = [];
+    for await (const item of provider.generateMessages({
+      model: "test",
+      messages: [{ role: "user", content: "json" }],
+      responseFormat: { type: "json_object" },
+    })) {
+      out.push(item);
+    }
+
+    expect(create.mock.calls[0][0].response_format).toEqual({ type: "json_object" });
+  });
+});
+
+describe("LlamaProvider – isContextLengthError", () => {
+  it("detects context length errors", () => {
+    const provider = new LlamaProvider(
+      { LLAMA_CPP_URL: "http://localhost:8080" },
+      { client: {} as any }
+    );
+    expect(provider.isContextLengthError("context length exceeded")).toBe(true);
+    expect(provider.isContextLengthError("random error")).toBe(false);
+  });
+});
+
+describe("LlamaProvider – convertMessage tool role", () => {
+  it("converts tool role with object content", async () => {
+    const provider = new LlamaProvider(
+      { LLAMA_CPP_URL: "http://localhost:8080" },
+      { client: {} as any }
+    );
+
+    const result = await provider.convertMessage({
+      role: "tool",
+      content: { result: 42 } as any,
+    });
+    expect((result as any).content).toContain("Tool result:");
+    expect((result as any).content).toContain("42");
+  });
+});

@@ -42,6 +42,18 @@ describe("Multiply", () => {
     const result = await node.process({ a: 4, b: 5 });
     expect(result.result).toBe(20);
   });
+
+  it("uses defaults when no inputs provided", async () => {
+    const node = new Multiply();
+    node.assign({});
+    const result = await node.process({});
+    expect(result.result).toBe(1); // 1 * 1
+  });
+
+  it("returns correct defaults", () => {
+    const node = new Multiply();
+    expect(node.defaults()).toEqual({ a: 1, b: 1 });
+  });
 });
 
 describe("Constant", () => {

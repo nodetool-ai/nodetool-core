@@ -480,6 +480,106 @@ describe("kieExecuteTask", () => {
       "Submit failed"
     );
   });
+
+  it("poll times out when state never reaches success/failed", async () => {
+    mockFetch.mockImplementation(async (url: string | URL) => {
+      const urlStr = String(url);
+      if (urlStr.includes("createTask")) {
+        return jsonResponse({ code: 200, data: { taskId: "task_timeout" } });
+      }
+      if (urlStr.includes("recordInfo")) {
+        return jsonResponse({
+          code: 200,
+          data: { state: "processing" },
+        });
+      }
+      return jsonResponse({}, 404);
+    });
+    await expect(kieExecuteTask(apiKey, model, input, 0, 2)).rejects.toThrow(
+      "Task timed out"
+    );
+  });
+
+  it("download fails when result URL fetch returns non-ok", async () => {
+    mockFetch.mockImplementation(async (url: string | URL) => {
+      const urlStr = String(url);
+      if (urlStr.includes("createTask")) {
+        return jsonResponse({ code: 200, data: { taskId: "task_dlf" } });
+      }
+      if (urlStr.includes("recordInfo")) {
+        return jsonResponse({
+          code: 200,
+          data: {
+            state: "success",
+            resultJson: JSON.stringify({
+              resultUrls: ["https://cdn.example.com/fail.png"],
+            }),
+          },
+        });
+      }
+      if (urlStr.includes("cdn.example.com")) {
+        return {
+          ok: false,
+          status: 404,
+          json: async () => null,
+          text: async () => "Not found",
+          arrayBuffer: async () => new ArrayBuffer(0),
+        } as unknown as Response;
+      }
+      return jsonResponse({}, 404);
+    });
+    await expect(kieExecuteTask(apiKey, model, input, 0, 5)).rejects.toThrow(
+      "Failed to download"
+    );
+  });
+
+  it("download fails when no resultUrls in resultJson", async () => {
+    mockFetch.mockImplementation(async (url: string | URL) => {
+      const urlStr = String(url);
+      if (urlStr.includes("createTask")) {
+        return jsonResponse({ code: 200, data: { taskId: "task_nru" } });
+      }
+      if (urlStr.includes("recordInfo")) {
+        return jsonResponse({
+          code: 200,
+          data: {
+            state: "success",
+            resultJson: JSON.stringify({}),
+          },
+        });
+      }
+      return jsonResponse({}, 404);
+    });
+    await expect(kieExecuteTask(apiKey, model, input, 0, 5)).rejects.toThrow(
+      "No resultUrls"
+    );
+  });
+
+  it("download fails when recordInfo returns non-ok", async () => {
+    let callIdx = 0;
+    mockFetch.mockImplementation(async (url: string | URL) => {
+      const urlStr = String(url);
+      if (urlStr.includes("createTask")) {
+        return jsonResponse({ code: 200, data: { taskId: "task_dr" } });
+      }
+      if (urlStr.includes("recordInfo")) {
+        callIdx++;
+        if (callIdx === 1) {
+          // pollStatus call - success
+          return jsonResponse({
+            code: 200,
+            data: { state: "success" },
+          });
+        }
+        // downloadResult call - fails
+        return { ok: false, status: 500, json: async () => ({}), text: async () => "err" } as unknown as Response;
+      }
+      return jsonResponse({}, 404);
+    });
+    await expect(kieExecuteTask(apiKey, model, input, 0, 5)).rejects.toThrow(
+      "Failed to get result"
+    );
+  });
 });
 
 /* ================================================================== */

@@ -275,3 +275,52 @@ describe("calculateImageCost", () => {
     warnSpy.mockRestore();
   });
 });
+
+describe("CostCalculator – getTier prefix match", () => {
+  it("matches model by prefix when no exact match exists", () => {
+    // "gpt-4o-2024-05-13" is not an exact key but starts with "gpt-4o"
+    const tier = CostCalculator.getTier("gpt-4o-2024-05-13", "openai");
+    expect(tier).toBe("topTierChat");
+  });
+});
+
+describe("CostCalculator – VIDEO_BASED cost type", () => {
+  it("calculates video-based cost using videoSeconds", () => {
+    // We need to test the VIDEO_BASED branch.
+    // Since there's no predefined VIDEO_BASED tier mapped to a model,
+    // we can test _calculateForTier indirectly by adding a temporary mapping.
+    // Instead, test the calculate method with a custom tier via PRICING_TIERS.
+    const tierName = "__test_video__";
+    (PRICING_TIERS as any)[tierName] = {
+      costType: CostType.VIDEO_BASED,
+      perSecondVideo: 0.05,
+    };
+    (MODEL_TO_TIER as any)["test:video-model"] = tierName;
+
+    try {
+      const cost = CostCalculator.calculate("video-model", { videoSeconds: 10 }, "test");
+      expect(cost).toBeCloseTo(0.5);
+    } finally {
+      delete (PRICING_TIERS as any)[tierName];
+      delete (MODEL_TO_TIER as any)["test:video-model"];
+    }
+  });
+});
+
+describe("CostCalculator – fallback return 0 for unknown cost type", () => {
+  it("returns 0 for an unknown cost type", () => {
+    const tierName = "__test_unknown_type__";
+    (PRICING_TIERS as any)[tierName] = {
+      costType: "unknown_type" as any,
+    };
+    (MODEL_TO_TIER as any)["test:unknown-model"] = tierName;
+
+    try {
+      const cost = CostCalculator.calculate("unknown-model", { inputTokens: 100 }, "test");
+      expect(cost).toBe(0);
+    } finally {
+      delete (PRICING_TIERS as any)[tierName];
+      delete (MODEL_TO_TIER as any)["test:unknown-model"];
+    }
+  });
+});

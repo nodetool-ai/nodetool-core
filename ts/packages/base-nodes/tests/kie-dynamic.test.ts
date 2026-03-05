@@ -229,6 +229,236 @@ describe("KieAINode process with mocked API", () => {
   });
 });
 
+describe("KieAINode parseInputParams and full process", () => {
+  function setupSuccessfulKieApi() {
+    mockFetch.mockImplementation(async (url: string | URL) => {
+      const urlStr = String(url);
+      if (urlStr.includes("createTask")) {
+        return jsonResponse({ code: 200, data: { taskId: "task_dyn_p" } });
+      }
+      if (urlStr.includes("recordInfo")) {
+        return jsonResponse({
+          code: 200,
+          data: {
+            state: "success",
+            resultJson: JSON.stringify({
+              resultUrls: ["https://cdn.example.com/output.png"],
+            }),
+          },
+        });
+      }
+      if (urlStr.includes("cdn.example.com")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => null,
+          text: async () => "",
+          arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+        } as unknown as Response;
+      }
+      return jsonResponse({ error: "unknown" }, 404);
+    });
+  }
+
+  // Docs with full parameter section that exercises parseInputParams
+  const FULL_DOCS = `
+| **Format** | \`test/model-123\` |
+
+### input Object Parameters
+
+#### prompt
+- **Type**: \`string\`
+- **Required**: Yes
+- **Description**: The prompt text
+- **Default Value**: \`hello world\`
+
+#### width
+- **Type**: \`integer\`
+- **Required**: No
+- **Description**: Width of the output
+- **Default Value**: \`512\`
+- **Range**: \`256\` to \`1024\`
+
+#### height
+- **Type**: \`number\`
+- **Required**: No
+- **Description**: Height
+- **Default Value**: \`3.14\`
+
+#### enable_hd
+- **Type**: \`boolean\`
+- **Required**: No
+- **Description**: Enable HD mode
+- **Default Value**: \`true\`
+
+#### style
+- **Type**: \`string\`
+- **Required**: No
+- **Description**: Style choice
+- **Options**:
+  - \`realistic\`
+  - \`artistic\`
+  - \`cartoon\`
+
+#### image_url
+- **Type**: \`string\`
+- **Required**: No
+- **Description**: Upload image URL
+
+#### image_urls
+- **Type**: \`array\`
+- **Required**: No
+- **Description**: Multiple images
+- **Accepted File Types**: png, jpg
+
+#### upload_method
+- **Type**: \`string\`
+- **Required**: No
+- **Description**: Hidden param
+
+#### json_config
+- **Type**: \`string\`
+- **Required**: No
+- **Default Value**: \`{"key": "value"}\`
+- **Description**: JSON config
+
+---
+`;
+
+  it("parses input params from docs with all field types", async () => {
+    setupSuccessfulKieApi();
+    const node = new KieAINode();
+    const result = await node.process({
+      model_info: FULL_DOCS,
+      prompt: "test prompt",
+      _secrets: { KIE_API_KEY: "test-key" },
+    });
+    expect(result.image).toBeDefined();
+    // Verify the createTask call includes the prompt
+    const createCall = mockFetch.mock.calls.find((c: unknown[]) =>
+      String(c[0]).includes("createTask")
+    );
+    const body = JSON.parse(createCall![1].body);
+    expect(body.model).toBe("test/model-123");
+    expect(body.input.prompt).toBe("test prompt");
+  });
+
+  it("throws when required param is missing", async () => {
+    setupSuccessfulKieApi();
+    const node = new KieAINode();
+    await expect(
+      node.process({
+        model_info: FULL_DOCS,
+        // prompt is required but not provided
+        _secrets: { KIE_API_KEY: "test-key" },
+      })
+    ).rejects.toThrow("Missing required input: prompt");
+  });
+
+  it("passes file URL params through", async () => {
+    setupSuccessfulKieApi();
+    const node = new KieAINode();
+    const result = await node.process({
+      model_info: FULL_DOCS,
+      prompt: "test",
+      image_url: "https://example.com/img.png",
+      image_urls: ["https://a.com/1.png", "https://b.com/2.png"],
+      _secrets: { KIE_API_KEY: "test-key" },
+    });
+    expect(result.image).toBeDefined();
+    const createCall = mockFetch.mock.calls.find((c: unknown[]) =>
+      String(c[0]).includes("createTask")
+    );
+    const body = JSON.parse(createCall![1].body);
+    expect(body.input.image_url).toBe("https://example.com/img.png");
+  });
+
+  it("extracts model ID from Model name format", async () => {
+    setupSuccessfulKieApi();
+    const node = new KieAINode();
+    const result = await node.process({
+      model_info: `Model name, format: \`custom/my-model\`\n### input Object Parameters\n---`,
+      prompt: "test",
+      _secrets: { KIE_API_KEY: "test-key" },
+    });
+    expect(result.image).toBeDefined();
+    const createCall = mockFetch.mock.calls.find((c: unknown[]) =>
+      String(c[0]).includes("createTask")
+    );
+    const body = JSON.parse(createCall![1].body);
+    expect(body.model).toBe("custom/my-model");
+  });
+
+  it("infers video output type", async () => {
+    setupSuccessfulKieApi();
+    const node = new KieAINode();
+    const result = await node.process({
+      model_info: `| **Format** | \`kling/video-gen\` |\n---`,
+      _secrets: { KIE_API_KEY: "test-key" },
+    });
+    expect(result.video).toBeDefined();
+  });
+
+  it("infers audio output type", async () => {
+    setupSuccessfulKieApi();
+    const node = new KieAINode();
+    const result = await node.process({
+      model_info: `| **Format** | \`suno/music-gen\` |\n---`,
+      _secrets: { KIE_API_KEY: "test-key" },
+    });
+    expect(result.audio).toBeDefined();
+  });
+
+  it("skips params with no name match", async () => {
+    setupSuccessfulKieApi();
+    const node = new KieAINode();
+    // Docs with a block that has no name match (just whitespace/empty)
+    const docs = `| **Format** | \`test/model\` |\n### input Object Parameters\n####\n#### prompt\n- **Type**: \`string\`\n- **Required**: Yes\n- **Description**: text\n---`;
+    const result = await node.process({
+      model_info: docs,
+      prompt: "hi",
+      _secrets: { KIE_API_KEY: "test-key" },
+    });
+    expect(result.image).toBeDefined();
+  });
+
+  it("sets isFileUrl when description contains Upload and type is string", async () => {
+    setupSuccessfulKieApi();
+    const node = new KieAINode();
+    const docs = `| **Format** | \`test/uploadmodel\` |
+### input Object Parameters
+#### my_file
+- **Type**: \`string\`
+- **Required**: No
+- **Description**: Upload your file here
+- **Default Value**: \`\`
+---`;
+    const result = await node.process({
+      model_info: docs,
+      my_file: "https://example.com/file.png",
+      _secrets: { KIE_API_KEY: "test-key" },
+    });
+    expect(result.image).toBeDefined();
+    const createCall = mockFetch.mock.calls.find((c: unknown[]) =>
+      String(c[0]).includes("createTask")
+    );
+    const body = JSON.parse(createCall![1].body);
+    expect(body.input.my_file).toBe("https://example.com/file.png");
+  });
+
+  it("coerces default value for boolean false", async () => {
+    setupSuccessfulKieApi();
+    const node = new KieAINode();
+    // Docs with boolean param default = "false"
+    const docs = `| **Format** | \`test/boolmodel\` |\n### input Object Parameters\n#### enabled\n- **Type**: \`boolean\`\n- **Required**: No\n- **Default Value**: \`false\`\n- **Description**: flag\n---`;
+    const result = await node.process({
+      model_info: docs,
+      _secrets: { KIE_API_KEY: "test-key" },
+    });
+    expect(result.image).toBeDefined();
+  });
+});
+
 describe("KieAINode API error handling", () => {
   it("throws on API submit error", async () => {
     mockFetch.mockResolvedValueOnce(
