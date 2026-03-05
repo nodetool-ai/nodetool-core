@@ -11,7 +11,8 @@
     "packages/parity-harness",
     "packages/websocket",
     "packages/agents",
-    "packages/chat"
+    "packages/chat",
+    "packages/security"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
@@ -22,6 +23,7 @@
     "workflow": "node ./scripts/run-workflow.mjs"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^1.6.1",
     "vitest": "^1.6.1"
   }
 }
