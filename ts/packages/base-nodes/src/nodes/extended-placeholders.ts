@@ -1,12 +1,12 @@
 import { BaseNode } from "@nodetool/node-sdk";
 import type { NodeClass } from "@nodetool/node-sdk";
 
-function titleFromNodeType(nodeType: string): string {
+export function titleFromNodeType(nodeType: string): string {
   const parts = nodeType.split(".");
   return parts[parts.length - 1] ?? nodeType;
 }
 
-function makePlaceholderNode(nodeType: string): NodeClass {
+export function makePlaceholderNode(nodeType: string): NodeClass {
   class PlaceholderNode extends BaseNode {
     static readonly nodeType = nodeType;
     static readonly title = titleFromNodeType(nodeType);

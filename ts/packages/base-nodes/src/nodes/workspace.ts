@@ -6,7 +6,7 @@ function workspaceDirFrom(inputs: Record<string, unknown>, props: Record<string,
   return String(inputs.workspace_dir ?? props.workspace_dir ?? process.cwd());
 }
 
-function ensureWorkspacePath(workspaceDir: string, relativePath: string): string {
+export function ensureWorkspacePath(workspaceDir: string, relativePath: string): string {
   if (!relativePath) {
     throw new Error("Path cannot be empty");
   }
