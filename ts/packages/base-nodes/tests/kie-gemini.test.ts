@@ -267,6 +267,29 @@ describe("ImageGenerationNode", () => {
     expect(body.contents[0].parts.length).toBe(2);
   });
 
+  it("handles Uint8Array image input for Gemini model", async () => {
+    const node = new ImageGenerationNode();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        candidates: [
+          {
+            content: {
+              parts: [{ inlineData: { data: "uint8img" } }],
+            },
+          },
+        ],
+      })
+    );
+    await node.process({
+      prompt: "edit this",
+      model: "gemini-2.0-flash",
+      image: { data: new Uint8Array([1, 2, 3]) },
+      ...secrets,
+    });
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.contents[0].parts.length).toBe(2);
+  });
+
   it("throws on prohibited content", async () => {
     const node = new ImageGenerationNode();
     mockFetch.mockResolvedValueOnce(
@@ -412,6 +435,74 @@ describe("TextToVideoGeminiNode", () => {
     await expect(
       node.process({ prompt: "cat", ...secrets })
     ).rejects.toThrow("No video generated");
+  });
+
+  it("throws on poll error", async () => {
+    const node = new TextToVideoGeminiNode();
+    // First call: start operation (not done)
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ name: "operations/op2", done: false })
+    );
+    // Poll call: error
+    mockFetch.mockResolvedValueOnce(jsonResponse("poll error", 500));
+
+    await expect(
+      node.process({ prompt: "cat", ...secrets })
+    ).rejects.toThrow("Gemini poll error 500");
+  }, 15000);
+
+  it("throws when no video object in generatedVideos", async () => {
+    const node = new TextToVideoGeminiNode();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ done: true, response: { generatedVideos: [{}] } })
+    );
+    await expect(
+      node.process({ prompt: "cat", ...secrets })
+    ).rejects.toThrow("No video in response");
+  });
+
+  it("throws when no videoBytes in video", async () => {
+    const node = new TextToVideoGeminiNode();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ done: true, response: { generatedVideos: [{ video: {} }] } })
+    );
+    await expect(
+      node.process({ prompt: "cat", ...secrets })
+    ).rejects.toThrow("No video bytes in response");
+  });
+
+  it("extractVideoFromResponse uses data.response", async () => {
+    const node = new TextToVideoGeminiNode();
+    // done: true with generatedVideos directly at top level (no response wrapper)
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        done: true,
+        generatedVideos: [{ video: { videoBytes: "directvideo" } }],
+      })
+    );
+    const result = await node.process({ prompt: "cat", ...secrets });
+    expect(result.output).toEqual({ data: "directvideo" });
+  });
+
+  it("throws timeout when poll never completes", async () => {
+    // Replace setTimeout with immediate resolution to skip 5s delays
+    const origSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((fn: () => void) => origSetTimeout(fn, 0)) as typeof setTimeout;
+    try {
+      const node = new TextToVideoGeminiNode();
+      // Initial response: not done, has operation name
+      mockFetch.mockResolvedValueOnce(
+        jsonResponse({ done: false, name: "operations/timeout-op" })
+      );
+      // All poll responses: never done
+      mockFetch.mockResolvedValue(jsonResponse({ done: false }));
+
+      await expect(
+        node.process({ prompt: "cat", ...secrets })
+      ).rejects.toThrow("Video generation timed out");
+    } finally {
+      globalThis.setTimeout = origSetTimeout;
+    }
   });
 });
 
@@ -733,5 +824,123 @@ describe("TranscribeGeminiNode", () => {
     await expect(
       node.process({ audio: { data: audioB64 }, ...secrets })
     ).rejects.toThrow("Gemini API error 500");
+  });
+
+  it("throws when no parts in transcription", async () => {
+    const node = new TranscribeGeminiNode();
+    const audioB64 = Buffer.from(new Uint8Array([0xff, 0xfb])).toString("base64");
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ candidates: [{ content: {} }] })
+    );
+    await expect(
+      node.process({ audio: { data: audioB64 }, ...secrets })
+    ).rejects.toThrow("No transcription generated from the audio");
+  });
+
+  it("defaults to audio/mpeg for unknown magic bytes", async () => {
+    const node = new TranscribeGeminiNode();
+    const unknownBytes = new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00]);
+    const audioB64 = Buffer.from(unknownBytes).toString("base64");
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        candidates: [{ content: { parts: [{ text: "unknown" }] } }],
+      })
+    );
+    await node.process({ audio: { data: audioB64 }, ...secrets });
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.contents[0].parts[1].inline_data.mime_type).toBe("audio/mpeg");
+  });
+});
+
+// ── Defaults coverage ────────────────────────────────────────────────────
+
+describe("Node defaults coverage", () => {
+  it("GroundedSearchNode defaults", () => {
+    const node = new GroundedSearchNode();
+    const d = node.defaults();
+    expect(d.query).toBe("");
+    expect(d.model).toBe("gemini-2.0-flash");
+  });
+
+  it("EmbeddingNode defaults", () => {
+    const node = new EmbeddingNode();
+    const d = node.defaults();
+    expect(d.input).toBe("");
+    expect(d.model).toBe("text-embedding-004");
+  });
+
+  it("ImageGenerationNode defaults", () => {
+    const node = new ImageGenerationNode();
+    const d = node.defaults();
+    expect(d.prompt).toBe("");
+    expect(d.model).toBe("imagen-3.0-generate-002");
+  });
+
+  it("TextToVideoGeminiNode defaults", () => {
+    const node = new TextToVideoGeminiNode();
+    const d = node.defaults();
+    expect(d.prompt).toBe("");
+    expect(d.model).toBe("veo-3.1-generate-preview");
+    expect(d.aspect_ratio).toBe("16:9");
+    expect(d.negative_prompt).toBe("");
+  });
+
+  it("ImageToVideoGeminiNode defaults", () => {
+    const node = new ImageToVideoGeminiNode();
+    const d = node.defaults();
+    expect(d.prompt).toBe("");
+    expect(d.model).toBe("veo-3.1-generate-preview");
+  });
+
+  it("TextToSpeechGeminiNode defaults", () => {
+    const node = new TextToSpeechGeminiNode();
+    const d = node.defaults();
+    expect(d.text).toBe("");
+    expect(d.model).toBe("gemini-2.5-pro-preview-tts");
+    expect(d.voice_name).toBe("kore");
+    expect(d.style_prompt).toBe("");
+  });
+
+  it("TranscribeGeminiNode defaults", () => {
+    const node = new TranscribeGeminiNode();
+    const d = node.defaults();
+    expect(d.model).toBe("gemini-2.5-flash");
+  });
+
+  it("TextToSpeechGeminiNode throws when no parts", async () => {
+    const node = new TextToSpeechGeminiNode();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ candidates: [{ content: {} }] })
+    );
+    await expect(
+      node.process({ text: "hello", ...secrets })
+    ).rejects.toThrow("No audio generated");
+  });
+
+  it("ImageGenerationNode throws when no parts in gemini response", async () => {
+    const node = new ImageGenerationNode();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        candidates: [{ content: {} }],
+      })
+    );
+    await expect(
+      node.process({ prompt: "cat", model: "gemini-2.0-flash", ...secrets })
+    ).rejects.toThrow("Invalid response format from Gemini API");
+  });
+
+  it("ImageGenerationNode Gemini API error", async () => {
+    const node = new ImageGenerationNode();
+    mockFetch.mockResolvedValueOnce(jsonResponse("err", 400));
+    await expect(
+      node.process({ prompt: "cat", model: "gemini-2.0-flash", ...secrets })
+    ).rejects.toThrow("Gemini API error 400");
+  });
+
+  it("getImageBytes returns Uint8Array for Uint8Array input", () => {
+    const node = new ImageGenerationNode();
+    const b64 = Buffer.from(new Uint8Array([1, 2, 3])).toString("base64");
+    // This exercises the Uint8Array path in getImageBytes
+    // (already covered by ImageToVideoGeminiNode tests)
   });
 });

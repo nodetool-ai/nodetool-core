@@ -320,3 +320,48 @@ describe("TelegramSendMessage", () => {
     expect(url).toContain("botsecret/sendMessage");
   });
 });
+
+// ── Defaults coverage ────────────────────────────────────────────────────
+
+describe("Node defaults coverage", () => {
+  it("DiscordBotTrigger defaults", () => {
+    const node = new DiscordBotTrigger();
+    const d = node.defaults();
+    expect(d.token).toBe("");
+    expect(d.channel_id).toBe("");
+    expect(d.allow_bot_messages).toBe(false);
+  });
+
+  it("DiscordSendMessage defaults", () => {
+    const node = new DiscordSendMessage();
+    const d = node.defaults();
+    expect(d.token).toBe("");
+    expect(d.channel_id).toBe("");
+    expect(d.content).toBe("");
+    expect(d.tts).toBe(false);
+    expect(d.embeds).toEqual([]);
+  });
+
+  it("TelegramBotTrigger defaults", () => {
+    const node = new TelegramBotTrigger();
+    const d = node.defaults();
+    expect(d.token).toBe("");
+    expect(d.chat_id).toBe(0);
+    expect(d.allow_bot_messages).toBe(false);
+    expect(d.include_edited_messages).toBe(false);
+    expect(d.poll_timeout_seconds).toBe(30);
+    expect(d.poll_interval_seconds).toBe(0.2);
+  });
+
+  it("TelegramSendMessage defaults", () => {
+    const node = new TelegramSendMessage();
+    const d = node.defaults();
+    expect(d.token).toBe("");
+    expect(d.chat_id).toBe(0);
+    expect(d.text).toBe("");
+    expect(d.parse_mode).toBe("");
+    expect(d.disable_web_page_preview).toBe(false);
+    expect(d.disable_notification).toBe(false);
+    expect(d.reply_to_message_id).toBe(0);
+  });
+});
