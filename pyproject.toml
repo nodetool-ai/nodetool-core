@@ -139,6 +139,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Add xllamacpp for local LLM inference with high-performance Cython bindings
+# Platform-specific builds available:
+#   CPU/Metal: pip install xllamacpp (default PyPI)
+#   CUDA 12.8: pip install xllamacpp --index-url https://xorbitsai.github.io/xllamacpp/whl/cu128
+#   CUDA 12.4: pip install xllamacpp --index-url https://xorbitsai.github.io/xllamacpp/whl/cu124
+#   Vulkan:    pip install xllamacpp --index-url https://xorbitsai.github.io/xllamacpp/whl/vulkan
+xllamacpp = [
+    "xllamacpp>=0.1.0",
+]
 dev = [
     "aioresponses>=0.7.8",
     "pytest-timeout>=2.3.1",

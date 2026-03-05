@@ -98,8 +98,19 @@ register_setting(
     group="Ollama",
     description=(
         "Context window size (in tokens) for Ollama models. "
-        "If not set, the provider will query the model for its default context length. "
-        "Common values: 2048, 4096, 8192, 16384, 32768, 128000"
+        "Determines the maximum number of tokens (roughly words) that can be processed in a single interaction. "
+        "Larger values allow more context but use more memory. Common values: 2048 (small), 8192 (medium), 32768 (large)."
+    ),
+)
+
+register_setting(
+    package_name="nodetool",
+    env_var="OLLAMA_API_URL",
+    group="Ollama",
+    description=(
+        "URL for the Ollama API server (e.g., http://127.0.0.1:11434). "
+        "This is where Ollama is running to serve local LLM models. "
+        "Default is localhost on port 11434."
     ),
 )
 

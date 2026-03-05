@@ -517,6 +517,7 @@ class Provider(enum.StrEnum):
     ComfyRunpod = "comfy_runpod"
     Local = "local"
     LlamaCpp = "llama_cpp"
+    XLlamaCpp = "xllamacpp"
     Gemini = "gemini"
     VLLM = "vllm"
     ZAI = "zai"
