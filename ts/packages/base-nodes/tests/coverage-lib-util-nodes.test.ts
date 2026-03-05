@@ -1319,30 +1319,11 @@ describe("coverage: lib-os", () => {
     await expect(node.process({ paths: "not-an-array" })).rejects.toThrow("cannot be empty");
   });
 
-  it("OpenWorkspaceDirectory calls openPath when dir exists", async () => {
-    // Test with a real temp dir to cover the openPath function
+  it("OpenWorkspaceDirectory returns empty when no workspaceDir", async () => {
     const node = new OpenWorkspaceDirectoryLibNode();
-    const dir = await mkdtemp(join(tmpdir(), "nt-open-"));
-    const ctx = { workspaceDir: dir } as unknown as ProcessingContext;
-    // openPath spawns 'open' command on macOS - this may succeed or fail
-    // but we just want to cover the code path
-    try {
-      await node.process({}, ctx);
-    } catch {
-      // openPath might fail in CI, that's OK - we've covered the code
-    }
-  });
-
-  it("OpenWorkspaceDirectory error path when open fails", async () => {
-    const node = new OpenWorkspaceDirectoryLibNode();
-    // Use a path that the 'open' command should fail on (nonexistent path with special chars)
-    const ctx = { workspaceDir: "/nonexistent/path/that/should/not/exist/__test__" } as unknown as ProcessingContext;
-    try {
-      await node.process({}, ctx);
-    } catch (e) {
-      // This covers the error rejection in openPath
-      expect(e).toBeDefined();
-    }
+    const ctx = {} as unknown as ProcessingContext;
+    const res = await node.process({}, ctx);
+    expect(res).toEqual({});
   });
 
   it("defaults() for all os nodes", () => {

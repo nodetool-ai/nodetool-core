@@ -109,4 +109,31 @@ describe("RunCodeTool", () => {
     expect(msg).toContain("...");
     expect(msg).not.toContain("a".repeat(100));
   });
+
+  it("userMessage handles missing params", () => {
+    const msg = tool.userMessage({});
+    expect(msg).toBe("Executing code...");
+  });
+
+  it("userMessage handles empty code", () => {
+    const msg = tool.userMessage({ language: "python", code: "" });
+    expect(msg).toBe("Executing python...");
+  });
+
+  it("returns error for undefined code", async () => {
+    const result = await tool.process(mockContext, {
+      language: "javascript",
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("No code provided");
+  });
+
+  it("returns error for non-string code", async () => {
+    const result = await tool.process(mockContext, {
+      language: "javascript",
+      code: 123 as any,
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("No code provided");
+  });
 });

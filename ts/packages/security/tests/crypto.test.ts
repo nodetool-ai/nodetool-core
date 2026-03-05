@@ -17,6 +17,7 @@ import {
   getSecretRequired,
   hasSecret,
   getSecretSync,
+  clearSecretCache,
   clearAllSecretCache,
 } from "../src/secret-helper.js";
 
@@ -332,6 +333,74 @@ describe("secret-helper", () => {
 
     it("should return default when not found", () => {
       expect(getSecretSync("NONEXISTENT_KEY", "default")).toBe("default");
+    });
+
+    it("should prioritize forced env keys (SUPABASE_URL)", () => {
+      process.env["SUPABASE_URL"] = "https://sync.supabase.co";
+      expect(getSecretSync("SUPABASE_URL")).toBe("https://sync.supabase.co");
+    });
+  });
+
+  describe("clearSecretCache", () => {
+    it("should clear a specific cached secret", async () => {
+      // Populate cache by retrieving a secret
+      process.env["TEST_SECRET"] = "cached-value";
+      await getSecret("TEST_SECRET", "user-1");
+
+      // Remove from env
+      delete process.env["TEST_SECRET"];
+
+      // Should still return cached value
+      const cached = await getSecret("TEST_SECRET", "user-1");
+      expect(cached).toBe("cached-value");
+
+      // Clear the specific cache entry
+      clearSecretCache("user-1", "TEST_SECRET");
+
+      // Now should return null since env is also gone
+      const afterClear = await getSecret("TEST_SECRET", "user-1");
+      expect(afterClear).toBeNull();
+    });
+  });
+
+  describe("getSecret caching", () => {
+    it("should use default userId when not provided", async () => {
+      process.env["TEST_SECRET"] = "default-user-val";
+      const value = await getSecret("TEST_SECRET");
+      expect(value).toBe("default-user-val");
+    });
+
+    it("should return cached value on second call", async () => {
+      process.env["TEST_SECRET"] = "first-val";
+      await getSecret("TEST_SECRET", "user-1");
+
+      // Change env but cache should prevail
+      process.env["TEST_SECRET"] = "second-val";
+      const cached = await getSecret("TEST_SECRET", "user-1");
+      expect(cached).toBe("first-val");
+    });
+
+    it("should return null from cache when cached as null", async () => {
+      // First call with no env value sets null in cache path (actually returns null)
+      const val = await getSecret("NONEXISTENT_CACHED", "user-1");
+      expect(val).toBeNull();
+    });
+  });
+
+  describe("hasSecret caching", () => {
+    it("should detect cached secrets", async () => {
+      process.env["TEST_SECRET"] = "exists-for-cache";
+      await getSecret("TEST_SECRET", "user-1");
+      delete process.env["TEST_SECRET"];
+
+      // Should find it in cache
+      const found = await hasSecret("TEST_SECRET", "user-1");
+      expect(found).toBe(true);
+    });
+
+    it("should use default userId when not provided", async () => {
+      const found = await hasSecret("NONEXISTENT_KEY");
+      expect(found).toBe(false);
     });
   });
 });

@@ -349,3 +349,23 @@ describe("AuthProvider.preferHeader", () => {
     expect(AuthProvider.preferHeader()).toBe("authorization");
   });
 });
+
+// ---------------------------------------------------------------------------
+// AuthProvider.clearCaches (default no-op)
+// ---------------------------------------------------------------------------
+describe("AuthProvider.clearCaches", () => {
+  it("does not throw (default no-op)", () => {
+    const provider = new StubProvider({ ok: true });
+    expect(() => provider.clearCaches()).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// StaticTokenProvider.clearCaches
+// ---------------------------------------------------------------------------
+describe("StaticTokenProvider.clearCaches", () => {
+  it("does not throw", () => {
+    const provider = new StaticTokenProvider({ tok: "u1" });
+    expect(() => provider.clearCaches()).not.toThrow();
+  });
+});

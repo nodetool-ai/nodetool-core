@@ -148,6 +148,16 @@ describe("BrowserTool", () => {
     expect(result.error).toMatch(/Network error/);
   });
 
+  it("returns error on fetch failure with non-Error thrown", async () => {
+    (globalThis.fetch as any).mockRejectedValueOnce("string error");
+
+    const result = (await tool.process(mockContext, {
+      url: "https://example.com",
+    })) as any;
+
+    expect(result.error).toMatch(/Error fetching page/);
+  });
+
   it("userMessage formats correctly", () => {
     expect(tool.userMessage({ url: "https://example.com" })).toBe(
       "Browsing https://example.com..."
@@ -240,9 +250,49 @@ describe("ScreenshotTool", () => {
     expect(result.error).toMatch(/Connection refused/);
   });
 
+  it("returns error when browser service returns non-OK", async () => {
+    process.env.BROWSER_URL = "http://localhost:9222/screenshot";
+    (globalThis.fetch as any).mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+    });
+
+    const result = (await tool.process(mockContext, {
+      url: "https://example.com",
+      output_file: "shot.png",
+    })) as any;
+
+    expect(result.error).toMatch(/Browser service returned HTTP 500/);
+  });
+
+  it("returns error when browser service fetch throws non-Error", async () => {
+    process.env.BROWSER_URL = "http://localhost:9222/screenshot";
+    (globalThis.fetch as any).mockRejectedValueOnce("string error");
+
+    const result = (await tool.process(mockContext, {
+      url: "https://example.com",
+      output_file: "shot.png",
+    })) as any;
+
+    expect(result.error).toMatch(/Error taking screenshot/);
+  });
+
   it("userMessage formats correctly", () => {
     expect(
       tool.userMessage({ url: "https://example.com", output_file: "out.png" })
     ).toBe("Taking screenshot of https://example.com and saving to out.png.");
+  });
+
+  it("userMessage truncates long URLs", () => {
+    const longUrl = "https://example.com/" + "a".repeat(200);
+    const msg = tool.userMessage({ url: longUrl, output_file: "out.png" });
+    expect(msg).toContain("Taking screenshot of a page");
+    expect(msg).toContain("out.png");
+  });
+
+  it("userMessage handles missing params", () => {
+    const msg = tool.userMessage({});
+    expect(msg).toContain("Taking screenshot");
   });
 });

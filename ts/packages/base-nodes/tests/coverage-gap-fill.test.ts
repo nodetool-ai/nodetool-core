@@ -3088,7 +3088,7 @@ describe("document.ts round 2", () => {
     const dir = tmpDir();
     const fp = join(dir, "test.txt");
     writeFileSync(fp, "Hello document");
-    const res = await new LoadDocumentFileNode().process({ file_path: fp });
+    const res = await new LoadDocumentFileNode().process({ path: fp });
     expect(typeof res.output).toBe("object");
   });
 

@@ -1,0 +1,328 @@
+/**
+ * Additional WorkflowRunner tests for coverage:
+ *  - dispatchControlEvent
+ *  - dispatchControlEventToTarget
+ *  - pushInputValue / finishInputStream errors
+ *  - control edges in graph
+ */
+
+import { describe, it, expect } from "vitest";
+import { WorkflowRunner } from "../src/runner.js";
+import type { NodeDescriptor, Edge, ControlEvent } from "@nodetool/protocol";
+import type { NodeExecutor } from "../src/actor.js";
+
+function simpleExecutor(
+  fn: (inputs: Record<string, unknown>) => Record<string, unknown>
+): NodeExecutor {
+  return {
+    async process(inputs) {
+      return fn(inputs);
+    },
+  };
+}
+
+describe("WorkflowRunner – dispatchControlEvent", () => {
+  it("broadcasts control event to all controlled nodes", async () => {
+    const nodes: NodeDescriptor[] = [
+      { id: "in", type: "test.Input", name: "x" },
+      { id: "ctrl1", type: "test.Controlled", is_controlled: true },
+      { id: "ctrl2", type: "test.Controlled", is_controlled: true },
+    ];
+    const edges: Edge[] = [
+      { source: "in", sourceHandle: "value", target: "ctrl1", targetHandle: "a" },
+      { source: "in", sourceHandle: "value", target: "ctrl2", targetHandle: "a" },
+    ];
+
+    const calls: Record<string, Array<Record<string, unknown>>> = {
+      ctrl1: [],
+      ctrl2: [],
+    };
+
+    const runner = new WorkflowRunner("test-ctrl", {
+      resolveExecutor: (node) => {
+        if (node.is_controlled) {
+          return {
+            async process(inputs) {
+              calls[node.id]?.push(inputs);
+              return { out: "ok" };
+            },
+          };
+        }
+        return simpleExecutor(() => ({}));
+      },
+    });
+
+    // Start running in background
+    const runPromise = runner.run(
+      { job_id: "j-ctrl", params: { x: 42 } },
+      { nodes, edges }
+    );
+
+    // Give time for actors to start
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Dispatch control event
+    await runner.dispatchControlEvent({
+      event_type: "run",
+      properties: { val: 1 },
+    } as ControlEvent);
+
+    // Stop all controlled nodes
+    await runner.dispatchControlEvent({
+      event_type: "stop",
+      properties: {},
+    } as ControlEvent);
+
+    const result = await runPromise;
+    expect(result.status).toBe("completed");
+  });
+});
+
+describe("WorkflowRunner – dispatchControlEventToTarget", () => {
+  it("sends control event to specific target node", async () => {
+    const nodes: NodeDescriptor[] = [
+      { id: "in", type: "test.Input", name: "x" },
+      { id: "ctrl1", type: "test.Controlled", is_controlled: true },
+    ];
+    const edges: Edge[] = [
+      { source: "in", sourceHandle: "value", target: "ctrl1", targetHandle: "a" },
+    ];
+
+    const runner = new WorkflowRunner("test-ctrl-target", {
+      resolveExecutor: (node) => {
+        if (node.is_controlled) {
+          return {
+            async process(inputs) {
+              return { out: inputs };
+            },
+          };
+        }
+        return simpleExecutor(() => ({}));
+      },
+    });
+
+    const runPromise = runner.run(
+      { job_id: "j-ctrl-t", params: { x: 10 } },
+      { nodes, edges }
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    await runner.dispatchControlEventToTarget(
+      { event_type: "run", properties: { p: 1 } } as ControlEvent,
+      "ctrl1"
+    );
+
+    await runner.dispatchControlEventToTarget(
+      { event_type: "stop", properties: {} } as ControlEvent,
+      "ctrl1"
+    );
+
+    const result = await runPromise;
+    expect(result.status).toBe("completed");
+  });
+
+  it("does nothing when target inbox does not exist", async () => {
+    const nodes: NodeDescriptor[] = [
+      { id: "in", type: "test.Input", name: "x" },
+      { id: "out", type: "test.Output" },
+    ];
+    const edges: Edge[] = [
+      { source: "in", sourceHandle: "value", target: "out", targetHandle: "value" },
+    ];
+
+    const runner = new WorkflowRunner("test-ctrl-miss", {
+      resolveExecutor: () => simpleExecutor((inputs) => inputs),
+    });
+
+    const runPromise = runner.run(
+      { job_id: "j-miss", params: { x: 1 } },
+      { nodes, edges }
+    );
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Send to nonexistent node - should not throw
+    await runner.dispatchControlEventToTarget(
+      { event_type: "run", properties: {} } as ControlEvent,
+      "nonexistent"
+    );
+
+    const result = await runPromise;
+    expect(result.status).toBe("completed");
+  });
+});
+
+describe("WorkflowRunner – pushInputValue errors", () => {
+  it("throws when workflow has not been started", async () => {
+    const runner = new WorkflowRunner("test-no-start", {
+      resolveExecutor: () => simpleExecutor(() => ({})),
+    });
+
+    await expect(runner.pushInputValue("x", 1)).rejects.toThrow(
+      "Workflow has not been started"
+    );
+  });
+
+  it("throws for nonexistent input name", async () => {
+    const nodes: NodeDescriptor[] = [
+      { id: "in", type: "test.Input", name: "x" },
+      { id: "out", type: "test.Output" },
+    ];
+    const edges: Edge[] = [
+      { source: "in", sourceHandle: "value", target: "out", targetHandle: "value" },
+    ];
+
+    const runner = new WorkflowRunner("test-bad-input", {
+      resolveExecutor: () => simpleExecutor((inputs) => inputs),
+    });
+
+    const runPromise = runner.run(
+      { job_id: "j-bad", params: {} },
+      { nodes, edges }
+    );
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    await expect(runner.pushInputValue("nonexistent", 1)).rejects.toThrow(
+      "Input node not found"
+    );
+
+    // Finish the stream to complete
+    runner.finishInputStream("x");
+    await runPromise;
+  });
+});
+
+describe("WorkflowRunner – finishInputStream errors", () => {
+  it("throws when workflow has not been started", () => {
+    const runner = new WorkflowRunner("test-finish-no-start", {
+      resolveExecutor: () => simpleExecutor(() => ({})),
+    });
+
+    expect(() => runner.finishInputStream("x")).toThrow(
+      "Workflow has not been started"
+    );
+  });
+
+  it("throws for nonexistent input name", async () => {
+    const nodes: NodeDescriptor[] = [
+      { id: "in", type: "test.Input", name: "x" },
+      { id: "out", type: "test.Output" },
+    ];
+    const edges: Edge[] = [
+      { source: "in", sourceHandle: "value", target: "out", targetHandle: "value" },
+    ];
+
+    const runner = new WorkflowRunner("test-finish-bad", {
+      resolveExecutor: () => simpleExecutor((inputs) => inputs),
+    });
+
+    const runPromise = runner.run(
+      { job_id: "j-finish-bad", params: {} },
+      { nodes, edges }
+    );
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(() => runner.finishInputStream("nonexistent")).toThrow(
+      "Input node not found"
+    );
+
+    runner.finishInputStream("x");
+    await runPromise;
+  });
+});
+
+describe("WorkflowRunner – pushInputValue with sourceHandle filter", () => {
+  it("filters by sourceHandle when provided", async () => {
+    const nodes: NodeDescriptor[] = [
+      { id: "in", type: "test.Input", name: "x" },
+      { id: "out1", type: "test.Output", name: "out1" },
+      { id: "out2", type: "test.Output", name: "out2" },
+    ];
+    const edges: Edge[] = [
+      { source: "in", sourceHandle: "value", target: "out1", targetHandle: "value" },
+      { source: "in", sourceHandle: "other", target: "out2", targetHandle: "value" },
+    ];
+
+    const runner = new WorkflowRunner("test-source-handle", {
+      resolveExecutor: () => simpleExecutor((inputs) => inputs),
+    });
+
+    const runPromise = runner.run(
+      { job_id: "j-sh", params: {} },
+      { nodes, edges }
+    );
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Push only to "value" handle
+    await runner.pushInputValue("x", 42, "value");
+    runner.finishInputStream("x", "value");
+    runner.finishInputStream("x", "other");
+
+    const result = await runPromise;
+    expect(result.status).toBe("completed");
+  });
+});
+
+describe("WorkflowRunner – multi-edge list detection", () => {
+  it("detects and handles multiple edges to the same target handle", async () => {
+    const nodes: NodeDescriptor[] = [
+      { id: "src1", type: "test.Src" },
+      { id: "src2", type: "test.Src" },
+      { id: "collector", type: "test.Collector" },
+    ];
+    // Two edges to the same target handle "items"
+    const edges: Edge[] = [
+      { source: "src1", sourceHandle: "out", target: "collector", targetHandle: "items" },
+      { source: "src2", sourceHandle: "out", target: "collector", targetHandle: "items" },
+    ];
+
+    const runner = new WorkflowRunner("test-multi-edge", {
+      resolveExecutor: (node) => {
+        if (node.type === "test.Src") {
+          return simpleExecutor(() => ({ out: node.id }));
+        }
+        return simpleExecutor((inputs) => ({ collected: inputs.items }));
+      },
+    });
+
+    const result = await runner.run(
+      { job_id: "j-multi", params: {} },
+      { nodes, edges }
+    );
+
+    expect(result.status).toBe("completed");
+  });
+});
+
+describe("WorkflowRunner – edge without id", () => {
+  it("generates edge id from source/target when no id provided", async () => {
+    const nodes: NodeDescriptor[] = [
+      { id: "in", type: "test.Input", name: "x" },
+      { id: "mid", type: "test.Pass" },
+      { id: "out", type: "test.Output" },
+    ];
+    // Edges without explicit id
+    const edges: Edge[] = [
+      { source: "in", sourceHandle: "value", target: "mid", targetHandle: "value" },
+      { source: "mid", sourceHandle: "value", target: "out", targetHandle: "value" },
+    ];
+
+    const runner = new WorkflowRunner("test-edge-id", {
+      resolveExecutor: () => simpleExecutor((inputs) => ({ value: inputs.value })),
+    });
+
+    const result = await runner.run(
+      { job_id: "j-eid", params: { x: 1 } },
+      { nodes, edges }
+    );
+
+    expect(result.status).toBe("completed");
+    // Check that edge_update messages use generated ids
+    const edgeMsgs = result.messages.filter((m) => m.type === "edge_update");
+    expect(edgeMsgs.length).toBeGreaterThan(0);
+  });
+});

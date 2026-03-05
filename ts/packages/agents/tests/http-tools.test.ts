@@ -147,6 +147,46 @@ describe("DownloadFileTool", () => {
     expect(msg.length).toBeLessThanOrEqual(80);
   });
 
+  it("userMessage falls back to generic when output_file is also long", () => {
+    const msg = tool.userMessage({
+      url: "https://example.com/" + "a".repeat(100),
+      output_file: "very/long/path/" + "f".repeat(80) + ".txt",
+    });
+    expect(msg).toBe("Downloading a file...");
+  });
+
+  it("merges custom headers when provided", async () => {
+    const fetchSpy = mockFetchResponse("ok", {
+      headers: { "Content-Type": "text/plain" },
+    });
+
+    const ctx = makeMockContext();
+    await tool.process(ctx, {
+      url: "https://example.com/file.txt",
+      output_file: "out.txt",
+      headers: { "X-Custom": "value" },
+    });
+
+    const calledHeaders = (fetchSpy.mock.calls[0][1] as RequestInit)
+      .headers as Record<string, string>;
+    expect(calledHeaders["X-Custom"]).toBe("value");
+  });
+
+  it("applies custom timeout", async () => {
+    const fetchSpy = mockFetchResponse("ok", {
+      headers: { "Content-Type": "text/plain" },
+    });
+
+    const ctx = makeMockContext();
+    await tool.process(ctx, {
+      url: "https://example.com/file.txt",
+      output_file: "out.txt",
+      timeout: 5,
+    });
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+  });
+
   it("handles binary content", async () => {
     const binaryData = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
     mockFetchResponse(binaryData.buffer as ArrayBuffer, {
@@ -286,5 +326,56 @@ describe("HttpRequestTool", () => {
   it("userMessage defaults to GET", () => {
     const msg = tool.userMessage({ url: "https://example.com" });
     expect(msg).toContain("GET");
+  });
+
+  it("userMessage truncates long URLs", () => {
+    const msg = tool.userMessage({
+      url: "https://example.com/" + "a".repeat(100),
+      method: "GET",
+    });
+    expect(msg).toBe("GET request...");
+  });
+
+  it("merges custom headers when provided", async () => {
+    const fetchSpy = mockFetchResponse("ok");
+
+    const ctx = makeMockContext();
+    await tool.process(ctx, {
+      url: "https://example.com",
+      headers: { "X-Custom": "value" },
+    });
+
+    const calledHeaders = (fetchSpy.mock.calls[0][1] as RequestInit)
+      .headers as Record<string, string>;
+    expect(calledHeaders["X-Custom"]).toBe("value");
+  });
+
+  it("applies custom timeout", async () => {
+    const fetchSpy = mockFetchResponse("ok");
+
+    const ctx = makeMockContext();
+    await tool.process(ctx, {
+      url: "https://example.com",
+      timeout: 10,
+    });
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+  });
+
+  it("sends body for PUT and PATCH methods", async () => {
+    for (const method of ["PUT", "PATCH"]) {
+      const fetchSpy = mockFetchResponse("ok");
+
+      const ctx = makeMockContext();
+      await tool.process(ctx, {
+        url: "https://example.com",
+        method,
+        body: '{"data":true}',
+      });
+
+      const [, calledInit] = fetchSpy.mock.calls[0];
+      expect((calledInit as RequestInit).body).toBe('{"data":true}');
+      fetchSpy.mockRestore();
+    }
   });
 });

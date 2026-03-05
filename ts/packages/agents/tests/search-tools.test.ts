@@ -114,6 +114,15 @@ describe("GoogleSearchTool", () => {
     expect(tool.userMessage({ query: longQuery })).toBe("Searching Google...");
   });
 
+  it("throws when SerpAPI returns non-OK response", async () => {
+    const ctx = makeContext({ SERPAPI_API_KEY: "test-key" });
+    fetchSpy = stubFetch({ error: "bad request" }, 400);
+
+    await expect(
+      tool.process(ctx, { query: "test" }),
+    ).rejects.toThrow("SerpAPI request failed (400)");
+  });
+
   it("has correct provider tool shape", () => {
     const pt = tool.toProviderTool();
     expect(pt.name).toBe("google_search");
@@ -185,6 +194,20 @@ describe("GoogleNewsTool", () => {
     expect(tool.userMessage({ query: "AI" })).toBe(
       "Searching Google News for 'AI'...",
     );
+  });
+
+  it("userMessage truncates long queries", () => {
+    const longQuery = "a".repeat(200);
+    expect(tool.userMessage({ query: longQuery })).toBe(
+      "Searching Google News...",
+    );
+  });
+
+  it("has correct provider tool shape", () => {
+    const pt = tool.toProviderTool();
+    expect(pt.name).toBe("google_news");
+    expect(pt.description).toBeTruthy();
+    expect(pt.inputSchema).toBeDefined();
   });
 });
 
@@ -265,6 +288,13 @@ describe("GoogleImagesTool", () => {
   it("userMessage returns image search description", () => {
     expect(tool.userMessage({ query: "sunset" })).toBe(
       "Searching Google Images for 'sunset'...",
+    );
+  });
+
+  it("userMessage truncates long queries", () => {
+    const longQuery = "a".repeat(200);
+    expect(tool.userMessage({ query: longQuery })).toBe(
+      "Searching Google Images...",
     );
   });
 
