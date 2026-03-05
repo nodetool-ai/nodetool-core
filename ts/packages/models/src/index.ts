@@ -30,6 +30,9 @@ export type {
 // ── In-memory Adapter ────────────────────────────────────────────────
 export { MemoryAdapter, MemoryAdapterFactory } from "./memory-adapter.js";
 
+// ── SQLite Adapter ──────────────────────────────────────────────────
+export { SQLiteAdapter, SQLiteAdapterFactory } from "./sqlite-adapter.js";
+
 // ── Base Model ───────────────────────────────────────────────────────
 export {
   DBModel,
