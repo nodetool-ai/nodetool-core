@@ -1,5 +1,5 @@
 /**
- * Workflow model – stores DAG-based workflow definitions.
+ * Workflow model -- stores DAG-based workflow definitions.
  *
  * Port of Python's `nodetool.models.workflow`.
  */
@@ -44,6 +44,7 @@ const WORKFLOW_SCHEMA: TableSchema = {
     run_mode: { type: "string", optional: true },
     workspace_id: { type: "string", optional: true },
     html_app: { type: "string", optional: true },
+    receive_clipboard: { type: "number", optional: true },
     access: { type: "string" },
     created_at: { type: "datetime" },
     updated_at: { type: "datetime" },
@@ -76,6 +77,7 @@ export class Workflow extends DBModel {
   declare run_mode: string | null;
   declare workspace_id: string | null;
   declare html_app: string | null;
+  declare receive_clipboard: boolean | null;
   declare access: AccessLevel;
   declare created_at: string;
   declare updated_at: string;
@@ -100,10 +102,45 @@ export class Workflow extends DBModel {
     this.access ??= "private";
     this.created_at ??= now;
     this.updated_at ??= now;
+
+    // SQLite stores booleans as 0/1
+    if (typeof this.receive_clipboard === "number") {
+      this.receive_clipboard = this.receive_clipboard !== 0;
+    }
+    this.receive_clipboard ??= null;
   }
 
   override beforeSave(): void {
     this.updated_at = new Date().toISOString();
+  }
+
+  // ── Graph helpers ─────────────────────────────────────────────────
+
+  /** Check if the workflow graph contains trigger nodes. */
+  hasTriggerNodes(): boolean {
+    if (!this.graph || !this.graph.nodes) return false;
+    return this.graph.nodes.some((node) => {
+      const nodeType = (node.type as string) ?? "";
+      return nodeType.includes("triggers.");
+    });
+  }
+
+  /** Check if this workflow has a tool_name set. */
+  hasToolName(): boolean {
+    return this.tool_name != null && this.tool_name !== "";
+  }
+
+  /** Return the graph as a WorkflowGraph. */
+  getGraph(): WorkflowGraph {
+    return {
+      nodes: this.graph?.nodes ?? [],
+      edges: this.graph?.edges ?? [],
+    };
+  }
+
+  /** Alias for getGraph (matches Python's get_api_graph). */
+  getApiGraph(): WorkflowGraph {
+    return this.getGraph();
   }
 
   // ── Static queries ───────────────────────────────────────────────
@@ -144,7 +181,9 @@ export class Workflow extends DBModel {
   }
 
   /** Paginate public workflows only. */
-  static async paginatePublic(opts: { limit?: number } = {}): Promise<[Workflow[], string]> {
+  static async paginatePublic(
+    opts: { limit?: number } = {},
+  ): Promise<[Workflow[], string]> {
     const { limit = 50 } = opts;
     return (Workflow as unknown as ModelClass<Workflow>).query({
       condition: field("access").equals("public"),
@@ -152,5 +191,49 @@ export class Workflow extends DBModel {
       reverse: true,
       limit,
     });
+  }
+
+  /** Paginate workflows that are configured as tools. */
+  static async paginateTools(
+    userId: string,
+    opts: { limit?: number } = {},
+  ): Promise<[Workflow[], string]> {
+    const { limit = 50 } = opts;
+    const cond = field("user_id")
+      .equals(userId)
+      .and(field("run_mode").equals("tool"));
+
+    const [results, cursor] = await (
+      Workflow as unknown as ModelClass<Workflow>
+    ).query({
+      condition: cond,
+      orderBy: "updated_at",
+      reverse: true,
+      limit,
+    });
+
+    // Filter to only those with a tool_name set (matches Python)
+    const tools = results.filter((w) => w.hasToolName());
+    return [tools, cursor];
+  }
+
+  /** Find a workflow by tool name for a given user. */
+  static async findByToolName(
+    userId: string,
+    toolName: string,
+  ): Promise<Workflow | null> {
+    const cond = field("user_id")
+      .equals(userId)
+      .and(field("tool_name").equals(toolName))
+      .and(field("run_mode").equals("tool"));
+
+    const [results] = await (
+      Workflow as unknown as ModelClass<Workflow>
+    ).query({
+      condition: cond,
+      limit: 1,
+    });
+
+    return results.length > 0 ? results[0] : null;
   }
 }

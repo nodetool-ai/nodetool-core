@@ -66,3 +66,11 @@ export { Thread } from "./thread.js";
 export { Secret } from "./secret.js";
 
 export { OAuthCredential } from "./oauth-credential.js";
+
+export { RunNodeState } from "./run-node-state.js";
+export type { NodeStatus } from "./run-node-state.js";
+
+export { RunEvent } from "./run-event.js";
+export type { EventType } from "./run-event.js";
+
+export { RunLease } from "./run-lease.js";

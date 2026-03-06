@@ -52,14 +52,15 @@ describe("Job model", () => {
     expect(job.worker_id).toBe("worker-1");
     expect(job.started_at).toBeTruthy();
 
-    job.markSuspended("node-5", { foo: "bar" });
+    job.markSuspended("node-5", "waiting for input", { foo: "bar" });
     expect(job.status).toBe("suspended");
     expect(job.suspended_node_id).toBe("node-5");
+    expect(job.suspension_reason).toBe("waiting for input");
     expect(job.suspension_state_json).toEqual({ foo: "bar" });
 
     job.markResumed();
     expect(job.status).toBe("running");
-    expect(job.suspended_node_id).toBeNull();
+    // Suspension fields kept for audit trail (matches Python)
 
     job.markCompleted();
     expect(job.status).toBe("completed");
@@ -106,7 +107,7 @@ describe("Job model", () => {
     expect(job.finished_at).toBeTruthy();
   });
 
-  it("markFailed records error", async () => {
+  it("markFailed records error and failed_at", async () => {
     const job = await (Job as unknown as ModelClass<Job>).create({
       user_id: "u1",
       workflow_id: "w1",
@@ -114,6 +115,96 @@ describe("Job model", () => {
     job.markFailed("boom");
     expect(job.status).toBe("failed");
     expect(job.error).toBe("boom");
+    expect(job.error_message).toBe("boom");
+    expect(job.failed_at).toBeTruthy();
+    expect(job.finished_at).toBeTruthy();
+  });
+
+  it("markCompleted sets completed_at", async () => {
+    const job = await (Job as unknown as ModelClass<Job>).create({
+      user_id: "u1",
+      workflow_id: "w1",
+    });
+    job.markCompleted();
+    expect(job.status).toBe("completed");
+    expect(job.completed_at).toBeTruthy();
+    expect(job.finished_at).toBeTruthy();
+  });
+
+  it("new fields have correct defaults", async () => {
+    const job = await (Job as unknown as ModelClass<Job>).create({
+      user_id: "u1",
+      workflow_id: "w1",
+    });
+    expect(job.job_type).toBe("");
+    expect(job.cost).toBeNull();
+    expect(job.logs).toBeNull();
+    expect(job.error_message).toBeNull();
+    expect(job.execution_strategy).toBeNull();
+    expect(job.execution_id).toBeNull();
+    expect(job.max_retries).toBe(3);
+    expect(job.suspension_reason).toBeNull();
+    expect(job.suspension_metadata_json).toBeNull();
+    expect(job.metadata_json).toBeNull();
+    expect(job.completed_at).toBeNull();
+    expect(job.failed_at).toBeNull();
+  });
+
+  it("claim and release", async () => {
+    const job = await (Job as unknown as ModelClass<Job>).create({
+      user_id: "u1",
+      workflow_id: "w1",
+    });
+    await job.claim("worker-1");
+    expect(job.worker_id).toBe("worker-1");
+    expect(job.heartbeat_at).toBeTruthy();
+    expect(job.isOwnedBy("worker-1")).toBe(true);
+    expect(job.isOwnedBy("worker-2")).toBe(false);
+
+    await job.release();
+    expect(job.worker_id).toBeNull();
+    expect(job.heartbeat_at).toBeNull();
+  });
+
+  it("isResumable / isComplete / isSuspended / isPaused", async () => {
+    const job = await (Job as unknown as ModelClass<Job>).create({
+      user_id: "u1",
+      workflow_id: "w1",
+    });
+
+    job.markRunning();
+    expect(job.isResumable()).toBe(true);
+    expect(job.isComplete()).toBe(false);
+
+    job.markSuspended("n1", "waiting");
+    expect(job.isSuspended()).toBe(true);
+
+    job.markPaused();
+    expect(job.isPaused()).toBe(true);
+    expect(job.isResumable()).toBe(true);
+
+    job.markCompleted();
+    expect(job.isComplete()).toBe(true);
+    expect(job.isResumable()).toBe(false);
+  });
+
+  it("markSuspended with metadata", async () => {
+    const job = await (Job as unknown as ModelClass<Job>).create({
+      user_id: "u1",
+      workflow_id: "w1",
+    });
+    job.markSuspended("n1", "input needed", { s: 1 }, { m: 2 });
+    expect(job.suspension_metadata_json).toEqual({ m: 2 });
+  });
+
+  it("beforeSave increments version", async () => {
+    const job = await (Job as unknown as ModelClass<Job>).create({
+      user_id: "u1",
+      workflow_id: "w1",
+    });
+    const v1 = job.version;
+    await job.save();
+    expect(job.version).toBe(v1 + 1);
   });
 
   it("heartbeat and stale check", async () => {
@@ -259,6 +350,102 @@ describe("Workflow model", () => {
     expect(results.every((w) => w.access === "public")).toBe(true);
   });
 
+  it("hasTriggerNodes detects trigger nodes", async () => {
+    const wf = await (Workflow as unknown as ModelClass<Workflow>).create({
+      user_id: "u1",
+      name: "Trigger WF",
+      graph: {
+        nodes: [{ type: "triggers.webhook" }, { type: "text.output" }],
+        edges: [],
+      },
+    });
+    expect(wf.hasTriggerNodes()).toBe(true);
+
+    const wf2 = await (Workflow as unknown as ModelClass<Workflow>).create({
+      user_id: "u1",
+      name: "No Trigger",
+      graph: { nodes: [{ type: "text.output" }], edges: [] },
+    });
+    expect(wf2.hasTriggerNodes()).toBe(false);
+  });
+
+  it("hasTriggerNodes handles empty/missing graph", () => {
+    const wf = new Workflow({ user_id: "u1", name: "empty" });
+    expect(wf.hasTriggerNodes()).toBe(false);
+  });
+
+  it("hasToolName checks tool_name", async () => {
+    const wf = await (Workflow as unknown as ModelClass<Workflow>).create({
+      user_id: "u1",
+      name: "Tool WF",
+      tool_name: "my_tool",
+      run_mode: "tool",
+    });
+    expect(wf.hasToolName()).toBe(true);
+
+    const wf2 = await (Workflow as unknown as ModelClass<Workflow>).create({
+      user_id: "u1",
+      name: "No Tool",
+    });
+    expect(wf2.hasToolName()).toBe(false);
+  });
+
+  it("getGraph and getApiGraph return graph", async () => {
+    const graph = {
+      nodes: [{ type: "text.output", id: "1" }],
+      edges: [{ source: "1", target: "2" }],
+    };
+    const wf = await (Workflow as unknown as ModelClass<Workflow>).create({
+      user_id: "u1",
+      name: "Graph WF",
+      graph,
+    });
+    expect(wf.getGraph()).toEqual(graph);
+    expect(wf.getApiGraph()).toEqual(graph);
+  });
+
+  it("paginateTools filters by run_mode=tool and tool_name", async () => {
+    await (Workflow as unknown as ModelClass<Workflow>).create({
+      user_id: "u1",
+      name: "Tool 1",
+      tool_name: "tool_a",
+      run_mode: "tool",
+    });
+    await (Workflow as unknown as ModelClass<Workflow>).create({
+      user_id: "u1",
+      name: "Tool no name",
+      run_mode: "tool",
+    });
+    await (Workflow as unknown as ModelClass<Workflow>).create({
+      user_id: "u1",
+      name: "Not a tool",
+      run_mode: "workflow",
+    });
+
+    const [tools] = await Workflow.paginateTools("u1");
+    expect(tools).toHaveLength(1);
+    expect(tools[0].tool_name).toBe("tool_a");
+  });
+
+  it("findByToolName finds workflow by tool name", async () => {
+    await (Workflow as unknown as ModelClass<Workflow>).create({
+      user_id: "u1",
+      name: "My Tool",
+      tool_name: "search_tool",
+      run_mode: "tool",
+    });
+
+    const found = await Workflow.findByToolName("u1", "search_tool");
+    expect(found).not.toBeNull();
+    expect(found!.tool_name).toBe("search_tool");
+
+    const notFound = await Workflow.findByToolName("u1", "nonexistent");
+    expect(notFound).toBeNull();
+
+    const wrongUser = await Workflow.findByToolName("u2", "search_tool");
+    expect(wrongUser).toBeNull();
+  });
+
   it("paginatePublic respects limit", async () => {
     await (Workflow as unknown as ModelClass<Workflow>).create({
       user_id: "u1",
@@ -377,6 +564,65 @@ describe("Message model", () => {
     });
     expect(msg.role).toBe("user");
     expect(msg.tool_calls).toBeNull();
+  });
+
+  it("new agent fields have correct defaults", async () => {
+    const msg = await (Message as unknown as ModelClass<Message>).create({
+      user_id: "u1",
+      thread_id: "t1",
+      content: "Hello",
+    });
+    expect(msg.agent_mode).toBeNull();
+    expect(msg.help_mode).toBeNull();
+    expect(msg.agent_execution_id).toBeNull();
+    expect(msg.graph).toBeNull();
+    expect(msg.tools).toBeNull();
+    expect(msg.collections).toBeNull();
+    expect(msg.tool_call_id).toBeNull();
+    expect(msg.name).toBeNull();
+    expect(msg.execution_event_type).toBeNull();
+    expect(msg.workflow_target).toBeNull();
+  });
+
+  it("creates with agent fields", async () => {
+    const msg = await (Message as unknown as ModelClass<Message>).create({
+      user_id: "u1",
+      thread_id: "t1",
+      content: "Agent msg",
+      agent_mode: true,
+      help_mode: false,
+      agent_execution_id: "exec-1",
+      tools: ["tool1", "tool2"],
+      collections: ["coll1"],
+      graph: { nodes: [], edges: [] },
+    });
+    expect(msg.agent_mode).toBe(true);
+    expect(msg.help_mode).toBe(false);
+    expect(msg.agent_execution_id).toBe("exec-1");
+    expect(msg.tools).toEqual(["tool1", "tool2"]);
+    expect(msg.collections).toEqual(["coll1"]);
+    expect(msg.graph).toEqual({ nodes: [], edges: [] });
+  });
+
+  it("deserializes JSON strings from SQLite", () => {
+    const msg = new Message({
+      id: "m1",
+      user_id: "u1",
+      thread_id: "t1",
+      role: "user",
+      tools: '["a","b"]',
+      collections: '["c"]',
+      graph: '{"nodes":[],"edges":[]}',
+      tool_calls: '[{"id":"1"}]',
+      agent_mode: 1,
+      help_mode: 0,
+    });
+    expect(msg.tools).toEqual(["a", "b"]);
+    expect(msg.collections).toEqual(["c"]);
+    expect(msg.graph).toEqual({ nodes: [], edges: [] });
+    expect(msg.tool_calls).toEqual([{ id: "1" }]);
+    expect(msg.agent_mode).toBe(true);
+    expect(msg.help_mode).toBe(false);
   });
 
   it("paginate by thread", async () => {
