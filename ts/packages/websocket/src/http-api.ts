@@ -17,6 +17,8 @@ import { handleOAuthRequest } from "./oauth-api.js";
 import { handleSkillsRequest, handleFontsRequest } from "./skills-api.js";
 import { handleCostRequest } from "./cost-api.js";
 import { handleWorkspaceRequest } from "./workspace-api.js";
+import { handleFileRequest, type FileApiOptions } from "./file-api.js";
+import { createStorageHandler } from "./storage-api.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -26,6 +28,7 @@ export interface HttpApiOptions {
   userIdHeader?: string;
   baseUrl?: string;
   openai?: OpenAIApiOptions;
+  fileApi?: FileApiOptions;
 }
 
 export interface WorkflowRequestBody {
@@ -48,6 +51,7 @@ export interface WorkflowRequestBody {
   html_app?: string | null;
 }
 
+const defaultStorageHandler = createStorageHandler();
 const defaultMemoryFactory = new MemoryAdapterFactory();
 let workflowTableInitialized = false;
 let messageTableInitialized = false;
@@ -1189,6 +1193,14 @@ export async function handleApiRequest(
   if (pathname === "/api/workspaces" || pathname.startsWith("/api/workspaces/")) {
     const response = await handleWorkspaceRequest(request, options);
     if (response) return response;
+  }
+
+  if (pathname.startsWith("/api/files/")) {
+    return handleFileRequest(request, options.fileApi);
+  }
+
+  if (pathname.startsWith("/api/storage/")) {
+    return defaultStorageHandler(request);
   }
 
   if (pathname === "/api/users/validate_username") {

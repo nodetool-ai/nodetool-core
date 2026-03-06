@@ -6,6 +6,7 @@ export {
 
 export { LocalAuthProvider } from "./providers/local-provider.js";
 export { StaticTokenProvider } from "./providers/static-token-provider.js";
+export { MultiUserAuthProvider, type MultiUserAuthProviderOptions } from "./providers/multi-user-provider.js";
 
 export {
   createAuthMiddleware,
@@ -21,3 +22,14 @@ export {
   requireAuth,
   type HttpAuthOptions,
 } from "./http-auth.js";
+
+// ── User type & helpers ─────────────────────────────────────────────
+
+export interface User {
+  id: string;
+  role?: string;
+}
+
+export function isAdmin(user: User): boolean {
+  return user.role === "admin";
+}
