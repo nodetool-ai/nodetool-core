@@ -9,7 +9,7 @@ Core agent system is ~85% complete. Tool coverage is ~70%.
 ## Core agent system gaps
 
 ### T-AG-1 · workspace_tools
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `agents/tools/workspace_tools.py`
 **Dependency:** Agent workspace directory (filesystem-based, available in Node.js)
 
@@ -31,7 +31,7 @@ The Python `workspace_tools` gives agents read/write access to a sandboxed works
 ---
 
 ### T-AG-3 · model_tools
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `agents/tools/model_tools.py`
 **Dependency:** Provider model registry
 
@@ -71,7 +71,7 @@ The Python `workspace_tools` gives agents read/write access to a sandboxed works
 ---
 
 ### T-AG-7 · _remove_base64_images utility
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `agents/tools/_remove_base64_images.py`
 
 - [ ] **TEST** — Write test: utility removes base64 image strings from nested message content while preserving other content.
@@ -80,7 +80,7 @@ The Python `workspace_tools` gives agents read/write access to a sandboxed works
 ---
 
 ### T-AG-8 · wrap_generators_parallel utility
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `agents/wrap_generators_parallel.py`
 
 - [ ] **TEST** — Write test: `wrapGeneratorsParallel([gen1, gen2, gen3])` yields items from all generators concurrently, in arrival order.

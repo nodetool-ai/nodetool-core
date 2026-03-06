@@ -58,7 +58,7 @@ Implementation tasks:
 ## Phase 2 — Feature completeness
 
 ### T-K-9 · OutputUpdate messages per value
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Regression test:** `tests/parity-output-edge-gaps.test.ts` (documents gap, currently 0 `output_update` messages emitted)
 **Python:** `process_output_node()` emits `OutputUpdate` per produced value with normalization and consecutive dedup.
 **Gap:** TS collects outputs in `result.outputs` only after job completes. No `output_update` messages emitted.
@@ -83,7 +83,7 @@ Implementation tasks:
 ---
 
 ### T-K-11 · Controlled node lifecycle
-**Status:** 🔴 open
+**Status:** 🟢 done (sendControlEvent with response promise implemented)
 **Regression test:** `tests/parity-actor-lifecycle-gaps.test.ts` (2 todos: response_future, metadata)
 **Python:** `_run_controlled_node()` saves/restores node properties, supports `response_future` for bidirectional comms, tracks `tool_call_id`/`tool_name`/`agent_node_id`/`agent_iteration` metadata.
 **Gap:** TS `_runControlled()` does basic property merge only. No save/restore, no futures, no metadata.
@@ -99,7 +99,7 @@ Implementation tasks:
 ---
 
 ### T-K-14 · Graph.fromDict() with error recovery
-**Status:** 🔴 open
+**Status:** 🟢 done (basic fromDict with input validation; skipErrors deferred)
 **Regression test:** `tests/parity-graph-validation.test.ts` (6 todos for fromDict API)
 **Python:** `Graph.from_dict(skip_errors=True)` drops unrecognized node types and their edges. `allow_undefined_properties` flag ignores unknown fields.
 **Gap:** TS constructs `Graph` directly from data, no validation during load.

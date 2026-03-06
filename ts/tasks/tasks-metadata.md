@@ -7,7 +7,7 @@ Parity gaps in `src/nodetool/metadata/` and `src/nodetool/messaging/` vs TypeScr
 ## Metadata (`src/nodetool/metadata/`)
 
 ### T-META-1 · Type metadata utilities
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `metadata/type_metadata.py` — `TypeMetadata`, `is_list_type()`, `is_union_type()`, type compatibility checking.
 
 These are used by:
@@ -36,7 +36,7 @@ In TypeScript, nodes register themselves with `NodeRegistry`. The metadata comes
 ---
 
 ### T-META-3 · Type validation (typecheck)
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `metadata/typecheck.py` — validates that a runtime value matches a declared type.
 
 - [ ] **TEST** — Write test: `validateType(42, "int")` returns `{ valid: true }`.
@@ -50,7 +50,7 @@ In TypeScript, nodes register themselves with `NodeRegistry`. The metadata comes
 ## Messaging (`src/nodetool/messaging/`)
 
 ### T-MSG-1 · Context packer
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `messaging/context_packer.py` — serializes conversation history + system prompt, truncating to fit a token budget.
 
 (Also tracked in [tasks-runtime.md](tasks-runtime.md) T-RT-16)
@@ -91,7 +91,7 @@ Deferred.
 ---
 
 ### T-MSG-5 · Graph input/output schema
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `graph.py` `get_input_schema()`, `get_output_schema()` — returns JSON Schema for workflow inputs/outputs based on input/output node types.
 
 - [ ] **TEST** — Write test: `graph.getInputSchema()` for a graph with one IntInput node returns `{ properties: { x: { type: "number" } }, required: ["x"] }`.
@@ -110,7 +110,7 @@ Deferred.
 ---
 
 ### T-MSG-7 · Workflow message types
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `types/wrap_primitive_types.py` — wraps primitive values (int, float, str) in typed envelopes for JSON serialization in workflow I/O.
 
 - [ ] **TEST** — Write test: `wrapPrimitive(42)` returns `{ type: "int", value: 42 }`.

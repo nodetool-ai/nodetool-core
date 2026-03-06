@@ -9,7 +9,7 @@ The entire storage abstraction layer is absent in TypeScript. Python's `src/node
 ## Phase 1 — Core abstraction + local backends
 
 ### T-ST-1 · AbstractStorage interface
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `storage/abstract_storage.py`
 
 Defines the contract all storage backends implement.
@@ -29,7 +29,7 @@ Defines the contract all storage backends implement.
 ---
 
 ### T-ST-2 · MemoryStorage backend
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `storage/memory_storage.py`
 Useful for tests; stores blobs in a `Map<string, Buffer>`.
 
@@ -41,7 +41,7 @@ Useful for tests; stores blobs in a `Map<string, Buffer>`.
 ---
 
 ### T-ST-3 · FileStorage backend
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `storage/file_storage.py`
 Stores blobs on local filesystem under a configured base directory.
 
@@ -80,7 +80,7 @@ Stores blobs on local filesystem under a configured base directory.
 ## Phase 3 — Node result caching
 
 ### T-ST-6 · AbstractNodeCache interface
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `storage/abstract_node_cache.py`
 
 - [ ] **TEST** — Write interface conformance tests: `get(key)`, `set(key, value, ttl?)`, `delete(key)`, `clear()`.
@@ -89,7 +89,7 @@ Stores blobs on local filesystem under a configured base directory.
 ---
 
 ### T-ST-7 · MemoryNodeCache
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `storage/memory_node_cache.py`
 
 - [ ] **TEST** — Write test: `MemoryNodeCache.set("k", val, 1)` then after 1s `get("k")` returns null (TTL expired).

@@ -7,7 +7,7 @@ The Python `src/nodetool/config/` module provides centralized environment loadin
 ---
 
 ### T-CFG-1 · Environment loader
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `config/environment.py`
 
 Python loads config in this hierarchy:
@@ -27,7 +27,7 @@ TypeScript has no equivalent. Each package reads `process.env` directly.
 ---
 
 ### T-CFG-2 · Settings registry
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `config/settings.py` — `register_setting()` API for packages to declare their settings; central discovery for UI configuration panels.
 
 - [ ] **TEST** — Write test: `registerSetting({ package, envVar, group, description, isSecret })` adds entry to global registry. `getSettings()` returns all registered settings.
@@ -37,7 +37,7 @@ TypeScript has no equivalent. Each package reads `process.env` directly.
 ---
 
 ### T-CFG-3 · Logging configuration
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `config/logging_config.py` — configures structlog with formatters, log level from env, optional Sentry integration.
 
 - [ ] **TEST** — Write test: `configureLogging({ level: "debug" })` sets minimum log level. DEBUG messages appear; below-level messages suppressed.

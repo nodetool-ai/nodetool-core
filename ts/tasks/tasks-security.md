@@ -9,7 +9,7 @@ Core crypto (Fernet, PBKDF2, keychain) is fully ported. The gaps are the auth pr
 ## Phase 1 — Unblock real deployments
 
 ### T-SEC-1 · HTTP auth middleware
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `security/http_auth.py` — extracts JWT / static token from `Authorization` header; injects `current_user` into FastAPI dependency chain.
 **Gap:** TS API layer has no auth enforcement. Any caller gets full access.
 
@@ -21,7 +21,7 @@ Core crypto (Fernet, PBKDF2, keychain) is fully ported. The gaps are the auth pr
 ---
 
 ### T-SEC-2 · Local auth provider
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `security/providers/local.py` — single-user mode, no credentials required; returns a hardcoded admin user.
 
 - [ ] **TEST** — Write test: `LocalAuthProvider.authenticate(request)` always returns the default user with id "1".
@@ -30,7 +30,7 @@ Core crypto (Fernet, PBKDF2, keychain) is fully ported. The gaps are the auth pr
 ---
 
 ### T-SEC-3 · Multi-user auth provider
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `security/providers/multi_user.py` — validates JWT tokens, looks up user by ID from DB.
 
 - [ ] **TEST** — Write test: valid JWT with user_id claim returns matching user from DB.
@@ -52,7 +52,7 @@ Core crypto (Fernet, PBKDF2, keychain) is fully ported. The gaps are the auth pr
 ## Phase 2 — Admin and user management
 
 ### T-SEC-5 · Admin authentication
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `security/admin_auth.py` — checks for admin role in user record; used to gate admin endpoints.
 
 - [ ] **TEST** — Write test: non-admin user calling admin endpoint returns 403.
@@ -62,7 +62,7 @@ Core crypto (Fernet, PBKDF2, keychain) is fully ported. The gaps are the auth pr
 ---
 
 ### T-SEC-6 · User management
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `security/user_manager.py` — create, read, update, delete users; role management.
 
 - [ ] **TEST** — Write test: `UserManager.create({ username, email, role })` persists user.
@@ -80,7 +80,7 @@ Low priority; can use AWS CLI directly.
 ---
 
 ### T-SEC-8 · Startup security checks
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `security/startup_checks.py` — validates master key available, DB accessible, required secrets configured.
 
 - [ ] **TEST** — Write test: `runStartupChecks()` returns error list when OPENAI_API_KEY missing and it's required.

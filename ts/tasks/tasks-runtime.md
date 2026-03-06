@@ -154,7 +154,7 @@ Deferred until a TS CLI is scoped. Partially covered by the existing `cli` packa
 ## Context packer
 
 ### T-RT-16 · context_packer port
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `messaging/context_packer.py` — serializes conversation history + system prompt into a token-limited context window.
 
 - [ ] **TEST** — Write test: `packContext(messages, systemPrompt, maxTokens)` truncates oldest messages to fit within token budget.
