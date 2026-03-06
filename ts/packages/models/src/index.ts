@@ -65,6 +65,8 @@ export { Thread } from "./thread.js";
 
 export { Secret } from "./secret.js";
 
+export { Workspace } from "./workspace.js";
+
 export { OAuthCredential } from "./oauth-credential.js";
 
 export { RunNodeState } from "./run-node-state.js";
@@ -74,3 +76,10 @@ export { RunEvent } from "./run-event.js";
 export type { EventType } from "./run-event.js";
 
 export { RunLease } from "./run-lease.js";
+
+export { Prediction } from "./prediction.js";
+export type {
+  AggregateResult,
+  ProviderAggregateResult,
+  ModelAggregateResult,
+} from "./prediction.js";
