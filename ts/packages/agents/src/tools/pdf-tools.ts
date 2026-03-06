@@ -124,12 +124,12 @@ export class ExtractPDFTablesTool extends Tool {
       const allTables: Array<Record<string, unknown>> = [];
       for (let pageNum = startPage; pageNum <= end && pageNum < pages.length; pageNum++) {
         const pageText = pages[pageNum] ?? "";
-        const lines = pageText.split("\n").filter((l) => l.trim().length > 0);
+        const lines = pageText.split("\n").filter((l: string) => l.trim().length > 0);
 
         // Detect tabular rows: lines with 2+ segments separated by 2+ spaces
         const tabularLines: string[][] = [];
         for (const line of lines) {
-          const cells = line.split(/\s{2,}/).filter((c) => c.trim().length > 0);
+          const cells = line.split(/\s{2,}/).filter((c: string) => c.trim().length > 0);
           if (cells.length >= 2) {
             tabularLines.push(cells);
           }

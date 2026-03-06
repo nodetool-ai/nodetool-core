@@ -5,16 +5,16 @@
  */
 
 import { readFile, writeFile, appendFile, mkdir, readdir, stat, access } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import type { ProcessingContext } from "@nodetool/runtime";
 import { Tool } from "./base-tool.js";
-import { encodingForModel } from "js-tiktoken";
 
 const MAX_READ_CHARS = 100_000;
 const MAX_TOKENS = 25_000;
 const TOKEN_MODEL = "gpt-4" as const;
 
-function countTokens(text: string): number {
+async function countTokens(text: string): Promise<number> {
+  const { encodingForModel } = await import("js-tiktoken");
   const enc = encodingForModel(TOKEN_MODEL);
   return enc.encode(text).length;
 }
@@ -131,7 +131,7 @@ export class ReadFileTool extends Tool {
         lineInfo = { total_lines: (content.match(/\n/g) || []).length + 1 };
       }
 
-      const tokenCount = countTokens(content);
+      const tokenCount = await countTokens(content);
       const tokenInfo = { count: tokenCount, model: TOKEN_MODEL };
 
       if (tokenCount > MAX_TOKENS) {

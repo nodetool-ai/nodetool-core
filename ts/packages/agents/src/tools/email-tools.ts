@@ -148,7 +148,7 @@ export class SearchEmailTool extends Tool {
           { source: true, uid: true },
           { uid: true },
         )) {
-          const parsed = await simpleParser(msg.source);
+          const parsed = await simpleParser(msg.source ?? Buffer.alloc(0));
           let body = "";
           if (parsed.html) {
             body = stripHtml(parsed.html);
