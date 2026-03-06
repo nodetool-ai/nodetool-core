@@ -91,6 +91,9 @@ export class WorkflowRunner {
   /** Per-edge message counters (for EdgeUpdate tracking). */
   private _edgeCounters = new Map<string, number>();
 
+  /** Per-edge streaming flag (true if on a streaming path). */
+  private _streamingEdges = new Map<string, boolean>();
+
   /**
    * Control edges that have actually routed at least one event.
    * Used to decide whether to send EOS for __control__ handles.
@@ -188,6 +191,9 @@ export class WorkflowRunner {
     try {
       this._graph = new Graph(graphData);
 
+      // Analyze streaming paths (Python parity: _analyze_streaming)
+      this._analyzeStreaming();
+
       // Validate
       this._graph.validate();
 
@@ -204,6 +210,9 @@ export class WorkflowRunner {
 
       // Initialize inboxes
       this._initializeInboxes();
+
+      // Initialize all nodes (Python parity: initialize_graph)
+      await this._initializeGraph();
 
       // Dispatch input parameters
       await this._dispatchInputs(request.params ?? {});
@@ -255,6 +264,19 @@ export class WorkflowRunner {
   }
 
   // -----------------------------------------------------------------------
+  // Node initialization
+  // -----------------------------------------------------------------------
+
+  private async _initializeGraph(): Promise<void> {
+    for (const node of this._graph.nodes) {
+      const executor = this._options.resolveExecutor(node);
+      if (executor.initialize) {
+        await executor.initialize();
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Inbox initialization
   // -----------------------------------------------------------------------
 
@@ -275,9 +297,10 @@ export class WorkflowRunner {
         .findIncomingEdges(node.id)
         .filter(isControlEdge);
       if (incomingControl.length > 0) {
+        const uniqueControllerCount = new Set(incomingControl.map(e => e.source)).size;
         handleCounts.set(
           "__control__",
-          (handleCounts.get("__control__") ?? 0) + incomingControl.length
+          (handleCounts.get("__control__") ?? 0) + uniqueControllerCount
         );
       }
 
@@ -420,6 +443,13 @@ export class WorkflowRunner {
 
     // Wait for all actors to complete
     await Promise.all(actorPromises);
+
+    // Check for in-flight messages after all actors complete (Python parity: _check_pending_inbox_work)
+    const COMPLETION_CHECK_DELAY_MS = 10;
+    const pendingNodes = this._checkPendingInboxWork();
+    if (pendingNodes.length > 0) {
+      await new Promise<void>(r => setTimeout(r, COMPLETION_CHECK_DELAY_MS));
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -547,6 +577,65 @@ export class WorkflowRunner {
       status: "active",
       counter,
     });
+  }
+
+  // -----------------------------------------------------------------------
+  // Streaming analysis
+  // -----------------------------------------------------------------------
+
+  private _edgeKey(edge: Edge): string {
+    return edge.id ?? `${edge.source}:${edge.sourceHandle}->${edge.target}:${edge.targetHandle}`;
+  }
+
+  private _analyzeStreaming(): void {
+    this._streamingEdges.clear();
+    const adjacency = new Map<string, Edge[]>();
+
+    for (const edge of this._graph.edges) {
+      if (isControlEdge(edge)) continue;
+      const key = this._edgeKey(edge);
+      this._streamingEdges.set(key, false);
+      const arr = adjacency.get(edge.source) ?? [];
+      arr.push(edge);
+      adjacency.set(edge.source, arr);
+    }
+
+    const queue: string[] = [];
+    const visited = new Set<string>();
+    for (const node of this._graph.nodes) {
+      if (node.is_streaming_output) {
+        queue.push(node.id);
+        visited.add(node.id);
+      }
+    }
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const edge of adjacency.get(current) ?? []) {
+        this._streamingEdges.set(this._edgeKey(edge), true);
+        if (!visited.has(edge.target)) {
+          visited.add(edge.target);
+          queue.push(edge.target);
+        }
+      }
+    }
+  }
+
+  /** Returns true if the given edge is on a streaming path. */
+  edgeStreams(edge: Edge): boolean {
+    return this._streamingEdges.get(this._edgeKey(edge)) ?? false;
+  }
+
+  // -----------------------------------------------------------------------
+  // Pending work detection
+  // -----------------------------------------------------------------------
+
+  private _checkPendingInboxWork(): string[] {
+    const pending: string[] = [];
+    for (const [nodeId, inbox] of this._inboxes) {
+      if (inbox.hasPendingWork()) pending.push(nodeId);
+    }
+    return pending;
   }
 
   // -----------------------------------------------------------------------
