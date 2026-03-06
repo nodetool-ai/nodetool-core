@@ -92,6 +92,14 @@ export class WorkflowRunner {
   private _edgeCounters = new Map<string, number>();
 
   /**
+   * Control edges that have actually routed at least one event.
+   * Used to decide whether to send EOS for __control__ handles.
+   * Edges that never routed an event (e.g., when using manual
+   * dispatchControlEvent()) should NOT close the __control__ handle.
+   */
+  private _controlEdgesRouted = new Set<string>();
+
+  /**
    * Multi-edge list inputs: nodeId → set of handles that aggregate
    * multiple edges into a list.
    */
@@ -420,6 +428,8 @@ export class WorkflowRunner {
 
   /**
    * Route output values from a node to downstream inboxes.
+   * For control edges: route control events to the __control__ handle.
+   * For data edges: route to the named target handle.
    */
   private async _sendMessages(
     sourceNodeId: string,
@@ -430,7 +440,19 @@ export class WorkflowRunner {
     const outgoing = this._graph.findOutgoingEdges(sourceNodeId);
 
     for (const edge of outgoing) {
-      if (isControlEdge(edge)) continue;
+      if (isControlEdge(edge)) {
+        // Route control events from controller nodes to controlled nodes.
+        // The controller yields { __control__: ControlEvent } on its __control__ handle.
+        const value = outputs[edge.sourceHandle];
+        if (value === undefined) continue;
+        const targetInbox = this._inboxes.get(edge.target);
+        if (!targetInbox) continue;
+        await targetInbox.put("__control__", value);
+        // Track that this edge has routed at least one event
+        const ctrlEdgeId = edge.id ?? `${edge.source}:${edge.sourceHandle}->${edge.target}:${edge.targetHandle}`;
+        this._controlEdgesRouted.add(ctrlEdgeId);
+        continue;
+      }
 
       const value = outputs[edge.sourceHandle];
       if (value === undefined) continue;
@@ -444,12 +466,27 @@ export class WorkflowRunner {
   }
 
   /**
-   * Signal EOS on all outgoing data edges of a completed node.
+   * Signal EOS on all outgoing edges of a completed node.
+   * For control edges: close the __control__ handle of the target.
+   * For data edges: close the named target handle.
    */
   private async _sendEOS(nodeId: string): Promise<void> {
     const outgoing = this._graph.findOutgoingEdges(nodeId);
     for (const edge of outgoing) {
-      if (isControlEdge(edge)) continue;
+      if (isControlEdge(edge)) {
+        // Only send EOS if we actually routed events through this edge.
+        // If no events were routed (e.g., manual dispatchControlEvent() is
+        // used instead), do not close the __control__ handle – the manual
+        // caller is responsible for sending a stop event.
+        const ctrlEdgeId = edge.id ?? `${edge.source}:${edge.sourceHandle}->${edge.target}:${edge.targetHandle}`;
+        if (this._controlEdgesRouted.has(ctrlEdgeId)) {
+          const targetInbox = this._inboxes.get(edge.target);
+          if (targetInbox) {
+            targetInbox.markSourceDone("__control__");
+          }
+        }
+        continue;
+      }
       const targetInbox = this._inboxes.get(edge.target);
       if (targetInbox) {
         targetInbox.markSourceDone(edge.targetHandle);
