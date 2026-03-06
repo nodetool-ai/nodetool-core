@@ -12,3 +12,10 @@ export {
   type SettingDefinition,
   type SettingStatus,
 } from "./settings.js";
+
+export {
+  configureLogging,
+  getLogLevel,
+  type LogLevel,
+  type LoggingOptions,
+} from "./logging.js";

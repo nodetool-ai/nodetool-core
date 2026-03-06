@@ -33,3 +33,5 @@ export interface User {
 export function isAdmin(user: User): boolean {
   return user.role === "admin";
 }
+
+export { UserManager, type ManagedUser, type CreateUserOptions } from "./user-manager.js";

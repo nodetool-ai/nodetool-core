@@ -117,6 +117,12 @@ export class WorkflowRunner {
   /** Cancellation flag. */
   private _cancelled = false;
 
+  /** Pending response resolvers for sendControlEvent. nodeId → resolver */
+  private _pendingControlResponses = new Map<
+    string,
+    { resolve: (outputs: Record<string, unknown>) => void; reject: (err: Error) => void }
+  >();
+
   constructor(jobId: string, options: WorkflowRunnerOptions) {
     this.jobId = jobId;
     this._options = options;
@@ -329,6 +335,7 @@ export class WorkflowRunner {
           (handleCounts.get("__control__") ?? 0) + uniqueControllerCount
         );
       }
+
 
       for (const [handle, count] of handleCounts) {
         inbox.addUpstream(handle, count);
@@ -548,6 +555,13 @@ export class WorkflowRunner {
         });
       }
     }
+
+    // Resolve pending sendControlEvent promise if one exists for this node
+    const pending = this._pendingControlResponses.get(sourceNodeId);
+    if (pending) {
+      this._pendingControlResponses.delete(sourceNodeId);
+      pending.resolve(outputs);
+    }
   }
 
   /**
@@ -614,6 +628,39 @@ export class WorkflowRunner {
     if (inbox) {
       await inbox.put("__control__", event);
     }
+  }
+
+  /**
+   * Send a run control event to a specific node and await its output.
+   * Returns a promise that resolves with the node's output from the next
+   * output_update message emitted for that node.
+   */
+  async sendControlEvent(
+    targetNodeId: string,
+    properties: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const inbox = this._inboxes.get(targetNodeId);
+    if (!inbox) {
+      throw new Error(`Target node not found or no inbox: ${targetNodeId}`);
+    }
+
+    // Ensure __control__ handle is registered so the controlled actor's
+    // iterAny() can receive events even without pre-existing control edges.
+    if (!inbox.isOpen("__control__") && !inbox.hasBuffered("__control__")) {
+      inbox.addUpstream("__control__", 1);
+    }
+
+    const promise = new Promise<Record<string, unknown>>((resolve, reject) => {
+      this._pendingControlResponses.set(targetNodeId, { resolve, reject });
+    });
+
+    const event: ControlEvent = {
+      event_type: "run",
+      properties,
+    };
+    await inbox.put("__control__", event);
+
+    return promise;
   }
 
   // -----------------------------------------------------------------------
