@@ -11,8 +11,13 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@nodetool/protocol": "*",
     "@nodetool/runtime": "*",
-    "@nodetool/protocol": "*"
+    "@types/mailparser": "^3.4.6",
+    "imapflow": "^1.2.12",
+    "js-tiktoken": "^1.0.18",
+    "mailparser": "^3.9.3",
+    "pdf-parse": "^1.1.4"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

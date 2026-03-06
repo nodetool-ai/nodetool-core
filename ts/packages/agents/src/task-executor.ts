@@ -30,6 +30,10 @@ export interface TaskExecutorOptions {
   maxSteps?: number;
   maxStepIterations?: number;
   maxTokenLimit?: number;
+  /** ID of the final aggregation step (will use useFinishTask=true). */
+  finalStepId?: string;
+  /** Execute independent steps in parallel (default: false). */
+  parallelExecution?: boolean;
 }
 
 export class TaskExecutor {
@@ -43,6 +47,9 @@ export class TaskExecutor {
   private maxSteps: number;
   private maxStepIterations: number;
   private maxTokenLimit: number;
+  private finalStepId: string | undefined;
+  private parallelExecution: boolean;
+  private _finishStepId: string | undefined;
 
   constructor(opts: TaskExecutorOptions) {
     this.provider = opts.provider;
@@ -55,10 +62,13 @@ export class TaskExecutor {
     this.maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
     this.maxStepIterations = opts.maxStepIterations ?? DEFAULT_MAX_STEP_ITERATIONS;
     this.maxTokenLimit = opts.maxTokenLimit ?? DEFAULT_TOKEN_LIMIT;
+    this.finalStepId = opts.finalStepId;
+    this.parallelExecution = opts.parallelExecution ?? false;
   }
 
   /**
    * Execute all steps in the task plan, respecting dependency order.
+   * Supports both sequential and parallel execution modes.
    */
   async *executeTasks(): AsyncGenerator<ProcessingMessage> {
     // Seed inputs into context
@@ -66,12 +76,17 @@ export class TaskExecutor {
       this.context.set(key, value);
     }
 
+    // Auto-detect finish step (last step) like Python does
+    this._finishStepId = this.finalStepId ??
+      (this.task.steps.length > 0 ? this.task.steps[this.task.steps.length - 1].id : undefined);
+
     let stepsTaken = 0;
 
     while (!this.allTasksComplete() && stepsTaken < this.maxSteps) {
       stepsTaken++;
 
-      const executableSteps = this.getExecutableSteps();
+      let executableSteps = this.getExecutableSteps();
+      executableSteps = this.maybeDeferFinishStep(executableSteps);
 
       if (executableSteps.length === 0) {
         if (!this.allTasksComplete()) {
@@ -84,8 +99,8 @@ export class TaskExecutor {
         break;
       }
 
-      // Execute steps sequentially
-      for (const step of executableSteps) {
+      // Create step executors
+      const stepGenerators = executableSteps.map((step) => {
         const executor = new StepExecutor({
           task: this.task,
           step,
@@ -96,10 +111,20 @@ export class TaskExecutor {
           systemPrompt: this.systemPrompt,
           maxTokenLimit: this.maxTokenLimit,
           maxIterations: this.maxStepIterations,
+          useFinishTask: this.isFinishStep(step),
         });
+        return executor.execute();
+      });
 
-        for await (const message of executor.execute()) {
-          yield message;
+      if (this.parallelExecution && stepGenerators.length > 1) {
+        // Execute all steps concurrently, merging yielded messages
+        yield* mergeAsyncGenerators(stepGenerators);
+      } else {
+        // Execute steps sequentially
+        for (const generator of stepGenerators) {
+          for await (const message of generator) {
+            yield message;
+          }
         }
       }
     }
@@ -129,5 +154,87 @@ export class TaskExecutor {
         !step.completed &&
         step.dependsOn.every((dep) => completedIds.has(dep)),
     );
+  }
+
+  /**
+   * Check if a step is the designated finish/aggregation step.
+   */
+  private isFinishStep(step: Step): boolean {
+    if (this._finishStepId) {
+      return step.id === this._finishStepId;
+    }
+    return this.task.steps.length > 0 && step === this.task.steps[this.task.steps.length - 1];
+  }
+
+  /**
+   * Defer the finish step until all other steps are complete.
+   * This ensures the final aggregation step runs last.
+   */
+  private maybeDeferFinishStep(executableSteps: Step[]): Step[] {
+    if (!this._finishStepId) return executableSteps;
+
+    const finishReady = executableSteps.some((s) => s.id === this._finishStepId);
+    if (!finishReady) return executableSteps;
+
+    const otherPending = this.task.steps.some(
+      (s) => !s.completed && s.id !== this._finishStepId,
+    );
+    if (!otherPending) return executableSteps;
+
+    return executableSteps.filter((s) => s.id !== this._finishStepId);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Async generator merge utility (TS equivalent of wrap_generators_parallel)
+// ---------------------------------------------------------------------------
+
+async function* mergeAsyncGenerators<T>(
+  generators: AsyncGenerator<T>[],
+): AsyncGenerator<T> {
+  // Channel: a queue of resolved values with a promise-based pull mechanism
+  const queue: T[] = [];
+  let activeCount = generators.length;
+  let resolve: (() => void) | null = null;
+  let firstError: unknown = undefined;
+
+  function notify() {
+    if (resolve) {
+      const r = resolve;
+      resolve = null;
+      r();
+    }
+  }
+
+  // Start a consumer task for each generator
+  const tasks = generators.map(async (gen) => {
+    try {
+      for await (const item of gen) {
+        queue.push(item);
+        notify();
+      }
+    } catch (e) {
+      if (firstError === undefined) firstError = e;
+    } finally {
+      activeCount--;
+      notify();
+    }
+  });
+
+  // Yield items as they arrive
+  while (activeCount > 0 || queue.length > 0) {
+    if (queue.length > 0) {
+      yield queue.shift()!;
+    } else if (activeCount > 0) {
+      // Wait for the next item or completion signal
+      await new Promise<void>((r) => { resolve = r; });
+    }
+  }
+
+  // Wait for all producer promises to settle
+  await Promise.allSettled(tasks);
+
+  if (firstError !== undefined) {
+    throw firstError;
   }
 }

@@ -10,6 +10,17 @@ export { Tool } from "./tools/base-tool.js";
 export { FinishStepTool } from "./tools/finish-step-tool.js";
 export { CalculatorTool } from "./tools/calculator-tool.js";
 export {
+  StatisticsTool,
+  GeometryTool,
+  TrigonometryTool,
+  ConversionTool,
+} from "./tools/math-tools.js";
+export {
+  OpenAIWebSearchTool,
+  OpenAIImageGenerationTool,
+  OpenAITextToSpeechTool,
+} from "./tools/openai-tools.js";
+export {
   ReadFileTool,
   WriteFileTool,
   ListDirectoryTool,
@@ -25,10 +36,60 @@ export {
   GoogleImagesTool,
 } from "./tools/search-tools.js";
 export {
+  GoogleGroundedSearchTool,
+  GoogleImageGenerationTool,
+} from "./tools/google-tools.js";
+export {
+  DataForSEOSearchTool,
+  DataForSEONewsTool,
+  DataForSEOImagesTool,
+} from "./tools/dataseo-tools.js";
+export {
   BrowserTool,
   ScreenshotTool,
   htmlToText,
 } from "./tools/browser-tools.js";
+export {
+  SearchEmailTool,
+  ArchiveEmailTool,
+  AddLabelToEmailTool,
+} from "./tools/email-tools.js";
+export {
+  ListWorkflowsTool,
+  GetWorkflowTool,
+  CreateWorkflowTool,
+  RunWorkflowTool,
+  ValidateWorkflowTool,
+  GetExampleWorkflowTool,
+  ExportWorkflowDigraphTool,
+  ListNodesTool,
+  SearchNodesTool,
+  GetNodeInfoTool,
+  ListJobsTool,
+  GetJobTool,
+  GetJobLogsTool,
+  StartBackgroundJobTool,
+  ListAssetsTool,
+  GetAssetTool,
+  ListModelsTool,
+  getAllMcpTools,
+} from "./tools/mcp-tools.js";
+export {
+  ExtractPDFTextTool,
+  ExtractPDFTablesTool,
+  ConvertPDFToMarkdownTool,
+  ConvertMarkdownToPDFTool,
+  ConvertDocumentTool,
+} from "./tools/pdf-tools.js";
+export {
+  ChromaTextSearchTool,
+  ChromaIndexTool,
+  ChromaHybridSearchTool,
+  ChromaRecursiveSplitAndIndexTool,
+  ChromaMarkdownSplitAndIndexTool,
+  ChromaBatchIndexTool,
+} from "./tools/chroma-tools.js";
+export type { ChromaCollection } from "./tools/chroma-tools.js";
 export {
   registerTool,
   resolveTool,
@@ -42,10 +103,18 @@ export { extractJSON } from "./utils/json-parser.js";
 // Core execution
 export { StepExecutor } from "./step-executor.js";
 export type { StepExecutorOptions } from "./step-executor.js";
+export {
+  AgentExecutor,
+  FinishTool,
+  jsonSchemaForOutputType,
+} from "./agent-executor.js";
+export type { AgentExecutorOptions } from "./agent-executor.js";
 
 // Agents
 export { BaseAgent } from "./base-agent.js";
 export { SimpleAgent } from "./simple-agent.js";
+export { Agent, loadSkillsFromDirectory } from "./agent.js";
+export type { AgentSkill, AgentOptions } from "./agent.js";
 
 // Planning & orchestration
 export { TaskPlanner } from "./task-planner.js";
