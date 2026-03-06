@@ -12,17 +12,17 @@ Master task index for closing all Python→TypeScript parity gaps.
 
 | Package | File | Open | Done |
 |---------|------|------|------|
-| Kernel (workflow engine) | [tasks/tasks-kernel.md](tasks/tasks-kernel.md) | 7 | 8 |
-| Models (ORM methods) | [tasks/tasks-models.md](tasks/tasks-models.md) | 27 | 11 |
-| Agents (tools + core) | [tasks/tasks-agents.md](tasks/tasks-agents.md) | 11 | 0 |
-| Runtime (providers) | [tasks/tasks-runtime.md](tasks/tasks-runtime.md) | 16 | 2 |
-| WebSocket / API | [tasks/tasks-websocket.md](tasks/tasks-websocket.md) | 19 | 0 |
-| Security / Auth | [tasks/tasks-security.md](tasks/tasks-security.md) | 7 | 2 |
+| Kernel (workflow engine) | [tasks/tasks-kernel.md](tasks/tasks-kernel.md) | 2 | 13 |
+| Models (ORM methods) | [tasks/tasks-models.md](tasks/tasks-models.md) | 3 | 35 |
+| Agents (tools + core) | [tasks/tasks-agents.md](tasks/tasks-agents.md) | 4 | 7 |
+| Runtime (providers) | [tasks/tasks-runtime.md](tasks/tasks-runtime.md) | 0 | 18 |
+| WebSocket / API | [tasks/tasks-websocket.md](tasks/tasks-websocket.md) | 5 | 14 |
+| Security / Auth | [tasks/tasks-security.md](tasks/tasks-security.md) | 4 | 5 |
 | Storage | [tasks/tasks-storage.md](tasks/tasks-storage.md) | 6 | 3 |
-| Config | [tasks/tasks-config.md](tasks/tasks-config.md) | 4 | 0 |
-| Metadata / Messaging | [tasks/tasks-metadata.md](tasks/tasks-metadata.md) | 7 | 0 |
+| Config | [tasks/tasks-config.md](tasks/tasks-config.md) | 2 | 2 |
+| Metadata / Messaging | [tasks/tasks-metadata.md](tasks/tasks-metadata.md) | 2 | 5 |
 
-**Total open: 104 · Total done: 26**
+**Total open: 28 · Total done: 102**
 
 ---
 
