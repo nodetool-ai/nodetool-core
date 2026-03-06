@@ -15,7 +15,8 @@
     "packages/security",
     "packages/auth",
     "packages/cli",
-    "packages/storage"
+    "packages/storage",
+    "packages/config"
   ],
   "scripts": {
     "build": "npm run build --workspaces",

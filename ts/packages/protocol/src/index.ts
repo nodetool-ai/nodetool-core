@@ -4,3 +4,4 @@
 
 export * from "./messages.js";
 export * from "./graph.js";
+export { TypeMetadata } from "./type-metadata.js";
