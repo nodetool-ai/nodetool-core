@@ -15,3 +15,10 @@ export {
   type WorkflowRunnerOptions,
   type RunResult,
 } from "./runner.js";
+export { Channel, ChannelManager, type ChannelStats } from "./channel.js";
+export { NodeInputs, NodeOutputs, type NodeOutputsOptions } from "./io.js";
+export {
+  findNodeOrThrow,
+  getNodeInputTypes,
+  getDownstreamSubgraph,
+} from "./graph-utils.js";
