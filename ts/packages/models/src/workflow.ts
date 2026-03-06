@@ -217,6 +217,29 @@ export class Workflow extends DBModel {
     return [tools, cursor];
   }
 
+  /** Create a Workflow instance from a plain dictionary. */
+  static fromDict(data: Record<string, unknown>): Workflow {
+    return new Workflow({
+      id: (data.id as string) ?? "",
+      user_id: (data.user_id as string) ?? "",
+      access: (data.access as string) ?? "private",
+      created_at: data.created_at as string | undefined,
+      updated_at: data.updated_at as string | undefined,
+      name: (data.name as string) ?? "",
+      tool_name: (data.tool_name as string) ?? null,
+      package_name: (data.package_name as string) ?? null,
+      tags: (data.tags as string[]) ?? [],
+      description: (data.description as string) ?? "",
+      thumbnail: (data.thumbnail as string) ?? null,
+      thumbnail_url: (data.thumbnail_url as string) ?? null,
+      settings: (data.settings as Record<string, unknown>) ?? null,
+      graph: (data.graph as Record<string, unknown>) ?? { nodes: [], edges: [] },
+      run_mode: (data.run_mode as string) ?? null,
+      workspace_id: (data.workspace_id as string) ?? null,
+      html_app: (data.html_app as string) ?? null,
+    });
+  }
+
   /** Find a workflow by tool name for a given user. */
   static async findByToolName(
     userId: string,

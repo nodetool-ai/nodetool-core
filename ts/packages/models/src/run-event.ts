@@ -172,6 +172,19 @@ export class RunEvent extends DBModel {
     return results;
   }
 
+  /** Deserialize a RunEvent from a plain object (e.g. from JSON). */
+  static fromDict(data: Record<string, unknown>): RunEvent {
+    return new RunEvent({
+      id: (data.id as string) ?? createTimeOrderedUuid(),
+      run_id: (data.run_id as string) ?? "",
+      seq: (data.seq as number) ?? 0,
+      event_type: (data.event_type as string) ?? "RunCreated",
+      event_time: (data.event_time as string) ?? new Date().toISOString(),
+      node_id: (data.node_id as string) ?? null,
+      payload: (data.payload as Record<string, unknown>) ?? null,
+    });
+  }
+
   /** Get the most recent event for a run, optionally filtered. */
   static async getLastEvent(
     runId: string,

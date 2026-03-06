@@ -272,6 +272,16 @@ export class Job extends DBModel {
 
   // ── Static queries ───────────────────────────────────────────────
 
+  /** Find a job by id, scoped to the user. */
+  static async find(
+    userId: string,
+    jobId: string,
+  ): Promise<Job | null> {
+    const job = (await (Job as unknown as ModelClass<Job>).get(jobId)) as Job | null;
+    if (!job || job.user_id !== userId) return null;
+    return job;
+  }
+
   static async paginate(
     userId: string,
     opts: {

@@ -119,6 +119,13 @@ export class Prediction extends DBModel {
 
   // ── Static queries ───────────────────────────────────────────────
 
+  /** Find a prediction by ID. */
+  static async find(predictionId: string): Promise<Prediction | null> {
+    return (await (Prediction as unknown as ModelClass<Prediction>).get(
+      predictionId,
+    )) as Prediction | null;
+  }
+
   static async paginate(
     userId: string,
     opts: {

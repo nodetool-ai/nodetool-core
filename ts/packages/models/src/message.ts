@@ -163,6 +163,11 @@ export class Message extends DBModel {
 
   // ── Static queries ───────────────────────────────────────────────
 
+  /** Find a message by id. */
+  static async find(messageId: string): Promise<Message | null> {
+    return (await (Message as unknown as ModelClass<Message>).get(messageId)) as Message | null;
+  }
+
   /** Paginate messages in a thread. */
   static async paginate(
     threadId: string,

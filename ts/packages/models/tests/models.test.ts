@@ -218,6 +218,30 @@ describe("Job model", () => {
     expect(job.isStale(60_000)).toBe(false);
   });
 
+  it("find returns job for matching user", async () => {
+    const job = await (Job as unknown as ModelClass<Job>).create({
+      user_id: "u1",
+      workflow_id: "w1",
+    });
+    const found = await Job.find("u1", job.id);
+    expect(found).not.toBeNull();
+    expect(found!.id).toBe(job.id);
+  });
+
+  it("find returns null for wrong user", async () => {
+    const job = await (Job as unknown as ModelClass<Job>).create({
+      user_id: "u1",
+      workflow_id: "w1",
+    });
+    const found = await Job.find("u2", job.id);
+    expect(found).toBeNull();
+  });
+
+  it("find returns null for nonexistent job", async () => {
+    const found = await Job.find("u1", "nonexistent");
+    expect(found).toBeNull();
+  });
+
   it("paginate by user and status", async () => {
     await (Job as unknown as ModelClass<Job>).create({
       user_id: "u1",
@@ -460,6 +484,43 @@ describe("Workflow model", () => {
     const [results] = await Workflow.paginatePublic({ limit: 1 });
     expect(results).toHaveLength(1);
   });
+
+  it("fromDict creates workflow from plain object", () => {
+    const wf = Workflow.fromDict({
+      id: "wf-123",
+      user_id: "u1",
+      name: "Test WF",
+      description: "A test workflow",
+      tags: ["tag1", "tag2"],
+      access: "public",
+      graph: { nodes: [{ type: "text.output", id: "1" }], edges: [] },
+      run_mode: "tool",
+      tool_name: "my_tool",
+      settings: { key: "value" },
+    });
+    expect(wf.id).toBe("wf-123");
+    expect(wf.user_id).toBe("u1");
+    expect(wf.name).toBe("Test WF");
+    expect(wf.description).toBe("A test workflow");
+    expect(wf.tags).toEqual(["tag1", "tag2"]);
+    expect(wf.access).toBe("public");
+    expect(wf.graph.nodes).toHaveLength(1);
+    expect(wf.run_mode).toBe("tool");
+    expect(wf.tool_name).toBe("my_tool");
+    expect(wf.settings).toEqual({ key: "value" });
+  });
+
+  it("fromDict applies defaults for missing fields", () => {
+    const wf = Workflow.fromDict({});
+    expect(wf.id).toBe("");
+    expect(wf.name).toBe("");
+    expect(wf.description).toBe("");
+    expect(wf.tags).toEqual([]);
+    expect(wf.access).toBe("private");
+    expect(wf.graph).toEqual({ nodes: [], edges: [] });
+    expect(wf.tool_name).toBeNull();
+    expect(wf.run_mode).toBe("workflow"); // constructor default
+  });
 });
 
 // ── Asset ────────────────────────────────────────────────────────────
@@ -644,6 +705,33 @@ describe("Message model", () => {
 
     const [msgs] = await Message.paginate("t1");
     expect(msgs).toHaveLength(2);
+  });
+
+  it("find returns message by id", async () => {
+    const msg = await (Message as unknown as ModelClass<Message>).create({
+      user_id: "u1",
+      thread_id: "t1",
+      content: "findable",
+    });
+    const found = await Message.find(msg.id);
+    expect(found).not.toBeNull();
+    expect(found!.content).toBe("findable");
+  });
+
+  it("find returns null for nonexistent message", async () => {
+    const found = await Message.find("nonexistent");
+    expect(found).toBeNull();
+  });
+
+  it("delete removes a message", async () => {
+    const msg = await (Message as unknown as ModelClass<Message>).create({
+      user_id: "u1",
+      thread_id: "t1",
+      content: "to-delete",
+    });
+    await msg.delete();
+    const found = await Message.find(msg.id);
+    expect(found).toBeNull();
   });
 });
 

@@ -4,6 +4,7 @@ import { MemoryAdapterFactory } from "../src/memory-adapter.js";
 import { RunNodeState } from "../src/run-node-state.js";
 import { RunEvent } from "../src/run-event.js";
 import { RunLease } from "../src/run-lease.js";
+import { Prediction } from "../src/prediction.js";
 import type { ModelClass } from "../src/base-model.js";
 
 const factory = new MemoryAdapterFactory();
@@ -14,6 +15,7 @@ async function setup() {
   await (RunNodeState as unknown as ModelClass).createTable();
   await (RunEvent as unknown as ModelClass).createTable();
   await (RunLease as unknown as ModelClass).createTable();
+  await (Prediction as unknown as ModelClass).createTable();
 }
 
 // ── RunNodeState ──────────────────────────────────────────────────────
@@ -257,6 +259,72 @@ describe("RunEvent model", () => {
 
     const noMatch = await RunEvent.getLastEvent("run99");
     expect(noMatch).toBeNull();
+  });
+
+  it("fromDict deserializes a plain object into a RunEvent", () => {
+    const ev = RunEvent.fromDict({
+      id: "ev-123",
+      run_id: "run1",
+      seq: 5,
+      event_type: "NodeCompleted",
+      event_time: "2025-01-01T00:00:00.000Z",
+      node_id: "n1",
+      payload: { result: 42 },
+    });
+    expect(ev).toBeInstanceOf(RunEvent);
+    expect(ev.id).toBe("ev-123");
+    expect(ev.run_id).toBe("run1");
+    expect(ev.seq).toBe(5);
+    expect(ev.event_type).toBe("NodeCompleted");
+    expect(ev.event_time).toBe("2025-01-01T00:00:00.000Z");
+    expect(ev.node_id).toBe("n1");
+    expect(ev.payload).toEqual({ result: 42 });
+  });
+
+  it("fromDict applies defaults for missing fields", () => {
+    const ev = RunEvent.fromDict({});
+    expect(ev).toBeInstanceOf(RunEvent);
+    expect(ev.id).toBeTruthy();
+    expect(ev.run_id).toBe("");
+    expect(ev.seq).toBe(0);
+    expect(ev.event_type).toBe("RunCreated");
+    expect(ev.event_time).toBeTruthy();
+    expect(ev.node_id).toBeNull();
+    expect(ev.payload).toBeNull();
+  });
+});
+
+// ── Prediction ────────────────────────────────────────────────────────
+
+describe("Prediction model", () => {
+  beforeEach(setup);
+  afterEach(() => ModelObserver.clear());
+
+  it("find returns a prediction by ID", async () => {
+    const created = await (
+      Prediction as unknown as ModelClass<Prediction>
+    ).create({
+      user_id: "u1",
+      node_id: "n1",
+      provider: "openai",
+      model: "gpt-4",
+      cost: 0.05,
+      input_tokens: 100,
+      output_tokens: 50,
+      total_tokens: 150,
+    });
+
+    const found = await Prediction.find(created.id);
+    expect(found).not.toBeNull();
+    expect(found!.id).toBe(created.id);
+    expect(found!.provider).toBe("openai");
+    expect(found!.model).toBe("gpt-4");
+    expect(found!.cost).toBe(0.05);
+  });
+
+  it("find returns null for non-existent ID", async () => {
+    const found = await Prediction.find("nonexistent-id");
+    expect(found).toBeNull();
   });
 });
 
