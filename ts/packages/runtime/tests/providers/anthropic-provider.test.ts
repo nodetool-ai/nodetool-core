@@ -219,14 +219,16 @@ describe("AnthropicProvider", () => {
           { type: "content_block_delta", delta: { text: "Hel" } },
           { type: "content_block_delta", delta: { text: "lo" } },
           {
-            type: "content_block_stop",
+            type: "content_block_start",
+            index: 1,
             content_block: {
               type: "tool_use",
               id: "tc1",
               name: "lookup",
-              input: { q: "x" },
             },
           },
+          { type: "content_block_delta", index: 1, delta: { partial_json: "{\"q\":\"x\"}" } },
+          { type: "content_block_stop", index: 1 },
           { type: "message_stop" },
         ])
       )
@@ -234,15 +236,7 @@ describe("AnthropicProvider", () => {
         makeAsyncIterable([
           { type: "content_block_delta", delta: { partial_json: "{\"a\":" } },
           { type: "content_block_delta", delta: { partial_json: "1}" } },
-          {
-            type: "content_block_stop",
-            content_block: {
-              type: "tool_use",
-              id: "tc2",
-              name: "json_output",
-              input: { a: 1 },
-            },
-          },
+          { type: "content_block_stop" },
           { type: "message_stop" },
         ])
       );
