@@ -8,6 +8,7 @@ from .async_channel import (
     fan_out,
 )
 from .async_condition import AsyncCondition
+from .async_countdown_latch import AsyncCountDownLatch
 from .async_event import AsyncEvent
 from .async_iterators import (
     AsyncByteStream,
@@ -54,6 +55,7 @@ __all__ = [
     "AsyncChannel",
     "AsyncChannelIterator",
     "AsyncCondition",
+    "AsyncCountDownLatch",
     "AsyncDebounce",
     "AsyncEvent",
     "AsyncLock",
