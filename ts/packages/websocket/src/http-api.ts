@@ -435,16 +435,27 @@ async function handleMessageById(
   messageId: string,
   options: HttpApiOptions
 ): Promise<Response> {
-  if (request.method !== "GET") {
-    return errorResponse(405, "Method not allowed");
-  }
   const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
   await ensureMessageTable();
-  const msg = (await Message.get(messageId)) as Message | null;
-  if (!msg || msg.user_id !== userId) {
-    return errorResponse(404, "Message not found");
+
+  if (request.method === "GET") {
+    const msg = (await Message.get(messageId)) as Message | null;
+    if (!msg || msg.user_id !== userId) {
+      return errorResponse(404, "Message not found");
+    }
+    return jsonResponse(toMessageResponse(msg));
   }
-  return jsonResponse(toMessageResponse(msg));
+
+  if (request.method === "DELETE") {
+    const msg = (await Message.get(messageId)) as Message | null;
+    if (!msg || msg.user_id !== userId) {
+      return errorResponse(404, "Message not found");
+    }
+    await msg.delete();
+    return new Response(null, { status: 204 });
+  }
+
+  return errorResponse(405, "Method not allowed");
 }
 
 // ── Thread types & helpers ────────────────────────────────────────
@@ -584,19 +595,27 @@ async function handleJobById(
   jobId: string,
   options: HttpApiOptions
 ): Promise<Response> {
-  if (request.method !== "GET") {
-    return errorResponse(405, "Method not allowed");
-  }
-
   const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
   await ensureJobTable();
 
-  const job = (await Job.get(jobId)) as Job | null;
-  if (!job || job.user_id !== userId) {
-    return errorResponse(404, "Job not found");
+  if (request.method === "GET") {
+    const job = (await Job.get(jobId)) as Job | null;
+    if (!job || job.user_id !== userId) {
+      return errorResponse(404, "Job not found");
+    }
+    return jsonResponse(toJobResponse(job));
   }
 
-  return jsonResponse(toJobResponse(job));
+  if (request.method === "DELETE") {
+    const job = (await Job.get(jobId)) as Job | null;
+    if (!job || job.user_id !== userId) {
+      return errorResponse(404, "Job not found");
+    }
+    await job.delete();
+    return new Response(null, { status: 204 });
+  }
+
+  return errorResponse(405, "Method not allowed");
 }
 
 async function handleJobCancel(
@@ -899,6 +918,124 @@ async function handleAssetById(
   return errorResponse(405, "Method not allowed");
 }
 
+// ── Workflow autosave & names ────────────────────────────────────────
+
+async function handleWorkflowAutosave(
+  request: Request,
+  workflowId: string,
+  options: HttpApiOptions
+): Promise<Response> {
+  if (request.method !== "PUT") {
+    return errorResponse(405, "Method not allowed");
+  }
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureWorkflowTable();
+
+  const body = await parseJsonBody<WorkflowRequestBody>(request);
+  if (!body || typeof body.name !== "string" || typeof body.access !== "string") {
+    return errorResponse(400, "Invalid JSON body");
+  }
+  if (!body.graph || !Array.isArray(body.graph.nodes) || !Array.isArray(body.graph.edges)) {
+    return errorResponse(400, "Invalid JSON body");
+  }
+
+  const existing = (await Workflow.get(workflowId)) as Workflow | null;
+  if (!existing || existing.user_id !== userId) {
+    return errorResponse(404, "Workflow not found");
+  }
+
+  existing.name = body.name;
+  existing.access = body.access === "public" ? "public" : "private";
+  existing.graph = body.graph;
+  if (body.description !== undefined) existing.description = body.description ?? "";
+  if (body.tags !== undefined) existing.tags = body.tags ?? [];
+  if (body.settings !== undefined) existing.settings = body.settings ?? null;
+  await existing.save();
+  return jsonResponse(toWorkflowResponse(existing));
+}
+
+async function handleWorkflowNames(
+  request: Request,
+  options: HttpApiOptions
+): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureWorkflowTable();
+
+  const [workflows] = await Workflow.paginate(userId, { limit: 10000 });
+  const names: Record<string, string> = {};
+  for (const wf of workflows) {
+    names[wf.id] = wf.name;
+  }
+  return jsonResponse(names);
+}
+
+// ── Jobs running/all ────────────────────────────────────────────────
+
+async function handleJobsRunningAll(
+  request: Request,
+  options: HttpApiOptions
+): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureJobTable();
+
+  const [jobs] = await Job.paginate(userId, { status: "running" });
+  return jsonResponse({ jobs: jobs.map((j) => toJobResponse(j)) });
+}
+
+// ── Asset search & children ─────────────────────────────────────────
+
+async function handleAssetSearch(
+  request: Request,
+  options: HttpApiOptions
+): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureAssetTable();
+
+  const url = new URL(request.url);
+  const query = url.searchParams.get("query");
+  if (!query) {
+    return errorResponse(400, "query parameter is required");
+  }
+
+  const contentType = url.searchParams.get("content_type") ?? undefined;
+  const limit = parseLimit(url, 100);
+  const [assets] = await Asset.searchAssetsGlobal(userId, query, { contentType, limit });
+  return jsonResponse({ assets: assets.map((a) => toAssetResponse(a)) });
+}
+
+async function handleAssetChildren(
+  request: Request,
+  assetId: string,
+  options: HttpApiOptions
+): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureAssetTable();
+
+  const url = new URL(request.url);
+  const limit = parseLimit(url, 100);
+  const children = await Asset.getChildren(userId, assetId, limit);
+  return jsonResponse({ assets: children.map((a) => toAssetResponse(a)) });
+}
+
+// ── Node replicate status ───────────────────────────────────────────
+
+function handleReplicateStatus(): Response {
+  const configured = !!process.env.REPLICATE_API_TOKEN;
+  return jsonResponse({ configured });
+}
+
 export async function handleApiRequest(
   request: Request,
   options: HttpApiOptions = {}
@@ -934,6 +1071,10 @@ export async function handleApiRequest(
     return handleNodeMetadata(request, options);
   }
 
+  if (pathname === "/api/nodes/replicate_status") {
+    return handleReplicateStatus();
+  }
+
   if (pathname === "/api/settings/secrets") {
     return handleSecretsRoot(request, options);
   }
@@ -948,6 +1089,15 @@ export async function handleApiRequest(
     return handleAssetsRoot(request, options);
   }
 
+  if (pathname === "/api/assets/search") {
+    return handleAssetSearch(request, options);
+  }
+
+  if (pathname.match(/^\/api\/assets\/([^/]+)\/children$/)) {
+    const assetId = decodeURIComponent(pathname.slice("/api/assets/".length, pathname.length - "/children".length));
+    return handleAssetChildren(request, assetId, options);
+  }
+
   if (pathname.startsWith("/api/assets/")) {
     const assetId = decodeURIComponent(pathname.slice("/api/assets/".length));
     if (!assetId) return errorResponse(404, "Not found");
@@ -956,6 +1106,10 @@ export async function handleApiRequest(
 
   if (pathname === "/api/jobs") {
     return handleJobsRoot(request, options);
+  }
+
+  if (pathname === "/api/jobs/running/all") {
+    return handleJobsRunningAll(request, options);
   }
 
   if (pathname.match(/^\/api\/jobs\/[^/]+\/cancel$/)) {
@@ -994,6 +1148,10 @@ export async function handleApiRequest(
     return handleWorkflowsRoot(request, options);
   }
 
+  if (pathname === "/api/workflows/names") {
+    return handleWorkflowNames(request, options);
+  }
+
   if (pathname === "/api/workflows/public") {
     return handlePublicWorkflows(request);
   }
@@ -1002,6 +1160,11 @@ export async function handleApiRequest(
     const workflowId = decodeURIComponent(pathname.slice("/api/workflows/public/".length));
     if (!workflowId) return errorResponse(404, "Not found");
     return handlePublicWorkflowById(request, workflowId);
+  }
+
+  if (pathname.match(/^\/api\/workflows\/([^/]+)\/autosave$/)) {
+    const workflowId = decodeURIComponent(pathname.slice("/api/workflows/".length, pathname.length - "/autosave".length));
+    return handleWorkflowAutosave(request, workflowId, options);
   }
 
   if (pathname.startsWith("/api/workflows/")) {
