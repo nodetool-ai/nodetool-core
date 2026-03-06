@@ -529,6 +529,25 @@ export class WorkflowRunner {
       await targetInbox.put(edge.targetHandle, value);
       this._incrementEdgeCounter(edge);
     }
+
+    // Emit output_update for each produced output handle
+    const sourceNode = this._graph.findNode(sourceNodeId);
+    if (sourceNode) {
+      const declaredOutputs = sourceNode.outputs ?? {};
+      for (const [handle, value] of Object.entries(outputs)) {
+        if (value === undefined) continue;
+        if (handle === "__control__") continue;
+        this._emit({
+          type: "output_update",
+          node_id: sourceNodeId,
+          node_name: sourceNode.name ?? sourceNodeId,
+          output_name: handle,
+          value,
+          output_type: declaredOutputs[handle] ?? "any",
+          metadata: {},
+        });
+      }
+    }
   }
 
   /**

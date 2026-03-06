@@ -90,13 +90,9 @@ describe("Gap #9 — OutputUpdate messages", () => {
       (m) => m.type === "output_update"
     ) as OutputUpdate[];
 
-    // This documents the gap: currently no output_update messages are emitted.
-    // When fixed, this assertion should pass and the one below should be removed.
-    expect(outputMsgs.length).toBe(0); // Current behavior — no output_update emitted
-
-    // TODO: When gap #9 is fixed, replace the above with:
-    // expect(outputMsgs.length).toBeGreaterThanOrEqual(1);
-    // expect(outputMsgs.some(m => m.node_id === "out" && m.value === 10)).toBe(true);
+    // Gap #9 fixed: output_update messages are now emitted.
+    expect(outputMsgs.length).toBeGreaterThanOrEqual(1);
+    expect(outputMsgs.some(m => m.node_id === "out" && m.value === 10)).toBe(true);
   });
 
   it("should deduplicate consecutive identical output values (not yet implemented)", async () => {
@@ -174,15 +170,15 @@ describe("Gap #9 — OutputUpdate messages", () => {
       (m) => m.type === "output_update"
     ) as OutputUpdate[];
 
-    expect(outputMsgs.length).toBe(0); // Current behavior — gap not yet fixed
-
-    // TODO: When fixed, verify fields:
-    // const msg = outputMsgs[0];
-    // expect(msg.node_id).toBe("out");
-    // expect(msg.node_name).toBe("my_output");
-    // expect(msg.value).toBe("hello");
-    // expect(msg.output_type).toBeDefined();
-    // expect(msg.metadata).toBeDefined();
+    // Gap #9 fixed: OutputUpdate message fields are now populated.
+    expect(outputMsgs.length).toBeGreaterThanOrEqual(1);
+    const msg = outputMsgs.find(m => m.node_id === "out");
+    expect(msg).toBeDefined();
+    expect(msg!.node_id).toBe("out");
+    expect(msg!.node_name).toBe("my_output");
+    expect(msg!.value).toBe("hello");
+    expect(msg!.output_type).toBeDefined();
+    expect(msg!.metadata).toBeDefined();
   });
 });
 

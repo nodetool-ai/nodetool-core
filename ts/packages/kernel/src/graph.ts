@@ -78,6 +78,27 @@ export class Graph {
     this._buildIndices();
   }
 
+  /**
+   * Create a Graph from a plain object, validating the input shape.
+   * Throws GraphValidationError if nodes or edges are missing or not arrays.
+   */
+  static fromDict(data: unknown): Graph {
+    if (!data || typeof data !== "object") {
+      throw new GraphValidationError("Graph data must be an object");
+    }
+    const obj = data as Record<string, unknown>;
+    if (!("nodes" in obj) || !("edges" in obj)) {
+      throw new GraphValidationError("Graph data must have 'nodes' and 'edges' fields");
+    }
+    if (!Array.isArray(obj.nodes)) {
+      throw new GraphValidationError("'nodes' must be an array");
+    }
+    if (!Array.isArray(obj.edges)) {
+      throw new GraphValidationError("'edges' must be an array");
+    }
+    return new Graph(obj as GraphData);
+  }
+
   // -----------------------------------------------------------------------
   // Index building
   // -----------------------------------------------------------------------
