@@ -14,6 +14,9 @@ import { loadPythonPackageMetadata, type NodeMetadata } from "@nodetool/node-sdk
 import { handleModelsApiRequest } from "./models-api.js";
 import { handleOpenAIRequest, type OpenAIApiOptions } from "./openai-api.js";
 import { handleOAuthRequest } from "./oauth-api.js";
+import { handleSkillsRequest, handleFontsRequest } from "./skills-api.js";
+import { handleCostRequest } from "./cost-api.js";
+import { handleWorkspaceRequest } from "./workspace-api.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -903,6 +906,14 @@ export async function handleApiRequest(
   const url = new URL(request.url);
   const pathname = normalizePath(url.pathname);
 
+  if (pathname === "/health") {
+    return new Response("OK", { status: 200, headers: { "content-type": "text/plain" } });
+  }
+
+  if (pathname === "/ping") {
+    return jsonResponse({ status: "healthy", timestamp: new Date().toISOString() });
+  }
+
   if (pathname.startsWith("/v1/")) {
     const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
     const response = await handleOpenAIRequest(request, pathname, userId, options.openai);
@@ -997,6 +1008,28 @@ export async function handleApiRequest(
     const workflowId = decodeURIComponent(pathname.slice("/api/workflows/".length));
     if (!workflowId) return errorResponse(404, "Not found");
     return handleWorkflowById(request, workflowId, options);
+  }
+
+  if (pathname === "/api/skills" || pathname.startsWith("/api/skills/")) {
+    return handleSkillsRequest(request);
+  }
+
+  if (pathname === "/api/fonts" || pathname.startsWith("/api/fonts/")) {
+    return handleFontsRequest(request);
+  }
+
+  if (pathname === "/api/costs" || pathname.startsWith("/api/costs/")) {
+    const response = await handleCostRequest(request, options);
+    if (response) return response;
+  }
+
+  if (pathname === "/api/workspaces" || pathname.startsWith("/api/workspaces/")) {
+    const response = await handleWorkspaceRequest(request, options);
+    if (response) return response;
+  }
+
+  if (pathname === "/api/users" || pathname.startsWith("/api/users/")) {
+    return errorResponse(501, "User management not available");
   }
 
   return errorResponse(404, "Not found");

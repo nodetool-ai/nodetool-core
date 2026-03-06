@@ -13,6 +13,7 @@ import {
 import type {
   ProviderTool,
   Message as ProviderMessage,
+  MessageContent,
   BaseProvider,
   ProcessingContext,
 } from "@nodetool/runtime";
@@ -505,7 +506,7 @@ export class UnifiedWebSocketRunner {
   private dbMessageToProviderMessage(m: Message): ProviderMessage {
     return {
       role: (m.role as ProviderMessage["role"]) ?? "user",
-      content: m.content ?? "",
+      content: (Array.isArray(m.content) ? (m.content as MessageContent[]) : m.content as string | null) ?? "",
       toolCallId: null,
       toolCalls: Array.isArray(m.tool_calls) ? (m.tool_calls as Array<{ id: string; name: string; args: Record<string, unknown> }>) : null,
       threadId: m.thread_id,

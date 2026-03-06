@@ -313,7 +313,7 @@ export function createSSEStream(
 
 async function handleChatCompletions(
   request: Request,
-  userId: string,
+  _userId: string,
   options?: OpenAIApiOptions,
 ): Promise<Response> {
   let body: ChatCompletionRequest;
