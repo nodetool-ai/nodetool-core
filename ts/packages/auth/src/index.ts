@@ -14,3 +14,10 @@ export {
   type AuthenticatedUser,
   type AuthMiddlewareOptions,
 } from "./middleware.js";
+
+export {
+  extractBearerToken,
+  authenticateRequest,
+  requireAuth,
+  type HttpAuthOptions,
+} from "./http-auth.js";
