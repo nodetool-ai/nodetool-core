@@ -22,7 +22,14 @@ import type { Message, ToolCall } from "@nodetool/runtime";
 import { ProcessingContext } from "@nodetool/runtime";
 import { processChat } from "@nodetool/chat";
 import { Agent } from "@nodetool/agents";
-import { ReadFileTool, WriteFileTool, ListDirectoryTool } from "@nodetool/agents";
+import {
+  ReadFileTool, WriteFileTool, ListDirectoryTool,
+  DownloadFileTool, HttpRequestTool,
+  GoogleSearchTool, GoogleNewsTool,
+  BrowserTool, ScreenshotTool,
+  RunCodeTool,
+  CalculatorTool,
+} from "@nodetool/agents";
 import { createProvider, DEFAULT_MODELS } from "./providers.js";
 import { renderMarkdown } from "./markdown.js";
 import { saveSettings } from "./settings.js";
@@ -252,11 +259,19 @@ export function App({
 
   // Create tools from enabled list
   function buildTools() {
-    const ctx = new ProcessingContext({ jobId: crypto.randomUUID(), workspaceDir });
     const toolMap: Record<string, unknown> = {
       read_file: new ReadFileTool(),
       write_file: new WriteFileTool(),
       list_directory: new ListDirectoryTool(),
+      download_file: new DownloadFileTool(),
+      http_request: new HttpRequestTool(),
+      http_get: new HttpRequestTool(),   // alias used in --tools flag
+      google_search: new GoogleSearchTool(),
+      google_news: new GoogleNewsTool(),
+      browser: new BrowserTool(),
+      screenshot: new ScreenshotTool(),
+      run_code: new RunCodeTool(),
+      calculator: new CalculatorTool(),
     };
     return enabledTools
       .filter(name => name in toolMap)
@@ -365,7 +380,7 @@ export function App({
     setStreamLabel("thinking");
 
     try {
-      const prov = createProvider(providerRef.current);
+      const prov = await createProvider(providerRef.current);
       const ctx = new ProcessingContext({ jobId: crypto.randomUUID(), workspaceDir });
       const tools = buildTools();
 

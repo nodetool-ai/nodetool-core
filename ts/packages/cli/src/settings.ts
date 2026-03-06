@@ -14,7 +14,13 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   provider: detectDefaultProvider(),
   model: detectDefaultModel(),
   agentMode: false,
-  enabledTools: ["read_file", "write_file", "list_directory", "calculator", "http_get"],
+  enabledTools: [
+    "read_file", "write_file", "list_directory",
+    "download_file", "http_request", "http_get",
+    "google_search", "google_news",
+    "browser", "screenshot",
+    "run_code", "calculator",
+  ],
   workspace: process.cwd(),
 };
 

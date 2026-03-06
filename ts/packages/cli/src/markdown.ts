@@ -6,46 +6,20 @@
 
 import { marked } from "marked";
 
-// Dynamic import to handle ESM marked-terminal
-let _renderer: unknown = null;
-async function getRenderer() {
-  if (_renderer) return _renderer;
-  // marked-terminal is an ESM module; we load it once
-  const mod = await import("marked-terminal");
-  const TerminalRenderer = mod.default ?? mod;
-  _renderer = new (TerminalRenderer as new (opts?: object) => unknown)({
-    code: true,         // syntax highlight code blocks
-    blockquote: true,
-    html: false,
-    heading: true,
-    firstHeading: true,
-    hr: true,
-    listitem: true,
-    table: true,
-    paragraph: true,
-    strong: true,
-    em: true,
-    codespan: true,
-    del: true,
-    link: true,
-    href: true,
-    tableOptions: {},
-    unescape: true,
-    emoji: false,
-    width: process.stdout.columns ?? 80,
-    showSectionPrefix: false,
-    reflowText: false,
-    tab: 2,
-  });
-  return _renderer;
-}
-
-// Cache so we only set the renderer once
+// Cache so we only set the extension once
 let _initialized = false;
 export async function renderMarkdown(text: string): Promise<string> {
   if (!_initialized) {
-    const renderer = await getRenderer();
-    marked.use({ renderer: renderer as Parameters<typeof marked.use>[0]["renderer"] });
+    // marked-terminal v7 exports markedTerminal() as a MarkedExtension factory
+    const mod = await import("marked-terminal");
+    const markedTerminal = mod.markedTerminal ?? mod.default;
+    marked.use(markedTerminal({
+      width: process.stdout.columns ?? 80,
+      emoji: false,
+      tab: 2,
+      showSectionPrefix: false,
+      reflowText: false,
+    }));
     _initialized = true;
   }
   try {

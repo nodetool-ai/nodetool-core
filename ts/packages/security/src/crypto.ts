@@ -8,7 +8,7 @@
  * encryption keys via PBKDF2-SHA256 with 100,000 iterations.
  */
 
-import { randomBytes, pbkdf2Sync, createCipheriv, createDecipheriv } from "node:crypto";
+import { randomBytes, pbkdf2Sync, createCipheriv, createDecipheriv, createHmac, timingSafeEqual } from "node:crypto";
 
 const PBKDF2_ITERATIONS = 100_000;
 const KEY_LENGTH = 32; // 256 bits for AES-256
@@ -98,6 +98,55 @@ export function decrypt(masterKey: string, userId: string, encryptedValue: strin
   } catch {
     throw new Error("Failed to decrypt secret");
   }
+}
+
+/**
+ * Decrypt a Fernet token encrypted by the Python side.
+ *
+ * Python uses: PBKDF2(master_key_bytes, user_id, 100k, 32) → fernet_key
+ * Fernet = AES-128-CBC + HMAC-SHA256, token = base64url(ver|ts|iv|ct|hmac)
+ *
+ * @param masterKey - The master key as a base64 or base64url string.
+ * @param userId - The user ID used as PBKDF2 salt.
+ * @param encryptedValue - The Fernet token (base64url encoded).
+ */
+export function decryptFernet(masterKey: string, userId: string, encryptedValue: string): string {
+  // Python uses master_key.encode() — the UTF-8 bytes of the base64 string itself as PBKDF2 password
+  const masterKeyBytes = Buffer.from(masterKey, "utf-8");
+  const salt = Buffer.from(userId, "utf-8");
+  const derived = pbkdf2Sync(masterKeyBytes, salt, PBKDF2_ITERATIONS, 32, "sha256");
+
+  // Fernet splits the 32-byte derived key: first 16 = HMAC key, last 16 = AES-128 key
+  const hmacKey = derived.subarray(0, 16);
+  const aesKey = derived.subarray(16, 32);
+
+  // Decode Fernet token from base64url
+  const b64token = encryptedValue.replace(/-/g, "+").replace(/_/g, "/");
+  const token = Buffer.from(b64token + "==".slice((b64token.length % 4) || 4), "base64");
+
+  // Token layout: version(1) + timestamp(8) + iv(16) + ciphertext(N) + hmac(32)
+  if (token.length < 1 + 8 + 16 + 32) {
+    throw new Error("Invalid Fernet token: too short");
+  }
+  if (token[0] !== 0x80) {
+    throw new Error(`Invalid Fernet token version: ${token[0]}`);
+  }
+
+  const body = token.subarray(0, token.length - 32);
+  const tokenHmac = token.subarray(token.length - 32);
+  const iv = body.subarray(9, 25);         // 1 + 8 = 9
+  const ciphertext = body.subarray(25);
+
+  // Verify HMAC-SHA256
+  const expectedHmac = createHmac("sha256", hmacKey).update(body).digest();
+  if (!timingSafeEqual(expectedHmac, tokenHmac)) {
+    throw new Error("Invalid Fernet token: HMAC mismatch");
+  }
+
+  // Decrypt AES-128-CBC and strip PKCS7 padding
+  const decipher = createDecipheriv("aes-128-cbc", aesKey, iv);
+  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return decrypted.toString("utf-8");
 }
 
 /**

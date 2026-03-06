@@ -11,8 +11,8 @@ import {
   GeminiProvider,
   MistralProvider,
   GroqProvider,
-  OllamaProvider as LlamaProvider,
 } from "@nodetool/runtime";
+import { getSecret } from "@nodetool/security";
 
 export const KNOWN_PROVIDERS = ["anthropic", "openai", "ollama", "gemini", "mistral", "groq"] as const;
 export type KnownProvider = (typeof KNOWN_PROVIDERS)[number];
@@ -27,27 +27,31 @@ export const DEFAULT_MODELS: Record<string, string> = {
   groq: "llama-3.3-70b-versatile",
 };
 
-export function createProvider(providerId: string): BaseProvider {
+/** Resolve a secret: encrypted DB first (user "1"), then env var. */
+async function resolveKey(key: string): Promise<string | undefined> {
+  return (await getSecret(key, "1")) ?? undefined;
+}
+
+export async function createProvider(providerId: string): Promise<BaseProvider> {
   switch (providerId.toLowerCase()) {
     case "anthropic":
-      return new AnthropicProvider({ ANTHROPIC_API_KEY: process.env["ANTHROPIC_API_KEY"] });
+      return new AnthropicProvider({ ANTHROPIC_API_KEY: await resolveKey("ANTHROPIC_API_KEY") });
     case "openai":
-      return new OpenAIProvider({ OPENAI_API_KEY: process.env["OPENAI_API_KEY"] });
+      return new OpenAIProvider({ OPENAI_API_KEY: await resolveKey("OPENAI_API_KEY") });
     case "ollama":
-      return new OllamaProvider({ OLLAMA_API_URL: process.env["OLLAMA_API_URL"] });
+      return new OllamaProvider({ OLLAMA_API_URL: await resolveKey("OLLAMA_API_URL") });
     case "gemini":
-      return new GeminiProvider({ GEMINI_API_KEY: process.env["GEMINI_API_KEY"] });
+      return new GeminiProvider({ GEMINI_API_KEY: await resolveKey("GEMINI_API_KEY") });
     case "mistral":
-      return new MistralProvider({ MISTRAL_API_KEY: process.env["MISTRAL_API_KEY"] });
+      return new MistralProvider({ MISTRAL_API_KEY: await resolveKey("MISTRAL_API_KEY") });
     case "groq":
-      return new GroqProvider({ GROQ_API_KEY: process.env["GROQ_API_KEY"] });
+      return new GroqProvider({ GROQ_API_KEY: await resolveKey("GROQ_API_KEY") });
     default:
-      // Attempt to use Ollama as a catch-all local provider
-      return new OllamaProvider({ OLLAMA_API_URL: process.env["OLLAMA_API_URL"] });
+      return new OllamaProvider({ OLLAMA_API_URL: await resolveKey("OLLAMA_API_URL") });
   }
 }
 
-/** Check which providers have API keys configured. */
+/** Check which providers have API keys configured (env only — fast sync check). */
 export function availableProviders(): string[] {
   const available: string[] = [];
   if (process.env["ANTHROPIC_API_KEY"]) available.push("anthropic");

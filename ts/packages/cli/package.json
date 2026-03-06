@@ -15,9 +15,11 @@
   },
   "dependencies": {
     "@nodetool/agents": "*",
+    "@nodetool/models": "*",
     "@nodetool/chat": "*",
     "@nodetool/protocol": "*",
     "@nodetool/runtime": "*",
+    "@nodetool/security": "*",
     "chalk": "^5.3.0",
     "commander": "^12.1.0",
     "ink": "^5.1.0",

@@ -12,7 +12,7 @@ import {
   type ModelClass,
 } from "./base-model.js";
 import { field } from "./condition-builder.js";
-import { encrypt, decrypt, getMasterKey } from "@nodetool/security";
+import { encrypt, decrypt, decryptFernet, getMasterKey, initMasterKey } from "@nodetool/security";
 
 // ── Schema ───────────────────────────────────────────────────────────
 
@@ -144,8 +144,14 @@ export class Secret extends DBModel {
    * Get the decrypted plaintext value.
    */
   async getDecryptedValue(): Promise<string> {
-    const masterKey = getMasterKey();
-    return decrypt(masterKey, this.user_id, this.encrypted_value);
+    // Ensure master key is loaded from keychain (async) before decrypting
+    const masterKey = await initMasterKey();
+    // Try native AES-256-GCM first (TS-encrypted secrets), then Fernet (Python-encrypted)
+    try {
+      return decrypt(masterKey, this.user_id, this.encrypted_value);
+    } catch {
+      return decryptFernet(masterKey, this.user_id, this.encrypted_value);
+    }
   }
 
   /**
