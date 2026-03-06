@@ -446,8 +446,29 @@ export class AnthropicProvider extends BaseProvider {
       request
     )) as AsyncIterable<any>;
 
+    let streamInputTokens = 0;
+    let streamOutputTokens = 0;
+    let streamCachedTokens = 0;
+
     for await (const event of stream) {
       const type = String(event?.type ?? "");
+
+      if (type === "message_start" && event?.message?.usage) {
+        streamInputTokens += event.message.usage.input_tokens ?? 0;
+        streamCachedTokens += event.message.usage.cache_read_input_tokens ?? 0;
+      }
+
+      if (type === "message_delta" && event?.usage) {
+        streamOutputTokens += event.usage.output_tokens ?? 0;
+      }
+
+      if (type === "message_stop") {
+        this.trackUsage(args.model, {
+          inputTokens: streamInputTokens,
+          outputTokens: streamOutputTokens,
+          cachedTokens: streamCachedTokens,
+        });
+      }
 
       if (type === "content_block_delta") {
         const delta = event.delta;
@@ -547,6 +568,14 @@ export class AnthropicProvider extends BaseProvider {
     };
 
     const response = await (this.getClient().messages as any).create(request);
+
+    if (response.usage) {
+      this.trackUsage(args.model, {
+        inputTokens: response.usage.input_tokens ?? 0,
+        outputTokens: response.usage.output_tokens ?? 0,
+        cachedTokens: response.usage.cache_read_input_tokens ?? 0,
+      });
+    }
 
     const textParts: string[] = [];
     const toolCalls: ToolCall[] = [];

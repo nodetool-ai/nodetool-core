@@ -642,6 +642,14 @@ export class OpenAIProvider extends BaseProvider {
 
     try {
       for await (const chunk of stream) {
+        if (chunk?.usage) {
+          this.trackUsage(model, {
+            inputTokens: chunk.usage.prompt_tokens ?? 0,
+            outputTokens: chunk.usage.completion_tokens ?? 0,
+            cachedTokens: chunk.usage.prompt_tokens_details?.cached_tokens ?? 0,
+          });
+        }
+
         const choice = chunk?.choices?.[0];
         if (!choice) continue;
 
@@ -765,6 +773,15 @@ export class OpenAIProvider extends BaseProvider {
     const choice = completion.choices?.[0];
     if (!choice) {
       throw new Error("OpenAI returned no choices");
+    }
+
+    const usage = (completion as any).usage;
+    if (usage) {
+      this.trackUsage(model, {
+        inputTokens: usage.prompt_tokens ?? 0,
+        outputTokens: usage.completion_tokens ?? 0,
+        cachedTokens: usage.prompt_tokens_details?.cached_tokens ?? 0,
+      });
     }
 
     const responseMessage = choice.message;

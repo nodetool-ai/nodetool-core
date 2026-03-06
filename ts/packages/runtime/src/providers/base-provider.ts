@@ -16,9 +16,12 @@ import type {
   TTSModel,
   VideoModel,
 } from "./types.js";
+import { CostCalculator } from "./cost-calculator.js";
+import type { UsageInfo } from "./cost-calculator.js";
 
 export abstract class BaseProvider {
   readonly provider: ProviderId;
+  private _cost = 0;
 
   protected constructor(provider: ProviderId) {
     this.provider = provider;
@@ -34,6 +37,20 @@ export abstract class BaseProvider {
 
   hasToolSupport(_model: string): boolean {
     return true;
+  }
+
+  trackUsage(model: string, usage: UsageInfo): number {
+    const cost = CostCalculator.calculate(model, usage, this.provider);
+    this._cost += cost;
+    return cost;
+  }
+
+  getTotalCost(): number {
+    return this._cost;
+  }
+
+  resetCost(): void {
+    this._cost = 0;
   }
 
   async getAvailableLanguageModels(): Promise<LanguageModel[]> {

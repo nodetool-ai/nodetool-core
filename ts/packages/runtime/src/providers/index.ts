@@ -14,6 +14,13 @@ export { GeminiProvider } from "./gemini-provider.js";
 export { LlamaProvider } from "./llama-provider.js";
 export { OpenAIProvider } from "./openai-provider.js";
 export { OllamaProvider } from "./ollama-provider.js";
+export { GroqProvider } from "./groq-provider.js";
+export { MistralProvider } from "./mistral-provider.js";
+export { OpenRouterProvider } from "./openrouter-provider.js";
+export { TogetherProvider } from "./together-provider.js";
+export { CerebrasProvider } from "./cerebras-provider.js";
+export { LMStudioProvider } from "./lmstudio-provider.js";
+export { VLLMProvider } from "./vllm-provider.js";
 export {
   FakeProvider,
   createFakeToolCall,
