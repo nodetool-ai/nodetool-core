@@ -16,3 +16,4 @@ export {
 } from "./context.js";
 
 export * from "./providers/index.js";
+export { initTelemetry, getTracer, type TelemetryOptions } from "./telemetry.js";

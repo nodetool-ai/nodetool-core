@@ -18,6 +18,8 @@ import type {
 } from "./types.js";
 import { CostCalculator } from "./cost-calculator.js";
 import type { UsageInfo } from "./cost-calculator.js";
+import { getTracer } from "../telemetry.js";
+import { SpanStatusCode } from "@opentelemetry/api";
 
 export abstract class BaseProvider {
   readonly provider: ProviderId;
@@ -94,6 +96,8 @@ export abstract class BaseProvider {
     messages: Message[];
     model: string;
     tools?: ProviderTool[];
+    /** Force the model to call a specific tool by name, or "any" to require any tool call. */
+    toolChoice?: string | "any";
     maxTokens?: number;
     responseFormat?: Record<string, unknown>;
     jsonSchema?: Record<string, unknown>;
@@ -103,6 +107,74 @@ export abstract class BaseProvider {
     frequencyPenalty?: number;
     audio?: Record<string, unknown>;
   }): AsyncGenerator<ProviderStreamItem>;
+
+  /** Traced wrapper around generateMessage. Use this instead of calling generateMessage directly. */
+  async generateMessageTraced(args: Parameters<this["generateMessage"]>[0]): Promise<Message> {
+    const tracer = getTracer();
+    if (!tracer) {
+      return this.generateMessage(args);
+    }
+    return tracer.startActiveSpan(`llm.chat ${this.provider}/${args.model}`, async (span) => {
+      span.setAttributes({
+        "llm.provider": this.provider,
+        "llm.model": args.model,
+        "llm.request.message_count": args.messages.length,
+        "llm.request.tools_count": args.tools?.length ?? 0,
+        "llm.request.max_tokens": args.maxTokens ?? 0,
+        "llm.request.stream": false,
+      });
+      try {
+        const result = await this.generateMessage(args);
+        const content = typeof result.content === "string" ? result.content : JSON.stringify(result.content);
+        span.setAttributes({
+          "llm.response.role": result.role,
+          "llm.response.content": content.slice(0, 2000),
+          "llm.response.tool_calls_count": result.toolCalls?.length ?? 0,
+        });
+        span.setStatus({ code: SpanStatusCode.OK });
+        return result;
+      } catch (err) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
+        span.recordException(err as Error);
+        throw err;
+      } finally {
+        span.end();
+      }
+    });
+  }
+
+  /** Traced wrapper around generateMessages. Use this instead of calling generateMessages directly. */
+  async *generateMessagesTraced(args: Parameters<this["generateMessages"]>[0]): AsyncGenerator<ProviderStreamItem> {
+    const tracer = getTracer();
+    if (!tracer) {
+      yield* this.generateMessages(args);
+      return;
+    }
+    const span = tracer.startSpan(`llm.stream ${this.provider}/${args.model}`);
+    span.setAttributes({
+      "llm.provider": this.provider,
+      "llm.model": args.model,
+      "llm.request.message_count": args.messages.length,
+      "llm.request.tools_count": args.tools?.length ?? 0,
+      "llm.request.max_tokens": args.maxTokens ?? 0,
+      "llm.request.stream": true,
+    });
+    let chunkCount = 0;
+    try {
+      for await (const item of this.generateMessages(args)) {
+        chunkCount++;
+        yield item;
+      }
+      span.setAttributes({ "llm.response.chunk_count": chunkCount });
+      span.setStatus({ code: SpanStatusCode.OK });
+    } catch (err) {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
+      span.recordException(err as Error);
+      throw err;
+    } finally {
+      span.end();
+    }
+  }
 
   async textToImage(_params: TextToImageParams): Promise<Uint8Array> {
     throw new Error(`${this.provider} does not support textToImage`);

@@ -10,11 +10,23 @@
  *   nodetool-chat --workspace /path/to/dir  # set workspace directory
  */
 
+import { initTelemetry } from "@nodetool/runtime";
 import { program } from "commander";
 import { render } from "ink";
 import React from "react";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { App } from "./app.js";
 import { loadSettings } from "./settings.js";
+import {
+  SQLiteAdapterFactory,
+  setGlobalAdapterResolver,
+  Secret,
+} from "@nodetool/models";
+
+// Initialize OpenLLMetry before any LLM SDK calls are made.
+// No-op if TRACELOOP_API_KEY / OTEL_EXPORTER_OTLP_ENDPOINT is not set.
+await initTelemetry();
 
 program
   .name("nodetool-chat")
@@ -35,6 +47,16 @@ const opts = program.opts<{
   workspace?: string;
   tools?: string;
 }>();
+
+// Initialize SQLite adapter pointing at the same DB as the Python side
+const dbPath = process.env["DB_PATH"] ?? join(homedir(), ".local", "share", "nodetool", "nodetool.sqlite3");
+try {
+  const factory = new SQLiteAdapterFactory(dbPath);
+  setGlobalAdapterResolver((schema) => factory.getAdapter(schema));
+  await Secret.createTable();
+} catch {
+  // DB unavailable — secret lookups will fall back to env vars
+}
 
 // Load persisted settings and merge with CLI flags
 const settings = await loadSettings();

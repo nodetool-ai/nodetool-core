@@ -22,10 +22,14 @@
     "metadata-parity": "npm run test:metadata --workspace @nodetool/node-sdk && npm run test:metadata-parity --workspace @nodetool/base-nodes",
     "devserver": "npm run devserver --workspace @nodetool/websocket",
     "lint": "npm run lint --workspaces",
-    "workflow": "node ./scripts/run-workflow.mjs"
+    "workflow": "node ./scripts/run-workflow.mjs",
+    "chat": "node ./packages/cli/dist/index.js"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^1.6.1",
     "vitest": "^1.6.1"
+  },
+  "dependencies": {
+    "keytar": "^7.9.0"
   }
 }
