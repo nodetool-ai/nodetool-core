@@ -28,6 +28,28 @@ export class GraphValidationError extends Error {
 }
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function nodeTypeToJsonSchema(typeStr: string | undefined): string {
+  if (!typeStr) return "string";
+  switch (typeStr) {
+    case "int":
+    case "float":
+    case "number":
+      return "number";
+    case "str":
+    case "string":
+      return "string";
+    case "bool":
+    case "boolean":
+      return "boolean";
+    default:
+      return "string";
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Graph
 // ---------------------------------------------------------------------------
 
@@ -267,6 +289,43 @@ export class Graph {
     }
 
     return levels;
+  }
+
+  // -----------------------------------------------------------------------
+  // Input / Output schema (T-MSG-5)
+  // -----------------------------------------------------------------------
+
+  /**
+   * Build a JSON Schema object from input nodes (type contains "Input").
+   * Each input node contributes a property named after node.name (or node.id).
+   */
+  getInputSchema(): { properties: Record<string, unknown>; required: string[] } {
+    return this._buildSchema((n) => n.type.includes("Input"));
+  }
+
+  /**
+   * Build a JSON Schema object from output nodes (type contains "Output").
+   */
+  getOutputSchema(): { properties: Record<string, unknown>; required: string[] } {
+    return this._buildSchema((n) => n.type.includes("Output"));
+  }
+
+  private _buildSchema(
+    filter: (n: NodeDescriptor) => boolean
+  ): { properties: Record<string, unknown>; required: string[] } {
+    const properties: Record<string, unknown> = {};
+    const required: string[] = [];
+
+    for (const node of this.nodes) {
+      if (!filter(node)) continue;
+      const name = node.name || node.id;
+      // Use the first output type to determine the JSON Schema type
+      const outputType = node.outputs ? Object.values(node.outputs)[0] : undefined;
+      properties[name] = { type: nodeTypeToJsonSchema(outputType) };
+      required.push(name);
+    }
+
+    return { properties, required };
   }
 
   // -----------------------------------------------------------------------

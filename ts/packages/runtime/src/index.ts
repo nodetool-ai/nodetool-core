@@ -17,3 +17,4 @@ export {
 
 export * from "./providers/index.js";
 export { initTelemetry, getTracer, type TelemetryOptions } from "./telemetry.js";
+export { packContext, type PackedContext } from "./context-packer.js";
