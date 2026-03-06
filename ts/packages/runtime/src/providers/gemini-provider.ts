@@ -4,6 +4,7 @@ import type {
   LanguageModel,
   Message,
   MessageContent,
+  MessageAudioContent,
   MessageImageContent,
   MessageTextContent,
   ProviderStreamItem,
@@ -168,7 +169,36 @@ export class GeminiProvider extends BaseProvider {
       return { inlineData: { mimeType, data: base64Data } };
     }
 
-    // audio — treat as inline data
+    if (content.type === "audio") {
+      const aud = (content as MessageAudioContent).audio;
+      let base64Data: string;
+      let mimeType = aud.mimeType ?? "audio/mp3";
+
+      if (aud.data) {
+        if (typeof aud.data === "string") {
+          base64Data = aud.data;
+        } else {
+          base64Data = Buffer.from(aud.data).toString("base64");
+        }
+      } else if (aud.uri) {
+        if (aud.uri.startsWith("data:")) {
+          const idx = aud.uri.indexOf(",");
+          const header = aud.uri.slice(5, idx);
+          mimeType = header.split(";")[0] || mimeType;
+          base64Data = aud.uri.slice(idx + 1);
+        } else {
+          const resp = await this._fetch(aud.uri);
+          if (!resp.ok) throw new Error(`Failed to fetch audio: ${resp.status}`);
+          mimeType = resp.headers.get("content-type") ?? mimeType;
+          base64Data = Buffer.from(await resp.arrayBuffer()).toString("base64");
+        }
+      } else {
+        base64Data = "";
+      }
+
+      return { inlineData: { mimeType, data: base64Data } };
+    }
+
     return { text: "[unsupported content type]" };
   }
 

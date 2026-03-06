@@ -415,6 +415,7 @@ export class AnthropicProvider extends BaseProvider {
     presencePenalty?: number;
     frequencyPenalty?: number;
     audio?: Record<string, unknown>;
+    thinkingBudget?: number;
   }): AsyncGenerator<ProviderStreamItem> {
     if (args.jsonSchema) {
       throw new Error("Anthropic provider expects responseFormat; jsonSchema is not supported directly");
@@ -449,6 +450,7 @@ export class AnthropicProvider extends BaseProvider {
       ...(resolvedToolChoice ? { tool_choice: resolvedToolChoice } : {}),
       ...(args.temperature != null ? { temperature: args.temperature } : {}),
       ...(args.topP != null ? { top_p: args.topP } : {}),
+      ...(args.thinkingBudget != null ? { thinking: { type: "enabled", budget_tokens: args.thinkingBudget } } : {}),
     };
 
     const stream = (await (this.getClient().messages as any).stream(
@@ -586,6 +588,7 @@ export class AnthropicProvider extends BaseProvider {
     topP?: number;
     presencePenalty?: number;
     frequencyPenalty?: number;
+    thinkingBudget?: number;
   }): Promise<Message> {
     if (args.jsonSchema) {
       throw new Error("Anthropic provider expects responseFormat; jsonSchema is not supported directly");
@@ -612,6 +615,7 @@ export class AnthropicProvider extends BaseProvider {
       ...(structured.toolChoice ? { tool_choice: structured.toolChoice } : {}),
       ...(args.temperature != null ? { temperature: args.temperature } : {}),
       ...(args.topP != null ? { top_p: args.topP } : {}),
+      ...(args.thinkingBudget != null ? { thinking: { type: "enabled", budget_tokens: args.thinkingBudget } } : {}),
     };
 
     const response = await (this.getClient().messages as any).create(request);

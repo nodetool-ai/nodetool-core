@@ -139,21 +139,101 @@ describe("GeminiProvider – convertMessages with images", () => {
     expect(result.contents[0].parts[0].inlineData!.data).toBe("");
   });
 
-  it("handles audio content as unsupported", async () => {
+  it("converts audio content with Uint8Array data to inlineData", async () => {
     const provider = new GeminiProvider({ GEMINI_API_KEY: "k" });
 
     const result = await provider.convertMessages([
       {
         role: "user",
         content: [
-          { type: "audio", audio: { data: new Uint8Array([1]) } },
+          { type: "audio", audio: { data: new Uint8Array([1, 2, 3]), mimeType: "audio/mp3" } },
         ],
       },
     ]);
 
-    expect(result.contents[0].parts[0].text).toBe(
-      "[unsupported content type]"
-    );
+    expect(result.contents[0].parts[0].inlineData).toBeDefined();
+    expect(result.contents[0].parts[0].inlineData!.mimeType).toBe("audio/mp3");
+    expect(result.contents[0].parts[0].inlineData!.data).toBeTruthy();
+  });
+
+  it("converts audio content with string data to inlineData", async () => {
+    const provider = new GeminiProvider({ GEMINI_API_KEY: "k" });
+
+    const result = await provider.convertMessages([
+      {
+        role: "user",
+        content: [
+          { type: "audio", audio: { data: "base64audiodata" } },
+        ],
+      },
+    ]);
+
+    expect(result.contents[0].parts[0].inlineData).toBeDefined();
+    expect(result.contents[0].parts[0].inlineData!.data).toBe("base64audiodata");
+    expect(result.contents[0].parts[0].inlineData!.mimeType).toBe("audio/mp3");
+  });
+
+  it("converts audio content with data URI", async () => {
+    const base64 = Buffer.from("audiodata").toString("base64");
+    const provider = new GeminiProvider({ GEMINI_API_KEY: "k" });
+
+    const result = await provider.convertMessages([
+      {
+        role: "user",
+        content: [
+          { type: "audio", audio: { uri: `data:audio/wav;base64,${base64}` } },
+        ],
+      },
+    ]);
+
+    expect(result.contents[0].parts[0].inlineData).toBeDefined();
+    expect(result.contents[0].parts[0].inlineData!.mimeType).toBe("audio/wav");
+    expect(result.contents[0].parts[0].inlineData!.data).toBe(base64);
+  });
+
+  it("converts audio content with remote URI", async () => {
+    const fetchFn = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes("example.com")) {
+        return {
+          ok: true,
+          headers: new Headers({ "content-type": "audio/mpeg" }),
+          arrayBuffer: async () => Uint8Array.from([4, 5, 6]).buffer,
+        };
+      }
+      return makeFetchResponse({});
+    });
+
+    const provider = new GeminiProvider({ GEMINI_API_KEY: "k" }, { fetchFn });
+
+    const result = await provider.convertMessages([
+      {
+        role: "user",
+        content: [
+          { type: "audio", audio: { uri: "https://example.com/audio.mp3" } },
+        ],
+      },
+    ]);
+
+    expect(result.contents[0].parts[0].inlineData).toBeDefined();
+    expect(result.contents[0].parts[0].inlineData!.mimeType).toBe("audio/mpeg");
+    expect(fetchFn).toHaveBeenCalledWith("https://example.com/audio.mp3");
+  });
+
+  it("converts audio content with no data and no URI to empty inlineData", async () => {
+    const provider = new GeminiProvider({ GEMINI_API_KEY: "k" });
+
+    const result = await provider.convertMessages([
+      {
+        role: "user",
+        content: [
+          { type: "audio", audio: {} },
+        ],
+      },
+    ]);
+
+    expect(result.contents[0].parts[0].inlineData).toBeDefined();
+    expect(result.contents[0].parts[0].inlineData!.data).toBe("");
+    expect(result.contents[0].parts[0].inlineData!.mimeType).toBe("audio/mp3");
   });
 });
 

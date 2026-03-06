@@ -622,6 +622,113 @@ describe("AnthropicProvider – extractSystemMessage non-string non-array conten
   });
 });
 
+describe("AnthropicProvider – extended thinking (T-RT-5)", () => {
+  it("includes thinking config in streaming request when thinkingBudget is set", async () => {
+    const stream = vi.fn().mockResolvedValue(
+      makeAsyncIterable([
+        { type: "content_block_delta", delta: { thinking: "let me think..." } },
+        { type: "content_block_delta", delta: { text: "answer" } },
+        { type: "message_stop" },
+      ])
+    );
+
+    const provider = new AnthropicProvider(
+      { ANTHROPIC_API_KEY: "k" },
+      { client: { messages: { stream } } as any }
+    );
+
+    const out: unknown[] = [];
+    for await (const item of provider.generateMessages({
+      model: "claude-sonnet-4-20250514",
+      messages: [{ role: "user", content: "think hard" }],
+      thinkingBudget: 5000,
+    })) {
+      out.push(item);
+    }
+
+    // Verify the request included the thinking config
+    const requestBody = stream.mock.calls[0][0];
+    expect(requestBody.thinking).toEqual({
+      type: "enabled",
+      budget_tokens: 5000,
+    });
+
+    // Verify thinking chunks are emitted
+    expect(out[0]).toEqual({
+      type: "chunk",
+      content: "let me think...",
+      done: false,
+      thinking: true,
+    });
+  });
+
+  it("does not include thinking config when thinkingBudget is not set", async () => {
+    const stream = vi.fn().mockResolvedValue(
+      makeAsyncIterable([
+        { type: "content_block_delta", delta: { text: "answer" } },
+        { type: "message_stop" },
+      ])
+    );
+
+    const provider = new AnthropicProvider(
+      { ANTHROPIC_API_KEY: "k" },
+      { client: { messages: { stream } } as any }
+    );
+
+    for await (const _item of provider.generateMessages({
+      model: "claude-sonnet",
+      messages: [{ role: "user", content: "hi" }],
+    })) {
+      // drain
+    }
+
+    const requestBody = stream.mock.calls[0][0];
+    expect(requestBody.thinking).toBeUndefined();
+  });
+
+  it("includes thinking config in non-streaming request when thinkingBudget is set", async () => {
+    const create = vi.fn().mockResolvedValue({
+      content: [{ type: "text", text: "thought about it" }],
+    });
+
+    const provider = new AnthropicProvider(
+      { ANTHROPIC_API_KEY: "k" },
+      { client: { messages: { create } } as any }
+    );
+
+    await provider.generateMessage({
+      model: "claude-sonnet-4-20250514",
+      messages: [{ role: "user", content: "think" }],
+      thinkingBudget: 10000,
+    });
+
+    const requestBody = create.mock.calls[0][0];
+    expect(requestBody.thinking).toEqual({
+      type: "enabled",
+      budget_tokens: 10000,
+    });
+  });
+
+  it("does not include thinking config in non-streaming when not set", async () => {
+    const create = vi.fn().mockResolvedValue({
+      content: [{ type: "text", text: "ok" }],
+    });
+
+    const provider = new AnthropicProvider(
+      { ANTHROPIC_API_KEY: "k" },
+      { client: { messages: { create } } as any }
+    );
+
+    await provider.generateMessage({
+      model: "claude-sonnet",
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    const requestBody = create.mock.calls[0][0];
+    expect(requestBody.thinking).toBeUndefined();
+  });
+});
+
 describe("AnthropicProvider – streaming content_block_stop suppresses structured tool calls", () => {
   it("does not emit structured tool call in stream", async () => {
     const stream = vi.fn().mockResolvedValue(
