@@ -14,7 +14,7 @@
  *   - zip_all: wait until ALL handles have data (with sticky semantics).
  */
 
-import type { NodeDescriptor, SyncMode, ControlEvent } from "@nodetool/protocol";
+import type { NodeDescriptor, ControlEvent } from "@nodetool/protocol";
 import type { ProcessingContext } from "@nodetool/runtime";
 import { NodeInbox } from "./inbox.js";
 
@@ -166,49 +166,71 @@ export class NodeActor {
 
     // Source nodes with no data inputs should execute once with empty inputs.
     if (inputHandles.length === 0) {
-      if (this.node.is_streaming_output && this._executor.genProcess) {
-        for await (const partial of this._executor.genProcess(
-          {},
-          this._executionContext
-        )) {
-          this._latestResult = partial;
-          await this._sendOutputs(this.node.id, partial);
-        }
-      } else {
-        const outputs = await this._executor.process({}, this._executionContext);
-        this._latestResult = outputs;
-        await this._sendOutputs(this.node.id, outputs);
-      }
+      await this._executeWithInputs({});
       return;
     }
 
-    // Keep gathering input batches until inbox is drained
+    if (syncMode === "on_any") {
+      return this._runOnAny(inputHandles);
+    }
+
+    // zip_all: keep gathering input batches until inbox is drained
     while (true) {
-      const inputs = await this._gatherInputs(syncMode);
-      if (inputs === null) break; // inbox exhausted
+      const inputs = await this._gatherZipAll();
+      if (inputs === null) break;
 
-      if (this.node.is_streaming_output && this._executor.genProcess) {
-        // Streaming output: yield items
-        for await (const partial of this._executor.genProcess(
-          inputs,
-          this._executionContext
-        )) {
-          this._latestResult = partial;
-          await this._sendOutputs(this.node.id, partial);
-        }
-      } else {
-        // Buffered: single process call
-        const outputs = await this._executor.process(
-          inputs,
-          this._executionContext
-        );
-        this._latestResult = outputs;
-        await this._sendOutputs(this.node.id, outputs);
-      }
+      await this._executeWithInputs(inputs);
 
-      // If on_any, keep looping until exhausted
-      // If zip_all, keep looping until all handles exhausted
       if (this.inbox.isFullyDrained()) break;
+    }
+  }
+
+  /**
+   * on_any execution: wait for all handles to have at least one value,
+   * then fire. After initial fire, each subsequent item fires immediately.
+   */
+  private async _runOnAny(inputHandles: string[]): Promise<void> {
+    const current: Record<string, unknown> = {};
+    const pendingHandles = new Set(inputHandles);
+    let initialFired = false;
+
+    for await (const [handle, item] of this.inbox.iterAny()) {
+      if (handle === "__control__") continue;
+
+      current[handle] = item;
+
+      if (!initialFired) {
+        pendingHandles.delete(handle);
+        if (pendingHandles.size > 0) continue;
+        await this._executeWithInputs({ ...current });
+        initialFired = true;
+      } else {
+        await this._executeWithInputs({ ...current });
+      }
+    }
+  }
+
+  /**
+   * Execute process or genProcess with the given inputs.
+   */
+  private async _executeWithInputs(
+    inputs: Record<string, unknown>
+  ): Promise<void> {
+    if (this.node.is_streaming_output && this._executor.genProcess) {
+      for await (const partial of this._executor.genProcess(
+        inputs,
+        this._executionContext
+      )) {
+        this._latestResult = partial;
+        await this._sendOutputs(this.node.id, partial);
+      }
+    } else {
+      const outputs = await this._executor.process(
+        inputs,
+        this._executionContext
+      );
+      this._latestResult = outputs;
+      await this._sendOutputs(this.node.id, outputs);
     }
   }
 
@@ -245,41 +267,6 @@ export class NodeActor {
   // -----------------------------------------------------------------------
   // Input gathering (sync modes)
   // -----------------------------------------------------------------------
-
-  /**
-   * Gather inputs based on sync mode.
-   *
-   * - on_any: return as soon as any handle has data.
-   * - zip_all: wait until all handles have data, using sticky semantics.
-   *
-   * Returns null when no more inputs are available.
-   */
-  private async _gatherInputs(
-    syncMode: SyncMode
-  ): Promise<Record<string, unknown> | null> {
-    if (syncMode === "on_any") {
-      return this._gatherOnAny();
-    }
-    return this._gatherZipAll();
-  }
-
-  /**
-   * on_any: pop the first available item from any handle.
-   */
-  private async _gatherOnAny(): Promise<Record<string, unknown> | null> {
-    const popped = this.inbox.tryPopAny();
-    if (popped) {
-      return { [popped[0]]: popped[1] };
-    }
-    // Nothing buffered – try async iteration
-    const gen = this.inbox.iterAny();
-    const next = await gen.next();
-    if (next.done) return null;
-    const [handle, item] = next.value;
-    // We must return the generator, but we only need one item for on_any
-    await gen.return(undefined);
-    return { [handle]: item };
-  }
 
   /**
    * zip_all: wait until every registered handle has at least one item,
