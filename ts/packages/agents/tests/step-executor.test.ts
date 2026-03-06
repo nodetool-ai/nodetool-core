@@ -269,9 +269,9 @@ describe("StepExecutor", () => {
     expect(step.completed).toBe(true);
     expect(mockTool.process).toHaveBeenCalledWith(context, { input: "test" });
 
-    // Should have a tool_call_update message
+    // Should have tool_call_update messages for my_tool and finish_step
     const toolUpdates = messages.filter((m) => m.type === "tool_call_update");
-    expect(toolUpdates).toHaveLength(1);
+    expect(toolUpdates.length).toBeGreaterThanOrEqual(1);
     expect((toolUpdates[0] as any).name).toBe("my_tool");
   });
 
@@ -671,7 +671,7 @@ describe("StepExecutor", () => {
       instructions: "Do something",
       completed: false,
       dependsOn: [],
-      // No outputSchema = no finishStepTool
+      // No outputSchema = unstructured mode, text accepted as result
       logs: [],
     };
 
@@ -686,7 +686,7 @@ describe("StepExecutor", () => {
       ...createMockProvider(),
       generateMessages: async function* () {
         callCount++;
-        // Always return long non-JSON text to inflate tokens and prevent JSON extraction
+        // Return text (no tool calls) - in unstructured mode this completes on first iteration
         yield { type: "chunk" as const, content: "A".repeat(300), done: false };
       },
     } as any;
@@ -707,10 +707,51 @@ describe("StepExecutor", () => {
       messages.push(msg);
     }
 
-    // Should exhaust iterations and fail
+    // Unstructured mode: text content is accepted as result on first iteration
     expect(step.completed).toBe(true);
-    // getCurrentTools() in conclusion stage with no finishStepTool returns []
-    expect(callCount).toBeGreaterThanOrEqual(2);
+    expect(callCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("handles finish_step with null args gracefully", async () => {
+    const step: Step = {
+      id: "step_null_args",
+      instructions: "Finish with null args",
+      completed: false,
+      dependsOn: [],
+      outputSchema: JSON.stringify({ type: "object", properties: { v: { type: "string" } } }),
+      logs: [],
+    };
+
+    const task: Task = { id: "task_null_args", title: "Null Args Test", steps: [step] };
+
+    let callCount = 0;
+    const provider = {
+      ...createMockProvider(),
+      generateMessages: async function* () {
+        callCount++;
+        if (callCount === 1) {
+          // finish_step with null args — triggers the "Missing result" branch
+          yield { id: "tc_finish", name: "finish_step", args: null };
+        } else {
+          // Second attempt: provide valid result
+          yield { id: "tc_finish2", name: "finish_step", args: { result: { v: "ok" } } };
+        }
+      },
+    } as any;
+
+    const context = createMockContext();
+    const executor = new StepExecutor({
+      task, step, context, provider,
+      model: "test-model",
+    });
+
+    const messages: ProcessingMessage[] = [];
+    for await (const msg of executor.execute()) {
+      messages.push(msg);
+    }
+
+    // Should eventually complete on second attempt
+    expect(step.completed).toBe(true);
   });
 
   it("handles tool call with undefined args", async () => {
@@ -783,6 +824,161 @@ describe("StepExecutor", () => {
     expect(simpleTool.process).toHaveBeenCalledWith(context, {});
   });
 
+  it("tracks browser URLs in getSources", async () => {
+    const step: Step = {
+      id: "step_browser",
+      instructions: "Browse a URL",
+      completed: false,
+      dependsOn: [],
+      outputSchema: JSON.stringify({ type: "object", properties: {} }),
+      logs: [],
+    };
+
+    const task: Task = { id: "task_browser", title: "Browser URL Test", steps: [step] };
+
+    let callCount = 0;
+    const provider = {
+      ...createMockProvider(),
+      generateMessages: async function* () {
+        callCount++;
+        if (callCount === 1) {
+          yield {
+            id: "tc_browser",
+            name: "browser",
+            args: { url: "https://example.com" },
+          };
+        } else {
+          yield {
+            id: "tc_finish",
+            name: "finish_step",
+            args: { result: { visited: true } },
+          };
+        }
+      },
+    } as any;
+
+    const browserTool = {
+      name: "browser",
+      description: "Browse a URL",
+      inputSchema: { type: "object" as const, properties: { url: { type: "string" } }, required: ["url"] },
+      process: vi.fn().mockResolvedValue({ content: "page content" }),
+      userMessage: () => "Browsing URL",
+      toProviderTool: () => ({
+        name: "browser",
+        description: "Browse a URL",
+        inputSchema: { type: "object", properties: {}, required: [] },
+      }),
+    };
+
+    const context = createMockContext();
+    const executor = new StepExecutor({
+      task,
+      step,
+      context,
+      provider,
+      model: "test-model",
+      tools: [browserTool as any],
+    });
+
+    const messages: ProcessingMessage[] = [];
+    for await (const msg of executor.execute()) {
+      messages.push(msg);
+    }
+
+    expect(step.completed).toBe(true);
+    expect(executor.getSources()).toContain("https://example.com");
+  });
+
+  it("deduplicates browser URLs in getSources", async () => {
+    const step: Step = {
+      id: "step_browser_dedup",
+      instructions: "Browse URL twice",
+      completed: false,
+      dependsOn: [],
+      outputSchema: JSON.stringify({ type: "object", properties: {} }),
+      logs: [],
+    };
+
+    const task: Task = { id: "task_browser_dedup", title: "Dedup Test", steps: [step] };
+
+    let callCount = 0;
+    const provider = {
+      ...createMockProvider(),
+      generateMessages: async function* () {
+        callCount++;
+        if (callCount === 1) {
+          yield { id: "tc_b1", name: "browser", args: { url: "https://dup.com" } };
+        } else if (callCount === 2) {
+          yield { id: "tc_b2", name: "browser", args: { url: "https://dup.com" } };
+        } else {
+          yield { id: "tc_finish", name: "finish_step", args: { result: {} } };
+        }
+      },
+    } as any;
+
+    const browserTool = {
+      name: "browser",
+      description: "Browse",
+      inputSchema: { type: "object" as const, properties: {}, required: [] },
+      process: vi.fn().mockResolvedValue({ content: "ok" }),
+      userMessage: () => "Browsing",
+      toProviderTool: () => ({ name: "browser", description: "Browse", inputSchema: { type: "object", properties: {}, required: [] } }),
+    };
+
+    const context = createMockContext();
+    const executor = new StepExecutor({
+      task, step, context, provider,
+      model: "test-model",
+      tools: [browserTool as any],
+    });
+
+    for await (const _ of executor.execute()) { /* drain */ }
+
+    const sources = executor.getSources();
+    // Should only appear once
+    expect(sources.filter(s => s === "https://dup.com")).toHaveLength(1);
+  });
+
+  it("getSources returns empty array initially", () => {
+    const step: Step = {
+      id: "step_sources",
+      instructions: "Test sources",
+      completed: false,
+      dependsOn: [],
+      logs: [],
+    };
+    const task: Task = { id: "task_sources", title: "Sources Test", steps: [step] };
+    const executor = new StepExecutor({
+      task,
+      step,
+      context: createMockContext(),
+      provider: createMockProvider(),
+      model: "test-model",
+    });
+    expect(executor.getSources()).toEqual([]);
+  });
+
+  it("getTokenUsage returns zero initially", () => {
+    const step: Step = {
+      id: "step_tokens",
+      instructions: "Test tokens",
+      completed: false,
+      dependsOn: [],
+      logs: [],
+    };
+    const task: Task = { id: "task_tokens", title: "Tokens Test", steps: [step] };
+    const executor = new StepExecutor({
+      task,
+      step,
+      context: createMockContext(),
+      provider: createMockProvider(),
+      model: "test-model",
+    });
+    const usage = executor.getTokenUsage();
+    expect(usage.inputTokensTotal).toBe(0);
+    expect(usage.outputTokensTotal).toBe(0);
+  });
+
   it("yields StepFailed when step exhausts iterations without completing", async () => {
     const step: Step = {
       id: "step_fail",
@@ -790,7 +986,12 @@ describe("StepExecutor", () => {
       completed: false,
       dependsOn: [],
       logs: [],
-      // No outputSchema so no finishStepTool
+      // Use an output schema so unstructured auto-complete doesn't trigger
+      outputSchema: JSON.stringify({
+        type: "object",
+        properties: { answer: { type: "string" } },
+        required: ["answer"],
+      }),
     };
 
     const task: Task = {

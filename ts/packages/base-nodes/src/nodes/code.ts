@@ -21,6 +21,8 @@ async function runProcess(args: {
       cwd: args.cwd,
       env: { ...process.env, ...(args.env ?? {}) },
       stdio: "pipe",
+      // Create a new process group so we can kill all children on timeout
+      detached: true,
     });
 
     let stdout = "";
@@ -29,7 +31,13 @@ async function runProcess(args: {
 
     const timer = setTimeout(() => {
       killed = true;
-      child.kill("SIGTERM");
+      try {
+        // Kill the entire process group (pid < 0 = process group)
+        process.kill(-child.pid!, "SIGKILL");
+      } catch {
+        // Fallback: kill just the direct child
+        child.kill("SIGKILL");
+      }
     }, timeoutMs);
 
     child.stdout.on("data", (d) => {

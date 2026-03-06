@@ -49,7 +49,7 @@ describe("GoogleSearchTool", () => {
     });
 
     const result = (await tool.process(ctx, {
-      query: "test query",
+      keyword: "test query",
     })) as Record<string, unknown>;
 
     expect(result.success).toBe(true);
@@ -73,7 +73,7 @@ describe("GoogleSearchTool", () => {
 
   it("throws when API key is missing", async () => {
     const ctx = makeContext({});
-    await expect(tool.process(ctx, { query: "test" })).rejects.toThrow(
+    await expect(tool.process(ctx, { keyword: "test" })).rejects.toThrow(
       "SERPAPI_API_KEY",
     );
   });
@@ -84,7 +84,7 @@ describe("GoogleSearchTool", () => {
     fetchSpy = stubFetch({ organic_results: [] });
 
     const result = (await tool.process(ctx, {
-      query: "test",
+      keyword: "test",
     })) as Record<string, unknown>;
     expect(result.success).toBe(true);
 
@@ -97,21 +97,21 @@ describe("GoogleSearchTool", () => {
     fetchSpy = stubFetch({ organic_results: [] });
 
     const result = (await tool.process(ctx, {
-      query: "nothing",
+      keyword: "nothing",
     })) as Record<string, unknown>;
     expect(result.success).toBe(true);
     expect(result.results).toEqual([]);
   });
 
   it("userMessage returns search description", () => {
-    expect(tool.userMessage({ query: "cats" })).toBe(
+    expect(tool.userMessage({ keyword: "cats" })).toBe(
       "Searching Google for 'cats'...",
     );
   });
 
   it("userMessage truncates long queries", () => {
     const longQuery = "a".repeat(200);
-    expect(tool.userMessage({ query: longQuery })).toBe("Searching Google...");
+    expect(tool.userMessage({ keyword: longQuery })).toBe("Searching Google...");
   });
 
   it("throws when SerpAPI returns non-OK response", async () => {
@@ -119,7 +119,7 @@ describe("GoogleSearchTool", () => {
     fetchSpy = stubFetch({ error: "bad request" }, 400);
 
     await expect(
-      tool.process(ctx, { query: "test" }),
+      tool.process(ctx, { keyword: "test" }),
     ).rejects.toThrow("SerpAPI request failed (400)");
   });
 
@@ -159,7 +159,7 @@ describe("GoogleNewsTool", () => {
     });
 
     const result = (await tool.process(ctx, {
-      query: "AI",
+      keyword: "AI",
     })) as Record<string, unknown>;
 
     expect(result.success).toBe(true);
@@ -185,20 +185,20 @@ describe("GoogleNewsTool", () => {
 
   it("throws when API key is missing", async () => {
     const ctx = makeContext({});
-    await expect(tool.process(ctx, { query: "test" })).rejects.toThrow(
+    await expect(tool.process(ctx, { keyword: "test" })).rejects.toThrow(
       "SERPAPI_API_KEY",
     );
   });
 
   it("userMessage returns news search description", () => {
-    expect(tool.userMessage({ query: "AI" })).toBe(
+    expect(tool.userMessage({ keyword: "AI" })).toBe(
       "Searching Google News for 'AI'...",
     );
   });
 
   it("userMessage truncates long queries", () => {
     const longQuery = "a".repeat(200);
-    expect(tool.userMessage({ query: longQuery })).toBe(
+    expect(tool.userMessage({ keyword: longQuery })).toBe(
       "Searching Google News...",
     );
   });
@@ -244,7 +244,7 @@ describe("GoogleImagesTool", () => {
     });
 
     const result = (await tool.process(ctx, {
-      query: "cute animals",
+      keyword: "cute animals",
     })) as Record<string, unknown>;
 
     expect(result.success).toBe(true);
@@ -270,7 +270,7 @@ describe("GoogleImagesTool", () => {
   it("throws when API key is missing", async () => {
     const ctx = makeContext({});
     await expect(
-      tool.process(ctx, { query: "test" }),
+      tool.process(ctx, { keyword: "test" }),
     ).rejects.toThrow("SERPAPI_API_KEY");
   });
 
@@ -279,21 +279,21 @@ describe("GoogleImagesTool", () => {
     fetchSpy = stubFetch({ images_results: [] });
 
     const result = (await tool.process(ctx, {
-      query: "nothing",
+      keyword: "nothing",
     })) as Record<string, unknown>;
     expect(result.success).toBe(true);
     expect(result.results).toEqual([]);
   });
 
   it("userMessage returns image search description", () => {
-    expect(tool.userMessage({ query: "sunset" })).toBe(
+    expect(tool.userMessage({ keyword: "sunset" })).toBe(
       "Searching Google Images for 'sunset'...",
     );
   });
 
   it("userMessage truncates long queries", () => {
     const longQuery = "a".repeat(200);
-    expect(tool.userMessage({ query: longQuery })).toBe(
+    expect(tool.userMessage({ keyword: longQuery })).toBe(
       "Searching Google Images...",
     );
   });

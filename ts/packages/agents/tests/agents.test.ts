@@ -276,15 +276,19 @@ describe("TaskPlanner", () => {
     // Should return null due to circular dependencies
     expect(task).toBeNull();
 
-    // Should have an error chunk about circular dependencies
-    const errorChunks = messages.filter(
+    // Should have a planning_update about circular dependencies
+    const errorUpdates = messages.filter(
       (m) =>
-        m.type === "chunk" &&
-        "content" in m &&
-        typeof (m as any).content === "string" &&
-        (m as any).content.includes("circular"),
+        (m.type === "planning_update" &&
+          "content" in m &&
+          typeof (m as any).content === "string" &&
+          (m as any).content.toLowerCase().includes("circular")) ||
+        (m.type === "chunk" &&
+          "content" in m &&
+          typeof (m as any).content === "string" &&
+          (m as any).content.toLowerCase().includes("circular")),
     );
-    expect(errorChunks.length).toBeGreaterThanOrEqual(1);
+    expect(errorUpdates.length).toBeGreaterThanOrEqual(1);
   });
 
   it("includes outputSchema in planner prompt when provided", async () => {
