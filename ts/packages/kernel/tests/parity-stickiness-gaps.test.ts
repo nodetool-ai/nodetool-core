@@ -250,6 +250,73 @@ describe("Gap #5 — zip_all stickiness: streaming vs non-streaming edges", () =
 });
 
 // ---------------------------------------------------------------------------
+// Gap #5 — stickyHandles wired from edgeStreams into _gatherZipAll
+// ---------------------------------------------------------------------------
+
+describe("Gap #5 — stickyHandles wired from runner streaming analysis", () => {
+  it("non-streaming edge handle is sticky before EOS via runner-level wiring", async () => {
+    // Setup: A (non-streaming) sends one value, B (streaming) sends 3.
+    // Both connect to C (zip_all). C should fire 3 times reusing A's value.
+    //
+    // The key: A's handle is marked sticky by the runner (edgeStreams = false),
+    // so even while A is technically still "open" (hasn't sent EOS yet from
+    // C's perspective), C should still reuse A's value.
+    //
+    // We use the real WorkflowRunner to verify end-to-end wiring.
+    const nodes: NodeDescriptor[] = [
+      { id: "A", type: "test.Source", name: "a_input" },
+      {
+        id: "B",
+        type: "test.StreamSource",
+        name: "b_input",
+        is_streaming_output: true,
+      },
+      { id: "C", type: "test.Combiner", sync_mode: "zip_all" },
+    ];
+    const edges: Edge[] = [
+      {
+        id: "e_ac",
+        source: "A",
+        sourceHandle: "value",
+        target: "C",
+        targetHandle: "a",
+      },
+      {
+        id: "e_bc",
+        source: "B",
+        sourceHandle: "value",
+        target: "C",
+        targetHandle: "b",
+      },
+    ];
+
+    const cCalls: Array<Record<string, unknown>> = [];
+
+    const runner = makeRunner({
+      A: simpleExecutor(() => ({ value: 10 })),
+      B: streamingExecutor([{ value: 1 }, { value: 2 }, { value: 3 }]),
+      C: {
+        async process(inputs) {
+          cCalls.push({ ...inputs });
+          return { result: `${inputs.a}-${inputs.b}` };
+        },
+      },
+    });
+
+    await runner.run(
+      { job_id: "sticky-test", params: { a_input: 10, b_input: 0 } },
+      { nodes, edges }
+    );
+
+    // C should fire 3 times, reusing A's sticky value for each B item
+    expect(cCalls).toHaveLength(3);
+    expect(cCalls[0]).toEqual({ a: 10, b: 1 });
+    expect(cCalls[1]).toEqual({ a: 10, b: 2 });
+    expect(cCalls[2]).toEqual({ a: 10, b: 3 });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Gap #10 — Multi-Edge List Type Validation
 // ---------------------------------------------------------------------------
 

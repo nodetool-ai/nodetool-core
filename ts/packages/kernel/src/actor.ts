@@ -75,6 +75,9 @@ export class NodeActor {
   /** Latest execution result. */
   private _latestResult: Record<string, unknown> | null = null;
 
+  /** Handles that are sticky from the start (non-streaming edges). */
+  private _initialStickyHandles: Set<string>;
+
   /** Callback to route outputs downstream. */
   private _sendOutputs: (
     nodeId: string,
@@ -96,6 +99,7 @@ export class NodeActor {
     ) => Promise<void>;
     emitMessage: (msg: unknown) => void;
     executionContext?: ProcessingContext;
+    stickyHandles?: Set<string>;
   }) {
     this.node = opts.node;
     this.inbox = opts.inbox;
@@ -103,6 +107,7 @@ export class NodeActor {
     this._sendOutputs = opts.sendOutputs;
     this._emitMessage = opts.emitMessage;
     this._executionContext = opts.executionContext;
+    this._initialStickyHandles = opts.stickyHandles ?? new Set();
   }
 
   // -----------------------------------------------------------------------
@@ -304,8 +309,9 @@ export class NodeActor {
         }
       }
 
-      // Use sticky value if handle is closed
-      if (!this.inbox.isOpen(handle) && handle in this._stickyValues) {
+      // Use sticky value if handle is closed or marked sticky from streaming analysis
+      const isSticky = !this.inbox.isOpen(handle) || this._initialStickyHandles.has(handle);
+      if (isSticky && handle in this._stickyValues) {
         result[handle] = this._stickyValues[handle];
         continue;
       }

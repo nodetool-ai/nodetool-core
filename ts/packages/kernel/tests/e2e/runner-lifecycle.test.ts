@@ -62,8 +62,8 @@ describe("RUNNER-001: 5-node linear chain", () => {
 // RUNNER-002: Graph with invalid edge endpoint
 // ---------------------------------------------------------------------------
 
-describe("RUNNER-002: Invalid graph edge causes failed status", () => {
-  it("run() returns failed status for edge referencing missing node", async () => {
+describe("RUNNER-002: Dangling edges are silently filtered (Python parity)", () => {
+  it("run() silently removes dangling edges and completes", async () => {
     const runner = new WorkflowRunner("test", { resolveExecutor: () => ({ async process() { return {}; } }) });
     const result = await runner.run(
       { job_id: "runner-002" },
@@ -72,8 +72,8 @@ describe("RUNNER-002: Invalid graph edge causes failed status", () => {
         edges: [de("missing", "out", "a", "in")],
       }
     );
-    expect(result.status).toBe("failed");
-    expect(result.error).toMatch(/unknown source/i);
+    // Python parity: _filterInvalidEdges removes dangling edge before validation
+    expect(result.status).toBe("completed");
   });
 });
 

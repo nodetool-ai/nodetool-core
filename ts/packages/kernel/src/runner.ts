@@ -191,6 +191,10 @@ export class WorkflowRunner {
     try {
       this._graph = new Graph(graphData);
 
+      // Python parity: _filter_invalid_edges — silently remove edges
+      // whose source or target node doesn't exist in the graph.
+      this._filterInvalidEdges();
+
       // Analyze streaming paths (Python parity: _analyze_streaming)
       this._analyzeStreaming();
 
@@ -260,6 +264,28 @@ export class WorkflowRunner {
     // Close all inboxes to unblock waiting actors
     for (const inbox of this._inboxes.values()) {
       inbox.closeAll();
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Invalid edge filtering (Python parity: _filter_invalid_edges)
+  // -----------------------------------------------------------------------
+
+  /**
+   * Remove edges whose source or target node doesn't exist in the graph.
+   * Reconstructs the graph without dangling edges.
+   */
+  private _filterInvalidEdges(): void {
+    const validEdges = this._graph.edges.filter(
+      (edge) =>
+        this._graph.findNode(edge.source) !== undefined &&
+        this._graph.findNode(edge.target) !== undefined
+    );
+    if (validEdges.length < this._graph.edges.length) {
+      this._graph = new Graph({
+        nodes: [...this._graph.nodes],
+        edges: validEdges,
+      });
     }
   }
 
@@ -407,6 +433,15 @@ export class WorkflowRunner {
       const inbox = this._inboxes.get(node.id)!;
       const executor = this._options.resolveExecutor(node);
 
+      // Compute sticky handles: handles fed by non-streaming edges
+      // are sticky from the start (Python parity: _analyze_streaming).
+      const stickyHandles = new Set<string>();
+      for (const edge of incoming) {
+        if (!this.edgeStreams(edge)) {
+          stickyHandles.add(edge.targetHandle);
+        }
+      }
+
       const actor = new NodeActor({
         node,
         inbox,
@@ -418,6 +453,7 @@ export class WorkflowRunner {
           this._emit(msg as ProcessingMessage);
         },
         executionContext: this._options.executionContext,
+        stickyHandles,
       });
 
       actorPromises.push(

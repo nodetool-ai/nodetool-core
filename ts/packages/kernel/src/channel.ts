@@ -58,18 +58,16 @@ interface SubscriberQueue<T> {
 
 export class Channel<T = unknown> {
   readonly name: string;
-  private _bufferLimit: number;
   private _subscribers = new Map<string, SubscriberQueue<T>>();
   private _closed = false;
   private _messageType?: new (...args: unknown[]) => T;
 
   constructor(
     name: string,
-    bufferLimit = 100,
+    _bufferLimit = 100,
     messageType?: new (...args: unknown[]) => T
   ) {
     this.name = name;
-    this._bufferLimit = bufferLimit;
     this._messageType = messageType;
   }
 

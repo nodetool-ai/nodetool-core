@@ -280,6 +280,7 @@ export class Graph {
   validate(): void {
     this.validateEdgeEndpoints();
     this.validateControlEdges();
+    this.validateEdgeTypes();
   }
 
   /**
@@ -319,6 +320,53 @@ export class Graph {
 
     // Cycle detection in control edges (DFS)
     this._checkCircularControl(controlEdges);
+  }
+
+  /**
+   * Validate type compatibility between connected edge endpoints.
+   * For each data edge, checks if the source output type is compatible
+   * with the target input type. Compatible means: same type, one is "any",
+   * or numeric widening (int -> float).
+   */
+  validateEdgeTypes(): void {
+    const NUMERIC_TYPES = new Set(["int", "float", "number"]);
+
+    const isCompatible = (sourceType: string, targetType: string): boolean => {
+      if (sourceType === targetType) return true;
+      if (sourceType === "any" || targetType === "any") return true;
+      // Numeric widening: int is compatible with float/number
+      if (NUMERIC_TYPES.has(sourceType) && NUMERIC_TYPES.has(targetType)) return true;
+      return false;
+    };
+
+    for (const edge of this.edges) {
+      if (isControlEdge(edge)) continue;
+
+      const sourceNode = this._nodeIndex.get(edge.source);
+      const targetNode = this._nodeIndex.get(edge.target);
+      if (!sourceNode || !targetNode) continue;
+
+      // Get source output type from node.outputs[sourceHandle]
+      const sourceType = sourceNode.outputs?.[edge.sourceHandle];
+      if (!sourceType) continue; // no type info, skip
+
+      // Get target input type from node.properties[targetHandle].type
+      const targetProp = targetNode.properties?.[edge.targetHandle];
+      let targetType: string | undefined;
+      if (typeof targetProp === "object" && targetProp !== null && "type" in targetProp) {
+        targetType = (targetProp as { type: string }).type;
+      } else if (typeof targetProp === "string") {
+        targetType = targetProp;
+      }
+      if (!targetType) continue; // no type info, skip
+
+      if (!isCompatible(sourceType, targetType)) {
+        throw new GraphValidationError(
+          `Type mismatch on edge ${edge.id ?? `${edge.source}:${edge.sourceHandle}->${edge.target}:${edge.targetHandle}`}: ` +
+          `source outputs "${sourceType}" but target expects "${targetType}"`
+        );
+      }
+    }
   }
 
   private _checkCircularControl(controlEdges: Edge[]): void {

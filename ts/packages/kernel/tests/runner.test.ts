@@ -142,8 +142,8 @@ describe("WorkflowRunner – error handling", () => {
   });
 });
 
-describe("WorkflowRunner – graph validation failure", () => {
-  it("returns failed status for invalid graph", async () => {
+describe("WorkflowRunner – dangling edges are filtered (Python parity)", () => {
+  it("silently removes dangling edges and completes successfully", async () => {
     const nodes: NodeDescriptor[] = [{ id: "a", type: "test.A" }];
     const edges: Edge[] = [
       { source: "missing", sourceHandle: "out", target: "a", targetHandle: "in" },
@@ -152,8 +152,8 @@ describe("WorkflowRunner – graph validation failure", () => {
     const runner = makeRunner({});
     const result = await runner.run({ job_id: "j4" }, { nodes, edges });
 
-    expect(result.status).toBe("failed");
-    expect(result.error).toContain("unknown source");
+    // Python parity: _filterInvalidEdges removes the dangling edge before validation
+    expect(result.status).toBe("completed");
   });
 });
 

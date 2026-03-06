@@ -68,50 +68,45 @@ function makeRunner(executorMap: Record<string, NodeExecutor>): WorkflowRunner {
 // ===========================================================================
 
 describe("Gap #3 – _filter_invalid_edges (silent removal of dangling edges)", () => {
-  it("should silently remove edges with non-existent source nodes instead of throwing", () => {
+  it("runner silently removes edges with non-existent source nodes", async () => {
     // Python behavior: _filter_invalid_edges removes edges that reference
-    // missing nodes, then proceeds with execution. The graph runs fine
-    // with the remaining valid edges.
-    //
-    // Current TypeScript behavior: graph.validate() throws
-    // GraphValidationError("Edge references unknown source node: ghost")
-    const nodes = [makeNode("a"), makeNode("b")];
-    const edges = [
+    // missing nodes, then proceeds with execution.
+    const nodes: NodeDescriptor[] = [
+      { id: "a", type: "test.Input", name: "a_in" },
+      { id: "b", type: "test.Output", name: "result" },
+    ];
+    const edges: Edge[] = [
       makeEdge("a", "out", "b", "in"),
       makeEdge("ghost", "out", "b", "extra"), // dangling source
     ];
 
-    // This SHOULD succeed (Python behavior: filter out the bad edge)
-    // Currently THROWS in TypeScript because validate() rejects unknown source
-    const graph = new Graph({ nodes, edges });
-    expect(() => graph.validate()).toThrow(GraphValidationError);
+    const runner = makeRunner({
+      "test.Output": simpleExecutor((inputs) => ({ value: inputs.in })),
+    });
 
-    // TODO: When parity is implemented, this test should be:
-    // const filtered = graph.filterInvalidEdges(); // or similar API
-    // expect(filtered.edges).toHaveLength(1);
-    // expect(filtered.edges[0].source).toBe("a");
+    const result = await runner.run({ job_id: "j1", params: { a_in: 42 } }, { nodes, edges });
+    expect(result.status).toBe("completed");
   });
 
-  it("should silently remove edges with non-existent target nodes instead of throwing", () => {
-    const nodes = [makeNode("a"), makeNode("b")];
-    const edges = [
+  it("runner silently removes edges with non-existent target nodes", async () => {
+    const nodes: NodeDescriptor[] = [
+      { id: "a", type: "test.Input", name: "a_in" },
+      { id: "b", type: "test.Output", name: "result" },
+    ];
+    const edges: Edge[] = [
       makeEdge("a", "out", "b", "in"),
       makeEdge("a", "extra", "ghost", "in"), // dangling target
     ];
 
-    const graph = new Graph({ nodes, edges });
-    expect(() => graph.validate()).toThrow(GraphValidationError);
+    const runner = makeRunner({
+      "test.Output": simpleExecutor((inputs) => ({ value: inputs.in })),
+    });
 
-    // TODO: Python would filter out the bad edge and continue.
+    const result = await runner.run({ job_id: "j1", params: { a_in: 7 } }, { nodes, edges });
+    expect(result.status).toBe("completed");
   });
 
   it("runner should complete when graph has dangling edges (after filtering)", async () => {
-    // Python: WorkflowRunner calls _filter_invalid_edges before execution,
-    // so a graph with a dangling edge still runs. The bad edge is silently
-    // removed and the rest of the graph executes normally.
-    //
-    // TypeScript: runner.run() calls graph.validate() which throws, so the
-    // run fails with status "failed".
     const nodes: NodeDescriptor[] = [
       { id: "in", type: "test.Input", name: "x" },
       { id: "out", type: "test.Output", name: "result" },
@@ -126,18 +121,17 @@ describe("Gap #3 – _filter_invalid_edges (silent removal of dangling edges)", 
     });
 
     const result = await runner.run({ job_id: "j1", params: { x: 42 } }, { nodes, edges });
-
-    // Python would complete successfully after filtering the bad edge.
-    // TypeScript currently fails because validate() throws.
-    expect(result.status).toBe("failed");
-    // TODO: When parity is implemented, this should be:
-    // expect(result.status).toBe("completed");
-    // expect(result.outputs.result).toContain(42);
+    expect(result.status).toBe("completed");
+    expect(result.outputs.result).toContain(42);
   });
 
-  it("should remove ALL dangling edges and keep valid ones", () => {
-    const nodes = [makeNode("a"), makeNode("b"), makeNode("c")];
-    const edges = [
+  it("should remove ALL dangling edges and keep valid ones", async () => {
+    const nodes: NodeDescriptor[] = [
+      { id: "a", type: "test.Input", name: "a_in" },
+      { id: "b", type: "test.Proc" },
+      { id: "c", type: "test.Output", name: "result" },
+    ];
+    const edges: Edge[] = [
       makeEdge("a", "out", "b", "in"),        // valid
       makeEdge("b", "out", "c", "in"),         // valid
       makeEdge("ghost1", "out", "b", "extra"), // dangling source
@@ -145,35 +139,67 @@ describe("Gap #3 – _filter_invalid_edges (silent removal of dangling edges)", 
       makeEdge("ghost1", "out", "ghost2", "in"), // both dangling
     ];
 
-    const graph = new Graph({ nodes, edges });
-    // Currently throws on the first bad edge found
-    expect(() => graph.validate()).toThrow(GraphValidationError);
+    const runner = makeRunner({
+      "test.Proc": simpleExecutor((inputs) => ({ out: inputs.in })),
+      "test.Output": simpleExecutor((inputs) => ({ value: inputs.in })),
+    });
 
-    // TODO: Python filters all bad edges, leaving only the 2 valid ones.
-    // const filtered = graph.filterInvalidEdges();
-    // expect(filtered.edges).toHaveLength(2);
+    const result = await runner.run({ job_id: "j1", params: { a_in: 99 } }, { nodes, edges });
+    expect(result.status).toBe("completed");
   });
 });
 
-describe("Gap #3 – type compatibility checking", () => {
-  it.todo(
-    "should reject edge connecting incompatible types (e.g., ImageRef output to int input)"
-    // Python's validate_graph checks type compatibility between source output
-    // type and target input type. TypeScript validate() only checks that the
-    // node endpoints exist, not that their types are compatible.
-    //
-    // Implementing this requires a type registry or type metadata on nodes.
-  );
+describe("Gap #3 – type compatibility checking (validateEdgeTypes)", () => {
+  it("rejects edge connecting incompatible types (image output to str input)", () => {
+    const nodes = [
+      makeNode("a", { outputs: { out: "image" } }),
+      makeNode("b", { properties: { in: { type: "str" } } }),
+    ];
+    const edges = [makeEdge("a", "out", "b", "in")];
+    const graph = new Graph({ nodes, edges });
+    expect(() => graph.validateEdgeTypes()).toThrow(GraphValidationError);
+    expect(() => graph.validateEdgeTypes()).toThrow(/Type mismatch/);
+  });
 
-  it.todo(
-    "should accept edge connecting compatible types (e.g., int output to float input)"
-    // Python allows implicit type coercion for compatible types.
-  );
+  it("accepts edge connecting compatible types (int output to float input)", () => {
+    const nodes = [
+      makeNode("a", { outputs: { out: "int" } }),
+      makeNode("b", { properties: { in: { type: "float" } } }),
+    ];
+    const edges = [makeEdge("a", "out", "b", "in")];
+    const graph = new Graph({ nodes, edges });
+    expect(() => graph.validateEdgeTypes()).not.toThrow();
+  });
 
-  it.todo(
-    "should accept edge where source type is a subtype of target type"
-    // Python checks type hierarchy for subclass compatibility.
-  );
+  it("accepts edge connecting same types", () => {
+    const nodes = [
+      makeNode("a", { outputs: { out: "int" } }),
+      makeNode("b", { properties: { in: { type: "int" } } }),
+    ];
+    const edges = [makeEdge("a", "out", "b", "in")];
+    const graph = new Graph({ nodes, edges });
+    expect(() => graph.validateEdgeTypes()).not.toThrow();
+  });
+
+  it("accepts edge where either type is 'any'", () => {
+    const nodes = [
+      makeNode("a", { outputs: { out: "image" } }),
+      makeNode("b", { properties: { in: { type: "any" } } }),
+    ];
+    const edges = [makeEdge("a", "out", "b", "in")];
+    const graph = new Graph({ nodes, edges });
+    expect(() => graph.validateEdgeTypes()).not.toThrow();
+  });
+
+  it("skips type check when type info is missing", () => {
+    const nodes = [
+      makeNode("a"), // no outputs type info
+      makeNode("b", { properties: { in: { type: "str" } } }),
+    ];
+    const edges = [makeEdge("a", "out", "b", "in")];
+    const graph = new Graph({ nodes, edges });
+    expect(() => graph.validateEdgeTypes()).not.toThrow();
+  });
 });
 
 // ===========================================================================
