@@ -22,6 +22,8 @@ function createMockProvider(delayMs = 0) {
         args: { result: { done: true } },
       };
     },
+    async *generateMessagesTraced(...args: any[]) { yield* (this as any).generateMessages(...args); },
+    async generateMessageTraced(...args: any[]) { return (this as any).generateMessage(...args); },
     generateMessage: vi.fn(),
     getAvailableLanguageModels: vi.fn().mockResolvedValue([]),
     getAvailableImageModels: vi.fn().mockResolvedValue([]),

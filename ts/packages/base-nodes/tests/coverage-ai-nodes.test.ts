@@ -415,6 +415,7 @@ describe("AgentNode", () => {
       generateMessage: async ({ messages, model, maxTokens }: any) => {
         return { content: `Generated response for model ${model}` };
       },
+      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
     };
     const mockContext = {
       getProvider: async (id: string) => mockProvider,
@@ -438,6 +439,7 @@ describe("AgentNode", () => {
         capturedMessages = messages;
         return { content: "ok" };
       },
+      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
     };
     const mockContext = {
       getProvider: async () => mockProvider,
@@ -465,6 +467,7 @@ describe("AgentNode", () => {
         capturedMessages = messages;
         return { content: "ok" };
       },
+      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
     };
     const mockContext = {
       getProvider: async () => mockProvider,
@@ -488,6 +491,7 @@ describe("AgentNode", () => {
         capturedMessages = messages;
         return { content: "ok" };
       },
+      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
     };
     const mockContext = {
       getProvider: async () => mockProvider,
@@ -519,6 +523,7 @@ describe("AgentNode", () => {
         capturedMessages = messages;
         return { content: "ok" };
       },
+      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
     };
     const mockContext = {
       getProvider: async () => mockProvider,
@@ -542,6 +547,7 @@ describe("AgentNode", () => {
     const n = new (AgentNode as any)();
     const mockProvider = {
       generateMessage: async () => ({ content: null }),
+      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
     };
     const mockContext = {
       getProvider: async () => mockProvider,
@@ -590,6 +596,7 @@ describe("AgentNode", () => {
     const n = new (AgentNode as any)();
     const mockProvider = {
       generateMessage: async () => ({ content: "Provider reply" }),
+      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
     };
     const mockContext = {
       getProvider: async () => mockProvider,

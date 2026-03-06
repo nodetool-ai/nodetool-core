@@ -899,6 +899,7 @@ describe("agents nodes", () => {
     it("uses provider when available", async () => {
       const mockProvider = {
         generateMessage: vi.fn().mockResolvedValue({ content: "AI response" }),
+        async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
       };
       const mockContext = {
         getProvider: vi.fn().mockResolvedValue(mockProvider),
@@ -921,6 +922,7 @@ describe("agents nodes", () => {
     it("skips invalid roles in history when using provider", async () => {
       const mockProvider = {
         generateMessage: vi.fn().mockResolvedValue({ content: "ok" }),
+        async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
       };
       const mockContext = {
         getProvider: vi.fn().mockResolvedValue(mockProvider),
@@ -947,6 +949,7 @@ describe("agents nodes", () => {
     it("handles history items without role (defaults to user)", async () => {
       const mockProvider = {
         generateMessage: vi.fn().mockResolvedValue({ content: "ok" }),
+        async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
       };
       const mockContext = {
         getProvider: vi.fn().mockResolvedValue(mockProvider),
