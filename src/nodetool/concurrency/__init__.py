@@ -46,6 +46,7 @@ from .debounce_throttle import AdaptiveThrottle, AsyncDebounce, AsyncThrottle
 from .rate_limit import AsyncRateLimiter, AsyncTokenBucket
 from .retry import RetryPolicy, retry_with_exponential_backoff
 from .timeout import TimeoutContext, TimeoutError, TimeoutPolicy, timeout, with_timeout
+from .timer import AsyncTimer, TimerStats, async_timer, timer
 
 __all__ = [
     "AdaptiveThrottle",
@@ -101,4 +102,8 @@ __all__ = [
     "retry_with_exponential_backoff",
     "timeout",
     "with_timeout",
+    "AsyncTimer",
+    "TimerStats",
+    "async_timer",
+    "timer",
 ]

@@ -22,3 +22,4 @@
 - **Async Channel**: `AsyncChannel` for producer-consumer patterns with send/receive/close operations, async iteration, and fan-in/fan-out utilities for channel composition
 - **Debounce & Throttle**: `AsyncDebounce`, `AsyncThrottle`, and `AdaptiveThrottle` for controlling async function execution frequency, useful for rate limiting and preventing excessive API calls
 - **Resource Pool**: `AsyncResourcePool` for managing reusable async resources like HTTP clients, database connections, or other expensive-to-create objects with lazy creation, size limits, expiration, and graceful shutdown
+- **Async Timer**: `AsyncTimer`, `async_timer`, and `timer` decorator for measuring execution time of async operations, useful for performance monitoring and debugging
