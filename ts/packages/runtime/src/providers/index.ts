@@ -30,6 +30,16 @@ export {
 } from "./fake-provider.js";
 export type { FakeProviderOptions } from "./fake-provider.js";
 export {
+  ScriptedProvider,
+  planScript,
+  stepScript,
+  textScript,
+  toolCallScript,
+  autoScript,
+  toolThenFinishScript,
+} from "./scripted-provider.js";
+export type { ScriptFn, ScriptItem, TaskPlanSpec } from "./scripted-provider.js";
+export {
   registerProvider,
   getRegisteredProvider,
   getProvider,
