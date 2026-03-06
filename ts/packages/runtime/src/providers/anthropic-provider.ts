@@ -406,6 +406,7 @@ export class AnthropicProvider extends BaseProvider {
     messages: Message[];
     model: string;
     tools?: ProviderTool[];
+    toolChoice?: string | "any";
     maxTokens?: number;
     responseFormat?: Record<string, unknown>;
     jsonSchema?: Record<string, unknown>;
@@ -431,13 +432,21 @@ export class AnthropicProvider extends BaseProvider {
 
     const structured = this.setupStructuredOutput(args.tools, args.responseFormat);
 
+    // Resolve tool_choice: explicit toolChoice arg wins over structured output default.
+    let resolvedToolChoice: Record<string, unknown> | undefined = structured.toolChoice;
+    if (args.toolChoice && !structured.isStructured) {
+      resolvedToolChoice = args.toolChoice === "any"
+        ? { type: "any" }
+        : { type: "tool", name: args.toolChoice };
+    }
+
     const request: Record<string, unknown> = {
       model: args.model,
       messages: anthropicMessages,
       system,
       max_tokens: args.maxTokens ?? 8192,
       ...(structured.tools ? { tools: structured.tools } : {}),
-      ...(structured.toolChoice ? { tool_choice: structured.toolChoice } : {}),
+      ...(resolvedToolChoice ? { tool_choice: resolvedToolChoice } : {}),
       ...(args.temperature != null ? { temperature: args.temperature } : {}),
       ...(args.topP != null ? { top_p: args.topP } : {}),
     };
@@ -449,6 +458,9 @@ export class AnthropicProvider extends BaseProvider {
     let streamInputTokens = 0;
     let streamOutputTokens = 0;
     let streamCachedTokens = 0;
+
+    // Track in-flight tool_use blocks: index → { id, name, accumulated partial_json }
+    const activeToolBlocks = new Map<number, { id: string; name: string; json: string }>();
 
     for await (const event of stream) {
       const type = String(event?.type ?? "");
@@ -470,6 +482,19 @@ export class AnthropicProvider extends BaseProvider {
         });
       }
 
+      // Record the start of a tool_use content block so we can accumulate its JSON.
+      if (type === "content_block_start") {
+        const block = event?.content_block;
+        if (block?.type === "tool_use" && !structured.isStructured) {
+          activeToolBlocks.set(Number(event.index ?? 0), {
+            id: String(block.id ?? ""),
+            name: String(block.name ?? ""),
+            json: "",
+          });
+        }
+        continue;
+      }
+
       if (type === "content_block_delta") {
         const delta = event.delta;
         if (typeof delta?.thinking === "string") {
@@ -483,13 +508,22 @@ export class AnthropicProvider extends BaseProvider {
           continue;
         }
 
-        if (structured.isStructured && typeof delta?.partial_json === "string") {
-          const chunk: Chunk = {
-            type: "chunk",
-            content: delta.partial_json,
-            done: false,
-          };
-          yield chunk;
+        if (typeof delta?.partial_json === "string") {
+          if (structured.isStructured) {
+            // Structured output: stream partial JSON as text chunks.
+            const chunk: Chunk = {
+              type: "chunk",
+              content: delta.partial_json,
+              done: false,
+            };
+            yield chunk;
+          } else {
+            // Regular tool call: accumulate the JSON into the active block.
+            const block = activeToolBlocks.get(Number(event.index ?? 0));
+            if (block) {
+              block.json += delta.partial_json;
+            }
+          }
           continue;
         }
 
@@ -505,12 +539,25 @@ export class AnthropicProvider extends BaseProvider {
       }
 
       if (type === "content_block_stop") {
-        const contentBlock = event?.content_block;
-        if (contentBlock?.type === "tool_use" && !structured.isStructured) {
+        // content_block_stop does NOT carry the content_block in the raw API event.
+        // Use the block we recorded from content_block_start + accumulated partial_json.
+        const index = Number(event.index ?? 0);
+        const toolBlock = activeToolBlocks.get(index);
+        if (toolBlock && !structured.isStructured) {
+          activeToolBlocks.delete(index);
+          let parsedArgs: Record<string, unknown> = {};
+          try {
+            const parsed = JSON.parse(toolBlock.json || "{}");
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+              parsedArgs = parsed as Record<string, unknown>;
+            }
+          } catch {
+            // malformed JSON — emit empty args
+          }
           const toolCall: ToolCall = {
-            id: String(contentBlock.id ?? ""),
-            name: String(contentBlock.name ?? ""),
-            args: (contentBlock.input ?? {}) as Record<string, unknown>,
+            id: toolBlock.id,
+            name: toolBlock.name,
+            args: parsedArgs,
           };
           yield toolCall;
         }

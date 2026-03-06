@@ -549,7 +549,7 @@ export class StepExecutor {
       "decisions, and results:\n\n" + joined;
 
     try {
-      const msg = await this.provider.generateMessage({
+      const msg = await this.provider.generateMessageTraced({
         messages: [
           { role: "system", content: "Summarize previous context." },
           { role: "user", content: prompt },
@@ -728,7 +728,7 @@ export class StepExecutor {
       let message: Message | null = null;
 
       try {
-        const stream = this.provider.generateMessages({
+        const stream = this.provider.generateMessagesTraced({
           messages: [...this.history],
           model: this.model,
           tools: providerTools.length > 0 ? providerTools : undefined,

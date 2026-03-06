@@ -542,7 +542,7 @@ export class UnifiedWebSocketRunner {
 
     let finalText = "";
     const tools: ProviderTool[] = [];
-    for await (const item of provider.generateMessages({ messages: providerMessages, model, tools })) {
+    for await (const item of provider.generateMessagesTraced({ messages: providerMessages, model, tools })) {
       if ("type" in item && item.type === "chunk") {
         const contentPart = typeof item.content === "string" ? item.content : "";
         finalText += contentPart;

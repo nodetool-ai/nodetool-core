@@ -21,6 +21,11 @@ type ProviderLike = {
     model: string;
     maxTokens?: number;
   }): Promise<{ content?: string | null }>;
+  generateMessageTraced(args: {
+    messages: ProviderMessage[];
+    model: string;
+    maxTokens?: number;
+  }): Promise<{ content?: string | null }>;
 };
 
 const THREAD_STORE = new Map<string, ThreadLike>();
@@ -247,7 +252,7 @@ export class AgentNode extends BaseNode {
       }
       messages.push({ role: "user", content: prompt });
 
-      const generated = await provider.generateMessage({
+      const generated = await provider.generateMessageTraced({
         model: modelId,
         messages,
         maxTokens: Number(inputs.max_tokens ?? this._props.max_tokens ?? 1024),

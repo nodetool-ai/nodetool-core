@@ -187,7 +187,7 @@ Safety and privacy:
     while (!this.completed && this.iterations < this.maxIterations) {
       this.iterations += 1;
 
-      const response = await this.provider.generateMessage({
+      const response = await this.provider.generateMessageTraced({
         messages: this.history,
         model: this.model,
         tools: providerTools,

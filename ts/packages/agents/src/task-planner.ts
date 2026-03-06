@@ -141,7 +141,7 @@ export class TaskPlanner {
         content: attempt > 0 ? `Retry attempt ${attempt + 1}/${this.maxRetries}...` : "Generating plan...",
       } satisfies PlanningUpdate;
 
-      const stream = this.provider.generateMessages({
+      const stream = this.provider.generateMessagesTraced({
         messages: [...messages],
         model: this.model,
         tools: [
@@ -151,6 +151,7 @@ export class TaskPlanner {
             inputSchema: CREATE_TASK_SCHEMA,
           },
         ],
+        toolChoice: "create_task",
       });
 
       for await (const item of stream) {

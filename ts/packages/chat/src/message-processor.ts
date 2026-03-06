@@ -105,7 +105,7 @@ export async function processChat(opts: {
   while (true) {
     let unprocessedMessages: Message[] = [];
 
-    const stream = provider.generateMessages({
+    const stream = provider.generateMessagesTraced({
       messages: messagesToSend,
       model,
       tools: providerTools,
@@ -150,10 +150,10 @@ export async function processChat(opts: {
       }
     }
 
-    // If tool calls were processed, continue the conversation
+    // If tool calls were processed, continue the conversation with full history
     if (unprocessedMessages.length > 0) {
       messages.push(...unprocessedMessages);
-      messagesToSend = unprocessedMessages;
+      messagesToSend = messages;
     } else {
       break;
     }
