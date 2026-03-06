@@ -13,6 +13,7 @@ import {
   type ModelClass,
 } from "./base-model.js";
 import { field } from "./condition-builder.js";
+import { encrypt, decrypt, decryptFernet, getMasterKey, initMasterKey } from "@nodetool/security";
 
 // ── Schema ───────────────────────────────────────────────────────────
 
@@ -180,5 +181,119 @@ export class OAuthCredential extends DBModel {
     });
 
     return results;
+  }
+
+  /**
+   * Create a new credential with encrypted tokens.
+   *
+   * Encrypts access_token and optionally refresh_token before storing.
+   */
+  static async createEncrypted(opts: {
+    user_id: string;
+    provider: string;
+    account_id: string;
+    access_token: string;
+    refresh_token?: string | null;
+    username?: string | null;
+    token_type?: string;
+    scope?: string | null;
+    received_at?: string;
+    expires_at?: string | null;
+  }): Promise<OAuthCredential> {
+    const masterKey = getMasterKey();
+    const encryptedAccessToken = encrypt(masterKey, opts.user_id, opts.access_token);
+    const encryptedRefreshToken = opts.refresh_token
+      ? encrypt(masterKey, opts.user_id, opts.refresh_token)
+      : null;
+
+    return (await (
+      OAuthCredential as unknown as ModelClass<OAuthCredential>
+    ).create({
+      user_id: opts.user_id,
+      provider: opts.provider,
+      account_id: opts.account_id,
+      access_token: encryptedAccessToken,
+      refresh_token: encryptedRefreshToken,
+      username: opts.username ?? null,
+      token_type: opts.token_type ?? "Bearer",
+      scope: opts.scope ?? null,
+      received_at: opts.received_at ?? new Date().toISOString(),
+      expires_at: opts.expires_at ?? null,
+    })) as OAuthCredential;
+  }
+
+  /**
+   * Decrypt and return the access token.
+   */
+  async getDecryptedAccessToken(): Promise<string> {
+    const masterKey = await initMasterKey();
+    try {
+      return decrypt(masterKey, this.user_id, this.access_token);
+    } catch {
+      return decryptFernet(masterKey, this.user_id, this.access_token);
+    }
+  }
+
+  /**
+   * Decrypt and return the refresh token, or null if not set.
+   */
+  async getDecryptedRefreshToken(): Promise<string | null> {
+    if (!this.refresh_token) return null;
+    const masterKey = await initMasterKey();
+    try {
+      return decrypt(masterKey, this.user_id, this.refresh_token);
+    } catch {
+      return decryptFernet(masterKey, this.user_id, this.refresh_token);
+    }
+  }
+
+  /**
+   * Update tokens with new encrypted values.
+   */
+  async updateTokens(opts: {
+    accessToken: string;
+    refreshToken?: string | null;
+    tokenType?: string;
+    scope?: string | null;
+    receivedAt?: string;
+    expiresAt?: string | null;
+  }): Promise<void> {
+    const masterKey = getMasterKey();
+    this.access_token = encrypt(masterKey, this.user_id, opts.accessToken);
+
+    if (opts.refreshToken !== undefined && opts.refreshToken !== null) {
+      this.refresh_token = encrypt(masterKey, this.user_id, opts.refreshToken);
+    }
+    if (opts.tokenType !== undefined) {
+      this.token_type = opts.tokenType;
+    }
+    if (opts.scope !== undefined) {
+      this.scope = opts.scope;
+    }
+    this.received_at = opts.receivedAt ?? new Date().toISOString();
+    if (opts.expiresAt !== undefined) {
+      this.expires_at = opts.expiresAt;
+    }
+
+    await this.save();
+  }
+
+  /**
+   * Return a safe dictionary representation without encrypted tokens.
+   */
+  toSafeObject(): Record<string, unknown> {
+    return {
+      id: this.id,
+      user_id: this.user_id,
+      provider: this.provider,
+      account_id: this.account_id,
+      username: this.username,
+      token_type: this.token_type,
+      scope: this.scope,
+      received_at: this.received_at,
+      expires_at: this.expires_at,
+      created_at: this.created_at,
+      updated_at: this.updated_at,
+    };
   }
 }

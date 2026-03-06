@@ -141,6 +141,16 @@ export class Secret extends DBModel {
   }
 
   /**
+   * List all secrets across all users (admin only).
+   */
+  static async listAll(limit = 1000): Promise<Secret[]> {
+    const [secrets] = await (Secret as unknown as ModelClass<Secret>).query({
+      limit,
+    });
+    return secrets;
+  }
+
+  /**
    * Get the decrypted plaintext value.
    */
   async getDecryptedValue(): Promise<string> {
