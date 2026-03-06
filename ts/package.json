@@ -14,7 +14,8 @@
     "packages/chat",
     "packages/security",
     "packages/auth",
-    "packages/cli"
+    "packages/cli",
+    "packages/storage"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
