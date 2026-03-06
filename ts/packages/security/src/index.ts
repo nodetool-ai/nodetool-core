@@ -8,9 +8,13 @@ export {
 
 export {
   getMasterKey,
+  initMasterKey,
   clearMasterKeyCache,
   setMasterKey,
+  setMasterKeyPersistent,
+  deleteMasterKey,
   isUsingEnvKey,
+  isUsingAwsKey,
 } from "./master-key.js";
 
 export {
@@ -20,4 +24,6 @@ export {
   getSecretSync,
   clearSecretCache,
   clearAllSecretCache,
+  resetSecretModelLoader,
+  setSecretModelLoader,
 } from "./secret-helper.js";
