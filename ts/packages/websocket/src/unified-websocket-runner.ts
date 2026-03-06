@@ -417,6 +417,23 @@ export class UnifiedWebSocketRunner {
       });
     }
 
+    // Persist final job status
+    try {
+      const job = (await Job.get(active.jobId)) as Job | null;
+      if (job) {
+        if (active.status === "completed") {
+          job.markCompleted();
+        } else if (active.status === "failed") {
+          job.markFailed(active.error ?? "Unknown error");
+        } else if (active.status === "cancelled") {
+          job.markCancelled();
+        }
+        await job.save();
+      }
+    } catch (error) {
+      this.logError("job persistence (final status) failed", error);
+    }
+
     this.activeJobs.delete(active.jobId);
   }
 

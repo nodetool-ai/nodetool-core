@@ -1191,6 +1191,14 @@ export async function handleApiRequest(
     if (response) return response;
   }
 
+  if (pathname === "/api/users/validate_username") {
+    const username = url.searchParams.get("username");
+    if (!username) return errorResponse(400, "username parameter is required");
+    // Validation: 3-30 chars, alphanumeric + underscore/hyphen only
+    const valid = /^[a-zA-Z0-9_-]{3,30}$/.test(username);
+    return jsonResponse({ valid, available: valid });
+  }
+
   if (pathname === "/api/users" || pathname.startsWith("/api/users/")) {
     return errorResponse(501, "User management not available");
   }
