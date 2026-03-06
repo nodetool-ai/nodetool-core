@@ -18,6 +18,9 @@ Regression tests live in `ts/packages/kernel/tests/`.
 | K-7 | Completion detection race — `_checkPendingInboxWork()` + delay | 🟢 |
 | K-8 | Streaming analysis — `_analyzeStreaming()` BFS, `edgeStreams()` | 🟢 |
 | K-13 | Node finalization in `finally` block | 🟢 |
+| K-3b | `_filterInvalidEdges()` removes edges with missing nodes | 🟢 |
+| K-3d | `validateEdgeTypes()` checks source→target type compat | 🟢 |
+| K-5 | Pre-computed stickyHandles wired from runner to actor | 🟢 |
 
 Regression tests for open gaps: `tests/parity-graph-validation.test.ts`, `tests/parity-stickiness-gaps.test.ts`, `tests/parity-output-edge-gaps.test.ts`, `tests/parity-actor-lifecycle-gaps.test.ts`
 
