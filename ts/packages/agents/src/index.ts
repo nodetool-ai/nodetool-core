@@ -97,8 +97,17 @@ export {
   getAllTools,
 } from "./tools/tool-registry.js";
 
+export {
+  WorkspaceReadTool,
+  WorkspaceWriteTool,
+  WorkspaceListTool,
+} from "./tools/workspace-tools.js";
+export { ListProviderModelsTool } from "./tools/model-tools.js";
+
 // Utilities
 export { extractJSON } from "./utils/json-parser.js";
+export { removeBase64Images } from "./utils/remove-base64-images.js";
+export { wrapGeneratorsParallel } from "./utils/wrap-generators-parallel.js";
 
 // Core execution
 export { StepExecutor } from "./step-executor.js";
