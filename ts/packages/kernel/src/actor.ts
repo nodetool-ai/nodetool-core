@@ -114,6 +114,7 @@ export class NodeActor {
    * Returns the last outputs produced.
    */
   async run(): Promise<ActorResult> {
+    let errorMessage: string | undefined;
     try {
       this._emitNodeStatus("running");
 
@@ -136,18 +137,26 @@ export class NodeActor {
         // Standard buffered or streaming-output mode
         await this._runBuffered();
       }
-
-      if (this._executor.finalize) {
-        await this._executor.finalize();
-      }
-
-      this._emitNodeStatus("completed", this._latestResult ?? {});
-      return { outputs: this._latestResult ?? {} };
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this._emitNodeStatus("error", undefined, message);
-      return { outputs: {}, error: message };
+      errorMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      // Always finalize, even on error (Python parity: gap #13)
+      if (this._executor.finalize) {
+        try {
+          await this._executor.finalize();
+        } catch {
+          // Swallow finalize errors — don't mask original error
+        }
+      }
     }
+
+    if (errorMessage !== undefined) {
+      this._emitNodeStatus("error", undefined, errorMessage);
+      return { outputs: {}, error: errorMessage };
+    }
+
+    this._emitNodeStatus("completed", this._latestResult ?? {});
+    return { outputs: this._latestResult ?? {} };
   }
 
   // -----------------------------------------------------------------------
