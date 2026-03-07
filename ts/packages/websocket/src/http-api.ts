@@ -712,9 +712,10 @@ async function handleMessagesRoot(request: Request, options: HttpApiOptions): Pr
       return errorResponse(400, "thread_id is required");
     }
     const limit = parseLimit(url, 100);
-    void url.searchParams.get("cursor"); // cursor not yet supported in memory adapter
-    void url.searchParams.get("reverse"); // reverse not yet supported in memory adapter
-    const [messages, cursor] = await Message.paginate(threadId, { limit });
+    const cursorParam = url.searchParams.get("cursor") ?? undefined;
+    const reverseParam = url.searchParams.get("reverse");
+    const reverse = reverseParam === "true" ? true : reverseParam === "false" ? false : undefined;
+    const [messages, cursor] = await Message.paginate(threadId, { limit, startKey: cursorParam, reverse });
     // Verify user ownership
     for (const msg of messages) {
       if (msg.user_id !== userId) {
@@ -771,6 +772,7 @@ function toThreadResponse(thread: Thread): JsonObject {
     title: thread.title,
     created_at: thread.created_at,
     updated_at: thread.updated_at,
+    etag: thread.getEtag(),
   };
 }
 
@@ -792,9 +794,10 @@ async function handleThreadsRoot(request: Request, options: HttpApiOptions): Pro
     await ensureThreadTable();
     const url = new URL(request.url);
     const limit = parseLimit(url, 10);
-    void url.searchParams.get("cursor"); // cursor not yet supported in memory adapter
-    void url.searchParams.get("reverse"); // reverse not yet supported in memory adapter
-    const [threads, nextCursor] = await Thread.paginate(userId, { limit });
+    const cursorParam = url.searchParams.get("cursor") ?? undefined;
+    const reverseParam = url.searchParams.get("reverse");
+    const reverse = reverseParam === "true" ? true : reverseParam === "false" ? false : undefined;
+    const [threads, nextCursor] = await Thread.paginate(userId, { limit, startKey: cursorParam, reverse });
     return jsonResponse({
       threads: threads.map((t) => toThreadResponse(t)),
       next: nextCursor || null,

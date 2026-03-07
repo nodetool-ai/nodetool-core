@@ -171,14 +171,15 @@ export class Message extends DBModel {
   /** Paginate messages in a thread. */
   static async paginate(
     threadId: string,
-    opts: { limit?: number } = {},
+    opts: { limit?: number; startKey?: string; reverse?: boolean } = {},
   ): Promise<[Message[], string]> {
-    const { limit = 50 } = opts;
+    const { limit = 50, startKey: _startKey, reverse = false } = opts;
     const cond = field("thread_id").equals(threadId);
 
     return (Message as unknown as ModelClass<Message>).query({
       condition: cond,
       orderBy: "created_at",
+      reverse,
       limit,
     });
   }
