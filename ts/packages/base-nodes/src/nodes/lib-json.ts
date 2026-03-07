@@ -357,7 +357,7 @@ export class LoadJSONAssetsLibNode extends BaseNode {
       try {
         parsed = JSON.parse(content);
       } catch (error) {
-        throw new Error(`Invalid JSON in file ${entry.name}: ${String(error)}`);
+        throw new Error(`Invalid JSON in file ${entry.name}: ${String(error)}`, { cause: error });
       }
       yield { json: parsed, name: entry.name };
     }

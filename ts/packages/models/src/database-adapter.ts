@@ -12,7 +12,7 @@ export type Row = Record<string, any>;
 export interface TableSchema {
   table_name: string;
   primary_key?: string; // defaults to "id"
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   columns: Record<string, FieldDef>;
 }
 

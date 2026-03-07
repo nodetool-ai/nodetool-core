@@ -215,8 +215,8 @@ export function App({
   ]);
   const [chatHistory, setChatHistory] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
-  const [inputHistory, setInputHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [, setInputHistory] = useState<string[]>([]);
+  const [, setHistoryIndex] = useState(-1);
   const [historyDraft, setHistoryDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [streamContent, setStreamContent] = useState("");

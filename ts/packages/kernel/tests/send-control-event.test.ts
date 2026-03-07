@@ -39,7 +39,7 @@ describe("T-K-11: sendControlEvent", () => {
     const { nodes, edges } = makeControlSetup();
 
     let resolveCtrl!: () => void;
-    let cancelledRef = { cancelled: false };
+    const cancelledRef = { cancelled: false };
     const ctrlStarted = new Promise<void>((r) => { resolveCtrl = r; });
 
     const runner = new WorkflowRunner("job1", {
@@ -98,7 +98,7 @@ describe("T-K-11: sendControlEvent", () => {
     const { nodes, edges } = makeControlSetup();
 
     let resolveCtrl!: () => void;
-    let cancelledRef = { cancelled: false };
+    const cancelledRef = { cancelled: false };
     const ctrlStarted = new Promise<void>((r) => { resolveCtrl = r; });
 
     const runner = new WorkflowRunner("job1", {

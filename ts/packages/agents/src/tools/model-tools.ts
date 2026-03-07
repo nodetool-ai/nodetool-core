@@ -41,7 +41,7 @@ export class ListProviderModelsTool extends Tool {
       return { success: false, error: `Unknown provider: ${providerId}` };
     }
 
-    if (typeof (provider as Record<string, unknown>).getAvailableLanguageModels !== "function") {
+    if (typeof (provider as unknown as Record<string, unknown>).getAvailableLanguageModels !== "function") {
       return { success: false, error: `Provider ${providerId} does not support model listing` };
     }
 

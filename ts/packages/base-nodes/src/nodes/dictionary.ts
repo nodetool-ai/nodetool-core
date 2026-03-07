@@ -437,7 +437,7 @@ export class FilterDictByQueryNode extends BaseNode {
       row: Record<string, unknown>
     ) => unknown;
 
-    let passed = false;
+    let passed: boolean;
     try {
       passed = Boolean(fn(dict));
     } catch {
@@ -500,7 +500,7 @@ export class FilterDictByNumberNode extends BaseNode {
       return {};
     }
 
-    let matched = false;
+    let matched: boolean;
     switch (this._filterType) {
       case "greater_than":
         matched = num > this._compareValue;
@@ -705,7 +705,7 @@ export class FilterDictByValueNode extends BaseNode {
     const valueStr = String(val);
     const criteria = this._criteria;
 
-    let matched = false;
+    let matched: boolean;
     switch (this._filterType) {
       case "contains":
         matched = valueStr.includes(criteria);

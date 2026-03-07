@@ -269,7 +269,7 @@ export class WorkflowRunner {
     this._cancelled = true;
     // Close all inboxes to unblock waiting actors
     for (const inbox of this._inboxes.values()) {
-      inbox.closeAll();
+      void inbox.closeAll();
     }
   }
 

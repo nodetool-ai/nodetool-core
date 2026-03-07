@@ -725,7 +725,7 @@ export class StepExecutor {
       // Call LLM
       let content = "";
       const toolCalls: ToolCall[] = [];
-      let message: Message | null = null;
+      let message: Message | null;
 
       try {
         const stream = this.provider.generateMessagesTraced({

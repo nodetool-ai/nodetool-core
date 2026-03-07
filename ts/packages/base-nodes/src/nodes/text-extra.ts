@@ -676,6 +676,7 @@ export class StripAccentsNode extends BaseNode {
     if (preserveNonAscii) {
       return { output: normalized };
     }
+    // eslint-disable-next-line no-control-regex
     return { output: normalized.replace(/[^\x00-\x7F]/g, "") };
   }
 }
@@ -699,6 +700,7 @@ export class SlugifyNode extends BaseNode {
 
     let value = text.normalize("NFKD");
     if (!allowUnicode) {
+      // eslint-disable-next-line no-control-regex
       value = value.replace(/[^\x00-\x7F]/g, "");
     }
     value = value.replace(/[^\w\s-]/g, "");
@@ -1116,6 +1118,7 @@ export class LoadTextAssetsNode extends BaseNode {
   }
 
   async *genProcess(): AsyncGenerator<Record<string, unknown>> {
+    yield* [];
     throw new Error(
       "LoadTextAssets is not implemented in base TS nodes without asset runtime."
     );
@@ -1170,7 +1173,7 @@ export class FilterStringNode extends BaseNode {
     const len = value.length;
     const n = Number(criteria);
 
-    let matched = false;
+    let matched: boolean;
     switch (this._filterType) {
       case "contains":
         matched = value.includes(criteria);

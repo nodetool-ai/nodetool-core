@@ -925,10 +925,10 @@ export function registerBaseNodes(registry: NodeRegistry): void {
           namespace: "nodetool.workflows.base_node",
           node_type: "nodetool.workflows.base_node.Preview",
           properties: [
-            { name: "value", type: { type: "any" }, default: null },
-            { name: "name", type: { type: "str" }, default: "" },
+            { name: "value", type: { type: "any", type_args: [] }, default: null },
+            { name: "name", type: { type: "str", type_args: [] }, default: "" },
           ],
-          outputs: [{ name: "output", type: { type: "any" } }],
+          outputs: [{ name: "output", type: { type: "any", type_args: [] } }],
           basic_fields: ["value"],
         },
       });

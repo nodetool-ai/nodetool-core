@@ -103,7 +103,7 @@ export async function processChat(opts: {
   let messagesToSend: Message[] = messages;
 
   while (true) {
-    let unprocessedMessages: Message[] = [];
+    const unprocessedMessages: Message[] = [];
 
     const stream = provider.generateMessagesTraced({
       messages: messagesToSend,

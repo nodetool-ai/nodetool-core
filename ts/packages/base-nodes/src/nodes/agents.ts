@@ -225,7 +225,7 @@ export class AgentNode extends BaseNode {
     const providerId = typeof model.provider === "string" ? model.provider : "";
     const modelId = typeof model.id === "string" ? model.id : "";
 
-    let response = "";
+    let response: string;
     const providerSupported =
       !!context && typeof context.getProvider === "function" && providerId && modelId;
 

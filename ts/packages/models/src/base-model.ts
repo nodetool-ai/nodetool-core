@@ -125,7 +125,7 @@ export function getGlobalAdapterResolver(): AdapterResolver | null {
 
 // ── DBModel Base ─────────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export type ModelClass<T extends DBModel = DBModel> = {
   new (data: Row): T;
   name: string;

@@ -64,7 +64,7 @@ export class NotNode extends BaseNode {
   }
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return { output: !Boolean(inputs.value ?? this._props.value ?? false) };
+    return { output: !(inputs.value ?? this._props.value ?? false) };
   }
 }
 

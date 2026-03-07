@@ -190,6 +190,7 @@ export abstract class BaseProvider {
     voice?: string;
     speed?: number;
   }): AsyncGenerator<StreamingAudioChunk> {
+    yield* [];
     throw new Error(`${this.provider} does not support textToSpeech`);
   }
 

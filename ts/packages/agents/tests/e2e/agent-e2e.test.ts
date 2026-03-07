@@ -640,7 +640,7 @@ describe("ScriptedProvider", () => {
 
     for (let i = 0; i < 2; i++) {
       // consume
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       for await (const _ of provider.generateMessages({ messages: [{ role: "user", content: `call ${i}` }], model: "m" })) {/* */}
     }
 
@@ -654,7 +654,7 @@ describe("ScriptedProvider", () => {
 
     // Use both scripts
     for (let i = 0; i < 2; i++) {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       for await (const _ of provider.generateMessages({ messages: [], model: "m" })) {/* */}
     }
     expect(provider.callLog).toHaveLength(2);

@@ -60,7 +60,7 @@ function applyFilter(rows: Row[], condition: string): Row[] {
   const expr = parseConditionExpr(trimmed);
   return rows.filter((row) => {
     try {
-      // eslint-disable-next-line no-new-func
+       
       const fn = new Function("row", `with (row) { return Boolean(${expr}); }`);
       return Boolean(fn(row));
     } catch {

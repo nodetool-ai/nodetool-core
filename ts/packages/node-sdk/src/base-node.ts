@@ -54,23 +54,14 @@ export abstract class BaseNode {
   }
 
   toExecutor(): NodeExecutor {
-    const self = this;
     return {
-      async process(inputs: Record<string, unknown>, context?: ProcessingContext) {
-        return self.process(inputs, context);
-      },
-      async *genProcess(inputs: Record<string, unknown>, context?: ProcessingContext) {
-        yield* self.genProcess(inputs, context);
-      },
-      async preProcess() {
-        return self.preProcess();
-      },
-      async finalize() {
-        return self.finalize();
-      },
-      async initialize() {
-        return self.initialize();
-      },
+      process: (inputs: Record<string, unknown>, context?: ProcessingContext) =>
+        this.process(inputs, context),
+      genProcess: (inputs: Record<string, unknown>, context?: ProcessingContext) =>
+        this.genProcess(inputs, context),
+      preProcess: () => this.preProcess(),
+      finalize: () => this.finalize(),
+      initialize: () => this.initialize(),
     };
   }
 

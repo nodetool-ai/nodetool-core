@@ -204,10 +204,9 @@ export class SplitJSONNode extends BaseNode {
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
     const raw = await readDocumentText(inputs.document ?? this._props.document);
-    let rendered = raw;
+    let rendered: string;
     try {
-      const parsed = JSON.parse(raw);
-      rendered = JSON.stringify(parsed, null, 2);
+      rendered = JSON.stringify(JSON.parse(raw), null, 2);
     } catch {
       rendered = raw;
     }

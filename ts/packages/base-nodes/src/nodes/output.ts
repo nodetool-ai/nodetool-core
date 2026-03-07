@@ -88,7 +88,7 @@ export class PreviewNode extends BaseNode {
   }
 
   async process(inputs: Record<string, unknown>, context?: ProcessingContext): Promise<Record<string, unknown>> {
-    let value: unknown = null;
+    let value: unknown;
     if ("value" in inputs) {
       value = inputs.value;
     } else {

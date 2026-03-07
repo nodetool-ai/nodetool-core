@@ -425,7 +425,7 @@ describe("kieExecuteTask", () => {
   });
 
   it("poll returns failed state -> throws", async () => {
-    let callCount = 0;
+    const callCount = 0;
     mockFetch.mockImplementation(async (url: string | URL) => {
       const urlStr = String(url);
       if (urlStr.includes("createTask")) {

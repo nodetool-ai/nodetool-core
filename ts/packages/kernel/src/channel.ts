@@ -202,7 +202,7 @@ export class ChannelManager {
         messageType !== existingType
       ) {
         throw new TypeError(
-          `Channel '${name}' has type ${(existingType as Function).name}, but ${messageType.name} was requested`
+          `Channel '${name}' has type ${(existingType as { name: string }).name}, but ${messageType.name} was requested`
         );
       }
     }

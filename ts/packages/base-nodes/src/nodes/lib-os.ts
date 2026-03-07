@@ -359,7 +359,7 @@ export class BasenameLibNode extends BaseNode {
     const p = expandUser(String(inputs.path ?? this._props.path ?? ""));
     if (p.trim() === "") throw new Error("path is empty");
     const basename = path.basename(p);
-    if (Boolean(inputs.remove_extension ?? this._props.remove_extension ?? false)) {
+    if (inputs.remove_extension ?? this._props.remove_extension ?? false) {
       return { output: path.parse(basename).name };
     }
     return { output: basename };
@@ -415,7 +415,7 @@ export class GetPathInfoLibNode extends BaseNode {
     const p = String(inputs.path ?? this._props.path ?? "");
     const abs = path.resolve(p);
     let stat: Awaited<ReturnType<typeof fs.lstat>> | null = null;
-    try { stat = await fs.lstat(p); } catch {}
+    try { stat = await fs.lstat(p); } catch { /* stat stays null if path doesn't exist */ }
     return {
       output: {
         dirname: path.dirname(p),
