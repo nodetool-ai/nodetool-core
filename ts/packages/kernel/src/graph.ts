@@ -96,7 +96,7 @@ export class Graph {
     if (!Array.isArray(obj.edges)) {
       throw new GraphValidationError("'edges' must be an array");
     }
-    return new Graph(obj as GraphData);
+    return new Graph(obj as unknown as GraphData);
   }
 
   // -----------------------------------------------------------------------
