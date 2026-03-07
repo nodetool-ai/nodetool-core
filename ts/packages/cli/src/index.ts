@@ -24,6 +24,7 @@ import {
   setGlobalAdapterResolver,
   Secret,
 } from "@nodetool/models";
+import { getSecret } from "@nodetool/security";
 
 // Initialize OpenLLMetry before any LLM SDK calls are made.
 // No-op if TRACELOOP_API_KEY / OTEL_EXPORTER_OTLP_ENDPOINT is not set.
@@ -74,8 +75,9 @@ const enabledTools = opts.tools
   ? opts.tools.split(",").map(t => t.trim())
   : settings.enabledTools;
 
-// Auto-enable google_search / google_news when SERPAPI_API_KEY is available
-if (process.env["SERPAPI_API_KEY"]) {
+// Auto-enable google_search / google_news when SERPAPI_API_KEY is available (env or DB secret)
+const serpApiKey = process.env["SERPAPI_API_KEY"] ?? await getSecret("SERPAPI_API_KEY", "1");
+if (serpApiKey) {
   for (const tool of ["google_search", "google_news"]) {
     if (!enabledTools.includes(tool)) enabledTools.push(tool);
   }
