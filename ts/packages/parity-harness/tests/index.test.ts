@@ -17,4 +17,25 @@ describe("index barrel exports", () => {
     expect(mod.DEFAULT_THRESHOLDS).toBeDefined();
     expect(mod.DEFAULT_THRESHOLDS.maxErrorRateDelta).toBeTypeOf("number");
   });
+
+  it("exports compareModelSchemas from model-parity module", async () => {
+    const mod = await import("../src/index.js");
+    expect(mod.compareModelSchemas).toBeTypeOf("function");
+  });
+
+  it("exports compareApiRoutes from api-parity module", async () => {
+    const mod = await import("../src/index.js");
+    expect(mod.compareApiRoutes).toBeTypeOf("function");
+  });
+
+  it("exports compareCliCommands from cli-parity module", async () => {
+    const mod = await import("../src/index.js");
+    expect(mod.compareCliCommands).toBeTypeOf("function");
+  });
+
+  it("exports compareLibraryClasses and snakeToCamel from library-parity module", async () => {
+    const mod = await import("../src/index.js");
+    expect(mod.compareLibraryClasses).toBeTypeOf("function");
+    expect(mod.snakeToCamel).toBeTypeOf("function");
+  });
 });
