@@ -75,13 +75,27 @@ const enabledTools = opts.tools
   ? opts.tools.split(",").map(t => t.trim())
   : settings.enabledTools;
 
-// Auto-enable google_search / google_news when SERPAPI_API_KEY is available (env or DB secret)
-const serpApiKey = process.env["SERPAPI_API_KEY"] ?? await getSecret("SERPAPI_API_KEY", "1");
-if (serpApiKey) {
-  for (const tool of ["google_search", "google_news"]) {
-    if (!enabledTools.includes(tool)) enabledTools.push(tool);
+// Always-on tools (no credentials needed)
+for (const tool of ["statistics", "geometry", "conversion", "extract_pdf_text", "convert_pdf_to_markdown", "convert_document"]) {
+  if (!enabledTools.includes(tool)) enabledTools.push(tool);
+}
+
+// Auto-enable based on available secrets (env or encrypted DB)
+async function autoEnable(key: string, tools: string[]): Promise<void> {
+  const val = process.env[key] ?? await getSecret(key, "1");
+  if (val) {
+    for (const tool of tools) {
+      if (!enabledTools.includes(tool)) enabledTools.push(tool);
+    }
   }
 }
+
+await Promise.all([
+  autoEnable("SERPAPI_API_KEY",      ["google_search", "google_news", "google_images"]),
+  autoEnable("OPENAI_API_KEY",       ["openai_web_search", "openai_image_generation", "openai_text_to_speech"]),
+  autoEnable("DATA_FOR_SEO_LOGIN",   ["dataseo_search", "dataseo_news"]),
+  autoEnable("IMAP_USERNAME",        ["search_email", "archive_email"]),
+]);
 
 // Stdin mode: activated when stdin is piped (not a TTY)
 if (!process.stdin.isTTY) {

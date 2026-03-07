@@ -25,10 +25,15 @@ import { Agent } from "@nodetool/agents";
 import {
   ReadFileTool, WriteFileTool, ListDirectoryTool,
   DownloadFileTool, HttpRequestTool,
-  GoogleSearchTool, GoogleNewsTool,
+  GoogleSearchTool, GoogleNewsTool, GoogleImagesTool,
   BrowserTool, ScreenshotTool,
   RunCodeTool,
   CalculatorTool,
+  ExtractPDFTextTool, ConvertPDFToMarkdownTool, ConvertDocumentTool,
+  StatisticsTool, GeometryTool, ConversionTool,
+  OpenAIWebSearchTool, OpenAIImageGenerationTool, OpenAITextToSpeechTool,
+  DataForSEOSearchTool, DataForSEONewsTool,
+  SearchEmailTool, ArchiveEmailTool,
 } from "@nodetool/agents";
 import { createProvider, DEFAULT_MODELS, WebSocketProvider } from "./providers.js";
 import { WebSocketChatClient } from "./websocket-client.js";
@@ -278,18 +283,41 @@ export function App({
   // Create tools from enabled list
   function buildTools() {
     const toolMap: Record<string, unknown> = {
+      // Filesystem
       read_file: new ReadFileTool(),
       write_file: new WriteFileTool(),
       list_directory: new ListDirectoryTool(),
+      // HTTP
       download_file: new DownloadFileTool(),
       http_request: new HttpRequestTool(),
-      http_get: new HttpRequestTool(),   // alias used in --tools flag
+      http_get: new HttpRequestTool(),
+      // Search (SERPAPI)
       google_search: new GoogleSearchTool(),
       google_news: new GoogleNewsTool(),
+      google_images: new GoogleImagesTool(),
+      // Browser
       browser: new BrowserTool(),
       screenshot: new ScreenshotTool(),
+      // Code & math
       run_code: new RunCodeTool(),
       calculator: new CalculatorTool(),
+      statistics: new StatisticsTool(),
+      geometry: new GeometryTool(),
+      conversion: new ConversionTool(),
+      // PDF & documents
+      extract_pdf_text: new ExtractPDFTextTool(),
+      convert_pdf_to_markdown: new ConvertPDFToMarkdownTool(),
+      convert_document: new ConvertDocumentTool(),
+      // OpenAI tools
+      openai_web_search: new OpenAIWebSearchTool(),
+      openai_image_generation: new OpenAIImageGenerationTool(),
+      openai_text_to_speech: new OpenAITextToSpeechTool(),
+      // DataForSEO
+      dataseo_search: new DataForSEOSearchTool(),
+      dataseo_news: new DataForSEONewsTool(),
+      // Email (IMAP)
+      search_email: new SearchEmailTool(),
+      archive_email: new ArchiveEmailTool(),
     };
     return enabledTools
       .filter(name => name in toolMap)
