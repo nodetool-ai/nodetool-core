@@ -22,6 +22,7 @@
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
     "metadata-parity": "npm run test:metadata --workspace @nodetool/node-sdk && npm run test:metadata-parity --workspace @nodetool/base-nodes",
+    "dev": "npm run dev --workspace @nodetool/websocket",
     "devserver": "npm run devserver --workspace @nodetool/websocket",
     "lint": "eslint packages/*/src packages/*/tests",
     "workflow": "node ./scripts/run-workflow.mjs",
