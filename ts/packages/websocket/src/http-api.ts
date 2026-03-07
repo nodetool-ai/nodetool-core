@@ -371,20 +371,80 @@ async function handleWorkflowTools(request: Request, options: HttpApiOptions): P
   });
 }
 
-// ── Workflow examples (stubs) ──────────────────────────────────────────
+// ── Workflow examples ──────────────────────────────────────────────────
 
-async function handleWorkflowExamples(request: Request): Promise<Response> {
-  if (request.method !== "GET") {
-    return errorResponse(405, "Method not allowed");
-  }
-  return jsonResponse({ workflows: [], next: null });
+interface ExampleMetadata {
+  id?: string;
+  name: string;
+  description?: string;
+  tags?: string[];
 }
 
-async function handleWorkflowExamplesSearch(request: Request): Promise<Response> {
+function buildExampleWorkflows(options: HttpApiOptions): unknown[] {
+  const loaded = loadPythonPackageMetadata({
+    roots: options.metadataRoots,
+    maxDepth: options.metadataMaxDepth,
+  });
+  const now = new Date().toISOString();
+  const workflows: unknown[] = [];
+  for (const pkg of loaded.packages) {
+    if (!pkg.examples || pkg.examples.length === 0) continue;
+    for (const ex of pkg.examples) {
+      const meta = ex as ExampleMetadata;
+      workflows.push({
+        id: meta.id ?? "",
+        access: "public",
+        created_at: now,
+        updated_at: now,
+        name: meta.name,
+        tool_name: null,
+        description: meta.description ?? "",
+        tags: meta.tags ?? [],
+        thumbnail: null,
+        thumbnail_url: null,
+        graph: { nodes: [], edges: [] },
+        input_schema: null,
+        output_schema: null,
+        settings: null,
+        package_name: pkg.name,
+        path: null,
+        run_mode: null,
+        workspace_id: null,
+        required_providers: null,
+        required_models: null,
+        html_app: null,
+        etag: null,
+      });
+    }
+  }
+  return workflows;
+}
+
+async function handleWorkflowExamples(request: Request, options: HttpApiOptions): Promise<Response> {
   if (request.method !== "GET") {
     return errorResponse(405, "Method not allowed");
   }
-  return jsonResponse({ workflows: [], next: null });
+  const workflows = buildExampleWorkflows(options);
+  return jsonResponse({ workflows, next: null });
+}
+
+async function handleWorkflowExamplesSearch(request: Request, options: HttpApiOptions): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
+  const url = new URL(request.url);
+  const query = (url.searchParams.get("query") ?? "").toLowerCase().trim();
+  const workflows = buildExampleWorkflows(options);
+  const filtered = query
+    ? workflows.filter((w) => {
+        const wf = w as Record<string, unknown>;
+        const name = String(wf.name ?? "").toLowerCase();
+        const desc = String(wf.description ?? "").toLowerCase();
+        const tags = (wf.tags as string[] | undefined) ?? [];
+        return name.includes(query) || desc.includes(query) || tags.some((t) => t.toLowerCase().includes(query));
+      })
+    : workflows;
+  return jsonResponse({ workflows: filtered, next: null });
 }
 
 // ── Workflow app page ──────────────────────────────────────────────────
@@ -1564,9 +1624,53 @@ export async function handleApiRequest(
   if (pathname.startsWith("/api/assets/packages/")) {
     // /api/assets/packages/{package_name} or /api/assets/packages/{package_name}/{asset_name}
     const rest = pathname.slice("/api/assets/packages/".length);
-    const parts = rest.split("/");
-    if (parts.length >= 2) {
-      return errorResponse(404, "Not found");
+    const slashIdx = rest.indexOf("/");
+    if (slashIdx !== -1) {
+      // Serve a specific package asset file
+      const packageName = decodeURIComponent(rest.slice(0, slashIdx));
+      const assetName = decodeURIComponent(rest.slice(slashIdx + 1));
+      if (!packageName || !assetName) return errorResponse(404, "Not found");
+      const loaded = loadPythonPackageMetadata({
+        roots: options.metadataRoots,
+        maxDepth: options.metadataMaxDepth,
+      });
+      const pkg = loaded.packages.find((p) => p.name === packageName);
+      if (!pkg || !pkg.sourceFolder) return errorResponse(404, `Package '${packageName}' not found`);
+      const { createReadStream, statSync } = await import("node:fs");
+      const { extname } = await import("node:path");
+      const mimeTypes: Record<string, string> = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+        ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
+        ".mp3": "audio/mpeg", ".mp4": "video/mp4", ".webm": "video/webm",
+        ".json": "application/json", ".txt": "text/plain",
+      };
+      const assetPath = `${pkg.sourceFolder}/nodetool/assets/${packageName}/${assetName}`;
+      let stat: { size: number };
+      try {
+        stat = statSync(assetPath);
+      } catch {
+        return errorResponse(404, `Asset '${assetName}' not found in package '${packageName}'`);
+      }
+      const contentType = mimeTypes[extname(assetName).toLowerCase()] ?? "application/octet-stream";
+      const stream = createReadStream(assetPath);
+      // Convert Node.js stream to Web ReadableStream
+      const webStream = new ReadableStream({
+        start(controller) {
+          stream.on("data", (chunk) => controller.enqueue(chunk));
+          stream.on("end", () => controller.close());
+          stream.on("error", (err) => controller.error(err));
+        },
+        cancel() { stream.destroy(); },
+      });
+      return new Response(webStream, {
+        status: 200,
+        headers: {
+          "content-type": contentType,
+          "content-length": String(stat.size),
+          "cache-control": "public, max-age=31536000, immutable",
+          "etag": `"${packageName}-${assetName}"`,
+        },
+      });
     }
     return jsonResponse({ assets: [], next: null });
   }
@@ -1693,11 +1797,11 @@ export async function handleApiRequest(
   }
 
   if (pathname === "/api/workflows/examples") {
-    return handleWorkflowExamples(request);
+    return handleWorkflowExamples(request, options);
   }
 
   if (pathname === "/api/workflows/examples/search") {
-    return handleWorkflowExamplesSearch(request);
+    return handleWorkflowExamplesSearch(request, options);
   }
 
   if (pathname.startsWith("/api/workflows/examples/")) {

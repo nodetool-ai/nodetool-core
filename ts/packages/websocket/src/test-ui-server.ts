@@ -9,7 +9,16 @@ import { NodeRegistry } from "@nodetool/node-sdk";
 import { registerBaseNodes } from "@nodetool/base-nodes";
 import { UnifiedWebSocketRunner, type WebSocketConnection } from "./unified-websocket-runner.js";
 import { handleNodeHttpRequest, type HttpApiOptions } from "./http-api.js";
-import { SQLiteAdapterFactory, setGlobalAdapterResolver, Secret } from "@nodetool/models";
+import {
+  SQLiteAdapterFactory,
+  setGlobalAdapterResolver,
+  Secret,
+  Workflow,
+  Job,
+  Message,
+  Thread,
+  Asset,
+} from "@nodetool/models";
 
 function htmlPage(): string {
   return `<!doctype html>
@@ -1193,7 +1202,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   try {
     const factory = new SQLiteAdapterFactory(dbPath);
     setGlobalAdapterResolver((schema) => factory.getAdapter(schema));
-    await Secret.createTable();
+    await Promise.all([
+      Secret.createTable(),
+      Workflow.createTable(),
+      Job.createTable(),
+      Message.createTable(),
+      Thread.createTable(),
+      Asset.createTable(),
+    ]);
   } catch {
     // DB unavailable — secrets will appear unconfigured
   }

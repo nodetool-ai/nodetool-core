@@ -63,6 +63,8 @@ export interface PackageMetadata {
   nodes?: NodeMetadata[];
   examples?: unknown[];
   assets?: unknown[];
+  /** Absolute path to the source root (e.g. /path/to/nodetool-base/src or /path/to/nodetool-base) */
+  sourceFolder?: string;
 }
 
 export interface PythonMetadataLoadOptions {
@@ -172,7 +174,9 @@ export function loadPythonPackageMetadata(
   for (const file of files) {
     let parsed: unknown;
     try {
-      parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+      // Python's json module allows NaN/Infinity which are not valid JSON; replace them with null.
+      const raw = fs.readFileSync(file, "utf8").replace(/\bNaN\b|-?Infinity\b/g, "null");
+      parsed = JSON.parse(raw);
     } catch (error) {
       warnings.push(`Failed to parse JSON ${file}: ${String(error)}`);
       continue;
@@ -181,6 +185,11 @@ export function loadPythonPackageMetadata(
       warnings.push(`Skipping non-object metadata file: ${file}`);
       continue;
     }
+
+    // Infer source folder from the metadata file path:
+    // file is at {root}/nodetool/package_metadata/{name}.json or {root}/src/nodetool/package_metadata/{name}.json
+    const metaDir = path.dirname(file); // .../nodetool/package_metadata
+    const sourceFolder = path.dirname(path.dirname(metaDir)); // strip /nodetool/package_metadata
 
     const pkg: PackageMetadata = {
       name: typeof parsed.name === "string" ? parsed.name : path.basename(file, ".json"),
@@ -191,6 +200,7 @@ export function loadPythonPackageMetadata(
       nodes: Array.isArray(parsed.nodes) ? (parsed.nodes as NodeMetadata[]) : undefined,
       examples: Array.isArray(parsed.examples) ? parsed.examples : undefined,
       assets: Array.isArray(parsed.assets) ? parsed.assets : undefined,
+      sourceFolder,
     };
     packages.push(pkg);
 
