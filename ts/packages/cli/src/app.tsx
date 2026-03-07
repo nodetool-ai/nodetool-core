@@ -237,6 +237,8 @@ export function App({
   const modelRef = useRef(model);
   const agentModeRef = useRef(agentMode);
   const abortRef = useRef(false);
+  // Guard against double-submit: useInput autocomplete Enter + TextInput onSubmit fire for the same keypress
+  const submittingRef = useRef(false);
 
   useEffect(() => { chatHistoryRef.current = chatHistory; }, [chatHistory]);
   useEffect(() => { providerRef.current = provider; }, [provider]);
@@ -403,6 +405,9 @@ export function App({
   const handleSubmit = useCallback(async (value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return;
+    // Deduplicate: useInput autocomplete Enter + TextInput onSubmit both fire for the same keypress
+    if (submittingRef.current) return;
+    submittingRef.current = true;
 
     // Add to history (deduplicated)
     setInputHistory(prev => {
@@ -418,6 +423,7 @@ export function App({
     // Handle commands
     if (trimmed.startsWith("/")) {
       await handleCommand(trimmed);
+      submittingRef.current = false;
       return;
     }
 
@@ -549,6 +555,7 @@ export function App({
       setStreaming(false);
       setStreamContent("");
       setStreamLabel("");
+      submittingRef.current = false;
     }
   }, [handleCommand, addMessage, workspaceDir, enabledTools]);
 
