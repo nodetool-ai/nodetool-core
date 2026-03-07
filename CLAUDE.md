@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## TypeScript Development Rule
+
+**After every change to TypeScript files, run `npm run build` in the affected package before considering the task complete.** TypeScript build errors must be resolved immediately — do not leave type errors unfixed. Run from `ts/` with `npm run build --workspace=packages/<name>` or run `npm run build` in the package directory directly.
+
 ## Environment Configuration
 
 NodeTool Core uses environment-specific configuration files to manage different deployment scenarios:
