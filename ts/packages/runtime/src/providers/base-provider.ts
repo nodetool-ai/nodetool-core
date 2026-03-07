@@ -20,7 +20,7 @@ import { CostCalculator } from "./cost-calculator.js";
 import type { UsageInfo } from "./cost-calculator.js";
 import { getTracer } from "../telemetry.js";
 import { SpanStatusCode } from "@opentelemetry/api";
-import { createLogger } from "../log.js";
+import { createLogger } from "@nodetool/config";
 
 const log = createLogger("nodetool.runtime.provider");
 

@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { Chunk } from "@nodetool/protocol";
-import { createLogger } from "../log.js";
+import { createLogger } from "@nodetool/config";
 import { BaseProvider } from "./base-provider.js";
 
 const log = createLogger("nodetool.runtime.providers.openai");
