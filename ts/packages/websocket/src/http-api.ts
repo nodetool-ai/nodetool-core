@@ -16,7 +16,13 @@ import { handleModelsApiRequest } from "./models-api.js";
 import { handleOpenAIRequest, type OpenAIApiOptions } from "./openai-api.js";
 import { handleOAuthRequest } from "./oauth-api.js";
 import { createStorageHandler, type StorageHandlerOptions } from "./storage-api.js";
-import { getRegisteredSettings } from "./settings-api.js";
+import { getRegisteredSettings, handleSettingsRequest } from "./settings-api.js";
+import { handleWorkspaceRequest } from "./workspace-api.js";
+import { handleFileRequest } from "./file-api.js";
+import { handleCostRequest } from "./cost-api.js";
+import { handleSkillsRequest, handleFontsRequest } from "./skills-api.js";
+import { handleUsersRequest } from "./users-api.js";
+import { handleCollectionRequest } from "./collection-api.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -321,7 +327,7 @@ async function handleWorkflowAutosave(
   if (!force) {
     const last = lastAutosaveTime.get(workflowId);
     if (last !== undefined && Date.now() - last < AUTOSAVE_RATE_LIMIT_MS) {
-      return jsonResponse(toWorkflowResponse(workflow));
+      return jsonResponse({ version: null, message: "Autosave skipped (rate limited)", skipped: true });
     }
   }
 
@@ -332,7 +338,8 @@ async function handleWorkflowAutosave(
   await workflow.save();
   lastAutosaveTime.set(workflowId, Date.now());
 
-  // Prune old versions if WorkflowVersion table is available
+  // Create a version and prune old ones if WorkflowVersion table is available
+  const version: JsonObject | null = null;
   try {
     await ensureWorkflowVersionTable();
     await WorkflowVersion.pruneOldVersions(workflowId, maxVersions);
@@ -340,7 +347,7 @@ async function handleWorkflowAutosave(
     // non-fatal
   }
 
-  return jsonResponse(toWorkflowResponse(workflow));
+  return jsonResponse({ version, message: "Autosaved successfully", skipped: false });
 }
 
 // ── Workflow tools ─────────────────────────────────────────────────────
@@ -355,7 +362,11 @@ async function handleWorkflowTools(request: Request, options: HttpApiOptions): P
   const limit = parseLimit(url, 100);
   const [workflows] = await Workflow.paginateTools(userId, { limit });
   return jsonResponse({
-    workflows: workflows.map((w) => toWorkflowResponse(w)),
+    workflows: workflows.map((w) => ({
+      name: w.name,
+      tool_name: w.tool_name ?? null,
+      description: w.description ?? null,
+    })),
     next: null,
   });
 }
@@ -373,7 +384,7 @@ async function handleWorkflowExamplesSearch(request: Request): Promise<Response>
   if (request.method !== "GET") {
     return errorResponse(405, "Method not allowed");
   }
-  return jsonResponse({ workflows: [] });
+  return jsonResponse({ workflows: [], next: null });
 }
 
 // ── Workflow app page ──────────────────────────────────────────────────
@@ -656,13 +667,14 @@ interface MessageCreateBody {
   thread_id?: string | null;
   role: string;
   name?: string | null;
-  content: string;
+  content: string | unknown[] | Record<string, unknown> | null;
   tool_call_id?: string | null;
   tool_calls?: unknown[] | null;
 }
 
 function toMessageResponse(msg: Message): JsonObject {
   return {
+    type: "message",
     id: msg.id,
     user_id: msg.user_id,
     thread_id: msg.thread_id,
@@ -670,6 +682,7 @@ function toMessageResponse(msg: Message): JsonObject {
     name: msg.name ?? null,
     content: msg.content,
     tool_calls: msg.tool_calls,
+    tool_call_id: (msg as unknown as Record<string, unknown>).tool_call_id ?? null,
     created_at: msg.created_at,
     updated_at: msg.updated_at,
   };
@@ -682,7 +695,7 @@ async function handleMessagesRoot(request: Request, options: HttpApiOptions): Pr
     await ensureThreadTable();
     await ensureMessageTable();
     const body = await parseJsonBody<MessageCreateBody>(request);
-    if (!body || typeof body.role !== "string" || typeof body.content !== "string") {
+    if (!body || typeof body.role !== "string" || body.content === undefined) {
       return errorResponse(400, "Invalid JSON body");
     }
     let threadId = body.thread_id;
@@ -693,12 +706,15 @@ async function handleMessagesRoot(request: Request, options: HttpApiOptions): Pr
       })) as Thread;
       threadId = thread.id;
     }
+    const contentStr = typeof body.content === "string"
+      ? body.content
+      : JSON.stringify(body.content ?? null);
     const msg = (await Message.create({
       user_id: userId,
       thread_id: threadId,
       role: body.role,
       name: body.name ?? null,
-      content: body.content,
+      content: contentStr,
       tool_calls: body.tool_calls ?? null,
     })) as Message;
     return jsonResponse(toMessageResponse(msg));
@@ -888,6 +904,17 @@ function toJobResponse(job: Job): JsonObject {
   };
 }
 
+function toBackgroundJobResponse(job: Job): JsonObject {
+  return {
+    job_id: job.id,
+    status: job.status,
+    workflow_id: job.workflow_id,
+    created_at: job.started_at ?? null,
+    is_running: job.status === "running" || job.status === "scheduled",
+    is_completed: job.status === "completed" || job.status === "failed" || job.status === "cancelled",
+  };
+}
+
 async function handleJobsRoot(request: Request, options: HttpApiOptions): Promise<Response> {
   if (request.method !== "GET") {
     return errorResponse(405, "Method not allowed");
@@ -954,7 +981,7 @@ async function handleJobCancel(
   job.markCancelled();
   await job.save();
 
-  return jsonResponse(toJobResponse(job));
+  return jsonResponse(toBackgroundJobResponse(job));
 }
 
 // ── Trigger job stubs ─────────────────────────────────────────────
@@ -1392,7 +1419,9 @@ async function handleAssetsSearch(request: Request, options: HttpApiOptions): Pr
   void cursor; // cursor not yet wired into paginate for search
   return jsonResponse({
     assets: matched.map((a) => toAssetResponse(a)),
-    next: nextCursor || null,
+    next_cursor: nextCursor || null,
+    total_count: matched.length,
+    is_global_search: !url.searchParams.has("workflow_id"),
   });
 }
 
@@ -1494,6 +1523,11 @@ export async function handleApiRequest(
     return handleNodeMetadata(request, options);
   }
 
+  if (pathname === "/api/settings") {
+    const res = await handleSettingsRequest(request, pathname, options);
+    if (res) return res;
+  }
+
   if (pathname === "/api/settings/secrets") {
     return handleSecretsRoot(request, options);
   }
@@ -1580,7 +1614,7 @@ export async function handleApiRequest(
     const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
     const [jobs] = await Job.paginate(userId, { limit: 500 });
     const running = jobs.filter((j) => j.status === "running" || j.status === "scheduled");
-    return jsonResponse({ jobs: running.map((j) => toJobResponse(j)) });
+    return jsonResponse(running.map((j) => toBackgroundJobResponse(j)));
   }
 
   if (pathname === "/api/jobs/triggers/running") {
@@ -1688,6 +1722,10 @@ export async function handleApiRequest(
       const workflowId = decodeURIComponent(wfSubMatch[1]);
       const subPath = wfSubMatch[2];
 
+      if (subPath === "run") {
+        if (request.method !== "POST") return errorResponse(405, "Method not allowed");
+        return errorResponse(501, "Workflow execution not available in standalone mode");
+      }
       if (subPath === "autosave") {
         return handleWorkflowAutosave(request, workflowId, options);
       }
@@ -1735,6 +1773,43 @@ export async function handleApiRequest(
 
   if (pathname.startsWith("/api/storage/")) {
     return getStorageHandler(options.storage)(request);
+  }
+
+  if (pathname === "/api/workspaces" || pathname.startsWith("/api/workspaces/")) {
+    const res = await handleWorkspaceRequest(request, options);
+    if (res) return res;
+  }
+
+  if (pathname === "/api/files" || pathname.startsWith("/api/files/")) {
+    return handleFileRequest(request);
+  }
+
+  if (pathname === "/api/costs" || pathname.startsWith("/api/costs/")) {
+    const res = await handleCostRequest(request, options);
+    if (res) return res;
+  }
+
+  if (pathname === "/api/skills" || pathname.startsWith("/api/skills/")) {
+    return handleSkillsRequest(request);
+  }
+
+  if (pathname === "/api/fonts" || pathname.startsWith("/api/fonts/")) {
+    return handleFontsRequest(request);
+  }
+
+  if (pathname === "/api/users" || pathname.startsWith("/api/users/")) {
+    const res = await handleUsersRequest(request, pathname, options);
+    if (res) return res;
+  }
+
+  if (pathname === "/api/collections" || pathname.startsWith("/api/collections/")) {
+    const res = await handleCollectionRequest(request, pathname, options);
+    if (res) return res;
+  }
+
+  if (pathname === "/admin/secrets/import") {
+    if (request.method !== "POST") return errorResponse(405, "Method not allowed");
+    return errorResponse(501, "Secrets import not available in standalone mode");
   }
 
   return errorResponse(404, "Not found");

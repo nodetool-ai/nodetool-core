@@ -16,7 +16,9 @@ import {
   getGlobalAdapterResolver,
   setGlobalAdapterResolver,
 } from "@nodetool/models";
-import type { HttpApiOptions } from "./http-api.js";
+interface SettingsHandlerOptions {
+  userIdHeader?: string;
+}
 
 // ── Secret table lazy-init ─────────────────────────────────────────
 
@@ -234,13 +236,12 @@ async function handleGetSettings(userId: string): Promise<Response> {
 
 async function handleUpdateSettings(request: Request, userId: string): Promise<Response> {
   await ensureSecretTable();
-  let body: { settings?: Record<string, unknown>; secrets?: Record<string, unknown> } | null = null;
+  let body: { settings?: Record<string, unknown>; secrets?: Record<string, unknown> };
   try {
     body = (await request.json()) as { settings?: Record<string, unknown>; secrets?: Record<string, unknown> };
   } catch {
     return errorResponse(400, "Invalid JSON body");
   }
-  if (!body) return errorResponse(400, "Invalid JSON body");
 
   // Save non-secret settings to file
   if (body.settings) {
@@ -265,7 +266,7 @@ async function handleUpdateSettings(request: Request, userId: string): Promise<R
 export async function handleSettingsRequest(
   request: Request,
   pathname: string,
-  options: HttpApiOptions
+  options: SettingsHandlerOptions
 ): Promise<Response | null> {
   // Only handle /api/settings (not /api/settings/secrets which is handled by http-api.ts)
   if (pathname !== "/api/settings") return null;

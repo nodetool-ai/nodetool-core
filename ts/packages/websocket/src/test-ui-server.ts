@@ -1127,7 +1127,7 @@ export function createTestUiServer(options: TestUiServerOptions = {}) {
       res.end(JSON.stringify(example));
       return;
     }
-    if (url.pathname.startsWith("/api/")) {
+    if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/v1/") || url.pathname.startsWith("/admin/")) {
       void handleNodeHttpRequest(req, res, resolvedApiOptions);
       return;
     }
@@ -1189,7 +1189,7 @@ export function createTestUiServer(options: TestUiServerOptions = {}) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   // Initialize SQLite adapter pointing at the same DB as the Python side
-  const dbPath = process.env["DB_PATH"] ?? join(homedir(), ".local", "share", "nodetool", "nodetool.sqlite3");
+  const dbPath = process.env["DB_PATH"] ?? join(homedir(), ".config", "nodetool", "nodetool.sqlite3");
   try {
     const factory = new SQLiteAdapterFactory(dbPath);
     setGlobalAdapterResolver((schema) => factory.getAdapter(schema));

@@ -57,7 +57,8 @@ describe("T-WS-1: Workflow API — autosave + names", () => {
     );
     expect(autosaveRes.status).toBe(200);
     const autosaved = (await jsonBody(autosaveRes)) as Record<string, unknown>;
-    expect(autosaved.name).toBe("WF Autosaved");
+    expect(autosaved.skipped).toBe(false);
+    expect(autosaved.message).toBe("Autosaved successfully");
   });
 
   it("PUT /api/workflows/{id}/autosave returns 404 for missing workflow", async () => {
@@ -177,9 +178,10 @@ describe("T-WS-2: Job API — running + delete", () => {
       })
     );
     expect(res.status).toBe(200);
-    const body = (await jsonBody(res)) as { jobs: Array<Record<string, unknown>> };
-    expect(body.jobs.length).toBe(1);
-    expect(body.jobs[0].status).toBe("running");
+    const body = (await jsonBody(res)) as Array<Record<string, unknown>>;
+    expect(body.length).toBe(1);
+    expect(body[0].status).toBe("running");
+    expect(body[0].is_running).toBe(true);
   });
 
   it("GET /api/jobs/running/all returns empty when no running jobs", async () => {
@@ -189,8 +191,8 @@ describe("T-WS-2: Job API — running + delete", () => {
       })
     );
     expect(res.status).toBe(200);
-    const body = (await jsonBody(res)) as { jobs: Array<Record<string, unknown>> };
-    expect(body.jobs.length).toBe(0);
+    const body = (await jsonBody(res)) as Array<Record<string, unknown>>;
+    expect(body.length).toBe(0);
   });
 
   it("DELETE /api/jobs/{id} deletes a completed job", async () => {

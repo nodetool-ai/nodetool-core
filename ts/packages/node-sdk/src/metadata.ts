@@ -5,8 +5,16 @@ export interface TypeMetadata {
   type: string;
   optional?: boolean;
   values?: Array<string | number>;
-  type_args?: TypeMetadata[];
+  type_args: TypeMetadata[];
   type_name?: string | null;
+}
+
+/** Ensure a raw type object from JSON always has type_args as an array. */
+export function normalizeTypeMetadata(t: TypeMetadata): TypeMetadata {
+  return {
+    ...t,
+    type_args: (t.type_args ?? []).map(normalizeTypeMetadata),
+  };
 }
 
 export interface PropertyMetadata {
@@ -193,7 +201,13 @@ export function loadPythonPackageMetadata(
       if (nodesByType.has(node.node_type)) {
         duplicates.add(node.node_type);
       }
-      nodesByType.set(node.node_type, node);
+      // Normalize type_args to always be an array (some JSON files omit it)
+      const normalized: NodeMetadata = {
+        ...node,
+        properties: (node.properties ?? []).map((p) => ({ ...p, type: normalizeTypeMetadata(p.type) })),
+        outputs: (node.outputs ?? []).map((o) => ({ ...o, type: normalizeTypeMetadata(o.type) })),
+      };
+      nodesByType.set(node.node_type, normalized);
     }
   }
 
