@@ -193,51 +193,51 @@ describe("T-WS-9: File browser API", () => {
   });
 });
 
-// ── T-WS-11 — Storage KV API ────────────────────────────────────────
+// ── T-WS-11 — Storage file API ──────────────────────────────────────
 
 describe("T-WS-11: Storage KV API", () => {
   let handler: (request: Request) => Promise<Response>;
+  let tmpDir: string;
 
-  beforeEach(() => {
-    handler = createStorageHandler();
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ws-storage-test-"));
+    handler = createStorageHandler({ storagePath: tmpDir, tempStoragePath: path.join(tmpDir, "temp") });
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it("PUT /api/storage/{key} stores a value", async () => {
     const res = await handler(
-      new Request("http://localhost/api/storage/mykey", {
+      new Request("http://localhost/api/storage/mykey.txt", {
         method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ value: "hello" }),
+        body: "hello world",
       })
     );
     expect(res.status).toBe(200);
-    const body = (await jsonBody(res)) as { key: string; value: unknown };
-    expect(body.key).toBe("mykey");
-    expect(body.value).toBe("hello");
   });
 
   it("GET /api/storage/{key} retrieves a stored value", async () => {
     // Store first
     await handler(
-      new Request("http://localhost/api/storage/mykey", {
+      new Request("http://localhost/api/storage/mykey.txt", {
         method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ value: { nested: true } }),
+        body: "hello world",
       })
     );
 
     const res = await handler(
-      new Request("http://localhost/api/storage/mykey")
+      new Request("http://localhost/api/storage/mykey.txt")
     );
     expect(res.status).toBe(200);
-    const body = (await jsonBody(res)) as { key: string; value: unknown };
-    expect(body.key).toBe("mykey");
-    expect((body.value as Record<string, unknown>).nested).toBe(true);
+    const text = await res.text();
+    expect(text).toBe("hello world");
   });
 
   it("GET /api/storage/{key} returns 404 for missing key", async () => {
     const res = await handler(
-      new Request("http://localhost/api/storage/nope")
+      new Request("http://localhost/api/storage/nope.txt")
     );
     expect(res.status).toBe(404);
   });
@@ -245,38 +245,36 @@ describe("T-WS-11: Storage KV API", () => {
   it("DELETE /api/storage/{key} removes a key", async () => {
     // Store first
     await handler(
-      new Request("http://localhost/api/storage/mykey", {
+      new Request("http://localhost/api/storage/mykey.txt", {
         method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ value: "hello" }),
+        body: "hello",
       })
     );
 
     const delRes = await handler(
-      new Request("http://localhost/api/storage/mykey", { method: "DELETE" })
+      new Request("http://localhost/api/storage/mykey.txt", { method: "DELETE" })
     );
-    expect(delRes.status).toBe(204);
+    expect(delRes.status).toBe(200);
 
     // Verify gone
     const getRes = await handler(
-      new Request("http://localhost/api/storage/mykey")
+      new Request("http://localhost/api/storage/mykey.txt")
     );
     expect(getRes.status).toBe(404);
   });
 
   it("DELETE /api/storage/{key} returns 404 for missing key", async () => {
     const res = await handler(
-      new Request("http://localhost/api/storage/nope", { method: "DELETE" })
+      new Request("http://localhost/api/storage/nope.txt", { method: "DELETE" })
     );
     expect(res.status).toBe(404);
   });
 
-  it("PUT /api/storage/{key} with invalid body returns 400", async () => {
+  it("PUT /api/storage with empty key returns 400", async () => {
     const res = await handler(
-      new Request("http://localhost/api/storage/mykey", {
+      new Request("http://localhost/api/storage/", {
         method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: "not json",
+        body: "data",
       })
     );
     expect(res.status).toBe(400);

@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import {
   Workflow,
+  WorkflowVersion,
   Job,
   Message,
   Thread,
@@ -15,6 +16,7 @@ import { handleModelsApiRequest } from "./models-api.js";
 import { handleOpenAIRequest, type OpenAIApiOptions } from "./openai-api.js";
 import { handleOAuthRequest } from "./oauth-api.js";
 import { createStorageHandler, type StorageHandlerOptions } from "./storage-api.js";
+import { getRegisteredSettings } from "./settings-api.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -61,11 +63,16 @@ export interface WorkflowRequestBody {
 
 const defaultMemoryFactory = new MemoryAdapterFactory();
 let workflowTableInitialized = false;
+let workflowVersionTableInitialized = false;
 let messageTableInitialized = false;
 let threadTableInitialized = false;
 let jobTableInitialized = false;
 let assetTableInitialized = false;
 let secretTableInitialized = false;
+
+// Rate-limit tracking for autosave: maps workflow_id -> last autosave timestamp (ms)
+const lastAutosaveTime = new Map<string, number>();
+const AUTOSAVE_RATE_LIMIT_MS = 30_000;
 
 function ensureAdapterResolver(): void {
   if (!getGlobalAdapterResolver()) {
@@ -78,6 +85,13 @@ async function ensureWorkflowTable(): Promise<void> {
   ensureAdapterResolver();
   await Workflow.createTable();
   workflowTableInitialized = true;
+}
+
+async function ensureWorkflowVersionTable(): Promise<void> {
+  if (workflowVersionTableInitialized) return;
+  ensureAdapterResolver();
+  await WorkflowVersion.createTable();
+  workflowVersionTableInitialized = true;
 }
 
 async function ensureMessageTable(): Promise<void> {
@@ -267,6 +281,275 @@ async function updateWorkflow(
   return existing;
 }
 
+// ── Autosave ──────────────────────────────────────────────────────────
+
+interface AutosaveBody {
+  name?: string;
+  access?: string;
+  save_type?: string;
+  description?: string;
+  graph?: { nodes: Record<string, unknown>[]; edges: Record<string, unknown>[] };
+  client_id?: string;
+  force?: boolean;
+  max_versions?: number;
+}
+
+async function handleWorkflowAutosave(
+  request: Request,
+  workflowId: string,
+  options: HttpApiOptions
+): Promise<Response> {
+  if (request.method !== "POST" && request.method !== "PUT") {
+    return errorResponse(405, "Method not allowed");
+  }
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureWorkflowTable();
+
+  const workflow = (await Workflow.get(workflowId)) as Workflow | null;
+  if (!workflow) return errorResponse(404, "Workflow not found");
+  if (workflow.user_id !== userId) return errorResponse(404, "Workflow not found");
+
+  const body = await parseJsonBody<AutosaveBody>(request);
+  if (!body || !body.graph) {
+    return errorResponse(400, "Invalid body: graph is required");
+  }
+  const graph = body.graph;
+  const force = body?.force === true;
+  const maxVersions = typeof body?.max_versions === "number" ? body.max_versions : 10;
+
+  // Rate-limit: skip if last autosave < 30s ago and force is false
+  if (!force) {
+    const last = lastAutosaveTime.get(workflowId);
+    if (last !== undefined && Date.now() - last < AUTOSAVE_RATE_LIMIT_MS) {
+      return jsonResponse(toWorkflowResponse(workflow));
+    }
+  }
+
+  workflow.graph = graph;
+  if (body.name !== undefined) workflow.name = body.name;
+  if (body.description !== undefined) workflow.description = body.description;
+  if (body.access === "public" || body.access === "private") workflow.access = body.access;
+  await workflow.save();
+  lastAutosaveTime.set(workflowId, Date.now());
+
+  // Prune old versions if WorkflowVersion table is available
+  try {
+    await ensureWorkflowVersionTable();
+    await WorkflowVersion.pruneOldVersions(workflowId, maxVersions);
+  } catch {
+    // non-fatal
+  }
+
+  return jsonResponse(toWorkflowResponse(workflow));
+}
+
+// ── Workflow tools ─────────────────────────────────────────────────────
+
+async function handleWorkflowTools(request: Request, options: HttpApiOptions): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureWorkflowTable();
+  const url = new URL(request.url);
+  const limit = parseLimit(url, 100);
+  const [workflows] = await Workflow.paginateTools(userId, { limit });
+  return jsonResponse({
+    workflows: workflows.map((w) => toWorkflowResponse(w)),
+    next: null,
+  });
+}
+
+// ── Workflow examples (stubs) ──────────────────────────────────────────
+
+async function handleWorkflowExamples(request: Request): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
+  return jsonResponse({ workflows: [], next: null });
+}
+
+async function handleWorkflowExamplesSearch(request: Request): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
+  return jsonResponse({ workflows: [] });
+}
+
+// ── Workflow app page ──────────────────────────────────────────────────
+
+async function handleWorkflowApp(
+  request: Request,
+  workflowId: string,
+  options: HttpApiOptions
+): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
+  const baseUrl = options.baseUrl ?? "http://127.0.0.1:7777";
+  const html = `<!DOCTYPE html><html><head><title>Workflow App</title>
+<script>window.WORKFLOW_ID="${workflowId}";window.API_URL="${baseUrl}";</script>
+</head><body><div id="app"></div></body></html>`;
+  return new Response(html, {
+    status: 200,
+    headers: { "content-type": "text/html" },
+  });
+}
+
+// ── Workflow generate-name (stub) ──────────────────────────────────────
+
+async function handleWorkflowGenerateName(
+  request: Request,
+  _workflowId: string,
+  _options: HttpApiOptions
+): Promise<Response> {
+  if (request.method !== "POST") {
+    return errorResponse(405, "Method not allowed");
+  }
+  return jsonResponse({ message: "Name generation not available" }, { status: 501 });
+}
+
+// ── Workflow DSL export (stub) ─────────────────────────────────────────
+
+async function handleWorkflowDslExport(
+  request: Request,
+  _workflowId: string,
+  _options: HttpApiOptions
+): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
+  return new Response("# DSL export not available in standalone mode", {
+    status: 200,
+    headers: { "content-type": "text/plain" },
+  });
+}
+
+// ── Workflow Gradio export (stub) ──────────────────────────────────────
+
+async function handleWorkflowGradioExport(
+  request: Request,
+  _workflowId: string,
+  _options: HttpApiOptions
+): Promise<Response> {
+  if (request.method !== "POST") {
+    return errorResponse(405, "Method not allowed");
+  }
+  return new Response("# Gradio export not available in standalone mode", {
+    status: 200,
+    headers: { "content-type": "text/plain" },
+  });
+}
+
+// ── Workflow versions ──────────────────────────────────────────────────
+
+function toVersionResponse(v: WorkflowVersion): JsonObject {
+  return {
+    id: v.id,
+    workflow_id: v.workflow_id,
+    user_id: v.user_id,
+    name: v.name,
+    description: v.description,
+    graph: v.graph,
+    version: v.version,
+    created_at: v.created_at,
+  };
+}
+
+interface VersionCreateBody {
+  name?: string;
+  description?: string;
+}
+
+async function handleWorkflowVersions(
+  request: Request,
+  workflowId: string,
+  options: HttpApiOptions
+): Promise<Response> {
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureWorkflowTable();
+  await ensureWorkflowVersionTable();
+
+  if (request.method === "POST") {
+    const workflow = (await Workflow.get(workflowId)) as Workflow | null;
+    if (!workflow) return errorResponse(404, "Workflow not found");
+    if (workflow.user_id !== userId) return errorResponse(404, "Workflow not found");
+
+    const body = await parseJsonBody<VersionCreateBody>(request);
+    const nextVer = await WorkflowVersion.nextVersion(workflowId);
+    const version = (await WorkflowVersion.create({
+      workflow_id: workflowId,
+      user_id: userId,
+      name: body?.name ?? null,
+      description: body?.description ?? null,
+      graph: workflow.graph,
+      version: nextVer,
+    })) as WorkflowVersion;
+    return jsonResponse(toVersionResponse(version));
+  }
+
+  if (request.method === "GET") {
+    const url = new URL(request.url);
+    const limit = parseLimit(url, 100);
+    const versions = await WorkflowVersion.listForWorkflow(workflowId, { limit });
+    return jsonResponse({ versions: versions.map(toVersionResponse) });
+  }
+
+  return errorResponse(405, "Method not allowed");
+}
+
+async function handleWorkflowVersionByNumber(
+  request: Request,
+  workflowId: string,
+  versionNumber: number,
+  options: HttpApiOptions
+): Promise<Response> {
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureWorkflowTable();
+  await ensureWorkflowVersionTable();
+
+  if (request.method === "GET") {
+    const version = await WorkflowVersion.findByVersion(workflowId, versionNumber);
+    if (!version) return errorResponse(404, "Version not found");
+    const workflow = (await Workflow.get(workflowId)) as Workflow | null;
+    if (!workflow) return errorResponse(404, "Workflow not found");
+    if (workflow.user_id !== userId) return errorResponse(404, "Workflow not found");
+    return jsonResponse(toVersionResponse(version));
+  }
+
+  if (request.method === "POST") {
+    // restore: copy version graph back to workflow
+    const version = await WorkflowVersion.findByVersion(workflowId, versionNumber);
+    if (!version) return errorResponse(404, "Version not found");
+    const workflow = (await Workflow.get(workflowId)) as Workflow | null;
+    if (!workflow) return errorResponse(404, "Workflow not found");
+    if (workflow.user_id !== userId) return errorResponse(404, "Workflow not found");
+    workflow.graph = version.graph;
+    await workflow.save();
+    return jsonResponse(toWorkflowResponse(workflow));
+  }
+
+  return errorResponse(405, "Method not allowed");
+}
+
+async function handleWorkflowVersionDeleteById(
+  request: Request,
+  _workflowId: string,
+  versionId: string,
+  options: HttpApiOptions
+): Promise<Response> {
+  if (request.method !== "DELETE") {
+    return errorResponse(405, "Method not allowed");
+  }
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureWorkflowVersionTable();
+  const version = (await WorkflowVersion.get(versionId)) as WorkflowVersion | null;
+  if (!version) return errorResponse(404, "Version not found");
+  if (version.user_id !== userId) return errorResponse(404, "Version not found");
+  await version.delete();
+  return new Response(null, { status: 204 });
+}
+
 async function handleWorkflowsRoot(request: Request, options: HttpApiOptions): Promise<Response> {
   const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
   const url = new URL(request.url);
@@ -275,10 +558,12 @@ async function handleWorkflowsRoot(request: Request, options: HttpApiOptions): P
     await ensureWorkflowTable();
     const limit = parseLimit(url, 100);
     const runMode = url.searchParams.get("run_mode") ?? undefined;
-    const [workflows] = await Workflow.paginate(userId, { limit, runMode });
+    // cursor and columns params accepted for Python parity (cursor ignored in memory adapter)
+    // columns param is Python-specific (column selection) — ignored here
+    const [workflows, cursor] = await Workflow.paginate(userId, { limit, runMode });
     return jsonResponse({
       workflows: workflows.map((w) => toWorkflowResponse(w)),
-      next: null,
+      next: cursor || null,
     });
   }
 
@@ -382,6 +667,7 @@ function toMessageResponse(msg: Message): JsonObject {
     user_id: msg.user_id,
     thread_id: msg.thread_id,
     role: msg.role,
+    name: msg.name ?? null,
     content: msg.content,
     tool_calls: msg.tool_calls,
     created_at: msg.created_at,
@@ -411,6 +697,7 @@ async function handleMessagesRoot(request: Request, options: HttpApiOptions): Pr
       user_id: userId,
       thread_id: threadId,
       role: body.role,
+      name: body.name ?? null,
       content: body.content,
       tool_calls: body.tool_calls ?? null,
     })) as Message;
@@ -425,6 +712,8 @@ async function handleMessagesRoot(request: Request, options: HttpApiOptions): Pr
       return errorResponse(400, "thread_id is required");
     }
     const limit = parseLimit(url, 100);
+    void url.searchParams.get("cursor"); // cursor not yet supported in memory adapter
+    void url.searchParams.get("reverse"); // reverse not yet supported in memory adapter
     const [messages, cursor] = await Message.paginate(threadId, { limit });
     // Verify user ownership
     for (const msg of messages) {
@@ -446,16 +735,23 @@ async function handleMessageById(
   messageId: string,
   options: HttpApiOptions
 ): Promise<Response> {
-  if (request.method !== "GET") {
-    return errorResponse(405, "Method not allowed");
-  }
   const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
   await ensureMessageTable();
   const msg = (await Message.get(messageId)) as Message | null;
   if (!msg || msg.user_id !== userId) {
     return errorResponse(404, "Message not found");
   }
-  return jsonResponse(toMessageResponse(msg));
+
+  if (request.method === "GET") {
+    return jsonResponse(toMessageResponse(msg));
+  }
+
+  if (request.method === "DELETE") {
+    await msg.delete();
+    return new Response(null, { status: 204 });
+  }
+
+  return errorResponse(405, "Method not allowed");
 }
 
 // ── Thread types & helpers ────────────────────────────────────────
@@ -496,10 +792,12 @@ async function handleThreadsRoot(request: Request, options: HttpApiOptions): Pro
     await ensureThreadTable();
     const url = new URL(request.url);
     const limit = parseLimit(url, 10);
-    const [threads, cursor] = await Thread.paginate(userId, { limit });
+    void url.searchParams.get("cursor"); // cursor not yet supported in memory adapter
+    void url.searchParams.get("reverse"); // reverse not yet supported in memory adapter
+    const [threads, nextCursor] = await Thread.paginate(userId, { limit });
     return jsonResponse({
       threads: threads.map((t) => toThreadResponse(t)),
-      next: cursor || null,
+      next: nextCursor || null,
     });
   }
 
@@ -554,6 +852,23 @@ async function handleThreadById(
   return errorResponse(405, "Method not allowed");
 }
 
+// ── Thread summarize stub ─────────────────────────────────────────
+
+async function handleThreadSummarize(
+  request: Request,
+  threadId: string,
+  options: HttpApiOptions
+): Promise<Response> {
+  if (request.method !== "POST") {
+    return errorResponse(405, "Method not allowed");
+  }
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureThreadTable();
+  const thread = await Thread.find(userId, threadId);
+  if (!thread) return errorResponse(404, "Thread not found");
+  return errorResponse(501, "Thread summarization not available in standalone mode");
+}
+
 // ── Job types & helpers ───────────────────────────────────────────
 
 function toJobResponse(job: Job): JsonObject {
@@ -595,7 +910,7 @@ async function handleJobById(
   jobId: string,
   options: HttpApiOptions
 ): Promise<Response> {
-  if (request.method !== "GET") {
+  if (request.method !== "GET" && request.method !== "DELETE") {
     return errorResponse(405, "Method not allowed");
   }
 
@@ -607,7 +922,13 @@ async function handleJobById(
     return errorResponse(404, "Job not found");
   }
 
-  return jsonResponse(toJobResponse(job));
+  if (request.method === "GET") {
+    return jsonResponse(toJobResponse(job));
+  }
+
+  // DELETE
+  await job.delete();
+  return new Response(null, { status: 204 });
 }
 
 async function handleJobCancel(
@@ -633,6 +954,50 @@ async function handleJobCancel(
   return jsonResponse(toJobResponse(job));
 }
 
+// ── Trigger job stubs ─────────────────────────────────────────────
+
+async function handleTriggersRunning(request: Request): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
+  return jsonResponse({ workflows: [] });
+}
+
+async function handleTriggerStart(
+  request: Request,
+  _workflowId: string
+): Promise<Response> {
+  if (request.method !== "POST") {
+    return errorResponse(405, "Method not allowed");
+  }
+  return errorResponse(501, "Trigger workflows not available in standalone mode");
+}
+
+async function handleTriggerStop(
+  request: Request,
+  _workflowId: string
+): Promise<Response> {
+  if (request.method !== "POST") {
+    return errorResponse(405, "Method not allowed");
+  }
+  return errorResponse(501, "Trigger workflows not available in standalone mode");
+}
+
+// ── Nodes dummy ───────────────────────────────────────────────────
+
+async function handleNodesDummy(request: Request): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
+  return jsonResponse({
+    type: "asset",
+    uri: "",
+    asset_id: null,
+    data: null,
+    metadata: null,
+  });
+}
+
 // ── Secrets types & helpers ────────────────────────────────────────
 
 interface SecretUpdateBody {
@@ -654,12 +1019,33 @@ async function handleSecretsRoot(request: Request, options: HttpApiOptions): Pro
   const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
   await ensureSecretTable();
 
-  const url = new URL(request.url);
-  const limit = parseLimit(url, 100);
-  const [secrets] = await Secret.listForUser(userId, limit);
+  const [configuredSecrets] = await Secret.listForUser(userId, 1000);
+  const configuredMap = new Map(configuredSecrets.map((s) => [s.key, s]));
+
+  // Return all registry secrets with is_configured flag
+  const registrySecrets = getRegisteredSettings().filter((d) => d.isSecret);
+  const result = registrySecrets.map((def) => {
+    const configured = configuredMap.get(def.envVar);
+    if (configured) {
+      return toSecretResponse(configured);
+    }
+    return {
+      key: def.envVar,
+      user_id: userId,
+      description: def.description ?? "",
+      is_configured: false,
+    };
+  });
+
+  // Also include any DB secrets not in the registry
+  for (const s of configuredSecrets) {
+    if (!registrySecrets.some((d) => d.envVar === s.key)) {
+      result.push(toSecretResponse(s));
+    }
+  }
 
   return jsonResponse({
-    secrets: secrets.map((s) => toSecretResponse(s)),
+    secrets: result,
     next_key: null,
   });
 }
@@ -736,6 +1122,8 @@ interface AssetUpdateBody {
   parent_id?: string;
   metadata?: Record<string, unknown>;
   size?: number;
+  data?: string | null;
+  data_encoding?: string | null;
 }
 
 function toAssetResponse(asset: Asset): JsonObject {
@@ -777,6 +1165,19 @@ async function deleteFolderRecursive(userId: string, folderId: string): Promise<
   return deletedIds;
 }
 
+async function getAllAssetsRecursive(userId: string, folderId: string): Promise<Asset[]> {
+  const collected: Asset[] = [];
+  const children = await Asset.getChildren(userId, folderId, 10000);
+  for (const child of children) {
+    collected.push(child);
+    if (child.content_type === "folder") {
+      const subAssets = await getAllAssetsRecursive(userId, child.id);
+      collected.push(...subAssets);
+    }
+  }
+  return collected;
+}
+
 async function handleAssetsRoot(request: Request, options: HttpApiOptions): Promise<Response> {
   const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
   await ensureAssetTable();
@@ -815,7 +1216,44 @@ async function handleAssetsRoot(request: Request, options: HttpApiOptions): Prom
   }
 
   if (request.method === "POST") {
-    const body = await parseJsonBody<AssetCreateBody>(request);
+    const contentType = request.headers.get("content-type") ?? "";
+    let body: AssetCreateBody | null = null;
+    let fileDataBase64: string | null = null;
+    let fileSize: number | null = null;
+
+    if (contentType.toLowerCase().includes("multipart/form-data")) {
+      try {
+        const fd = await request.formData();
+        const file = fd.get("file") as File | null;
+        const assetJson = fd.get("asset");
+        if (assetJson && typeof assetJson === "string") {
+          body = JSON.parse(assetJson) as AssetCreateBody;
+        }
+        if (file) {
+          const arrayBuffer = await file.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          fileDataBase64 = buffer.toString("base64");
+          fileSize = buffer.byteLength;
+          // Use file metadata if not supplied in the asset JSON field
+          if (!body) {
+            body = {
+              name: file.name,
+              content_type: file.type || "application/octet-stream",
+              parent_id: userId,
+            };
+          } else {
+            body.name = body.name || file.name;
+            body.content_type = body.content_type || file.type || "application/octet-stream";
+            body.parent_id = body.parent_id || userId;
+          }
+        }
+      } catch {
+        return errorResponse(400, "Invalid multipart form data");
+      }
+    } else {
+      body = await parseJsonBody<AssetCreateBody>(request);
+    }
+
     if (
       !body ||
       typeof body.name !== "string" ||
@@ -823,6 +1261,11 @@ async function handleAssetsRoot(request: Request, options: HttpApiOptions): Prom
       typeof body.parent_id !== "string"
     ) {
       return errorResponse(400, "Invalid JSON body: name, content_type, and parent_id are required");
+    }
+
+    const metadata: Record<string, unknown> = body.metadata ?? {};
+    if (fileDataBase64 !== null) {
+      metadata.data = fileDataBase64;
     }
 
     const asset = (await Asset.create({
@@ -833,8 +1276,8 @@ async function handleAssetsRoot(request: Request, options: HttpApiOptions): Prom
       workflow_id: body.workflow_id ?? null,
       node_id: body.node_id ?? null,
       job_id: body.job_id ?? null,
-      metadata: body.metadata ?? null,
-      size: body.size ?? null,
+      metadata: Object.keys(metadata).length > 0 ? metadata : (body.metadata ?? null),
+      size: fileSize ?? body.size ?? null,
     })) as Asset;
 
     return jsonResponse(toAssetResponse(asset));
@@ -889,6 +1332,20 @@ async function handleAssetById(
     if (body.parent_id !== undefined) asset.parent_id = body.parent_id;
     if (body.metadata !== undefined) asset.metadata = body.metadata;
     if (body.size !== undefined) asset.size = body.size;
+
+    if (body.data != null) {
+      let buf: Buffer;
+      if (body.data_encoding === "base64") {
+        buf = Buffer.from(body.data, "base64");
+      } else {
+        buf = Buffer.from(body.data, "utf-8");
+      }
+      const existingMetadata: Record<string, unknown> = asset.metadata ?? {};
+      existingMetadata.data = buf.toString("base64");
+      asset.metadata = existingMetadata;
+      asset.size = buf.byteLength;
+    }
+
     await asset.save();
     return jsonResponse(toAssetResponse(asset));
   }
@@ -908,6 +1365,83 @@ async function handleAssetById(
   }
 
   return errorResponse(405, "Method not allowed");
+}
+
+async function handleAssetsSearch(request: Request, options: HttpApiOptions): Promise<Response> {
+  if (request.method !== "GET") return errorResponse(405, "Method not allowed");
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureAssetTable();
+  const url = new URL(request.url);
+  const query = url.searchParams.get("query") ?? "";
+  if (query.length < 2) {
+    return errorResponse(400, "Query must be at least 2 characters");
+  }
+  const pageSizeRaw = url.searchParams.get("page_size");
+  const pageSize = pageSizeRaw
+    ? Math.min(Math.max(Number.parseInt(pageSizeRaw, 10) || 200, 1), 10000)
+    : 200;
+  const cursor = url.searchParams.get("cursor") ?? undefined;
+
+  // Search by name using a broad paginate and filter client-side (no FTS in memory adapter)
+  const [allAssets, nextCursor] = await Asset.paginate(userId, { limit: pageSize });
+  const lowerQuery = query.toLowerCase();
+  const matched = allAssets.filter((a) => a.name.toLowerCase().includes(lowerQuery));
+  void cursor; // cursor not yet wired into paginate for search
+  return jsonResponse({
+    assets: matched.map((a) => toAssetResponse(a)),
+    next: nextCursor || null,
+  });
+}
+
+async function handleAssetRecursive(
+  request: Request,
+  folderId: string,
+  options: HttpApiOptions,
+): Promise<Response> {
+  if (request.method !== "GET") return errorResponse(405, "Method not allowed");
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureAssetTable();
+  const assets = await getAllAssetsRecursive(userId, folderId);
+  return jsonResponse({ assets: assets.map((a) => toAssetResponse(a)) });
+}
+
+async function handleAssetByFilename(
+  request: Request,
+  filename: string,
+  options: HttpApiOptions,
+): Promise<Response> {
+  if (request.method !== "GET") return errorResponse(405, "Method not allowed");
+  if (!filename) return errorResponse(400, "filename is required");
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureAssetTable();
+  const [assets] = await Asset.paginate(userId, { limit: 10000 });
+  const asset = assets.find((a) => a.name === filename) ?? null;
+  if (!asset) return errorResponse(404, "Asset not found");
+  return jsonResponse(toAssetResponse(asset));
+}
+
+async function handleAssetThumbnail(
+  request: Request,
+  assetId: string,
+  options: HttpApiOptions,
+): Promise<Response> {
+  if (request.method === "POST") {
+    return errorResponse(501, "Thumbnail generation not available");
+  }
+  if (request.method !== "GET") return errorResponse(405, "Method not allowed");
+
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  await ensureAssetTable();
+  const asset = await Asset.find(userId, assetId);
+  if (!asset) return errorResponse(404, "Asset not found");
+
+  // If there's a thumbnail URL stored, redirect
+  const thumbUrl = (asset.metadata as Record<string, unknown> | null)?.thumbnail_url as string | undefined;
+  if (thumbUrl) {
+    return new Response(null, { status: 302, headers: { location: thumbUrl } });
+  }
+
+  return errorResponse(404, "No thumbnail available");
 }
 
 export async function handleApiRequest(
@@ -933,6 +1467,26 @@ export async function handleApiRequest(
     if (response) return response;
   }
 
+  if (pathname === "/api/nodes/replicate_status") {
+    if (request.method !== "GET") return errorResponse(405, "Method not allowed");
+    const configured = Boolean(process.env.REPLICATE_API_TOKEN);
+    return jsonResponse({ configured });
+  }
+
+  if (pathname === "/api/users/validate_username") {
+    if (request.method !== "GET") return errorResponse(405, "Method not allowed");
+    const url = new URL(request.url);
+    const username = url.searchParams.get("username");
+    if (username === null) return errorResponse(400, "username parameter is required");
+    if (!username) return errorResponse(400, "username cannot be empty");
+    const valid = /^[a-zA-Z0-9_-]{3,32}$/.test(username);
+    return jsonResponse({ valid, available: true });
+  }
+
+  if (pathname === "/api/nodes/dummy") {
+    return handleNodesDummy(request);
+  }
+
   if (pathname === "/api/nodes/metadata" || pathname === "/api/node/metadata") {
     return handleNodeMetadata(request, options);
   }
@@ -951,6 +1505,63 @@ export async function handleApiRequest(
     return handleAssetsRoot(request, options);
   }
 
+  // Asset sub-routes — must be matched before the generic /{id} catch-all
+  if (pathname === "/api/assets/search") {
+    return handleAssetsSearch(request, options);
+  }
+
+  if (pathname === "/api/assets/packages") {
+    return jsonResponse({ assets: [], next: null });
+  }
+
+  if (pathname === "/api/assets/download") {
+    if (request.method !== "POST") return errorResponse(405, "Method not allowed");
+    return errorResponse(501, "ZIP download not available in standalone mode");
+  }
+
+  if (pathname === "/api/assets/by-filename" || pathname.startsWith("/api/assets/by-filename/")) {
+    const filename = decodeURIComponent(pathname.slice("/api/assets/by-filename/".length));
+    return handleAssetByFilename(request, filename, options);
+  }
+
+  if (pathname.startsWith("/api/assets/packages/")) {
+    // /api/assets/packages/{package_name} or /api/assets/packages/{package_name}/{asset_name}
+    const rest = pathname.slice("/api/assets/packages/".length);
+    const parts = rest.split("/");
+    if (parts.length >= 2) {
+      return errorResponse(404, "Not found");
+    }
+    return jsonResponse({ assets: [], next: null });
+  }
+
+  if (pathname.startsWith("/api/assets/") && pathname.endsWith("/children")) {
+    const inner = pathname.slice("/api/assets/".length, pathname.length - "/children".length);
+    if (inner && !inner.includes("/")) {
+      if (request.method !== "GET") return errorResponse(405, "Method not allowed");
+      const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+      await ensureAssetTable();
+      const url = new URL(request.url);
+      const limit = parseLimit(url, 100);
+      const [assets] = await Asset.paginate(userId, { parentId: decodeURIComponent(inner), limit });
+      return jsonResponse({ assets: assets.map((a) => toAssetResponse(a)), next: null });
+    }
+  }
+
+  if (pathname.startsWith("/api/assets/") && pathname.endsWith("/recursive")) {
+    // /api/assets/{id}/recursive
+    const inner = pathname.slice("/api/assets/".length, pathname.length - "/recursive".length);
+    if (inner && !inner.includes("/")) {
+      return handleAssetRecursive(request, decodeURIComponent(inner), options);
+    }
+  }
+
+  if (pathname.startsWith("/api/assets/") && pathname.endsWith("/thumbnail")) {
+    const inner = pathname.slice("/api/assets/".length, pathname.length - "/thumbnail".length);
+    if (inner && !inner.includes("/")) {
+      return handleAssetThumbnail(request, decodeURIComponent(inner), options);
+    }
+  }
+
   if (pathname.startsWith("/api/assets/")) {
     const assetId = decodeURIComponent(pathname.slice("/api/assets/".length));
     if (!assetId) return errorResponse(404, "Not found");
@@ -959,6 +1570,32 @@ export async function handleApiRequest(
 
   if (pathname === "/api/jobs") {
     return handleJobsRoot(request, options);
+  }
+
+  if (pathname === "/api/jobs/running/all") {
+    await ensureJobTable();
+    const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+    const [jobs] = await Job.paginate(userId, { limit: 500 });
+    const running = jobs.filter((j) => j.status === "running" || j.status === "scheduled");
+    return jsonResponse({ jobs: running.map((j) => toJobResponse(j)) });
+  }
+
+  if (pathname === "/api/jobs/triggers/running") {
+    return handleTriggersRunning(request);
+  }
+
+  if (pathname.match(/^\/api\/jobs\/triggers\/[^/]+\/start$/)) {
+    const workflowId = decodeURIComponent(
+      pathname.slice("/api/jobs/triggers/".length, pathname.length - "/start".length)
+    );
+    return handleTriggerStart(request, workflowId);
+  }
+
+  if (pathname.match(/^\/api\/jobs\/triggers\/[^/]+\/stop$/)) {
+    const workflowId = decodeURIComponent(
+      pathname.slice("/api/jobs/triggers/".length, pathname.length - "/stop".length)
+    );
+    return handleTriggerStop(request, workflowId);
   }
 
   if (pathname.match(/^\/api\/jobs\/[^/]+\/cancel$/)) {
@@ -987,6 +1624,13 @@ export async function handleApiRequest(
     return handleThreadsRoot(request, options);
   }
 
+  if (pathname.match(/^\/api\/threads\/[^/]+\/summarize$/)) {
+    const threadId = decodeURIComponent(
+      pathname.slice("/api/threads/".length, pathname.length - "/summarize".length)
+    );
+    return handleThreadSummarize(request, threadId, options);
+  }
+
   if (pathname.startsWith("/api/threads/")) {
     const threadId = decodeURIComponent(pathname.slice("/api/threads/".length));
     if (!threadId) return errorResponse(404, "Not found");
@@ -997,6 +1641,32 @@ export async function handleApiRequest(
     return handleWorkflowsRoot(request, options);
   }
 
+  if (pathname === "/api/workflows/names") {
+    if (request.method !== "GET") return errorResponse(405, "Method not allowed");
+    const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+    await ensureWorkflowTable();
+    const [workflows] = await Workflow.paginate(userId, { limit: 1000 });
+    const names: Record<string, string> = {};
+    for (const wf of workflows) names[wf.id] = wf.name;
+    return jsonResponse(names);
+  }
+
+  if (pathname === "/api/workflows/tools") {
+    return handleWorkflowTools(request, options);
+  }
+
+  if (pathname === "/api/workflows/examples") {
+    return handleWorkflowExamples(request);
+  }
+
+  if (pathname === "/api/workflows/examples/search") {
+    return handleWorkflowExamplesSearch(request);
+  }
+
+  if (pathname.startsWith("/api/workflows/examples/")) {
+    return errorResponse(404, "Examples not available in standalone mode");
+  }
+
   if (pathname === "/api/workflows/public") {
     return handlePublicWorkflows(request);
   }
@@ -1005,6 +1675,53 @@ export async function handleApiRequest(
     const workflowId = decodeURIComponent(pathname.slice("/api/workflows/public/".length));
     if (!workflowId) return errorResponse(404, "Not found");
     return handlePublicWorkflowById(request, workflowId);
+  }
+
+  // ── Workflow sub-resource routes ───────────────────────────────────
+  // Pattern: /api/workflows/{id}/...
+  {
+    const wfSubMatch = pathname.match(/^\/api\/workflows\/([^/]+)\/(.+)$/);
+    if (wfSubMatch) {
+      const workflowId = decodeURIComponent(wfSubMatch[1]);
+      const subPath = wfSubMatch[2];
+
+      if (subPath === "autosave") {
+        return handleWorkflowAutosave(request, workflowId, options);
+      }
+      if (subPath === "app") {
+        return handleWorkflowApp(request, workflowId, options);
+      }
+      if (subPath === "generate-name") {
+        return handleWorkflowGenerateName(request, workflowId, options);
+      }
+      if (subPath === "dsl-export") {
+        return handleWorkflowDslExport(request, workflowId, options);
+      }
+      if (subPath === "gradio-export") {
+        return handleWorkflowGradioExport(request, workflowId, options);
+      }
+      if (subPath === "versions") {
+        return handleWorkflowVersions(request, workflowId, options);
+      }
+      // /api/workflows/{id}/versions/{version}/restore
+      const versionRestoreMatch = subPath.match(/^versions\/(\d+)\/restore$/);
+      if (versionRestoreMatch) {
+        const versionNum = Number.parseInt(versionRestoreMatch[1], 10);
+        return handleWorkflowVersionByNumber(request, workflowId, versionNum, options);
+      }
+      // /api/workflows/{id}/versions/{version} (GET by version number)
+      const versionNumMatch = subPath.match(/^versions\/(\d+)$/);
+      if (versionNumMatch) {
+        const versionNum = Number.parseInt(versionNumMatch[1], 10);
+        return handleWorkflowVersionByNumber(request, workflowId, versionNum, options);
+      }
+      // /api/workflows/{id}/versions/{version_id} (DELETE by id — version_id is not numeric)
+      const versionIdMatch = subPath.match(/^versions\/([^/]+)$/);
+      if (versionIdMatch) {
+        const versionId = decodeURIComponent(versionIdMatch[1]);
+        return handleWorkflowVersionDeleteById(request, workflowId, versionId, options);
+      }
+    }
   }
 
   if (pathname.startsWith("/api/workflows/")) {
@@ -1076,18 +1793,8 @@ export async function handleNodeHttpRequest(
     return;
   }
 
-  // Stream the response body to avoid buffering large files in memory
-  const reader = response.body.getReader();
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      res.write(Buffer.from(value));
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  res.end();
+  const bodyBuffer = Buffer.from(await response.arrayBuffer());
+  res.end(bodyBuffer);
 }
 
 export function createHttpApiServer(options: HttpApiOptions = {}): Server {

@@ -57,6 +57,8 @@ export type { JobStatus } from "./job.js";
 export { Workflow } from "./workflow.js";
 export type { AccessLevel, WorkflowGraph } from "./workflow.js";
 
+export { WorkflowVersion } from "./workflow-version.js";
+
 export { Asset } from "./asset.js";
 
 export { Message } from "./message.js";
@@ -65,21 +67,9 @@ export { Thread } from "./thread.js";
 
 export { Secret } from "./secret.js";
 
-export { Workspace } from "./workspace.js";
-
 export { OAuthCredential } from "./oauth-credential.js";
 
-export { RunNodeState } from "./run-node-state.js";
-export type { NodeStatus } from "./run-node-state.js";
-
-export { RunEvent } from "./run-event.js";
-export type { EventType } from "./run-event.js";
-
-export { RunLease } from "./run-lease.js";
-
 export { Prediction } from "./prediction.js";
-export type {
-  AggregateResult,
-  ProviderAggregateResult,
-  ModelAggregateResult,
-} from "./prediction.js";
+export type { AggregateResult, ProviderAggregateResult, ModelAggregateResult } from "./prediction.js";
+
+export { Workspace } from "./workspace.js";
