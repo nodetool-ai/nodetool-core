@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "nodetool-chat": "dist/index.js"
+    "nodetool-chat": "dist/index.js",
+    "nodetool": "dist/nodetool.js"
   },
   "scripts": {
     "build": "tsc",

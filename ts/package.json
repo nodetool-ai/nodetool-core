@@ -26,7 +26,8 @@
     "devserver": "npm run devserver --workspace @nodetool/websocket",
     "lint": "eslint packages/*/src packages/*/tests",
     "workflow": "node ./scripts/run-workflow.mjs",
-    "chat": "node ./packages/cli/dist/index.js"
+    "chat": "node ./packages/cli/dist/index.js",
+    "nodetool": "node ./packages/cli/dist/nodetool.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
