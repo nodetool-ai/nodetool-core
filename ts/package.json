@@ -3,20 +3,20 @@
   "private": true,
   "workspaces": [
     "packages/protocol",
-    "packages/kernel",
     "packages/runtime",
+    "packages/security",
+    "packages/auth",
+    "packages/config",
+    "packages/storage",
+    "packages/kernel",
     "packages/models",
     "packages/node-sdk",
     "packages/base-nodes",
-    "packages/parity-harness",
-    "packages/websocket",
     "packages/agents",
     "packages/chat",
-    "packages/security",
-    "packages/auth",
-    "packages/cli",
-    "packages/storage",
-    "packages/config"
+    "packages/parity-harness",
+    "packages/websocket",
+    "packages/cli"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
