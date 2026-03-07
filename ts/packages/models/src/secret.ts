@@ -13,6 +13,9 @@ import {
 } from "./base-model.js";
 import { field } from "./condition-builder.js";
 import { encryptFernet, decrypt, decryptFernet, getMasterKey, initMasterKey } from "@nodetool/security";
+import { createLogger } from "@nodetool/config";
+
+const log = createLogger("nodetool.models.secret");
 
 // ── Schema ───────────────────────────────────────────────────────────
 
@@ -196,6 +199,7 @@ export class Secret extends DBModel {
     try {
       return decrypt(masterKey, this.user_id, this.encrypted_value);
     } catch {
+      log.debug("AES-GCM decryption failed, trying Fernet", { key: this.key });
       return decryptFernet(masterKey, this.user_id, this.encrypted_value);
     }
   }

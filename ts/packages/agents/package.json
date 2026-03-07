@@ -2,6 +2,7 @@
   "name": "@nodetool/agents",
   "version": "0.1.0",
   "description": "Agent system for planning and executing multi-step LLM tasks",
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -11,6 +12,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@nodetool/config": "*",
     "@nodetool/protocol": "*",
     "@nodetool/runtime": "*",
     "@types/mailparser": "^3.4.6",

@@ -9,6 +9,9 @@
  */
 
 import { randomBytes, pbkdf2Sync, createCipheriv, createDecipheriv, createHmac, timingSafeEqual } from "node:crypto";
+import { createLogger } from "@nodetool/config";
+
+const log = createLogger("nodetool.security.crypto");
 
 // Fernet token version byte
 const FERNET_VERSION = 0x80;
@@ -98,7 +101,8 @@ export function decrypt(masterKey: string, userId: string, encryptedValue: strin
       decipher.final(),
     ]);
     return decrypted.toString("utf-8");
-  } catch {
+  } catch (err) {
+    log.error("Decryption failed", { error: String(err) });
     throw new Error("Failed to decrypt secret");
   }
 }

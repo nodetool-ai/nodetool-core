@@ -304,6 +304,10 @@ export interface UsageInfo {
   videoSeconds?: number;
 }
 
+import { createLogger } from "@nodetool/config";
+
+const log = createLogger("nodetool.runtime.cost");
+
 export class CostCalculator {
   /**
    * Get the pricing tier for a model ID scoped by provider.
@@ -359,15 +363,13 @@ export class CostCalculator {
   ): number {
     const tierName = CostCalculator.getTier(modelId, provider);
     if (tierName === null) {
-      console.warn(
-        `No pricing tier found for model: ${modelId} (provider: ${provider})`
-      );
+      log.warn(`No pricing tier found for model: ${modelId} (provider: ${provider})`);
       return 0.0;
     }
 
     const tier = PRICING_TIERS[tierName];
     if (tier === undefined) {
-      console.warn(`Pricing tier '${tierName}' not defined`);
+      log.warn(`Pricing tier '${tierName}' not defined`);
       return 0.0;
     }
 

@@ -1,5 +1,8 @@
 import type { Chunk } from "@nodetool/protocol";
+import { createLogger } from "@nodetool/config";
 import { BaseProvider } from "./base-provider.js";
+
+const log = createLogger("nodetool.runtime.providers.gemini");
 import type {
   LanguageModel,
   Message,
@@ -376,6 +379,8 @@ export class GeminiProvider extends BaseProvider {
     }
     body.generationConfig = generationConfig;
 
+    log.debug("Gemini request", { model });
+
     const url = `${GEMINI_API_BASE}/models/${model}:generateContent?key=${this.apiKey}`;
     const response = await this._fetch(url, {
       method: "POST",
@@ -385,6 +390,7 @@ export class GeminiProvider extends BaseProvider {
 
     if (!response.ok) {
       const text = await response.text();
+      log.error("Gemini request failed", { model, error: `${response.status}: ${text.slice(0, 200)}` });
       throw new Error(`Gemini API error ${response.status}: ${text}`);
     }
 
@@ -447,6 +453,8 @@ export class GeminiProvider extends BaseProvider {
     if (topP != null) generationConfig.topP = topP;
     body.generationConfig = generationConfig;
 
+    log.debug("Gemini request", { model });
+
     const url = `${GEMINI_API_BASE}/models/${model}:streamGenerateContent?alt=sse&key=${this.apiKey}`;
     const response = await this._fetch(url, {
       method: "POST",
@@ -456,6 +464,7 @@ export class GeminiProvider extends BaseProvider {
 
     if (!response.ok) {
       const text = await response.text();
+      log.error("Gemini request failed", { model, error: `${response.status}: ${text.slice(0, 200)}` });
       throw new Error(`Gemini API error ${response.status}: ${text}`);
     }
 

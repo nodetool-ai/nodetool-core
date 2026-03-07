@@ -10,7 +10,10 @@
 
 import type { BaseProvider } from "@nodetool/runtime";
 import type { ProcessingContext } from "@nodetool/runtime";
+import { createLogger } from "@nodetool/config";
 import type { ProcessingMessage, Chunk } from "@nodetool/protocol";
+
+const log = createLogger("nodetool.agents.task-executor");
 import { StepExecutor } from "./step-executor.js";
 import type { Tool } from "./tools/base-tool.js";
 import type { Step, Task } from "./types.js";
@@ -80,6 +83,8 @@ export class TaskExecutor {
     this._finishStepId = this.finalStepId ??
       (this.task.steps.length > 0 ? this.task.steps[this.task.steps.length - 1].id : undefined);
 
+    log.info("Task execution started", { title: this.task.title, steps: this.task.steps.length });
+
     let stepsTaken = 0;
 
     while (!this.allTasksComplete() && stepsTaken < this.maxSteps) {
@@ -98,6 +103,8 @@ export class TaskExecutor {
         }
         break;
       }
+
+      log.debug("Dispatching steps", { stepIds: executableSteps.map((s) => s.id) });
 
       // Create step executors
       const stepGenerators = executableSteps.map((step) => {

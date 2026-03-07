@@ -2,6 +2,7 @@
   "name": "@nodetool/runtime",
   "version": "0.1.0",
   "description": "Processing context, message queue, and output normalization",
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -12,6 +13,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.33.1",
+    "@nodetool/config": "*",
     "@nodetool/protocol": "*",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.203.0",

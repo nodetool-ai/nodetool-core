@@ -11,7 +11,10 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
+import { createLogger } from "@nodetool/config";
 import type { BaseProvider } from "@nodetool/runtime";
+
+const log = createLogger("nodetool.agents.agent");
 import type { ProcessingContext } from "@nodetool/runtime";
 import type { ProcessingMessage, StepResult } from "@nodetool/protocol";
 import { BaseAgent } from "./base-agent.js";
@@ -350,6 +353,8 @@ export class Agent extends BaseAgent {
   }
 
   async *execute(context: ProcessingContext): AsyncGenerator<ProcessingMessage> {
+    log.info("Agent started", { name: this.name, objective: this.objective.slice(0, 80) });
+
     // Discover and resolve skills
     const availableSkills = await this.discoverSkills();
     const activeSkills = this.resolveActiveSkills(availableSkills, this.requestedSkills);
@@ -366,6 +371,7 @@ export class Agent extends BaseAgent {
     let task: Task | null = this.initialTask ?? null;
 
     if (!task) {
+      log.info("Planning phase started", { name: this.name });
       const planner = new TaskPlanner({
         provider: this.provider,
         model: this.planningModel,
@@ -386,15 +392,19 @@ export class Agent extends BaseAgent {
     }
 
     if (!task) {
+      log.error("Agent failed", { name: this.name, error: "TaskPlanner failed to create a task plan." });
       throw new Error("TaskPlanner failed to create a task plan.");
     }
 
+    log.info("Planning complete", { name: this.name, steps: task.steps.length });
     this.task = task;
 
     // Apply output schema to the last step if specified
     if (this.outputSchema && task.steps.length > 0) {
       task.steps[task.steps.length - 1].outputSchema = JSON.stringify(this.outputSchema);
     }
+
+    log.info("Executing task", { name: this.name, title: task.title });
 
     // Execute: run TaskExecutor over the planned steps
     const executor = new TaskExecutor({
@@ -419,6 +429,8 @@ export class Agent extends BaseAgent {
       }
       yield item;
     }
+
+    log.info("Agent completed", { name: this.name });
   }
 
   getResults(): unknown {

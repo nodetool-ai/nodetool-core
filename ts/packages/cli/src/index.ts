@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { App } from "./app.js";
 import { loadSettings } from "./settings.js";
+import { runStdinMode } from "./stdin.js";
 import {
   SQLiteAdapterFactory,
   setGlobalAdapterResolver,
@@ -34,8 +35,10 @@ program
   .option("-p, --provider <provider>", "LLM provider (anthropic, openai, ollama, gemini, mistral, groq)")
   .option("-m, --model <model>", "Model ID")
   .option("-a, --agent", "Start in agent mode")
+  .option("--no-agent", "Disable agent mode (overrides saved settings)")
   .option("-w, --workspace <path>", "Workspace directory (default: current directory)")
   .option("--tools <tools>", "Comma-separated list of enabled tools")
+  .option("-u, --url <url>", "NodeTool server WebSocket URL (e.g. ws://localhost:7777/ws)")
   .helpOption("-h, --help", "Show help")
   .version("0.1.0")
   .parse();
@@ -46,6 +49,7 @@ const opts = program.opts<{
   agent?: boolean;
   workspace?: string;
   tools?: string;
+  url?: string;
 }>();
 
 // Initialize SQLite adapter pointing at the same DB as the Python side
@@ -69,6 +73,18 @@ const enabledTools = opts.tools
   ? opts.tools.split(",").map(t => t.trim())
   : settings.enabledTools;
 
+// Stdin mode: activated when stdin is piped (not a TTY)
+if (!process.stdin.isTTY) {
+  await runStdinMode({
+    provider,
+    model,
+    workspaceDir: workspace,
+    agentMode,
+    wsUrl: opts.url,
+  });
+  process.exit(0);
+}
+
 const { waitUntilExit } = render(
   React.createElement(App, {
     initialProvider: provider,
@@ -76,6 +92,7 @@ const { waitUntilExit } = render(
     initialAgentMode: agentMode,
     enabledTools,
     workspaceDir: workspace,
+    wsUrl: opts.url,
   }),
   { exitOnCtrlC: false },
 );

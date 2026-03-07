@@ -16,6 +16,8 @@ export {
 export {
   configureLogging,
   getLogLevel,
+  createLogger,
   type LogLevel,
   type LoggingOptions,
+  type Logger,
 } from "./logging.js";

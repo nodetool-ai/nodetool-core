@@ -20,6 +20,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@nodetool/config": "*",
     "@nodetool/protocol": "*",
     "@nodetool/security": "*",
     "better-sqlite3": "^12.6.2"

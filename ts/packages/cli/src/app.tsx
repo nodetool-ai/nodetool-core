@@ -30,7 +30,8 @@ import {
   RunCodeTool,
   CalculatorTool,
 } from "@nodetool/agents";
-import { createProvider, DEFAULT_MODELS } from "./providers.js";
+import { createProvider, DEFAULT_MODELS, WebSocketProvider } from "./providers.js";
+import { WebSocketChatClient } from "./websocket-client.js";
 import { renderMarkdown } from "./markdown.js";
 import { saveSettings } from "./settings.js";
 
@@ -52,6 +53,7 @@ interface AppProps {
   initialAgentMode: boolean;
   enabledTools: string[];
   workspaceDir: string;
+  wsUrl?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +195,7 @@ export function App({
   initialAgentMode,
   enabledTools,
   workspaceDir,
+  wsUrl,
 }: AppProps) {
   const { exit } = useApp();
 
@@ -219,6 +222,10 @@ export function App({
   const [showHelp, setShowHelp] = useState(false);
   const [acIndex, setAcIndex] = useState(0);
 
+  // WebSocket client state (when --url is passed)
+  const wsClientRef = useRef<WebSocketChatClient | null>(null);
+  const [threadId, setThreadId] = useState<string>(() => crypto.randomUUID());
+
   // Refs to hold latest values without causing re-renders in async callbacks
   const chatHistoryRef = useRef(chatHistory);
   const providerRef = useRef(provider);
@@ -231,6 +238,23 @@ export function App({
   useEffect(() => { modelRef.current = model; }, [model]);
   useEffect(() => { agentModeRef.current = agentMode; }, [agentMode]);
   useEffect(() => { setAcIndex(0); }, [inputValue]);
+
+  // Connect WebSocket when --url is provided
+  useEffect(() => {
+    if (!wsUrl) return;
+    const client = new WebSocketChatClient(wsUrl);
+    client.connect().then(() => {
+      wsClientRef.current = client;
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      addMessage("system", `WebSocket connection failed: ${msg}`);
+    });
+    return () => {
+      client.disconnect();
+      wsClientRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsUrl]);
 
   // Unique ID generator
   const nextId = useRef(0);
@@ -289,6 +313,9 @@ export function App({
         setMessages([{ id: genId(), role: "system", content: "History cleared." }]);
         setChatHistory([]);
         setShowHelp(false);
+        if (wsClientRef.current) {
+          setThreadId(crypto.randomUUID()); // next message starts a fresh server thread
+        }
         return true;
 
       case "/exit":
@@ -375,13 +402,16 @@ export function App({
     setStreamLabel("thinking");
 
     try {
-      const prov = await createProvider(providerRef.current);
       const ctx = new ProcessingContext({ jobId: crypto.randomUUID(), workspaceDir });
       const tools = buildTools();
 
       if (agentModeRef.current) {
-        // --- Agent mode: use Agent class with a pre-defined task ---
+        // --- Agent mode ---
         setStreamLabel("planning");
+        const prov = wsClientRef.current
+          ? new WebSocketProvider(wsClientRef.current, modelRef.current, providerRef.current)
+          : await createProvider(providerRef.current);
+
         const agent = new Agent({
           name: "chat-agent",
           objective: trimmed,
@@ -422,8 +452,29 @@ export function App({
           await addMessage("assistant", assistantContent);
         }
 
+      } else if (wsClientRef.current) {
+        // --- Regular chat via WebSocket ---
+        const wsClient = wsClientRef.current;
+        let assistantContent = "";
+        for await (const event of wsClient.chat(trimmed, threadId, modelRef.current, providerRef.current)) {
+          if (abortRef.current) break;
+          if (event.type === "chunk") {
+            assistantContent += event.content;
+            setStreamContent(assistantContent);
+            setStreamLabel("streaming");
+          } else if (event.type === "error") {
+            throw new Error(event.message);
+          } else if (event.type === "done") {
+            break;
+          }
+        }
+        if (assistantContent) {
+          await addMessage("assistant", assistantContent);
+        }
+
       } else {
-        // --- Regular chat mode ---
+        // --- Regular chat mode (direct provider) ---
+        const prov = await createProvider(providerRef.current);
         let assistantContent = "";
         const updatedHistory = [...chatHistoryRef.current];
 
@@ -488,6 +539,9 @@ export function App({
     if (key.escape || (key.ctrl && input === "c")) {
       if (streaming) {
         abortRef.current = true;
+        if (wsClientRef.current) {
+          wsClientRef.current.stop(agentModeRef.current ? undefined : threadId);
+        }
       } else {
         saveSettings({ provider, model, agentMode }).then(() => exit());
       }

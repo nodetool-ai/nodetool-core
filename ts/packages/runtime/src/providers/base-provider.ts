@@ -20,6 +20,9 @@ import { CostCalculator } from "./cost-calculator.js";
 import type { UsageInfo } from "./cost-calculator.js";
 import { getTracer } from "../telemetry.js";
 import { SpanStatusCode } from "@opentelemetry/api";
+import { createLogger } from "../log.js";
+
+const log = createLogger("nodetool.runtime.provider");
 
 export abstract class BaseProvider {
   readonly provider: ProviderId;
@@ -44,6 +47,7 @@ export abstract class BaseProvider {
   trackUsage(model: string, usage: UsageInfo): number {
     const cost = CostCalculator.calculate(model, usage, this.provider);
     this._cost += cost;
+    log.debug("Cost tracked", { model, cost, total: this._cost });
     return cost;
   }
 
@@ -145,9 +149,11 @@ export abstract class BaseProvider {
 
   /** Traced wrapper around generateMessages. Use this instead of calling generateMessages directly. */
   async *generateMessagesTraced(args: Parameters<this["generateMessages"]>[0]): AsyncGenerator<ProviderStreamItem> {
+    log.debug("LLM call", { provider: this.provider, model: args.model });
     const tracer = getTracer();
     if (!tracer) {
       yield* this.generateMessages(args);
+      log.debug("LLM call complete", { provider: this.provider, model: args.model });
       return;
     }
     const span = tracer.startSpan(`llm.stream ${this.provider}/${args.model}`);
@@ -167,6 +173,7 @@ export abstract class BaseProvider {
       }
       span.setAttributes({ "llm.response.chunk_count": chunkCount });
       span.setStatus({ code: SpanStatusCode.OK });
+      log.debug("LLM call complete", { provider: this.provider, model: args.model });
     } catch (err) {
       span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
       span.recordException(err as Error);

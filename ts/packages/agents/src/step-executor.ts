@@ -9,6 +9,7 @@
  */
 
 import type { BaseProvider, ProcessingContext, Message, ToolCall, ProviderStreamItem } from "@nodetool/runtime";
+import { createLogger } from "@nodetool/config";
 import {
   TaskUpdateEvent,
   type ProcessingMessage,
@@ -22,6 +23,8 @@ import type { Step, Task } from "./types.js";
 import type { Tool } from "./tools/base-tool.js";
 import { FinishStepTool } from "./tools/finish-step-tool.js";
 import { extractJSON } from "./utils/json-parser.js";
+
+const log = createLogger("nodetool.agents.step-executor");
 
 const MAX_TOOL_RESULT_CHARS = 20000;
 const DEFAULT_MAX_ITERATIONS = 30;
@@ -667,6 +670,8 @@ export class StepExecutor {
    * Execute the step, yielding ProcessingMessages as progress updates.
    */
   async *execute(): AsyncGenerator<ProcessingMessage> {
+    log.debug("Step started", { stepId: this.step.id, instructions: this.step.instructions.slice(0, 60) });
+
     // Initialize history with system prompt
     this.history.push({ role: "system" as const, content: this.systemPrompt });
 
@@ -745,6 +750,7 @@ export class StepExecutor {
             } satisfies Chunk;
           }
           if (isToolCall(item)) {
+            log.debug("Tool call", { name: item.name });
             toolCalls.push(item);
           }
         }
@@ -760,6 +766,7 @@ export class StepExecutor {
         // Estimate output tokens
         this.outputTokensTotal += Math.ceil((content.length + JSON.stringify(toolCalls).length) / 4);
       } catch (e) {
+        log.error("Step failed", { stepId: this.step.id, error: String(e) });
         this.generationFailures++;
         if (this.generationFailures >= 3) throw e;
         message = { role: "assistant", content: `Error generating message: ${e}` };
@@ -803,6 +810,7 @@ export class StepExecutor {
               });
 
               await this.storeCompletionResult(normalizedResult);
+              log.debug("Step completed", { stepId: this.step.id });
 
               yield {
                 type: "task_update",

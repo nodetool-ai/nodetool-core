@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { pack, unpack } from "msgpackr";
+import { createLogger } from "@nodetool/config";
 import { WorkflowRunner, type NodeExecutor } from "@nodetool/kernel";
 import {
   Job,
@@ -23,6 +24,8 @@ import type {
   WebSocketCommandEnvelope,
   WebSocketMode,
 } from "@nodetool/protocol";
+
+const log = createLogger("nodetool.websocket.runner");
 
 export interface WebSocketReceiveFrame {
   type: string;
@@ -118,9 +121,7 @@ export class UnifiedWebSocketRunner {
   private observerRegistered = false;
 
   private logError(context: string, error: unknown): void {
-    const detail = error instanceof Error ? error : new Error(String(error));
-    // eslint-disable-next-line no-console
-    console.error(`[UnifiedWebSocketRunner] ${context}`, detail);
+    log.error(context, error instanceof Error ? error : new Error(String(error)));
   }
 
   private inferOutputType(value: unknown): string {
@@ -192,6 +193,7 @@ export class UnifiedWebSocketRunner {
 
     await websocket.accept();
     this.websocket = websocket;
+    log.info("Client connected", { userId: this.userId });
 
     this.startHeartbeat();
     this.startStatsBroadcast();
@@ -199,6 +201,7 @@ export class UnifiedWebSocketRunner {
   }
 
   async disconnect(): Promise<void> {
+    log.info("Client disconnected");
     this.stopHeartbeat();
     this.stopStatsBroadcast();
     this.unregisterObserver();
@@ -319,6 +322,7 @@ export class UnifiedWebSocketRunner {
       status: "running",
     };
     this.activeJobs.set(jobId, active);
+    log.info("Job started", { jobId, workflowId });
 
     try {
       const existing = await Job.get(jobId);
@@ -383,13 +387,10 @@ export class UnifiedWebSocketRunner {
           job_id: (msg as unknown as Record<string, unknown>).job_id ?? active.jobId,
           workflow_id: (msg as unknown as Record<string, unknown>).workflow_id ?? active.workflowId,
         };
-        // Log errors to console for visibility
         if (outbound.type === "node_update" && outbound.status === "error") {
-          // eslint-disable-next-line no-console
-          console.error(`[UnifiedWebSocketRunner] node error job=${active.jobId} node=${outbound.node_id}:`, outbound.error);
+          log.error("Node error", { jobId: active.jobId, nodeId: outbound.node_id, error: outbound.error });
         } else if (outbound.type === "job_update" && outbound.status === "failed") {
-          // eslint-disable-next-line no-console
-          console.error(`[UnifiedWebSocketRunner] job failed job=${active.jobId}:`, outbound.error);
+          log.error("Job failed", { jobId: active.jobId, error: outbound.error });
         }
 
         // Only relay output_update messages for actual output-type nodes.
@@ -422,6 +423,8 @@ export class UnifiedWebSocketRunner {
     if (!outputUpdateSeen && Object.keys(finalOutputs).length > 0) {
       await this.sendOutputUpdates(active, finalOutputs);
     }
+
+    log.info("Job completed", { jobId: active.jobId, status: active.status });
 
     if (!terminalSeen || (!terminalWithResultSeen && Object.keys(finalOutputs).length > 0)) {
       await this.sendMessage({
@@ -553,6 +556,7 @@ export class UnifiedWebSocketRunner {
     const providerId = (typeof data.provider === "string" ? data.provider : this.defaultProvider) as string;
     const model = (typeof data.model === "string" ? data.model : this.defaultModel) as string;
     const content = typeof data.content === "string" ? data.content : "";
+    log.debug("Chat message", { threadId, model, provider: providerId });
 
     await Message.create({
       user_id: this.userId ?? "1",
@@ -603,12 +607,71 @@ export class UnifiedWebSocketRunner {
       model,
       workflow_id: typeof data.workflow_id === "string" ? data.workflow_id : null,
     });
+
+    log.debug("Chat complete", { threadId, chars: finalText.length });
+    await this.sendMessage({ type: "job_update", status: "completed", thread_id: threadId });
+  }
+
+  async handleInference(data: Record<string, unknown>, requestSeq: number): Promise<void> {
+    const providerId = typeof data.provider === "string" ? data.provider : this.defaultProvider;
+    const model = typeof data.model === "string" ? data.model : this.defaultModel;
+    const rawMessages = Array.isArray(data.messages) ? data.messages : [];
+    log.debug("Inference request", { model, provider: providerId, messages: rawMessages.length });
+
+    const messages: ProviderMessage[] = rawMessages.map((m) => {
+      const msg = m as Record<string, unknown>;
+      return {
+        role: (typeof msg.role === "string" ? msg.role : "user") as ProviderMessage["role"],
+        content: typeof msg.content === "string"
+          ? msg.content
+          : Array.isArray(msg.content)
+            ? (msg.content as MessageContent[])
+            : "",
+        toolCallId: typeof msg.toolCallId === "string" ? msg.toolCallId : null,
+        toolCalls: Array.isArray(msg.toolCalls)
+          ? (msg.toolCalls as Array<{ id: string; name: string; args: Record<string, unknown> }>)
+          : null,
+        threadId: null,
+      };
+    });
+
+    if (!this.resolveProvider) {
+      await this.sendMessage({ type: "error", message: "No provider resolver configured" });
+      return;
+    }
+
+    const rawTools = Array.isArray(data.tools) ? data.tools : [];
+    const tools: ProviderTool[] = rawTools.map((t) => {
+      const tool = t as Record<string, unknown>;
+      return {
+        name: typeof tool.name === "string" ? tool.name : "",
+        description: typeof tool.description === "string" ? tool.description : undefined,
+        inputSchema: typeof tool.inputSchema === "object" ? (tool.inputSchema as Record<string, unknown>) : undefined,
+      };
+    });
+
+    const provider = await this.resolveProvider(providerId);
+    for await (const item of provider.generateMessagesTraced({ messages, model, tools })) {
+      if (requestSeq !== this.chatRequestSeq) break; // cancelled
+      if ("type" in item && item.type === "chunk") {
+        await this.sendMessage({ ...(item as unknown as Record<string, unknown>), seq: requestSeq });
+      } else if ("name" in item) {
+        const toolItem = item as { id: string; name: string; args: Record<string, unknown> };
+        await this.sendMessage({ type: "tool_call", id: toolItem.id, name: toolItem.name, args: toolItem.args, seq: requestSeq });
+      }
+    }
+
+    if (requestSeq === this.chatRequestSeq) {
+      log.debug("Inference complete");
+      await this.sendMessage({ type: "inference_done", seq: requestSeq });
+    }
   }
 
   async handleCommand(command: WebSocketCommandEnvelope): Promise<Record<string, unknown>> {
     const data = command.data ?? {};
     const jobId = typeof data.job_id === "string" ? data.job_id : undefined;
     const workflowId = typeof data.workflow_id === "string" ? data.workflow_id : undefined;
+    log.debug("Command", { command: command.command });
 
     switch (command.command as UnifiedCommandType) {
       case "clear_models":
@@ -698,15 +761,21 @@ export class UnifiedWebSocketRunner {
         });
         return { message: "Chat message processing started", thread_id: threadId };
       }
+      case "inference": {
+        this.chatRequestSeq += 1;
+        const seq = this.chatRequestSeq;
+        this.currentTask = this.handleInference(data, seq);
+        void this.currentTask.catch(async (err) => {
+          this.logError("inference processing failed", err);
+          await this.sendMessage({ type: "error", message: err instanceof Error ? err.message : String(err) });
+        });
+        return { message: "Inference started" };
+      }
       case "stop": {
         const threadId = typeof data.thread_id === "string" ? data.thread_id : undefined;
-        if (!jobId && !threadId) {
-          return { error: "job_id or thread_id is required for stop command" };
-        }
-        if (threadId) {
-          this.chatRequestSeq += 1;
-          this.currentTask = null;
-        }
+        // Always increment seq to cancel any in-progress chat or inference
+        this.chatRequestSeq += 1;
+        this.currentTask = null;
         if (jobId) {
           const active = this.activeJobs.get(jobId);
           if (active) {

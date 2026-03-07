@@ -274,6 +274,7 @@ export type UnifiedCommandType =
   | "stream_input"
   | "end_input_stream"
   | "chat_message"
+  | "inference"
   | "stop";
 
 export interface WebSocketCommandEnvelope<

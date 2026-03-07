@@ -17,6 +17,9 @@
  */
 
 import { generateMasterKey } from "./crypto.js";
+import { createLogger } from "@nodetool/config";
+
+const log = createLogger("nodetool.security.master-key");
 
 const KEYRING_SERVICE = "nodetool";
 const KEYRING_ACCOUNT = "secrets_master_key";
@@ -76,7 +79,7 @@ async function getFromAwsSecrets(secretName: string): Promise<string | null> {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     // Log but don't throw -- caller will fall back to next source
-    console.warn(`Failed to retrieve master key from AWS Secrets Manager: ${message}`);
+    log.warn("Master key source failed, trying next", { source: "aws", error: message });
     return null;
   }
 }
@@ -101,11 +104,13 @@ export function getMasterKey(): string {
   // 1. Check environment variable
   const envKey = process.env["SECRETS_MASTER_KEY"];
   if (envKey) {
+    log.debug("Master key source", { source: "env" });
     cachedMasterKey = envKey;
     return envKey;
   }
 
   // 2. Auto-generate (not persisted without initMasterKey)
+  log.debug("Master key source", { source: "generated" });
   const newKey = generateMasterKey();
   cachedMasterKey = newKey;
   return newKey;
@@ -135,6 +140,7 @@ export async function initMasterKey(): Promise<string> {
   // 1. Check environment variable
   const envKey = process.env["SECRETS_MASTER_KEY"];
   if (envKey) {
+    log.debug("Master key source", { source: "env" });
     cachedMasterKey = envKey;
     return envKey;
   }
@@ -144,6 +150,7 @@ export async function initMasterKey(): Promise<string> {
   if (awsSecretName) {
     const awsKey = await getFromAwsSecrets(awsSecretName);
     if (awsKey) {
+      log.debug("Master key source", { source: "aws" });
       cachedMasterKey = awsKey;
       return awsKey;
     }
@@ -155,27 +162,30 @@ export async function initMasterKey(): Promise<string> {
     try {
       const storedKey = await keytar.getPassword(KEYRING_SERVICE, KEYRING_ACCOUNT);
       if (storedKey) {
+        log.debug("Master key source", { source: "keychain" });
         cachedMasterKey = storedKey;
         return storedKey;
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      console.warn(`Could not access system keychain: ${message}`);
+      log.warn("Master key source failed, trying next", { source: "keychain", error: message });
     }
 
     // 4. Auto-generate and persist to keychain
     const newKey = generateMasterKey();
     try {
       await keytar.setPassword(KEYRING_SERVICE, KEYRING_ACCOUNT, newKey);
+      log.info("Master key generated and stored");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      console.warn(`Failed to store master key in keychain: ${message}`);
+      log.warn("Failed to persist master key to keychain", { error: message });
     }
     cachedMasterKey = newKey;
     return newKey;
   }
 
   // No keytar available -- auto-generate without persistence
+  log.debug("Master key source", { source: "generated" });
   const newKey = generateMasterKey();
   cachedMasterKey = newKey;
   return newKey;

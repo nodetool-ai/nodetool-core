@@ -14,6 +14,9 @@
  */
 
 import type { Tracer } from "@opentelemetry/api";
+import { createLogger } from "@nodetool/config";
+
+const log = createLogger("nodetool.runtime.telemetry");
 
 let _tracer: Tracer | null = null;
 
@@ -88,7 +91,7 @@ export async function initTelemetry(options: TelemetryOptions = {}): Promise<boo
   _tracer = otelApi.trace.getTracer("nodetool", "0.1.0");
 
   if (!options.silent) {
-    console.error(`[telemetry] OpenTelemetry initialized → ${destination}`);
+    log.info(`OpenTelemetry initialized`, { destination });
   }
 
   return true;

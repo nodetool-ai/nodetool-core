@@ -14,12 +14,15 @@
  *   - Completion detection.
  */
 
+import { createLogger } from "@nodetool/config";
 import type {
   NodeDescriptor,
   Edge,
   ProcessingMessage,
   ControlEvent,
 } from "@nodetool/protocol";
+
+const log = createLogger("nodetool.kernel.runner");
 import type { ProcessingContext } from "@nodetool/runtime";
 import { isControlEdge, isDataEdge } from "@nodetool/protocol";
 import { Graph } from "./graph.js";
@@ -195,6 +198,7 @@ export class WorkflowRunner {
    */
   async run(request: RunJobRequest, graphData: { nodes: NodeDescriptor[]; edges: Edge[] }): Promise<RunResult> {
     try {
+      log.info("Workflow started", { jobId: request.job_id, workflowId: request.workflow_id });
       this._graph = new Graph(graphData);
 
       // Python parity: _filter_invalid_edges — silently remove edges
@@ -231,6 +235,7 @@ export class WorkflowRunner {
       await this._processGraph();
 
       const status = this._cancelled ? "cancelled" : "completed";
+      log.info("Workflow completed", { jobId: request.job_id, status });
 
       this._emit({
         type: "job_update",
@@ -246,6 +251,7 @@ export class WorkflowRunner {
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      log.error("Workflow failed", { jobId: request.job_id, error: message });
       this._emit({
         type: "job_update",
         status: "failed",
@@ -266,6 +272,7 @@ export class WorkflowRunner {
    * Cancel the running workflow.
    */
   cancel(): void {
+    log.info("Job cancelled", { jobId: this.jobId });
     this._cancelled = true;
     // Close all inboxes to unblock waiting actors
     for (const inbox of this._inboxes.values()) {
@@ -288,6 +295,10 @@ export class WorkflowRunner {
         this._graph.findNode(edge.target) !== undefined
     );
     if (validEdges.length < this._graph.edges.length) {
+      log.warn("Filtered invalid edges", {
+        removed: this._graph.edges.length - validEdges.length,
+        remaining: validEdges.length,
+      });
       this._graph = new Graph({
         nodes: [...this._graph.nodes],
         edges: validEdges,
@@ -763,8 +774,7 @@ export class WorkflowRunner {
     if (this._options.executionContext) {
       this._options.executionContext.emit(msg);
     }
-    // eslint-disable-next-line no-console
-    console.log("[WorkflowRunner]", this.jobId, msg.type, msg);
+    log.debug("Message emitted", { jobId: this.jobId, type: msg.type });
   }
 
   private _resolveInputNodes(inputName: string): NodeDescriptor[] {

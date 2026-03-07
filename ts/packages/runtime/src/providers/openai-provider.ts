@@ -1,6 +1,9 @@
 import OpenAI from "openai";
 import type { Chunk } from "@nodetool/protocol";
+import { createLogger } from "../log.js";
 import { BaseProvider } from "./base-provider.js";
+
+const log = createLogger("nodetool.runtime.providers.openai");
 import type {
   ASRModel,
   EmbeddingModel,
@@ -634,6 +637,8 @@ export class OpenAIProvider extends BaseProvider {
       request.tools = this.formatTools(tools);
     }
 
+    log.debug("OpenAI request", { model });
+
     const stream = (await this.getClient().chat.completions.create(
       request as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming
     )) as AsyncIterable<any> & { close?: () => Promise<void> };
@@ -765,6 +770,8 @@ export class OpenAIProvider extends BaseProvider {
     if (tools.length > 0 && this.hasToolSupport(model)) {
       request.tools = this.formatTools(tools);
     }
+
+    log.debug("OpenAI request", { model });
 
     const completion = await this.getClient().chat.completions.create(
       request as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming

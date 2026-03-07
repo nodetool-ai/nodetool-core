@@ -9,6 +9,10 @@
  * - Backpressure via buffer limits per subscriber queue.
  */
 
+import { createLogger } from "@nodetool/config";
+
+const log = createLogger("nodetool.kernel.channel");
+
 // ---------------------------------------------------------------------------
 // Deferred – a tiny promise that can be resolved externally
 // ---------------------------------------------------------------------------
@@ -81,6 +85,7 @@ export class Channel<T = unknown> {
 
   async publish(item: T): Promise<void> {
     if (this._closed) {
+      log.error("Publish to closed channel", { channel: this.name });
       throw new Error(`Channel ${this.name} is closed`);
     }
 
@@ -166,6 +171,7 @@ export class ChannelManager {
     messageType?: new (...args: unknown[]) => T
   ): Promise<Channel<T>> {
     if (this._channels.has(name) && !replace) {
+      log.error("Channel already exists", { channel: name });
       throw new Error(`Channel '${name}' already exists`);
     }
 
@@ -173,6 +179,7 @@ export class ChannelManager {
       await this._channels.get(name)!.close();
     }
 
+    log.debug("Channel created", { channel: name, bufferLimit });
     const channel = new Channel<T>(name, bufferLimit, messageType);
     this._channels.set(name, channel as unknown as Channel<unknown>);
     if (messageType !== undefined) {
@@ -258,6 +265,7 @@ export class ChannelManager {
   async closeChannel(name: string): Promise<void> {
     const channel = this._channels.get(name);
     if (channel) {
+      log.debug("Channel closed", { channel: name });
       await channel.close();
       this._channels.delete(name);
       this._channelTypes.delete(name);

@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createLogger } from "@nodetool/config";
 import {
   Workflow,
   WorkflowVersion,
@@ -23,6 +24,8 @@ import { handleCostRequest } from "./cost-api.js";
 import { handleSkillsRequest, handleFontsRequest } from "./skills-api.js";
 import { handleUsersRequest } from "./users-api.js";
 import { handleCollectionRequest } from "./collection-api.js";
+
+const log = createLogger("nodetool.websocket.http");
 
 type JsonObject = Record<string, unknown>;
 
@@ -1982,8 +1985,7 @@ export async function handleNodeHttpRequest(
 export function createHttpApiServer(options: HttpApiOptions = {}): Server {
   return createServer((req, res) => {
     void handleNodeHttpRequest(req, res, options).catch((error) => {
-      // eslint-disable-next-line no-console
-      console.error("[createHttpApiServer] request failed", error);
+      log.error("Request failed", error instanceof Error ? error : new Error(String(error)));
       res.statusCode = 500;
       res.setHeader("content-type", "application/json");
       const detail = error instanceof Error ? error.message : String(error);

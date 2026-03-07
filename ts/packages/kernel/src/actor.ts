@@ -14,7 +14,10 @@
  *   - zip_all: wait until ALL handles have data (with sticky semantics).
  */
 
+import { createLogger } from "@nodetool/config";
 import type { NodeDescriptor, ControlEvent } from "@nodetool/protocol";
+
+const log = createLogger("nodetool.kernel.actor");
 import type { ProcessingContext } from "@nodetool/runtime";
 import { NodeInbox } from "./inbox.js";
 
@@ -121,6 +124,7 @@ export class NodeActor {
   async run(): Promise<ActorResult> {
     let errorMessage: string | undefined;
     try {
+      log.debug("Actor started", { nodeId: this.node.id, type: this.node.type });
       this._emitNodeStatus("running");
 
       if (this._executor.preProcess) {
@@ -144,6 +148,7 @@ export class NodeActor {
       }
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : String(err);
+      log.error("Actor failed", { nodeId: this.node.id, type: this.node.type, error: errorMessage });
     } finally {
       // Always finalize, even on error (Python parity: gap #13)
       if (this._executor.finalize) {
@@ -160,6 +165,7 @@ export class NodeActor {
       return { outputs: {}, error: errorMessage };
     }
 
+    log.debug("Actor completed", { nodeId: this.node.id, type: this.node.type });
     this._emitNodeStatus("completed", this._latestResult ?? {});
     return { outputs: this._latestResult ?? {} };
   }

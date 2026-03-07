@@ -1,5 +1,8 @@
 import type { Chunk } from "@nodetool/protocol";
+import { createLogger } from "@nodetool/config";
 import { BaseProvider } from "./base-provider.js";
+
+const log = createLogger("nodetool.runtime.providers.ollama");
 import type {
   EmbeddingModel,
   LanguageModel,
@@ -309,6 +312,8 @@ export class OllamaProvider extends BaseProvider {
     });
     request.stream = false;
 
+    log.debug("Ollama request", { model: args.model });
+
     const response = await this.postJson<{ message?: OllamaChatMessage }>("/api/chat", request);
     const message = response.message ?? {};
     const content = typeof message.content === "string" ? message.content : "";
@@ -346,6 +351,8 @@ export class OllamaProvider extends BaseProvider {
       responseFormat: args.responseFormat,
     });
     request.stream = true;
+
+    log.debug("Ollama request", { model: args.model });
 
     const response = await this._fetch(`${this.apiUrl}/api/chat`, {
       method: "POST",

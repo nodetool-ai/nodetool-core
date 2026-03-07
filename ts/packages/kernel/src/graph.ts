@@ -9,11 +9,14 @@
  *   - Streaming upstream computation
  */
 
+import { createLogger } from "@nodetool/config";
 import type {
   Edge,
   NodeDescriptor,
   GraphData,
 } from "@nodetool/protocol";
+
+const log = createLogger("nodetool.kernel.graph");
 import { isControlEdge, isDataEdge } from "@nodetool/protocol";
 
 // ---------------------------------------------------------------------------
@@ -304,6 +307,7 @@ export class Graph {
 
     // If not all nodes visited → cycle exists
     if (visited.size !== this.nodes.length) {
+      log.error("Graph contains a cycle in data edges", { visited: visited.size, total: this.nodes.length });
       throw new GraphValidationError(
         "Graph contains a cycle in data edges"
       );
@@ -369,11 +373,13 @@ export class Graph {
   validateEdgeEndpoints(): void {
     for (const edge of this.edges) {
       if (!this._nodeIndex.has(edge.source)) {
+        log.error("Edge references unknown source node", { source: edge.source });
         throw new GraphValidationError(
           `Edge references unknown source node: ${edge.source}`
         );
       }
       if (!this._nodeIndex.has(edge.target)) {
+        log.error("Edge references unknown target node", { target: edge.target });
         throw new GraphValidationError(
           `Edge references unknown target node: ${edge.target}`
         );
@@ -441,6 +447,7 @@ export class Graph {
       if (!targetType) continue; // no type info, skip
 
       if (!isCompatible(sourceType, targetType)) {
+        log.warn("Type mismatch on edge", { source: edge.source, target: edge.target, sourceType, targetType });
         throw new GraphValidationError(
           `Type mismatch on edge ${edge.id ?? `${edge.source}:${edge.sourceHandle}->${edge.target}:${edge.targetHandle}`}: ` +
           `source outputs "${sourceType}" but target expects "${targetType}"`
@@ -480,6 +487,7 @@ export class Graph {
     for (const node of adj.keys()) {
       if ((color.get(node) ?? WHITE) === WHITE) {
         if (dfs(node)) {
+          log.error("Graph contains a cycle in control edges");
           throw new GraphValidationError(
             "Graph contains a cycle in control edges"
           );

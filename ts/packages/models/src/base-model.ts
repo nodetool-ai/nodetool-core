@@ -10,6 +10,9 @@
 
 import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
+import { createLogger } from "@nodetool/config";
+
+const log = createLogger("nodetool.models");
 import type { ConditionBuilder } from "./condition-builder.js";
 import type { DatabaseAdapter, Row, TableSchema, IndexDef } from "./database-adapter.js";
 
@@ -61,7 +64,7 @@ export class ModelObserver {
       try {
         cb(instance, event);
       } catch (err) {
-        console.error(`Observer error for ${className}:`, err);
+        log.error(`Observer notification failed for ${className}`, { error: String(err) });
       }
     }
 
@@ -70,7 +73,7 @@ export class ModelObserver {
       try {
         cb(instance, event);
       } catch (err) {
-        console.error("Global observer error:", err);
+        log.error("Global observer notification failed", { error: String(err) });
       }
     }
   }

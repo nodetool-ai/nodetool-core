@@ -5,7 +5,10 @@
  */
 
 import type { BaseProvider, ProcessingContext, Message } from "@nodetool/runtime";
+import { createLogger } from "@nodetool/config";
 import type { ProcessingMessage, Chunk, PlanningUpdate } from "@nodetool/protocol";
+
+const log = createLogger("nodetool.agents.planner");
 import type { Step, Task } from "./types.js";
 import type { Tool } from "./tools/base-tool.js";
 import { extractJSON } from "./utils/json-parser.js";
@@ -130,6 +133,8 @@ export class TaskPlanner {
     } satisfies PlanningUpdate;
 
     for (let attempt = 0; attempt < this.maxRetries; attempt++) {
+      log.debug("Generating plan", { objective: objective.slice(0, 60), attempt: attempt + 1 });
+
       // Call LLM with the create_task tool
       let content = "";
       let taskData: Record<string, unknown> | null = null;
@@ -179,11 +184,13 @@ export class TaskPlanner {
 
       if (!taskData) {
         const errorMsg = `LLM did not call create_task tool on attempt ${attempt + 1}/${this.maxRetries}`;
+        log.warn("Plan generation retry", { attempt: attempt + 1, reason: errorMsg });
         if (attempt < this.maxRetries - 1) {
           messages.push({ role: "assistant", content });
           messages.push({ role: "user", content: `Error: ${errorMsg}. Please call the create_task tool with your task plan.` });
           continue;
         }
+        log.error("Plan generation failed", { attempts: this.maxRetries });
         yield {
           type: "chunk",
           content: `\nFailed to generate a task plan after ${this.maxRetries} attempts.\n`,
@@ -247,6 +254,8 @@ export class TaskPlanner {
 
       // Apply schema normalization
       this.applySchemaOverrides(task.steps);
+
+      log.info("Plan created", { title: task.title, steps: task.steps.length });
 
       yield {
         type: "planning_update",

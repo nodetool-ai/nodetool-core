@@ -1,6 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Chunk } from "@nodetool/protocol";
+import { createLogger } from "@nodetool/config";
 import { BaseProvider } from "./base-provider.js";
+
+const log = createLogger("nodetool.runtime.providers.anthropic");
 import type {
   LanguageModel,
   Message,
@@ -453,6 +456,8 @@ export class AnthropicProvider extends BaseProvider {
       ...(args.thinkingBudget != null ? { thinking: { type: "enabled", budget_tokens: args.thinkingBudget } } : {}),
     };
 
+    log.debug("Anthropic request", { model: args.model });
+
     const stream = (await (this.getClient().messages as any).stream(
       request
     )) as AsyncIterable<any>;
@@ -617,6 +622,8 @@ export class AnthropicProvider extends BaseProvider {
       ...(args.topP != null ? { top_p: args.topP } : {}),
       ...(args.thinkingBudget != null ? { thinking: { type: "enabled", budget_tokens: args.thinkingBudget } } : {}),
     };
+
+    log.debug("Anthropic request", { model: args.model });
 
     const response = await (this.getClient().messages as any).create(request);
 

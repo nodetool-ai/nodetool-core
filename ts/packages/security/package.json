@@ -10,6 +10,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@nodetool/config": "*",
     "keytar": "^7.9.0"
   },
   "devDependencies": {

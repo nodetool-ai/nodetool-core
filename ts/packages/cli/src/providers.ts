@@ -3,7 +3,7 @@
  * Creates the right BaseProvider instance based on name + available API keys.
  */
 
-import type { BaseProvider } from "@nodetool/runtime";
+import type { BaseProvider, Message, ProviderStreamItem, ProviderTool } from "@nodetool/runtime";
 import {
   AnthropicProvider,
   OpenAIProvider,
@@ -11,8 +11,11 @@ import {
   GeminiProvider,
   MistralProvider,
   GroqProvider,
+  BaseProvider as BaseProviderClass,
 } from "@nodetool/runtime";
+import type { Chunk } from "@nodetool/protocol";
 import { getSecret } from "@nodetool/security";
+import type { WebSocketChatClient } from "./websocket-client.js";
 
 export const KNOWN_PROVIDERS = ["anthropic", "openai", "ollama", "gemini", "mistral", "groq"] as const;
 export type KnownProvider = (typeof KNOWN_PROVIDERS)[number];
@@ -61,4 +64,52 @@ export function availableProviders(): string[] {
   if (process.env["GROQ_API_KEY"]) available.push("groq");
   available.push("ollama"); // always available (local)
   return available;
+}
+
+/**
+ * A provider that routes all inference through the NodeTool WebSocket server.
+ * Used in agent mode when --url is passed: the server handles LLM calls,
+ * so no local API keys are required.
+ */
+export class WebSocketProvider extends BaseProviderClass {
+  constructor(
+    private readonly client: WebSocketChatClient,
+    private readonly defaultModel: string,
+    private readonly providerId: string,
+  ) {
+    // ProviderId = "openai" | "anthropic" | ... | string, which collapses to string
+    super(providerId as string);
+  }
+
+  async generateMessage(args: {
+    messages: Message[];
+    model: string;
+    tools?: ProviderTool[];
+    maxTokens?: number;
+  }): Promise<Message> {
+    let content = "";
+    for await (const item of this.generateMessages(args)) {
+      if ("type" in item && item.type === "chunk") {
+        content += (item as Chunk).content ?? "";
+      }
+    }
+    return { role: "assistant", content };
+  }
+
+  async *generateMessages(args: {
+    messages: Message[];
+    model: string;
+    tools?: ProviderTool[];
+  }): AsyncGenerator<ProviderStreamItem> {
+    const model = args.model || this.defaultModel;
+    for await (const event of this.client.inference(args.messages, model, this.providerId, args.tools)) {
+      if (event.type === "chunk") {
+        yield { type: "chunk", content: event.content } as Chunk;
+      } else if (event.type === "tool_call") {
+        yield { id: event.id, name: event.name, args: event.args };
+      } else if (event.type === "error") {
+        throw new Error(event.message);
+      }
+    }
+  }
 }
