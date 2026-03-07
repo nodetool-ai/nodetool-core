@@ -12,7 +12,7 @@ import {
   type ModelClass,
 } from "./base-model.js";
 import { field } from "./condition-builder.js";
-import { encrypt, decrypt, decryptFernet, getMasterKey, initMasterKey } from "@nodetool/security";
+import { encryptFernet, decrypt, decryptFernet, getMasterKey, initMasterKey } from "@nodetool/security";
 
 // ── Schema ───────────────────────────────────────────────────────────
 
@@ -86,7 +86,8 @@ export class Secret extends DBModel {
     description?: string;
   }): Promise<Secret> {
     const masterKey = getMasterKey();
-    const encryptedValue = encrypt(masterKey, opts.userId, opts.value);
+    // Use Fernet so Python can also decrypt secrets written by the TS server
+    const encryptedValue = encryptFernet(masterKey, opts.userId, opts.value);
     const now = new Date().toISOString();
 
     const existing = await Secret.find(opts.userId, opts.key);
@@ -106,6 +107,41 @@ export class Secret extends DBModel {
       user_id: opts.userId,
       key: opts.key,
       encrypted_value: encryptedValue,
+      description: opts.description ?? "",
+      created_at: now,
+      updated_at: now,
+    })) as Secret;
+  }
+
+  /**
+   * Create or update a secret with a pre-encrypted value (no re-encryption).
+   *
+   * Use when the encrypted_value is already encrypted by the caller.
+   */
+  static async upsertEncrypted(opts: {
+    userId: string;
+    key: string;
+    encryptedValue: string;
+    description?: string;
+  }): Promise<Secret> {
+    const now = new Date().toISOString();
+    const existing = await Secret.find(opts.userId, opts.key);
+
+    if (existing) {
+      existing.encrypted_value = opts.encryptedValue;
+      existing.updated_at = now;
+      if (opts.description !== undefined) {
+        existing.description = opts.description ?? "";
+      }
+      await existing.save();
+      return existing;
+    }
+
+    return (await (Secret as unknown as ModelClass<Secret>).create({
+      id: createTimeOrderedUuid(),
+      user_id: opts.userId,
+      key: opts.key,
+      encrypted_value: opts.encryptedValue,
       description: opts.description ?? "",
       created_at: now,
       updated_at: now,

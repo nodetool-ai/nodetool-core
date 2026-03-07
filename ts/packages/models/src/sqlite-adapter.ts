@@ -79,7 +79,7 @@ function deserializeValue(value: unknown, fieldType: string): unknown {
   if (value === null || value === undefined) return null;
   switch (fieldType) {
     case "boolean":
-      return value === 1 || value === true;
+      return Boolean(value);
     case "json":
       if (typeof value === "string") {
         try {
@@ -303,6 +303,10 @@ export class SQLiteAdapter implements DatabaseAdapter {
         }
         case Operator.LIKE:
           return [`${quotedField} LIKE ?`, [condition.value]];
+        case Operator.IS_NULL:
+          return [`${quotedField} IS NULL`, []];
+        case Operator.IS_NOT_NULL:
+          return [`${quotedField} IS NOT NULL`, []];
         default:
           return ["1=1", []];
       }

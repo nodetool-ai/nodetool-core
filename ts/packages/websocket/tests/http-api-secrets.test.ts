@@ -41,13 +41,16 @@ describe("HTTP API: settings/secrets", () => {
     await Secret.createTable();
   });
 
-  it("GET /api/settings/secrets returns empty list initially", async () => {
+  it("GET /api/settings/secrets returns all registry secrets initially (none configured)", async () => {
     const res = await handleApiRequest(makeRequest("GET", "/api/settings/secrets"));
     expect(res.status).toBe(200);
 
-    const data = (await jsonBody(res)) as { secrets: unknown[]; next_key: unknown };
-    expect(data.secrets).toEqual([]);
-    expect(data.next_key).toBeNull();
+    const data = (await jsonBody(res)) as { secrets: Array<Record<string, unknown>>; next_key: unknown };
+    expect(data.secrets.length).toBeGreaterThan(0);
+    // All secrets should be unconfigured initially
+    for (const s of data.secrets) {
+      expect(s.is_configured).toBe(false);
+    }
   });
 
   it("PUT /api/settings/secrets/:key creates a secret", async () => {
@@ -68,46 +71,48 @@ describe("HTTP API: settings/secrets", () => {
     expect(data).not.toHaveProperty("value");
   });
 
-  it("GET /api/settings/secrets lists created secrets", async () => {
+  it("GET /api/settings/secrets lists created secrets with is_configured flag", async () => {
     await handleApiRequest(
-      makeRequest("PUT", "/api/settings/secrets/KEY_A", { value: "val-a" })
+      makeRequest("PUT", "/api/settings/secrets/OPENAI_API_KEY", { value: "sk-test-a" })
     );
     await handleApiRequest(
-      makeRequest("PUT", "/api/settings/secrets/KEY_B", { value: "val-b" })
+      makeRequest("PUT", "/api/settings/secrets/ANTHROPIC_API_KEY", { value: "sk-ant-b" })
     );
 
     const res = await handleApiRequest(makeRequest("GET", "/api/settings/secrets"));
     expect(res.status).toBe(200);
 
     const data = (await jsonBody(res)) as { secrets: Array<Record<string, unknown>> };
-    expect(data.secrets.length).toBe(2);
+    // Should return all registry secrets
+    expect(data.secrets.length).toBeGreaterThan(0);
 
-    const keys = data.secrets.map((s) => s.key).sort();
-    expect(keys).toEqual(["KEY_A", "KEY_B"]);
+    const configured = data.secrets.filter((s) => s.is_configured);
+    const configuredKeys = configured.map((s) => s.key).sort();
+    expect(configuredKeys).toContain("ANTHROPIC_API_KEY");
+    expect(configuredKeys).toContain("OPENAI_API_KEY");
 
     // Should not include encrypted values
     for (const s of data.secrets) {
       expect(s).not.toHaveProperty("encrypted_value");
       expect(s).not.toHaveProperty("value");
-      expect(s.is_configured).toBe(true);
     }
   });
 
   it("GET /api/settings/secrets/:key returns secret metadata", async () => {
     await handleApiRequest(
-      makeRequest("PUT", "/api/settings/secrets/MY_KEY", {
-        value: "my-secret",
+      makeRequest("PUT", "/api/settings/secrets/GROQ_API_KEY", {
+        value: "gsk-test",
         description: "desc",
       })
     );
 
     const res = await handleApiRequest(
-      makeRequest("GET", "/api/settings/secrets/MY_KEY")
+      makeRequest("GET", "/api/settings/secrets/GROQ_API_KEY")
     );
     expect(res.status).toBe(200);
 
     const data = (await jsonBody(res)) as Record<string, unknown>;
-    expect(data.key).toBe("MY_KEY");
+    expect(data.key).toBe("GROQ_API_KEY");
     expect(data.description).toBe("desc");
     expect(data.is_configured).toBe(true);
     expect(data).not.toHaveProperty("value");
@@ -115,18 +120,18 @@ describe("HTTP API: settings/secrets", () => {
 
   it("GET /api/settings/secrets/:key?decrypt=true returns decrypted value", async () => {
     await handleApiRequest(
-      makeRequest("PUT", "/api/settings/secrets/DECRYPT_KEY", {
+      makeRequest("PUT", "/api/settings/secrets/GEMINI_API_KEY", {
         value: "super-secret-value",
       })
     );
 
     const res = await handleApiRequest(
-      makeRequest("GET", "/api/settings/secrets/DECRYPT_KEY?decrypt=true")
+      makeRequest("GET", "/api/settings/secrets/GEMINI_API_KEY?decrypt=true")
     );
     expect(res.status).toBe(200);
 
     const data = (await jsonBody(res)) as Record<string, unknown>;
-    expect(data.key).toBe("DECRYPT_KEY");
+    expect(data.key).toBe("GEMINI_API_KEY");
     expect(data.value).toBe("super-secret-value");
   });
 
@@ -139,14 +144,14 @@ describe("HTTP API: settings/secrets", () => {
 
   it("PUT /api/settings/secrets/:key updates an existing secret", async () => {
     await handleApiRequest(
-      makeRequest("PUT", "/api/settings/secrets/UPD_KEY", {
+      makeRequest("PUT", "/api/settings/secrets/MISTRAL_API_KEY", {
         value: "original",
         description: "v1",
       })
     );
 
     const res = await handleApiRequest(
-      makeRequest("PUT", "/api/settings/secrets/UPD_KEY", {
+      makeRequest("PUT", "/api/settings/secrets/MISTRAL_API_KEY", {
         value: "updated",
         description: "v2",
       })
@@ -158,7 +163,7 @@ describe("HTTP API: settings/secrets", () => {
 
     // Verify updated value
     const getRes = await handleApiRequest(
-      makeRequest("GET", "/api/settings/secrets/UPD_KEY?decrypt=true")
+      makeRequest("GET", "/api/settings/secrets/MISTRAL_API_KEY?decrypt=true")
     );
     const getData = (await jsonBody(getRes)) as Record<string, unknown>;
     expect(getData.value).toBe("updated");
@@ -166,7 +171,7 @@ describe("HTTP API: settings/secrets", () => {
 
   it("PUT /api/settings/secrets/:key returns 400 for missing value", async () => {
     const res = await handleApiRequest(
-      makeRequest("PUT", "/api/settings/secrets/BAD_KEY", {
+      makeRequest("PUT", "/api/settings/secrets/FAL_API_KEY", {
         description: "no value",
       })
     );
@@ -175,20 +180,20 @@ describe("HTTP API: settings/secrets", () => {
 
   it("DELETE /api/settings/secrets/:key deletes a secret", async () => {
     await handleApiRequest(
-      makeRequest("PUT", "/api/settings/secrets/DEL_KEY", { value: "to-delete" })
+      makeRequest("PUT", "/api/settings/secrets/ELEVENLABS_API_KEY", { value: "to-delete" })
     );
 
     const res = await handleApiRequest(
-      makeRequest("DELETE", "/api/settings/secrets/DEL_KEY")
+      makeRequest("DELETE", "/api/settings/secrets/ELEVENLABS_API_KEY")
     );
     expect(res.status).toBe(200);
 
     const data = (await jsonBody(res)) as Record<string, unknown>;
     expect(data.message).toBe("Secret deleted successfully");
 
-    // Verify it's gone
+    // Verify it's gone (GET by key returns 404 when not in DB)
     const getRes = await handleApiRequest(
-      makeRequest("GET", "/api/settings/secrets/DEL_KEY")
+      makeRequest("GET", "/api/settings/secrets/ELEVENLABS_API_KEY")
     );
     expect(getRes.status).toBe(404);
   });
@@ -202,20 +207,20 @@ describe("HTTP API: settings/secrets", () => {
 
   it("isolates secrets between users", async () => {
     await handleApiRequest(
-      makeRequest("PUT", "/api/settings/secrets/SHARED", { value: "user1-val" }, "user-1")
+      makeRequest("PUT", "/api/settings/secrets/OPENAI_API_KEY", { value: "user1-val" }, "user-1")
     );
     await handleApiRequest(
-      makeRequest("PUT", "/api/settings/secrets/SHARED", { value: "user2-val" }, "user-2")
+      makeRequest("PUT", "/api/settings/secrets/OPENAI_API_KEY", { value: "user2-val" }, "user-2")
     );
 
     const res1 = await handleApiRequest(
-      makeRequest("GET", "/api/settings/secrets/SHARED?decrypt=true", undefined, "user-1")
+      makeRequest("GET", "/api/settings/secrets/OPENAI_API_KEY?decrypt=true", undefined, "user-1")
     );
     const data1 = (await jsonBody(res1)) as Record<string, unknown>;
     expect(data1.value).toBe("user1-val");
 
     const res2 = await handleApiRequest(
-      makeRequest("GET", "/api/settings/secrets/SHARED?decrypt=true", undefined, "user-2")
+      makeRequest("GET", "/api/settings/secrets/OPENAI_API_KEY?decrypt=true", undefined, "user-2")
     );
     const data2 = (await jsonBody(res2)) as Record<string, unknown>;
     expect(data2.value).toBe("user2-val");

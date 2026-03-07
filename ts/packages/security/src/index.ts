@@ -4,6 +4,7 @@ export {
   encrypt,
   decrypt,
   decryptFernet,
+  encryptFernet,
   isValidMasterKey,
 } from "./crypto.js";
 

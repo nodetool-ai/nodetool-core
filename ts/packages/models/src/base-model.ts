@@ -60,8 +60,8 @@ export class ModelObserver {
     for (const cb of ModelObserver.observers.get(className) ?? []) {
       try {
         cb(instance, event);
-      } catch {
-        // swallow observer errors (matches Python behaviour)
+      } catch (err) {
+        console.error(`Observer error for ${className}:`, err);
       }
     }
 
@@ -69,8 +69,8 @@ export class ModelObserver {
     for (const cb of ModelObserver.observers.get(null) ?? []) {
       try {
         cb(instance, event);
-      } catch {
-        // swallow
+      } catch (err) {
+        console.error("Global observer error:", err);
       }
     }
   }

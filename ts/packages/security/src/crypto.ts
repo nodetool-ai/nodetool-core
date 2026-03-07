@@ -10,6 +10,9 @@
 
 import { randomBytes, pbkdf2Sync, createCipheriv, createDecipheriv, createHmac, timingSafeEqual } from "node:crypto";
 
+// Fernet token version byte
+const FERNET_VERSION = 0x80;
+
 const PBKDF2_ITERATIONS = 100_000;
 const KEY_LENGTH = 32; // 256 bits for AES-256
 const IV_LENGTH = 12; // 96 bits for GCM
@@ -147,6 +150,50 @@ export function decryptFernet(masterKey: string, userId: string, encryptedValue:
   const decipher = createDecipheriv("aes-128-cbc", aesKey, iv);
   const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   return decrypted.toString("utf-8");
+}
+
+/**
+ * Encrypt a value using Fernet (Python-compatible).
+ *
+ * Produces a token that Python's cryptography.Fernet can decrypt.
+ * Format: base64url(version(1) | timestamp(8) | iv(16) | ciphertext(N) | hmac(32))
+ *
+ * @param masterKey - The master key as a base64 or utf-8 string.
+ * @param userId - The user ID used as PBKDF2 salt.
+ * @param plaintext - The plaintext to encrypt.
+ */
+export function encryptFernet(masterKey: string, userId: string, plaintext: string): string {
+  const masterKeyBytes = Buffer.from(masterKey, "utf-8");
+  const salt = Buffer.from(userId, "utf-8");
+  const derived = pbkdf2Sync(masterKeyBytes, salt, PBKDF2_ITERATIONS, 32, "sha256");
+
+  const hmacKey = derived.subarray(0, 16);
+  const aesKey = derived.subarray(16, 32);
+
+  const iv = randomBytes(16);
+  // Timestamp: seconds since epoch as big-endian uint64
+  const timestamp = BigInt(Math.floor(Date.now() / 1000));
+  const tsBuf = Buffer.alloc(8);
+  tsBuf.writeBigUInt64BE(timestamp);
+
+  // Pad plaintext to 16-byte boundary (PKCS7)
+  const plaintextBuf = Buffer.from(plaintext, "utf-8");
+  const padLen = 16 - (plaintextBuf.length % 16);
+  const padded = Buffer.concat([plaintextBuf, Buffer.alloc(padLen, padLen)]);
+
+  const cipher = createCipheriv("aes-128-cbc", aesKey, iv);
+  cipher.setAutoPadding(false);
+  const ciphertext = Buffer.concat([cipher.update(padded), cipher.final()]);
+
+  // Build body: version(1) + timestamp(8) + iv(16) + ciphertext
+  const body = Buffer.concat([Buffer.from([FERNET_VERSION]), tsBuf, iv, ciphertext]);
+
+  // HMAC-SHA256 over body
+  const hmac = createHmac("sha256", hmacKey).update(body).digest();
+
+  const token = Buffer.concat([body, hmac]);
+  // Encode as base64url (no padding)
+  return token.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
 /**

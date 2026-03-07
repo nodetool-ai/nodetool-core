@@ -23,6 +23,8 @@ export enum Operator {
   IN = "IN",
   LIKE = "LIKE",
   CONTAINS = "CONTAINS",
+  IS_NULL = "IS NULL",
+  IS_NOT_NULL = "IS NOT NULL",
 }
 
 export enum LogicalOperator {
@@ -99,6 +101,12 @@ export class Field {
   }
   like(pattern: string | Variable): ConditionBuilder {
     return this._cond(Operator.LIKE, pattern);
+  }
+  isNull(): ConditionBuilder {
+    return this._cond(Operator.IS_NULL, null);
+  }
+  isNotNull(): ConditionBuilder {
+    return this._cond(Operator.IS_NOT_NULL, null);
   }
 }
 
