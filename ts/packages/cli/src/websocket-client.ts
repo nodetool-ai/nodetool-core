@@ -104,8 +104,9 @@ export class WebSocketChatClient {
     threadId: string,
     model: string,
     provider: string,
+    tools?: unknown[],
   ): AsyncGenerator<ChatEvent> {
-    this.send({ command: "chat_message", data: { content, thread_id: threadId, model, provider } });
+    this.send({ command: "chat_message", data: { content, thread_id: threadId, model, provider, tools: tools ?? [] } });
     while (true) {
       const event = await this.nextContent();
       if (!event) {

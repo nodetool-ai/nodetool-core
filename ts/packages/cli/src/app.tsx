@@ -456,7 +456,8 @@ export function App({
         // --- Regular chat via WebSocket ---
         const wsClient = wsClientRef.current;
         let assistantContent = "";
-        for await (const event of wsClient.chat(trimmed, threadId, modelRef.current, providerRef.current)) {
+        const toolSchemas = tools.map(t => t.toProviderTool());
+        for await (const event of wsClient.chat(trimmed, threadId, modelRef.current, providerRef.current, toolSchemas)) {
           if (abortRef.current) break;
           if (event.type === "chunk") {
             assistantContent += event.content;

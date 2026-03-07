@@ -580,7 +580,15 @@ export class UnifiedWebSocketRunner {
     const provider = await this.resolveProvider(providerId);
 
     let finalText = "";
-    const tools: ProviderTool[] = [];
+    const rawTools = Array.isArray(data.tools) ? data.tools : [];
+    const tools: ProviderTool[] = rawTools.map((t) => {
+      const tool = t as Record<string, unknown>;
+      return {
+        name: typeof tool.name === "string" ? tool.name : "",
+        description: typeof tool.description === "string" ? tool.description : undefined,
+        inputSchema: typeof tool.inputSchema === "object" ? (tool.inputSchema as Record<string, unknown>) : undefined,
+      };
+    });
     for await (const item of provider.generateMessagesTraced({ messages: providerMessages, model, tools })) {
       if ("type" in item && item.type === "chunk") {
         const contentPart = typeof item.content === "string" ? item.content : "";
