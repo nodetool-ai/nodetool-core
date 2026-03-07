@@ -25,8 +25,8 @@ const SECRET_SCHEMA: TableSchema = {
     key: { type: "string" },
     encrypted_value: { type: "string" },
     description: { type: "string", optional: true },
-    created_at: { type: "string" },
-    updated_at: { type: "string" },
+    created_at: { type: "datetime" },
+    updated_at: { type: "datetime" },
   },
 };
 

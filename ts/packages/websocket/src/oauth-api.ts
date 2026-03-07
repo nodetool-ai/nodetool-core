@@ -419,7 +419,7 @@ async function handleHfRefresh(
     );
   }
 
-  if (!credential.refresh_token) {
+  if (!credential.encrypted_refresh_token) {
     return errorResponse(
       400,
       "No refresh token available. Please re-authenticate.",
@@ -432,7 +432,7 @@ async function handleHfRefresh(
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         grant_type: "refresh_token",
-        refresh_token: credential.refresh_token,
+        refresh_token: credential.encrypted_refresh_token,
         client_id: HF_CLIENT_ID,
       }),
     });
@@ -445,7 +445,7 @@ async function handleHfRefresh(
     const tokenData = (await tokenRes.json()) as Record<string, unknown>;
     const accessToken = tokenData.access_token as string | undefined;
     const newRefreshToken =
-      (tokenData.refresh_token as string) ?? credential.refresh_token;
+      (tokenData.refresh_token as string) ?? credential.encrypted_refresh_token;
     const tokenType =
       (tokenData.token_type as string) ?? credential.token_type;
     const scope = (tokenData.scope as string) ?? credential.scope;
@@ -460,8 +460,8 @@ async function handleHfRefresh(
       expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
     }
 
-    credential.access_token = accessToken;
-    credential.refresh_token = newRefreshToken;
+    credential.encrypted_access_token = accessToken;
+    credential.encrypted_refresh_token = newRefreshToken;
     credential.token_type = tokenType;
     credential.scope = scope;
     credential.received_at = new Date().toISOString();
@@ -506,7 +506,7 @@ async function handleHfWhoami(
   try {
     const res = await fetch(HF_WHOAMI_URL, {
       headers: {
-        Authorization: `${credential.token_type} ${credential.access_token}`,
+        Authorization: `${credential.token_type} ${credential.encrypted_access_token}`,
       },
     });
 
@@ -789,7 +789,7 @@ async function handleGithubUser(
   try {
     const res = await fetch(GITHUB_USER_URL, {
       headers: {
-        Authorization: `${credential.token_type} ${credential.access_token}`,
+        Authorization: `${credential.token_type} ${credential.encrypted_access_token}`,
         Accept: "application/json",
       },
     });

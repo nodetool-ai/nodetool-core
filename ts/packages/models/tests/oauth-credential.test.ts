@@ -24,7 +24,7 @@ describe("OAuthCredential model", () => {
       user_id: "u1",
       provider: "google",
       account_id: "acc1",
-      access_token: "tok123",
+      encrypted_access_token: "tok123",
       token_type: "Bearer",
       received_at: new Date().toISOString(),
     });
@@ -32,9 +32,9 @@ describe("OAuthCredential model", () => {
     expect(cred.user_id).toBe("u1");
     expect(cred.provider).toBe("google");
     expect(cred.account_id).toBe("acc1");
-    expect(cred.access_token).toBe("tok123");
+    expect(cred.encrypted_access_token).toBe("tok123");
     expect(cred.token_type).toBe("Bearer");
-    expect(cred.refresh_token).toBeNull();
+    expect(cred.encrypted_refresh_token).toBeNull();
     expect(cred.username).toBeNull();
     expect(cred.scope).toBeNull();
     expect(cred.expires_at).toBeNull();
@@ -47,11 +47,11 @@ describe("OAuthCredential model", () => {
       user_id: "u1",
       provider: "github",
       account_id: "acc2",
-      access_token: "tok456",
+      encrypted_access_token: "tok456",
     });
     expect(cred.id).toBeTruthy();
     expect(cred.token_type).toBe("Bearer");
-    expect(cred.refresh_token).toBeNull();
+    expect(cred.encrypted_refresh_token).toBeNull();
     expect(cred.username).toBeNull();
     expect(cred.scope).toBeNull();
     expect(cred.expires_at).toBeNull();
@@ -65,14 +65,14 @@ describe("OAuthCredential model", () => {
       user_id: "u1",
       provider: "google",
       account_id: "acc1",
-      access_token: "tok123",
+      encrypted_access_token: "tok123",
       token_type: "Bearer",
       received_at: new Date().toISOString(),
     });
     const originalUpdatedAt = cred.updated_at;
     // Wait a tick so timestamp changes
     await new Promise((r) => setTimeout(r, 5));
-    cred.access_token = "new-token";
+    cred.encrypted_access_token = "new-token";
     await cred.save();
     expect(cred.updated_at).not.toBe(originalUpdatedAt);
   });
@@ -82,14 +82,14 @@ describe("OAuthCredential model", () => {
       user_id: "u1",
       provider: "google",
       account_id: "acc1",
-      access_token: "tok-a",
+      encrypted_access_token: "tok-a",
       token_type: "Bearer",
       received_at: new Date().toISOString(),
     });
 
     const found = await OAuthCredential.findByAccount("u1", "google", "acc1");
     expect(found).not.toBeNull();
-    expect(found!.access_token).toBe("tok-a");
+    expect(found!.encrypted_access_token).toBe("tok-a");
   });
 
   it("findByAccount returns null when not found", async () => {
@@ -102,7 +102,7 @@ describe("OAuthCredential model", () => {
       user_id: "u1",
       provider: "google",
       account_id: "acc1",
-      access_token: "tok-u1",
+      encrypted_access_token: "tok-u1",
       token_type: "Bearer",
       received_at: new Date().toISOString(),
     });
@@ -125,7 +125,7 @@ describe("OAuthCredential model", () => {
       user_id: "u1",
       provider: "google",
       account_id: "acc1",
-      access_token: "tok1",
+      encrypted_access_token: "tok1",
       token_type: "Bearer",
       received_at: new Date().toISOString(),
     });
@@ -133,7 +133,7 @@ describe("OAuthCredential model", () => {
       user_id: "u1",
       provider: "google",
       account_id: "acc2",
-      access_token: "tok2",
+      encrypted_access_token: "tok2",
       token_type: "Bearer",
       received_at: new Date().toISOString(),
     });
@@ -141,7 +141,7 @@ describe("OAuthCredential model", () => {
       user_id: "u1",
       provider: "github",
       account_id: "acc3",
-      access_token: "tok3",
+      encrypted_access_token: "tok3",
       token_type: "Bearer",
       received_at: new Date().toISOString(),
     });
@@ -149,7 +149,7 @@ describe("OAuthCredential model", () => {
       user_id: "u2",
       provider: "google",
       account_id: "acc4",
-      access_token: "tok4",
+      encrypted_access_token: "tok4",
       token_type: "Bearer",
       received_at: new Date().toISOString(),
     });
@@ -176,7 +176,7 @@ describe("OAuthCredential model", () => {
     });
 
     expect(cred.id).toBeTruthy();
-    expect(cred.access_token).toBe("tok-new");
+    expect(cred.encrypted_access_token).toBe("tok-new");
   });
 
   it("upsert updates an existing credential", async () => {
@@ -204,8 +204,8 @@ describe("OAuthCredential model", () => {
     });
 
     expect(updated.id).toBe(createdId);
-    expect(updated.access_token).toBe("tok-updated");
-    expect(updated.refresh_token).toBe("refresh-new");
+    expect(updated.encrypted_access_token).toBe("tok-updated");
+    expect(updated.encrypted_refresh_token).toBe("refresh-new");
     expect(updated.username).toBe("user@example.com");
     expect(updated.scope).toBe("read write");
     expect(updated.received_at).toBe("2024-06-01T00:00:00.000Z");
@@ -236,7 +236,7 @@ describe("OAuthCredential model", () => {
       // not providing refresh_token, username, scope, expires_at
     });
 
-    expect(updated.refresh_token).toBe("existing-refresh");
+    expect(updated.encrypted_refresh_token).toBe("existing-refresh");
     expect(updated.username).toBe("existing-user");
     expect(updated.scope).toBe("existing-scope");
     expect(updated.expires_at).toBe("2025-12-31T00:00:00.000Z");
@@ -247,7 +247,7 @@ describe("OAuthCredential model", () => {
       user_id: "u1",
       provider: "google",
       account_id: "acc1",
-      access_token: "tok1",
+      encrypted_access_token: "tok1",
       token_type: "Bearer",
       received_at: new Date().toISOString(),
     });
@@ -263,7 +263,7 @@ describe("OAuthCredential model", () => {
       user_id: "u1",
       provider: "google",
       account_id: "acc1",
-      access_token: "tok1",
+      encrypted_access_token: "tok1",
       token_type: "Bearer",
       received_at: new Date().toISOString(),
     });
@@ -288,10 +288,10 @@ describe("OAuthCredential encryption", () => {
     });
 
     expect(cred.id).toBeTruthy();
-    expect(cred.access_token).not.toBe("my-access-token");
-    expect(cred.refresh_token).not.toBe("my-refresh-token");
-    expect(cred.access_token).toBeTruthy();
-    expect(cred.refresh_token).toBeTruthy();
+    expect(cred.encrypted_access_token).not.toBe("my-access-token");
+    expect(cred.encrypted_refresh_token).not.toBe("my-refresh-token");
+    expect(cred.encrypted_access_token).toBeTruthy();
+    expect(cred.encrypted_refresh_token).toBeTruthy();
   });
 
   it("createEncrypted without refresh_token stores null", async () => {
@@ -302,7 +302,7 @@ describe("OAuthCredential encryption", () => {
       access_token: "my-access-token",
     });
 
-    expect(cred.refresh_token).toBeNull();
+    expect(cred.encrypted_refresh_token).toBeNull();
   });
 
   it("getDecryptedAccessToken decrypts correctly", async () => {
@@ -351,7 +351,7 @@ describe("OAuthCredential encryption", () => {
       refresh_token: "old-refresh-token",
     });
 
-    const oldEncryptedAccess = cred.access_token;
+    const oldEncryptedAccess = cred.encrypted_access_token;
 
     await cred.updateTokens({
       accessToken: "new-access-token",
@@ -360,7 +360,7 @@ describe("OAuthCredential encryption", () => {
     });
 
     // Encrypted value should have changed
-    expect(cred.access_token).not.toBe(oldEncryptedAccess);
+    expect(cred.encrypted_access_token).not.toBe(oldEncryptedAccess);
 
     // Decrypt to verify
     const decryptedAccess = await cred.getDecryptedAccessToken();
@@ -430,7 +430,7 @@ describe("OAuthCredential encryption", () => {
     });
 
     // Different users should produce different ciphertexts even for same-length tokens
-    expect(cred1.access_token).not.toBe(cred2.access_token);
+    expect(cred1.encrypted_access_token).not.toBe(cred2.encrypted_access_token);
 
     const d1 = await cred1.getDecryptedAccessToken();
     const d2 = await cred2.getDecryptedAccessToken();

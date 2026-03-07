@@ -25,8 +25,8 @@ const OAUTH_CREDENTIAL_SCHEMA: TableSchema = {
     user_id: { type: "string" },
     provider: { type: "string" },
     account_id: { type: "string" },
-    access_token: { type: "string" },
-    refresh_token: { type: "string", optional: true },
+    encrypted_access_token: { type: "string" },
+    encrypted_refresh_token: { type: "string", optional: true },
     username: { type: "string", optional: true },
     token_type: { type: "string" },
     scope: { type: "string", optional: true },
@@ -38,6 +38,11 @@ const OAUTH_CREDENTIAL_SCHEMA: TableSchema = {
 };
 
 const OAUTH_CREDENTIAL_INDEXES: IndexSpec[] = [
+  {
+    name: "idx_oauth_user_id",
+    columns: ["user_id"],
+    unique: false,
+  },
   {
     name: "idx_oauth_user_provider",
     columns: ["user_id", "provider"],
@@ -60,8 +65,8 @@ export class OAuthCredential extends DBModel {
   declare user_id: string;
   declare provider: string;
   declare account_id: string;
-  declare access_token: string;
-  declare refresh_token: string | null;
+  declare encrypted_access_token: string;
+  declare encrypted_refresh_token: string | null;
   declare username: string | null;
   declare token_type: string;
   declare scope: string | null;
@@ -74,7 +79,7 @@ export class OAuthCredential extends DBModel {
     super(data);
     const now = new Date().toISOString();
     this.id ??= createTimeOrderedUuid();
-    this.refresh_token ??= null;
+    this.encrypted_refresh_token ??= null;
     this.username ??= null;
     this.scope ??= null;
     this.expires_at ??= null;
@@ -114,8 +119,8 @@ export class OAuthCredential extends DBModel {
     );
 
     if (existing) {
-      existing.access_token = opts.access_token;
-      existing.refresh_token = opts.refresh_token ?? existing.refresh_token;
+      existing.encrypted_access_token = opts.access_token;
+      existing.encrypted_refresh_token = opts.refresh_token ?? existing.encrypted_refresh_token;
       existing.username = opts.username ?? existing.username;
       existing.token_type = opts.token_type;
       existing.scope = opts.scope ?? existing.scope;
@@ -131,8 +136,8 @@ export class OAuthCredential extends DBModel {
       user_id: opts.user_id,
       provider: opts.provider,
       account_id: opts.account_id,
-      access_token: opts.access_token,
-      refresh_token: opts.refresh_token ?? null,
+      encrypted_access_token: opts.access_token,
+      encrypted_refresh_token: opts.refresh_token ?? null,
       username: opts.username ?? null,
       token_type: opts.token_type,
       scope: opts.scope ?? null,
@@ -212,8 +217,8 @@ export class OAuthCredential extends DBModel {
       user_id: opts.user_id,
       provider: opts.provider,
       account_id: opts.account_id,
-      access_token: encryptedAccessToken,
-      refresh_token: encryptedRefreshToken,
+      encrypted_access_token: encryptedAccessToken,
+      encrypted_refresh_token: encryptedRefreshToken,
       username: opts.username ?? null,
       token_type: opts.token_type ?? "Bearer",
       scope: opts.scope ?? null,
@@ -228,9 +233,9 @@ export class OAuthCredential extends DBModel {
   async getDecryptedAccessToken(): Promise<string> {
     const masterKey = await initMasterKey();
     try {
-      return decrypt(masterKey, this.user_id, this.access_token);
+      return decrypt(masterKey, this.user_id, this.encrypted_access_token);
     } catch {
-      return decryptFernet(masterKey, this.user_id, this.access_token);
+      return decryptFernet(masterKey, this.user_id, this.encrypted_access_token);
     }
   }
 
@@ -238,12 +243,12 @@ export class OAuthCredential extends DBModel {
    * Decrypt and return the refresh token, or null if not set.
    */
   async getDecryptedRefreshToken(): Promise<string | null> {
-    if (!this.refresh_token) return null;
+    if (!this.encrypted_refresh_token) return null;
     const masterKey = await initMasterKey();
     try {
-      return decrypt(masterKey, this.user_id, this.refresh_token);
+      return decrypt(masterKey, this.user_id, this.encrypted_refresh_token);
     } catch {
-      return decryptFernet(masterKey, this.user_id, this.refresh_token);
+      return decryptFernet(masterKey, this.user_id, this.encrypted_refresh_token);
     }
   }
 
@@ -259,10 +264,10 @@ export class OAuthCredential extends DBModel {
     expiresAt?: string | null;
   }): Promise<void> {
     const masterKey = getMasterKey();
-    this.access_token = encrypt(masterKey, this.user_id, opts.accessToken);
+    this.encrypted_access_token = encrypt(masterKey, this.user_id, opts.accessToken);
 
     if (opts.refreshToken !== undefined && opts.refreshToken !== null) {
-      this.refresh_token = encrypt(masterKey, this.user_id, opts.refreshToken);
+      this.encrypted_refresh_token = encrypt(masterKey, this.user_id, opts.refreshToken);
     }
     if (opts.tokenType !== undefined) {
       this.token_type = opts.tokenType;

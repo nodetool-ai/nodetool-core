@@ -58,14 +58,24 @@ const PREDICTION_SCHEMA: TableSchema = {
     provider: { type: "string" },
     model: { type: "string" },
     workflow_id: { type: "string", optional: true },
+    error: { type: "string", optional: true },
+    logs: { type: "string", optional: true },
+    status: { type: "string" },
     cost: { type: "number", optional: true },
     input_tokens: { type: "number", optional: true },
     output_tokens: { type: "number", optional: true },
     total_tokens: { type: "number", optional: true },
     cached_tokens: { type: "number", optional: true },
     reasoning_tokens: { type: "number", optional: true },
-    created_at: { type: "string" },
-    metadata: { type: "string", optional: true },
+    created_at: { type: "datetime", optional: true },
+    started_at: { type: "datetime", optional: true },
+    completed_at: { type: "datetime", optional: true },
+    duration: { type: "number", optional: true },
+    hardware: { type: "string", optional: true },
+    input_size: { type: "number", optional: true },
+    output_size: { type: "number", optional: true },
+    parameters: { type: "json", optional: true },
+    metadata: { type: "json", optional: true },
   },
 };
 
@@ -74,6 +84,16 @@ const PREDICTION_INDEXES: IndexSpec[] = [
   {
     name: "idx_predictions_user_provider",
     columns: ["user_id", "provider"],
+    unique: false,
+  },
+  {
+    name: "idx_prediction_created_at",
+    columns: ["created_at"],
+    unique: false,
+  },
+  {
+    name: "idx_prediction_user_model",
+    columns: ["user_id", "model"],
     unique: false,
   },
 ];
@@ -90,14 +110,24 @@ export class Prediction extends DBModel {
   declare provider: string;
   declare model: string;
   declare workflow_id: string | null;
+  declare error: string | null;
+  declare logs: string | null;
+  declare status: string;
   declare cost: number | null;
   declare input_tokens: number | null;
   declare output_tokens: number | null;
   declare total_tokens: number | null;
   declare cached_tokens: number | null;
   declare reasoning_tokens: number | null;
-  declare created_at: string;
-  declare metadata: string | null;
+  declare created_at: string | null;
+  declare started_at: string | null;
+  declare completed_at: string | null;
+  declare duration: number | null;
+  declare hardware: string | null;
+  declare input_size: number | null;
+  declare output_size: number | null;
+  declare parameters: Record<string, unknown> | null;
+  declare metadata: Record<string, unknown> | null;
 
   constructor(data: Row) {
     super(data);
@@ -107,13 +137,23 @@ export class Prediction extends DBModel {
     this.node_id ??= "";
     this.provider ??= "";
     this.model ??= "";
+    this.status ??= "pending";
     this.workflow_id ??= null;
+    this.error ??= null;
+    this.logs ??= null;
     this.cost ??= null;
     this.input_tokens ??= null;
     this.output_tokens ??= null;
     this.total_tokens ??= null;
     this.cached_tokens ??= null;
     this.reasoning_tokens ??= null;
+    this.started_at ??= null;
+    this.completed_at ??= null;
+    this.duration ??= null;
+    this.hardware ??= null;
+    this.input_size ??= null;
+    this.output_size ??= null;
+    this.parameters ??= null;
     this.metadata ??= null;
   }
 

@@ -45,7 +45,7 @@ const RUN_NODE_STATE_SCHEMA: TableSchema = {
     suspended_at: { type: "datetime", optional: true },
     updated_at: { type: "datetime" },
     last_error: { type: "string", optional: true },
-    retryable: { type: "number" },
+    retryable: { type: "boolean" },
     suspension_reason: { type: "string", optional: true },
     resume_state_json: { type: "json", optional: true },
     outputs_json: { type: "json", optional: true },

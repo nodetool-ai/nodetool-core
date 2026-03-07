@@ -25,9 +25,9 @@ const WORKSPACE_SCHEMA: TableSchema = {
     user_id: { type: "string" },
     name: { type: "string" },
     path: { type: "string" },
-    is_default: { type: "number" },
-    created_at: { type: "string" },
-    updated_at: { type: "string" },
+    is_default: { type: "boolean" },
+    created_at: { type: "datetime" },
+    updated_at: { type: "datetime" },
   },
 };
 
