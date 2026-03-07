@@ -208,13 +208,47 @@ def export_cli() -> list[dict]:
 
 # ── Library Function Export ───────────────────────────────────────────
 
+# Pydantic BaseModel method names that should be excluded from parity checks.
+# These are framework-level methods that don't have TypeScript counterparts.
+_PYDANTIC_METHOD_NAMES: frozenset[str] = frozenset()
+
+
+def _get_pydantic_method_names() -> frozenset[str]:
+    """Return the set of method names inherited from pydantic.BaseModel."""
+    global _PYDANTIC_METHOD_NAMES
+    if _PYDANTIC_METHOD_NAMES:
+        return _PYDANTIC_METHOD_NAMES
+    try:
+        from pydantic import BaseModel as PydanticBase  # type: ignore
+
+        _PYDANTIC_METHOD_NAMES = frozenset(
+            name
+            for name in dir(PydanticBase)
+            if not name.startswith("_")
+        )
+    except ImportError:
+        _PYDANTIC_METHOD_NAMES = frozenset()
+    return _PYDANTIC_METHOD_NAMES
+
+
+def _method_predicate(member: object) -> bool:
+    """Return True for regular functions, class methods, and static methods."""
+    return inspect.isfunction(member) or inspect.ismethod(member)
+
 
 def export_library() -> list[dict]:
-    """Export signatures of key library functions that TS should mirror."""
+    """Export signatures of key library functions that TS should mirror.
+
+    Includes both instance methods and class methods while filtering out
+    methods inherited from pydantic.BaseModel to keep the comparison
+    focused on domain-specific functionality.
+    """
     targets: list[tuple[str, str]] = [
         ("nodetool.models.base_model", "DBModel"),
         ("nodetool.workflows.graph", "Graph"),
     ]
+
+    pydantic_names = _get_pydantic_method_names()
 
     entries: list[dict] = []
     for module_path, class_name in targets:
@@ -222,10 +256,16 @@ def export_library() -> list[dict]:
             mod = __import__(module_path, fromlist=[class_name])
             cls = getattr(mod, class_name)
             methods: list[dict] = []
-            for name, method in inspect.getmembers(cls, predicate=inspect.isfunction):
+            for name, member in inspect.getmembers(cls, predicate=_method_predicate):
                 if name.startswith("_"):
                     continue
-                sig = inspect.signature(method)
+                # Skip methods that are purely inherited from pydantic.BaseModel
+                if name in pydantic_names:
+                    continue
+                try:
+                    sig = inspect.signature(member)
+                except (ValueError, TypeError):
+                    continue
                 params = []
                 for pname, param in sig.parameters.items():
                     if pname == "self" or pname == "cls":
