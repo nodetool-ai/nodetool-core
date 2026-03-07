@@ -19,7 +19,7 @@ import type { WorkflowGraph } from "./workflow.js";
 // ── Schema ───────────────────────────────────────────────────────────
 
 const WORKFLOW_VERSION_SCHEMA: TableSchema = {
-  table_name: "workflow_versions",
+  table_name: "nodetool_workflow_versions",
   primary_key: "id",
   columns: {
     id: { type: "string" },

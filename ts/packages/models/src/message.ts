@@ -17,7 +17,7 @@ import { field } from "./condition-builder.js";
 // ── Schema ───────────────────────────────────────────────────────────
 
 const MESSAGE_SCHEMA: TableSchema = {
-  table_name: "messages",
+  table_name: "nodetool_messages",
   primary_key: "id",
   columns: {
     id: { type: "string" },

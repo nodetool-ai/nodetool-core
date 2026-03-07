@@ -17,7 +17,7 @@ import { field } from "./condition-builder.js";
 // ── Schema ───────────────────────────────────────────────────────────
 
 const THREAD_SCHEMA: TableSchema = {
-  table_name: "threads",
+  table_name: "nodetool_threads",
   primary_key: "id",
   columns: {
     id: { type: "string" },

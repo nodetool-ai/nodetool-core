@@ -26,7 +26,7 @@ export interface WorkflowGraph {
 // ── Schema ───────────────────────────────────────────────────────────
 
 const WORKFLOW_SCHEMA: TableSchema = {
-  table_name: "workflows",
+  table_name: "nodetool_workflows",
   primary_key: "id",
   columns: {
     id: { type: "string" },

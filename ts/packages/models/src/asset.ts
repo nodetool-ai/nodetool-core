@@ -17,7 +17,7 @@ import { field } from "./condition-builder.js";
 // ── Schema ───────────────────────────────────────────────────────────
 
 const ASSET_SCHEMA: TableSchema = {
-  table_name: "assets",
+  table_name: "nodetool_assets",
   primary_key: "id",
   columns: {
     id: { type: "string" },

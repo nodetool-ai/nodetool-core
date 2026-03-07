@@ -29,7 +29,7 @@ export type JobStatus =
 // ── Schema ───────────────────────────────────────────────────────────
 
 const JOB_SCHEMA: TableSchema = {
-  table_name: "jobs",
+  table_name: "nodetool_jobs",
   primary_key: "id",
   columns: {
     id: { type: "string" },
