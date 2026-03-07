@@ -43,7 +43,6 @@ const MESSAGE_SCHEMA: TableSchema = {
     execution_event_type: { type: "string", optional: true },
     workflow_target: { type: "string", optional: true },
     created_at: { type: "datetime" },
-    updated_at: { type: "datetime" },
   },
 };
 
@@ -111,7 +110,6 @@ export class Message extends DBModel {
   declare execution_event_type: string | null;
   declare workflow_target: string | null;
   declare created_at: string;
-  declare updated_at: string;
 
   constructor(data: Row) {
     super(data);
@@ -135,7 +133,6 @@ export class Message extends DBModel {
     this.execution_event_type ??= null;
     this.workflow_target ??= null;
     this.created_at ??= now;
-    this.updated_at ??= now;
 
     // Deserialize JSON strings from SQLite TEXT columns
     this.tools = parseJsonArray(this.tools) as string[] | null;
@@ -155,10 +152,6 @@ export class Message extends DBModel {
       this.help_mode = this.help_mode !== 0;
     }
     this.help_mode ??= null;
-  }
-
-  override beforeSave(): void {
-    this.updated_at = new Date().toISOString();
   }
 
   // ── Static queries ───────────────────────────────────────────────
