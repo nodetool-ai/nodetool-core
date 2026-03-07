@@ -23,12 +23,15 @@
     "test": "npm run test --workspaces",
     "metadata-parity": "npm run test:metadata --workspace @nodetool/node-sdk && npm run test:metadata-parity --workspace @nodetool/base-nodes",
     "devserver": "npm run devserver --workspace @nodetool/websocket",
-    "lint": "npm run lint --workspaces",
+    "lint": "eslint packages/*/src packages/*/tests",
     "workflow": "node ./scripts/run-workflow.mjs",
     "chat": "node ./packages/cli/dist/index.js"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@vitest/coverage-v8": "^1.6.1",
+    "eslint": "^10.0.3",
+    "typescript-eslint": "^8.56.1",
     "vitest": "^1.6.1"
   },
   "dependencies": {
