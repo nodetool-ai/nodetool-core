@@ -101,30 +101,50 @@ const apiOptions: HttpApiOptions = {};
 
 // Adapter: bridge ws.WebSocket to WebSocketConnection interface
 class WsAdapter implements WebSocketConnection {
-  constructor(private ws: any) {}
-  async accept() {}
-  async receive(): Promise<{ type: string; bytes?: Uint8Array | null; text?: string | null }> {
-    return new Promise((resolve, reject) => {
-      this.ws.once("message", (data: Buffer | string) => {
-        if (typeof data === "string") resolve({ type: "text", text: data });
-        else resolve({ type: "bytes", bytes: new Uint8Array(data) });
-      });
-      this.ws.once("close", () => resolve({ type: "close" }));
-      this.ws.once("error", reject);
+  clientState: "connected" | "disconnected" = "connected";
+  applicationState: "connected" | "disconnected" = "connected";
+
+  private queue: Array<{ type: string; bytes?: Uint8Array | null; text?: string | null }> = [];
+  private waiters: Array<(frame: { type: string; bytes?: Uint8Array | null; text?: string | null }) => void> = [];
+
+  constructor(private socket: any) {
+    socket.on("message", (raw: any, isBinary: boolean) => {
+      const frame = isBinary
+        ? { type: "websocket.message", bytes: raw instanceof Uint8Array ? raw : new Uint8Array(raw as Buffer) }
+        : { type: "websocket.message", text: raw.toString() };
+      const waiter = this.waiters.shift();
+      if (waiter) waiter(frame);
+      else this.queue.push(frame);
+    });
+
+    socket.on("close", () => {
+      this.clientState = "disconnected";
+      this.applicationState = "disconnected";
+      const waiter = this.waiters.shift();
+      if (waiter) waiter({ type: "websocket.disconnect" });
     });
   }
-  async sendBytes(data: Uint8Array) {
-    await new Promise<void>((resolve, reject) =>
-      this.ws.send(data, (err?: Error) => (err ? reject(err) : resolve()))
-    );
+
+  async accept(): Promise<void> {}
+
+  async receive(): Promise<{ type: string; bytes?: Uint8Array | null; text?: string | null }> {
+    const next = this.queue.shift();
+    if (next) return next;
+    return new Promise((resolve) => this.waiters.push(resolve));
   }
-  async sendText(data: string) {
-    await new Promise<void>((resolve, reject) =>
-      this.ws.send(data, (err?: Error) => (err ? reject(err) : resolve()))
-    );
+
+  async sendBytes(data: Uint8Array): Promise<void> {
+    this.socket.send(data);
   }
-  async close(code?: number, reason?: string) {
-    this.ws.close(code, reason);
+
+  async sendText(data: string): Promise<void> {
+    this.socket.send(data);
+  }
+
+  async close(code?: number, reason?: string): Promise<void> {
+    this.clientState = "disconnected";
+    this.applicationState = "disconnected";
+    this.socket.close(code, reason);
   }
 }
 
