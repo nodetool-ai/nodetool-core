@@ -383,10 +383,18 @@ export class UnifiedWebSocketRunner {
           job_id: (msg as unknown as Record<string, unknown>).job_id ?? active.jobId,
           workflow_id: (msg as unknown as Record<string, unknown>).workflow_id ?? active.workflowId,
         };
-        await this.sendMessage(outbound);
+        // Only relay output_update messages for actual output-type nodes.
+        // The kernel emits output_update for all nodes; the WebSocket API
+        // should only forward them for final output nodes (type contains "Output").
         if (outbound.type === "output_update") {
+          const nodeId = String(outbound.node_id ?? "");
+          const graphNodes = (active.graph as { nodes?: Array<{ id?: unknown; type?: unknown }> }).nodes ?? [];
+          const node = graphNodes.find((n) => n.id === nodeId);
+          const nodeType = typeof node?.type === "string" ? node.type : "";
+          if (!nodeType.includes("Output")) continue;
           outputUpdateSeen = true;
         }
+        await this.sendMessage(outbound);
         if (outbound.type === "job_update") {
           const status = String(outbound.status ?? "");
           if (["completed", "failed", "cancelled", "error", "suspended"].includes(status)) {

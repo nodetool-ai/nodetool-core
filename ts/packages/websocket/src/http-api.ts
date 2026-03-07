@@ -19,6 +19,10 @@ import { handleCostRequest } from "./cost-api.js";
 import { handleWorkspaceRequest } from "./workspace-api.js";
 import { handleFileRequest, type FileApiOptions } from "./file-api.js";
 import { createStorageHandler } from "./storage-api.js";
+import { handleUsersRequest } from "./users-api.js";
+import { handleSettingsRequest } from "./settings-api.js";
+import { handleCollectionRequest } from "./collection-api.js";
+import { handleMcpHttpRequest } from "./mcp-server.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -172,6 +176,68 @@ function toWorkflowResponse(workflow: Workflow): JsonObject {
   };
 }
 
+/** Normalize a TypeMetadata object to match Python Pydantic serialization defaults. */
+function normalizeTypeMetadata(t: unknown): Record<string, unknown> {
+  const tm = (t && typeof t === "object" ? t : {}) as Record<string, unknown>;
+  return {
+    type: typeof tm.type === "string" ? tm.type : "any",
+    optional: tm.optional ?? false,
+    values: Array.isArray(tm.values) ? tm.values : [],
+    type_args: Array.isArray(tm.type_args)
+      ? tm.type_args.map(normalizeTypeMetadata)
+      : [],
+    type_name: tm.type_name ?? null,
+  };
+}
+
+/** Normalize a Property to match Python Pydantic serialization defaults. */
+function normalizeProperty(p: unknown): Record<string, unknown> {
+  const prop = (p && typeof p === "object" ? p : {}) as Record<string, unknown>;
+  return {
+    name: prop.name ?? "",
+    type: normalizeTypeMetadata(prop.type),
+    default: prop.default ?? null,
+    title: prop.title ?? null,
+    description: prop.description ?? null,
+    min: prop.min ?? null,
+    max: prop.max ?? null,
+    json_schema_extra: prop.json_schema_extra ?? null,
+    required: prop.required ?? false,
+  };
+}
+
+/** Normalize an OutputSlot to match Python Pydantic serialization defaults. */
+function normalizeOutputSlot(o: unknown): Record<string, unknown> {
+  const slot = (o && typeof o === "object" ? o : {}) as Record<string, unknown>;
+  return {
+    name: slot.name ?? "",
+    type: normalizeTypeMetadata(slot.type),
+    stream: slot.stream ?? false,
+  };
+}
+
+/** Normalize a NodeMetadata object to match the Python API response exactly. */
+function normalizeNodeMetadata(node: NodeMetadata): Record<string, unknown> {
+  return {
+    title: node.title,
+    description: node.description,
+    namespace: node.namespace,
+    node_type: node.node_type,
+    layout: node.layout ?? "default",
+    properties: (node.properties ?? []).map(normalizeProperty),
+    outputs: (node.outputs ?? []).map(normalizeOutputSlot),
+    the_model_info: node.the_model_info ?? {},
+    recommended_models: node.recommended_models ?? [],
+    basic_fields: node.basic_fields ?? [],
+    required_settings: node.required_settings ?? [],
+    is_dynamic: node.is_dynamic ?? false,
+    is_streaming_output: node.is_streaming_output ?? false,
+    expose_as_tool: node.expose_as_tool ?? false,
+    supports_dynamic_outputs: node.supports_dynamic_outputs ?? false,
+    model_packs: node.model_packs ?? [],
+  };
+}
+
 async function handleNodeMetadata(request: Request, options: HttpApiOptions): Promise<Response> {
   if (request.method !== "GET") {
     return errorResponse(405, "Method not allowed");
@@ -180,9 +246,9 @@ async function handleNodeMetadata(request: Request, options: HttpApiOptions): Pr
     roots: options.metadataRoots,
     maxDepth: options.metadataMaxDepth,
   });
-  const nodes: NodeMetadata[] = [...loaded.nodesByType.values()].sort((a, b) =>
-    a.node_type.localeCompare(b.node_type)
-  );
+  const nodes = [...loaded.nodesByType.values()]
+    .sort((a, b) => a.node_type.localeCompare(b.node_type))
+    .map(normalizeNodeMetadata);
   return jsonResponse(nodes);
 }
 
@@ -668,12 +734,33 @@ async function handleSecretsRoot(request: Request, options: HttpApiOptions): Pro
 
   const url = new URL(request.url);
   const limit = parseLimit(url, 100);
-  const [secrets] = await Secret.listForUser(userId, limit);
 
-  return jsonResponse({
-    secrets: secrets.map((s) => toSecretResponse(s)),
-    next_key: null,
-  });
+  // Return all possible secrets from the registry (like Python), with is_configured flag.
+  const { getRegisteredSettings } = await import("./settings-api.js");
+  const secretDefs = getRegisteredSettings().filter((d) => d.isSecret);
+
+  const allSecrets: JsonObject[] = [];
+  for (const def of secretDefs) {
+    const secret = await Secret.find(userId, def.envVar);
+    if (secret) {
+      allSecrets.push({ ...secret.toSafeObject(), is_configured: true });
+    } else {
+      allSecrets.push({
+        id: null,
+        user_id: null,
+        key: def.envVar,
+        description: def.description,
+        created_at: null,
+        updated_at: null,
+        is_configured: false,
+      });
+    }
+  }
+
+  const limited = allSecrets.slice(0, limit);
+  const next_key = allSecrets.length > limit ? (allSecrets[limit] as Record<string, unknown>).key as string : null;
+
+  return jsonResponse({ secrets: limited, next_key });
 }
 
 async function handleSecretByKey(
@@ -702,6 +789,13 @@ async function handleSecretByKey(
   }
 
   if (request.method === "PUT") {
+    // Validate key is in the secrets registry (like Python)
+    const { getRegisteredSettings } = await import("./settings-api.js");
+    const secretDef = getRegisteredSettings().find((d) => d.isSecret && d.envVar === key);
+    if (!secretDef) {
+      return errorResponse(404, `Secret key '${key}' is not available. Only secrets from the registry can be configured.`);
+    }
+
     const body = await parseJsonBody<SecretUpdateBody>(request);
     if (!body || typeof body.value !== "string") {
       return errorResponse(400, "Invalid JSON body");
@@ -711,7 +805,7 @@ async function handleSecretByKey(
         userId,
         key,
         value: body.value,
-        description: body.description,
+        description: body.description ?? secretDef.description,
       });
       return jsonResponse(toSecretResponse(secret));
     } catch (err) {
@@ -1040,6 +1134,57 @@ function handleReplicateStatus(): Response {
   return jsonResponse({ configured });
 }
 
+// ── Admin secrets import ────────────────────────────────────────────
+
+interface EncryptedSecretPayload {
+  user_id: string;
+  key: string;
+  encrypted_value: string;
+  description?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+async function handleAdminSecretsImport(
+  request: Request,
+  options: HttpApiOptions
+): Promise<Response> {
+  if (request.method !== "POST") {
+    return errorResponse(405, "Method not allowed");
+  }
+
+  // Simple admin check: user must be "1" (dev mode) or listed in ADMIN_USER_IDS
+  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
+  const adminIds = process.env.ADMIN_USER_IDS;
+  const isAdmin = userId === "1" || (!!adminIds && adminIds.split(",").map((s) => s.trim()).includes(userId));
+  if (!isAdmin) {
+    return errorResponse(403, "Admin access required");
+  }
+
+  const body = await parseJsonBody<EncryptedSecretPayload[]>(request);
+  if (!Array.isArray(body)) {
+    return errorResponse(400, "Expected array of secret payloads");
+  }
+
+  await ensureSecretTable();
+  let imported = 0;
+  for (const item of body) {
+    if (!item.user_id || !item.key || !item.encrypted_value) continue;
+    try {
+      await Secret.upsert({
+        userId: item.user_id,
+        key: item.key,
+        value: item.encrypted_value,
+        description: item.description ?? undefined,
+      });
+      imported++;
+    } catch {
+      // Non-fatal: skip invalid entries
+    }
+  }
+  return jsonResponse({ imported });
+}
+
 export async function handleApiRequest(
   request: Request,
   options: HttpApiOptions = {}
@@ -1077,6 +1222,11 @@ export async function handleApiRequest(
 
   if (pathname === "/api/nodes/replicate_status") {
     return handleReplicateStatus();
+  }
+
+  if (pathname === "/api/settings") {
+    const response = await handleSettingsRequest(request, pathname, options);
+    if (response) return response;
   }
 
   if (pathname === "/api/settings/secrets") {
@@ -1212,7 +1362,25 @@ export async function handleApiRequest(
   }
 
   if (pathname === "/api/users" || pathname.startsWith("/api/users/")) {
-    return errorResponse(501, "User management not available");
+    const response = await handleUsersRequest(request, pathname, options);
+    if (response) return response;
+  }
+
+  if (pathname === "/admin/secrets/import") {
+    return handleAdminSecretsImport(request, options);
+  }
+
+  if (pathname === "/api/collections" || pathname.startsWith("/api/collections/")) {
+    const response = await handleCollectionRequest(request, pathname, options);
+    if (response) return response;
+  }
+
+  if (pathname.startsWith("/mcp")) {
+    const mcpResponse = await handleMcpHttpRequest(request, {
+      metadataRoots: options.metadataRoots,
+      metadataMaxDepth: options.metadataMaxDepth,
+    });
+    if (mcpResponse) return mcpResponse;
   }
 
   return errorResponse(404, "Not found");

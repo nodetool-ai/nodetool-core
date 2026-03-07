@@ -35,3 +35,9 @@ export function isAdmin(user: User): boolean {
 }
 
 export { UserManager, type ManagedUser, type CreateUserOptions } from "./user-manager.js";
+export {
+  FileUserManager,
+  type UserRecord,
+  type UsersFile,
+  type CreateUserResult,
+} from "./file-user-manager.js";

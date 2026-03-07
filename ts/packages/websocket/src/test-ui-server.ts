@@ -2,11 +2,14 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { WebSocketServer } from "ws";
 import { NodeRegistry } from "@nodetool/node-sdk";
 import { registerBaseNodes } from "@nodetool/base-nodes";
 import { UnifiedWebSocketRunner, type WebSocketConnection } from "./unified-websocket-runner.js";
 import { handleNodeHttpRequest, type HttpApiOptions } from "./http-api.js";
+import { SQLiteAdapterFactory, setGlobalAdapterResolver, Secret } from "@nodetool/models";
 
 function htmlPage(): string {
   return `<!doctype html>
@@ -1185,6 +1188,16 @@ export function createTestUiServer(options: TestUiServerOptions = {}) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
+  // Initialize SQLite adapter pointing at the same DB as the Python side
+  const dbPath = process.env["DB_PATH"] ?? join(homedir(), ".local", "share", "nodetool", "nodetool.sqlite3");
+  try {
+    const factory = new SQLiteAdapterFactory(dbPath);
+    setGlobalAdapterResolver((schema) => factory.getAdapter(schema));
+    await Secret.createTable();
+  } catch {
+    // DB unavailable — secrets will appear unconfigured
+  }
+
   const srv = createTestUiServer();
   void srv.listen().then(() => {
     // eslint-disable-next-line no-console

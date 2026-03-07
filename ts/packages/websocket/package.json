@@ -15,13 +15,17 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@nodetool/auth": "*",
     "@nodetool/base-nodes": "*",
+    "@nodetool/config": "*",
     "@nodetool/kernel": "*",
     "@nodetool/models": "*",
     "@nodetool/node-sdk": "*",
     "@nodetool/protocol": "*",
     "@nodetool/runtime": "*",
     "@nodetool/security": "*",
+    "chromadb": "^3.3.1",
     "msgpackr": "^1.11.2",
     "ws": "^8.18.3"
   },
