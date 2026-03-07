@@ -74,6 +74,13 @@ const enabledTools = opts.tools
   ? opts.tools.split(",").map(t => t.trim())
   : settings.enabledTools;
 
+// Auto-enable google_search / google_news when SERPAPI_API_KEY is available
+if (process.env["SERPAPI_API_KEY"]) {
+  for (const tool of ["google_search", "google_news"]) {
+    if (!enabledTools.includes(tool)) enabledTools.push(tool);
+  }
+}
+
 // Stdin mode: activated when stdin is piped (not a TTY)
 if (!process.stdin.isTTY) {
   await runStdinMode({
