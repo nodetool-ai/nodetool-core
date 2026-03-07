@@ -8,6 +8,7 @@ import { WebSocketServer } from "ws";
 import { NodeRegistry } from "@nodetool/node-sdk";
 import { registerBaseNodes } from "@nodetool/base-nodes";
 import { UnifiedWebSocketRunner, type WebSocketConnection } from "./unified-websocket-runner.js";
+import { resolveProvider } from "./openai-api.js";
 import { handleNodeHttpRequest, type HttpApiOptions } from "./http-api.js";
 import {
   SQLiteAdapterFactory,
@@ -1166,6 +1167,7 @@ export function createTestUiServer(options: TestUiServerOptions = {}) {
       });
       const runner = new UnifiedWebSocketRunner({
         resolveExecutor: (node) => registry.resolve(node),
+        resolveProvider: async (providerId) => resolveProvider(providerId),
       });
       void runner.run(new WsAdapter(ws)).catch((error) => {
         // eslint-disable-next-line no-console

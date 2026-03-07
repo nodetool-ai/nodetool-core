@@ -258,11 +258,117 @@ def export_library() -> list[dict]:
 
 # ── Main ──────────────────────────────────────────────────────────────
 
+# ── OpenAPI Export ────────────────────────────────────────────────────
+
+
+def export_openapi() -> dict:
+    """Export the full FastAPI OpenAPI schema (paths + component schemas)."""
+    from nodetool.api.server import create_app
+
+    app = create_app()
+    return app.openapi()
+
+
+# ── Protocol Message Export ───────────────────────────────────────────
+
+
+def _field_type_from_jsonschema(prop: dict) -> str:
+    """Map a JSON Schema property object to a canonical parity type string."""
+    if "const" in prop:
+        return "string"
+    t = prop.get("type")
+    if t == "string":
+        return "string"
+    if t in ("integer", "number"):
+        return "number"
+    if t == "boolean":
+        return "boolean"
+    if t in ("array", "object"):
+        return "json"
+    variants = prop.get("anyOf", prop.get("oneOf", []))
+    if variants:
+        non_null = [p for p in variants if p != {"type": "null"} and p.get("type") != "null"]
+        if len(non_null) == 1:
+            return _field_type_from_jsonschema(non_null[0])
+        return "json"
+    if "$ref" in prop:
+        return "json"
+    return "json"
+
+
+def export_messages() -> dict:
+    """Export Pydantic message class schemas for cross-language protocol parity."""
+    from nodetool.metadata.types import Chunk
+    from nodetool.types.job import JobUpdate
+    from nodetool.types.prediction import Prediction
+    from nodetool.workflows.types import (
+        BinaryUpdate,
+        EdgeUpdate,
+        Error,
+        LogUpdate,
+        NodeProgress,
+        NodeUpdate,
+        Notification,
+        OutputUpdate,
+        PlanningUpdate,
+        PreviewUpdate,
+        SaveUpdate,
+        StepResult,
+        TaskUpdate,
+        ToolCallUpdate,
+        ToolResultUpdate,
+    )
+
+    message_classes = [
+        JobUpdate,
+        NodeUpdate,
+        NodeProgress,
+        EdgeUpdate,
+        OutputUpdate,
+        PreviewUpdate,
+        SaveUpdate,
+        BinaryUpdate,
+        LogUpdate,
+        Notification,
+        StepResult,
+        PlanningUpdate,
+        TaskUpdate,
+        ToolCallUpdate,
+        ToolResultUpdate,
+        Error,
+        Prediction,
+        Chunk,
+    ]
+
+    result: dict = {}
+    for cls in message_classes:
+        schema = cls.model_json_schema()
+        props = schema.get("properties", {})
+        required_set = set(schema.get("required", []))
+        type_discriminator = props.get("type", {}).get("const")
+
+        fields: dict = {}
+        for fname, fprop in props.items():
+            fields[fname] = {
+                "type": _field_type_from_jsonschema(fprop),
+                "required": fname in required_set,
+            }
+
+        result[cls.__name__] = {
+            "type_discriminator": type_discriminator,
+            "required": sorted(required_set),
+            "fields": fields,
+        }
+    return result
+
+
 EXPORTERS = {
     "models": export_models,
     "api": export_api,
     "cli": export_cli,
     "library": export_library,
+    "openapi": export_openapi,
+    "messages": export_messages,
 }
 
 

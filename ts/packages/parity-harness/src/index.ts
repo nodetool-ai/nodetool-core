@@ -56,3 +56,30 @@ export {
   type TsMethodDef,
   type TsClassDef,
 } from "./library-parity.js";
+
+export {
+  extractRoutes,
+  compareOpenApiSchemas,
+  type OpenApiField,
+  type OpenApiRoute,
+  type OpenApiRouteMap,
+  type OpenApiDrift,
+  type OpenApiParityReport,
+} from "./openapi-parity.js";
+
+export {
+  compareProtocolMessages,
+  TS_MESSAGE_MANIFEST,
+  type MessageFieldDef,
+  type MessageSchema,
+  type MessageSchemaMap,
+  type ProtocolDrift,
+  type ProtocolParityReport,
+} from "./protocol-parity.js";
+
+export {
+  fetchJson,
+  compareHttpResponses,
+  type HttpShadowOptions,
+  type HttpShadowResult,
+} from "./shadow.js";

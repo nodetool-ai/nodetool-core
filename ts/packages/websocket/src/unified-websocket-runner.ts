@@ -383,6 +383,15 @@ export class UnifiedWebSocketRunner {
           job_id: (msg as unknown as Record<string, unknown>).job_id ?? active.jobId,
           workflow_id: (msg as unknown as Record<string, unknown>).workflow_id ?? active.workflowId,
         };
+        // Log errors to console for visibility
+        if (outbound.type === "node_update" && outbound.status === "error") {
+          // eslint-disable-next-line no-console
+          console.error(`[UnifiedWebSocketRunner] node error job=${active.jobId} node=${outbound.node_id}:`, outbound.error);
+        } else if (outbound.type === "job_update" && outbound.status === "failed") {
+          // eslint-disable-next-line no-console
+          console.error(`[UnifiedWebSocketRunner] job failed job=${active.jobId}:`, outbound.error);
+        }
+
         // Only relay output_update messages for actual output-type nodes.
         // The kernel emits output_update for all nodes; the WebSocket API
         // should only forward them for final output nodes (type contains "Output").
