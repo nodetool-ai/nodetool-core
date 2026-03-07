@@ -67,7 +67,8 @@ const settings = await loadSettings();
 
 const provider = opts.provider ?? settings.provider;
 const model = opts.model ?? settings.model;
-const agentMode = opts.agent ?? settings.agentMode;
+// When connecting to a WS server, default to regular chat mode unless --agent is explicit
+const agentMode = opts.agent ?? (opts.url ? false : settings.agentMode);
 const workspace = opts.workspace ?? settings.workspace;
 const enabledTools = opts.tools
   ? opts.tools.split(",").map(t => t.trim())

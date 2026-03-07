@@ -678,7 +678,7 @@ export function App({
 
       {/* Bottom status */}
       <Box>
-        <Text color="gray" dimColor>  {agentMode ? "agent mode · " : ""}{provider} · {model}</Text>
+        <Text color="gray" dimColor>  {agentMode ? "agent mode · " : ""}{wsUrl ? "ws · " : ""}{provider} · {model}</Text>
       </Box>
     </Box>
   );

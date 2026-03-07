@@ -1,5 +1,6 @@
 {
   "name": "@nodetool/base-nodes",
+  "type": "module",
   "version": "0.1.0",
   "description": "Basic nodetool-base node ports for the TS workflow runner",
   "main": "dist/index.js",
