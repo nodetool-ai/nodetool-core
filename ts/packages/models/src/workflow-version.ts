@@ -29,6 +29,8 @@ const WORKFLOW_VERSION_SCHEMA: TableSchema = {
     description: { type: "string", optional: true },
     graph: { type: "json" },
     version: { type: "number" },
+    save_type: { type: "string" },
+    autosave_metadata: { type: "json", optional: true },
     created_at: { type: "datetime" },
   },
 };
@@ -36,6 +38,11 @@ const WORKFLOW_VERSION_SCHEMA: TableSchema = {
 const WORKFLOW_VERSION_INDEXES: IndexSpec[] = [
   { name: "idx_wv_workflow_id", columns: ["workflow_id"], unique: false },
   { name: "idx_wv_user_id", columns: ["user_id"], unique: false },
+  {
+    name: "idx_nodetool_workflow_versions_workflow_id_save_type_created_at",
+    columns: ["workflow_id", "save_type", "created_at"],
+    unique: false,
+  },
 ];
 
 // ── Model ────────────────────────────────────────────────────────────
@@ -51,6 +58,8 @@ export class WorkflowVersion extends DBModel {
   declare description: string | null;
   declare graph: WorkflowGraph;
   declare version: number;
+  declare save_type: string;
+  declare autosave_metadata: Record<string, unknown> | null;
   declare created_at: string;
 
   constructor(data: Row) {
@@ -61,6 +70,8 @@ export class WorkflowVersion extends DBModel {
     this.description ??= null;
     this.graph ??= { nodes: [], edges: [] };
     this.version ??= 1;
+    this.save_type ??= "manual";
+    this.autosave_metadata ??= null;
     this.created_at ??= now;
   }
 

@@ -279,8 +279,8 @@ describe("OAuthCredential model CRUD", () => {
     expect(cred.user_id).toBe("u1");
     expect(cred.provider).toBe("huggingface");
     expect(cred.account_id).toBe("acc123");
-    expect(cred.access_token).toBe("hf_token_abc");
-    expect(cred.refresh_token).toBe("hf_refresh_xyz");
+    expect(cred.encrypted_access_token).toBe("hf_token_abc");
+    expect(cred.encrypted_refresh_token).toBe("hf_refresh_xyz");
     expect(cred.username).toBe("testuser");
     expect(cred.id).toBeDefined();
   });
@@ -306,7 +306,7 @@ describe("OAuthCredential model CRUD", () => {
     });
 
     expect(cred2.id).toBe(cred1.id);
-    expect(cred2.access_token).toBe("token2");
+    expect(cred2.encrypted_access_token).toBe("token2");
   });
 
   it("findByAccount returns null for non-existent credential", async () => {
@@ -388,13 +388,13 @@ describe("OAuthCredential model CRUD", () => {
       "huggingface",
     );
     expect(u1Creds.length).toBe(1);
-    expect(u1Creds[0].access_token).toBe("tok1");
+    expect(u1Creds[0].encrypted_access_token).toBe("tok1");
 
     const u2Creds = await OAuthCredential.listForUserAndProvider(
       "u2",
       "huggingface",
     );
     expect(u2Creds.length).toBe(1);
-    expect(u2Creds[0].access_token).toBe("tok2");
+    expect(u2Creds[0].encrypted_access_token).toBe("tok2");
   });
 });

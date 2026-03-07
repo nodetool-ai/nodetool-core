@@ -36,7 +36,7 @@ function toPredictionResponse(pred: Prediction): JsonObject {
     cached_tokens: pred.cached_tokens ?? null,
     reasoning_tokens: pred.reasoning_tokens ?? null,
     created_at: pred.created_at,
-    metadata: pred.metadata ? JSON.parse(pred.metadata) : null,
+    metadata: pred.metadata ?? null,
   };
 }
 

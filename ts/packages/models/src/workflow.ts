@@ -44,7 +44,7 @@ const WORKFLOW_SCHEMA: TableSchema = {
     run_mode: { type: "string", optional: true },
     workspace_id: { type: "string", optional: true },
     html_app: { type: "string", optional: true },
-    receive_clipboard: { type: "number", optional: true },
+    receive_clipboard: { type: "boolean", optional: true },
     access: { type: "string" },
     created_at: { type: "datetime" },
     updated_at: { type: "datetime" },
