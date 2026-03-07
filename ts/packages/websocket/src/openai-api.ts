@@ -206,7 +206,7 @@ export function createSSEStream(
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        const stream = provider.generateMessagesTraced({
+        const stream = provider.generateMessages({
           messages,
           model,
           tools,
@@ -357,7 +357,7 @@ async function handleChatCompletions(
 
   // Non-streaming: collect all chunks
   try {
-    const providerStream = provider.generateMessagesTraced({
+    const providerStream = provider.generateMessages({
       messages,
       model,
       tools,

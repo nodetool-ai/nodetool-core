@@ -14,15 +14,7 @@ import { loadPythonPackageMetadata, type NodeMetadata } from "@nodetool/node-sdk
 import { handleModelsApiRequest } from "./models-api.js";
 import { handleOpenAIRequest, type OpenAIApiOptions } from "./openai-api.js";
 import { handleOAuthRequest } from "./oauth-api.js";
-import { handleSkillsRequest, handleFontsRequest } from "./skills-api.js";
-import { handleCostRequest } from "./cost-api.js";
-import { handleWorkspaceRequest } from "./workspace-api.js";
-import { handleFileRequest, type FileApiOptions } from "./file-api.js";
-import { createStorageHandler } from "./storage-api.js";
-import { handleUsersRequest } from "./users-api.js";
-import { handleSettingsRequest } from "./settings-api.js";
-import { handleCollectionRequest } from "./collection-api.js";
-import { handleMcpHttpRequest } from "./mcp-server.js";
+import { createStorageHandler, type StorageHandlerOptions } from "./storage-api.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -32,7 +24,19 @@ export interface HttpApiOptions {
   userIdHeader?: string;
   baseUrl?: string;
   openai?: OpenAIApiOptions;
-  fileApi?: FileApiOptions;
+  storage?: StorageHandlerOptions;
+}
+
+// Lazily created storage handler — recreated if options change
+let _storageHandler: ((request: Request) => Promise<Response>) | null = null;
+let _storageOpts: StorageHandlerOptions | undefined;
+
+function getStorageHandler(opts?: StorageHandlerOptions): (request: Request) => Promise<Response> {
+  if (!_storageHandler || _storageOpts !== opts) {
+    _storageHandler = createStorageHandler(opts);
+    _storageOpts = opts;
+  }
+  return _storageHandler;
 }
 
 export interface WorkflowRequestBody {
@@ -55,7 +59,6 @@ export interface WorkflowRequestBody {
   html_app?: string | null;
 }
 
-const defaultStorageHandler = createStorageHandler();
 const defaultMemoryFactory = new MemoryAdapterFactory();
 let workflowTableInitialized = false;
 let messageTableInitialized = false;
@@ -176,68 +179,6 @@ function toWorkflowResponse(workflow: Workflow): JsonObject {
   };
 }
 
-/** Normalize a TypeMetadata object to match Python Pydantic serialization defaults. */
-function normalizeTypeMetadata(t: unknown): Record<string, unknown> {
-  const tm = (t && typeof t === "object" ? t : {}) as Record<string, unknown>;
-  return {
-    type: typeof tm.type === "string" ? tm.type : "any",
-    optional: tm.optional ?? false,
-    values: Array.isArray(tm.values) ? tm.values : [],
-    type_args: Array.isArray(tm.type_args)
-      ? tm.type_args.map(normalizeTypeMetadata)
-      : [],
-    type_name: tm.type_name ?? null,
-  };
-}
-
-/** Normalize a Property to match Python Pydantic serialization defaults. */
-function normalizeProperty(p: unknown): Record<string, unknown> {
-  const prop = (p && typeof p === "object" ? p : {}) as Record<string, unknown>;
-  return {
-    name: prop.name ?? "",
-    type: normalizeTypeMetadata(prop.type),
-    default: prop.default ?? null,
-    title: prop.title ?? null,
-    description: prop.description ?? null,
-    min: prop.min ?? null,
-    max: prop.max ?? null,
-    json_schema_extra: prop.json_schema_extra ?? null,
-    required: prop.required ?? false,
-  };
-}
-
-/** Normalize an OutputSlot to match Python Pydantic serialization defaults. */
-function normalizeOutputSlot(o: unknown): Record<string, unknown> {
-  const slot = (o && typeof o === "object" ? o : {}) as Record<string, unknown>;
-  return {
-    name: slot.name ?? "",
-    type: normalizeTypeMetadata(slot.type),
-    stream: slot.stream ?? false,
-  };
-}
-
-/** Normalize a NodeMetadata object to match the Python API response exactly. */
-function normalizeNodeMetadata(node: NodeMetadata): Record<string, unknown> {
-  return {
-    title: node.title,
-    description: node.description,
-    namespace: node.namespace,
-    node_type: node.node_type,
-    layout: node.layout ?? "default",
-    properties: (node.properties ?? []).map(normalizeProperty),
-    outputs: (node.outputs ?? []).map(normalizeOutputSlot),
-    the_model_info: node.the_model_info ?? {},
-    recommended_models: node.recommended_models ?? [],
-    basic_fields: node.basic_fields ?? [],
-    required_settings: node.required_settings ?? [],
-    is_dynamic: node.is_dynamic ?? false,
-    is_streaming_output: node.is_streaming_output ?? false,
-    expose_as_tool: node.expose_as_tool ?? false,
-    supports_dynamic_outputs: node.supports_dynamic_outputs ?? false,
-    model_packs: node.model_packs ?? [],
-  };
-}
-
 async function handleNodeMetadata(request: Request, options: HttpApiOptions): Promise<Response> {
   if (request.method !== "GET") {
     return errorResponse(405, "Method not allowed");
@@ -246,9 +187,9 @@ async function handleNodeMetadata(request: Request, options: HttpApiOptions): Pr
     roots: options.metadataRoots,
     maxDepth: options.metadataMaxDepth,
   });
-  const nodes = [...loaded.nodesByType.values()]
-    .sort((a, b) => a.node_type.localeCompare(b.node_type))
-    .map(normalizeNodeMetadata);
+  const nodes: NodeMetadata[] = [...loaded.nodesByType.values()].sort((a, b) =>
+    a.node_type.localeCompare(b.node_type)
+  );
   return jsonResponse(nodes);
 }
 
@@ -505,27 +446,16 @@ async function handleMessageById(
   messageId: string,
   options: HttpApiOptions
 ): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
   const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
   await ensureMessageTable();
-
-  if (request.method === "GET") {
-    const msg = (await Message.get(messageId)) as Message | null;
-    if (!msg || msg.user_id !== userId) {
-      return errorResponse(404, "Message not found");
-    }
-    return jsonResponse(toMessageResponse(msg));
+  const msg = (await Message.get(messageId)) as Message | null;
+  if (!msg || msg.user_id !== userId) {
+    return errorResponse(404, "Message not found");
   }
-
-  if (request.method === "DELETE") {
-    const msg = (await Message.get(messageId)) as Message | null;
-    if (!msg || msg.user_id !== userId) {
-      return errorResponse(404, "Message not found");
-    }
-    await msg.delete();
-    return new Response(null, { status: 204 });
-  }
-
-  return errorResponse(405, "Method not allowed");
+  return jsonResponse(toMessageResponse(msg));
 }
 
 // ── Thread types & helpers ────────────────────────────────────────
@@ -665,27 +595,19 @@ async function handleJobById(
   jobId: string,
   options: HttpApiOptions
 ): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse(405, "Method not allowed");
+  }
+
   const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
   await ensureJobTable();
 
-  if (request.method === "GET") {
-    const job = (await Job.get(jobId)) as Job | null;
-    if (!job || job.user_id !== userId) {
-      return errorResponse(404, "Job not found");
-    }
-    return jsonResponse(toJobResponse(job));
+  const job = (await Job.get(jobId)) as Job | null;
+  if (!job || job.user_id !== userId) {
+    return errorResponse(404, "Job not found");
   }
 
-  if (request.method === "DELETE") {
-    const job = (await Job.get(jobId)) as Job | null;
-    if (!job || job.user_id !== userId) {
-      return errorResponse(404, "Job not found");
-    }
-    await job.delete();
-    return new Response(null, { status: 204 });
-  }
-
-  return errorResponse(405, "Method not allowed");
+  return jsonResponse(toJobResponse(job));
 }
 
 async function handleJobCancel(
@@ -734,33 +656,12 @@ async function handleSecretsRoot(request: Request, options: HttpApiOptions): Pro
 
   const url = new URL(request.url);
   const limit = parseLimit(url, 100);
+  const [secrets] = await Secret.listForUser(userId, limit);
 
-  // Return all possible secrets from the registry (like Python), with is_configured flag.
-  const { getRegisteredSettings } = await import("./settings-api.js");
-  const secretDefs = getRegisteredSettings().filter((d) => d.isSecret);
-
-  const allSecrets: JsonObject[] = [];
-  for (const def of secretDefs) {
-    const secret = await Secret.find(userId, def.envVar);
-    if (secret) {
-      allSecrets.push({ ...secret.toSafeObject(), is_configured: true });
-    } else {
-      allSecrets.push({
-        id: null,
-        user_id: null,
-        key: def.envVar,
-        description: def.description,
-        created_at: null,
-        updated_at: null,
-        is_configured: false,
-      });
-    }
-  }
-
-  const limited = allSecrets.slice(0, limit);
-  const next_key = allSecrets.length > limit ? (allSecrets[limit] as Record<string, unknown>).key as string : null;
-
-  return jsonResponse({ secrets: limited, next_key });
+  return jsonResponse({
+    secrets: secrets.map((s) => toSecretResponse(s)),
+    next_key: null,
+  });
 }
 
 async function handleSecretByKey(
@@ -789,13 +690,6 @@ async function handleSecretByKey(
   }
 
   if (request.method === "PUT") {
-    // Validate key is in the secrets registry (like Python)
-    const { getRegisteredSettings } = await import("./settings-api.js");
-    const secretDef = getRegisteredSettings().find((d) => d.isSecret && d.envVar === key);
-    if (!secretDef) {
-      return errorResponse(404, `Secret key '${key}' is not available. Only secrets from the registry can be configured.`);
-    }
-
     const body = await parseJsonBody<SecretUpdateBody>(request);
     if (!body || typeof body.value !== "string") {
       return errorResponse(400, "Invalid JSON body");
@@ -805,7 +699,7 @@ async function handleSecretByKey(
         userId,
         key,
         value: body.value,
-        description: body.description ?? secretDef.description,
+        description: body.description,
       });
       return jsonResponse(toSecretResponse(secret));
     } catch (err) {
@@ -1016,189 +910,12 @@ async function handleAssetById(
   return errorResponse(405, "Method not allowed");
 }
 
-// ── Workflow autosave & names ────────────────────────────────────────
-
-async function handleWorkflowAutosave(
-  request: Request,
-  workflowId: string,
-  options: HttpApiOptions
-): Promise<Response> {
-  if (request.method !== "PUT") {
-    return errorResponse(405, "Method not allowed");
-  }
-  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
-  await ensureWorkflowTable();
-
-  const body = await parseJsonBody<WorkflowRequestBody>(request);
-  if (!body || typeof body.name !== "string" || typeof body.access !== "string") {
-    return errorResponse(400, "Invalid JSON body");
-  }
-  if (!body.graph || !Array.isArray(body.graph.nodes) || !Array.isArray(body.graph.edges)) {
-    return errorResponse(400, "Invalid JSON body");
-  }
-
-  const existing = (await Workflow.get(workflowId)) as Workflow | null;
-  if (!existing || existing.user_id !== userId) {
-    return errorResponse(404, "Workflow not found");
-  }
-
-  existing.name = body.name;
-  existing.access = body.access === "public" ? "public" : "private";
-  existing.graph = body.graph;
-  if (body.description !== undefined) existing.description = body.description ?? "";
-  if (body.tags !== undefined) existing.tags = body.tags ?? [];
-  if (body.settings !== undefined) existing.settings = body.settings ?? null;
-  await existing.save();
-  return jsonResponse(toWorkflowResponse(existing));
-}
-
-async function handleWorkflowNames(
-  request: Request,
-  options: HttpApiOptions
-): Promise<Response> {
-  if (request.method !== "GET") {
-    return errorResponse(405, "Method not allowed");
-  }
-  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
-  await ensureWorkflowTable();
-
-  const [workflows] = await Workflow.paginate(userId, { limit: 10000 });
-  const names: Record<string, string> = {};
-  for (const wf of workflows) {
-    names[wf.id] = wf.name;
-  }
-  return jsonResponse(names);
-}
-
-// ── Jobs running/all ────────────────────────────────────────────────
-
-async function handleJobsRunningAll(
-  request: Request,
-  options: HttpApiOptions
-): Promise<Response> {
-  if (request.method !== "GET") {
-    return errorResponse(405, "Method not allowed");
-  }
-  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
-  await ensureJobTable();
-
-  const [jobs] = await Job.paginate(userId, { status: "running" });
-  return jsonResponse({ jobs: jobs.map((j) => toJobResponse(j)) });
-}
-
-// ── Asset search & children ─────────────────────────────────────────
-
-async function handleAssetSearch(
-  request: Request,
-  options: HttpApiOptions
-): Promise<Response> {
-  if (request.method !== "GET") {
-    return errorResponse(405, "Method not allowed");
-  }
-  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
-  await ensureAssetTable();
-
-  const url = new URL(request.url);
-  const query = url.searchParams.get("query");
-  if (!query) {
-    return errorResponse(400, "query parameter is required");
-  }
-
-  const contentType = url.searchParams.get("content_type") ?? undefined;
-  const limit = parseLimit(url, 100);
-  const [assets] = await Asset.searchAssetsGlobal(userId, query, { contentType, limit });
-  return jsonResponse({ assets: assets.map((a) => toAssetResponse(a)) });
-}
-
-async function handleAssetChildren(
-  request: Request,
-  assetId: string,
-  options: HttpApiOptions
-): Promise<Response> {
-  if (request.method !== "GET") {
-    return errorResponse(405, "Method not allowed");
-  }
-  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
-  await ensureAssetTable();
-
-  const url = new URL(request.url);
-  const limit = parseLimit(url, 100);
-  const children = await Asset.getChildren(userId, assetId, limit);
-  return jsonResponse({ assets: children.map((a) => toAssetResponse(a)) });
-}
-
-// ── Node replicate status ───────────────────────────────────────────
-
-function handleReplicateStatus(): Response {
-  const configured = !!process.env.REPLICATE_API_TOKEN;
-  return jsonResponse({ configured });
-}
-
-// ── Admin secrets import ────────────────────────────────────────────
-
-interface EncryptedSecretPayload {
-  user_id: string;
-  key: string;
-  encrypted_value: string;
-  description?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-}
-
-async function handleAdminSecretsImport(
-  request: Request,
-  options: HttpApiOptions
-): Promise<Response> {
-  if (request.method !== "POST") {
-    return errorResponse(405, "Method not allowed");
-  }
-
-  // Simple admin check: user must be "1" (dev mode) or listed in ADMIN_USER_IDS
-  const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
-  const adminIds = process.env.ADMIN_USER_IDS;
-  const isAdmin = userId === "1" || (!!adminIds && adminIds.split(",").map((s) => s.trim()).includes(userId));
-  if (!isAdmin) {
-    return errorResponse(403, "Admin access required");
-  }
-
-  const body = await parseJsonBody<EncryptedSecretPayload[]>(request);
-  if (!Array.isArray(body)) {
-    return errorResponse(400, "Expected array of secret payloads");
-  }
-
-  await ensureSecretTable();
-  let imported = 0;
-  for (const item of body) {
-    if (!item.user_id || !item.key || !item.encrypted_value) continue;
-    try {
-      await Secret.upsert({
-        userId: item.user_id,
-        key: item.key,
-        value: item.encrypted_value,
-        description: item.description ?? undefined,
-      });
-      imported++;
-    } catch {
-      // Non-fatal: skip invalid entries
-    }
-  }
-  return jsonResponse({ imported });
-}
-
 export async function handleApiRequest(
   request: Request,
   options: HttpApiOptions = {}
 ): Promise<Response> {
   const url = new URL(request.url);
   const pathname = normalizePath(url.pathname);
-
-  if (pathname === "/health") {
-    return new Response("OK", { status: 200, headers: { "content-type": "text/plain" } });
-  }
-
-  if (pathname === "/ping") {
-    return jsonResponse({ status: "healthy", timestamp: new Date().toISOString() });
-  }
 
   if (pathname.startsWith("/v1/")) {
     const userId = getUserId(request, options.userIdHeader ?? "x-user-id");
@@ -1220,15 +937,6 @@ export async function handleApiRequest(
     return handleNodeMetadata(request, options);
   }
 
-  if (pathname === "/api/nodes/replicate_status") {
-    return handleReplicateStatus();
-  }
-
-  if (pathname === "/api/settings") {
-    const response = await handleSettingsRequest(request, pathname, options);
-    if (response) return response;
-  }
-
   if (pathname === "/api/settings/secrets") {
     return handleSecretsRoot(request, options);
   }
@@ -1243,15 +951,6 @@ export async function handleApiRequest(
     return handleAssetsRoot(request, options);
   }
 
-  if (pathname === "/api/assets/search") {
-    return handleAssetSearch(request, options);
-  }
-
-  if (pathname.match(/^\/api\/assets\/([^/]+)\/children$/)) {
-    const assetId = decodeURIComponent(pathname.slice("/api/assets/".length, pathname.length - "/children".length));
-    return handleAssetChildren(request, assetId, options);
-  }
-
   if (pathname.startsWith("/api/assets/")) {
     const assetId = decodeURIComponent(pathname.slice("/api/assets/".length));
     if (!assetId) return errorResponse(404, "Not found");
@@ -1260,10 +959,6 @@ export async function handleApiRequest(
 
   if (pathname === "/api/jobs") {
     return handleJobsRoot(request, options);
-  }
-
-  if (pathname === "/api/jobs/running/all") {
-    return handleJobsRunningAll(request, options);
   }
 
   if (pathname.match(/^\/api\/jobs\/[^/]+\/cancel$/)) {
@@ -1302,10 +997,6 @@ export async function handleApiRequest(
     return handleWorkflowsRoot(request, options);
   }
 
-  if (pathname === "/api/workflows/names") {
-    return handleWorkflowNames(request, options);
-  }
-
   if (pathname === "/api/workflows/public") {
     return handlePublicWorkflows(request);
   }
@@ -1316,71 +1007,14 @@ export async function handleApiRequest(
     return handlePublicWorkflowById(request, workflowId);
   }
 
-  if (pathname.match(/^\/api\/workflows\/([^/]+)\/autosave$/)) {
-    const workflowId = decodeURIComponent(pathname.slice("/api/workflows/".length, pathname.length - "/autosave".length));
-    return handleWorkflowAutosave(request, workflowId, options);
-  }
-
   if (pathname.startsWith("/api/workflows/")) {
     const workflowId = decodeURIComponent(pathname.slice("/api/workflows/".length));
     if (!workflowId) return errorResponse(404, "Not found");
     return handleWorkflowById(request, workflowId, options);
   }
 
-  if (pathname === "/api/skills" || pathname.startsWith("/api/skills/")) {
-    return handleSkillsRequest(request);
-  }
-
-  if (pathname === "/api/fonts" || pathname.startsWith("/api/fonts/")) {
-    return handleFontsRequest(request);
-  }
-
-  if (pathname === "/api/costs" || pathname.startsWith("/api/costs/")) {
-    const response = await handleCostRequest(request, options);
-    if (response) return response;
-  }
-
-  if (pathname === "/api/workspaces" || pathname.startsWith("/api/workspaces/")) {
-    const response = await handleWorkspaceRequest(request, options);
-    if (response) return response;
-  }
-
-  if (pathname.startsWith("/api/files/")) {
-    return handleFileRequest(request, options.fileApi);
-  }
-
   if (pathname.startsWith("/api/storage/")) {
-    return defaultStorageHandler(request);
-  }
-
-  if (pathname === "/api/users/validate_username") {
-    const username = url.searchParams.get("username");
-    if (!username) return errorResponse(400, "username parameter is required");
-    // Validation: 3-30 chars, alphanumeric + underscore/hyphen only
-    const valid = /^[a-zA-Z0-9_-]{3,30}$/.test(username);
-    return jsonResponse({ valid, available: valid });
-  }
-
-  if (pathname === "/api/users" || pathname.startsWith("/api/users/")) {
-    const response = await handleUsersRequest(request, pathname, options);
-    if (response) return response;
-  }
-
-  if (pathname === "/admin/secrets/import") {
-    return handleAdminSecretsImport(request, options);
-  }
-
-  if (pathname === "/api/collections" || pathname.startsWith("/api/collections/")) {
-    const response = await handleCollectionRequest(request, pathname, options);
-    if (response) return response;
-  }
-
-  if (pathname.startsWith("/mcp")) {
-    const mcpResponse = await handleMcpHttpRequest(request, {
-      metadataRoots: options.metadataRoots,
-      metadataMaxDepth: options.metadataMaxDepth,
-    });
-    if (mcpResponse) return mcpResponse;
+    return getStorageHandler(options.storage)(request);
   }
 
   return errorResponse(404, "Not found");
@@ -1442,8 +1076,18 @@ export async function handleNodeHttpRequest(
     return;
   }
 
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  res.end(Buffer.from(bytes));
+  // Stream the response body to avoid buffering large files in memory
+  const reader = response.body.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  res.end();
 }
 
 export function createHttpApiServer(options: HttpApiOptions = {}): Server {
