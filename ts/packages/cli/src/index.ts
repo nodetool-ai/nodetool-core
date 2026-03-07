@@ -77,7 +77,7 @@ const { waitUntilExit } = render(
     enabledTools,
     workspaceDir: workspace,
   }),
-  { exitOnCtrlC: true },
+  { exitOnCtrlC: false },
 );
 
 await waitUntilExit();

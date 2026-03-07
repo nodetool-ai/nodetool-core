@@ -72,72 +72,27 @@ const COMMANDS = {
 const COMMAND_NAMES = Object.keys(COMMANDS);
 
 // ---------------------------------------------------------------------------
-// Status bar
-// ---------------------------------------------------------------------------
-
-function StatusBar({
-  provider,
-  model,
-  agentMode,
-  msgCount,
-  streaming,
-}: {
-  provider: string;
-  model: string;
-  agentMode: boolean;
-  msgCount: number;
-  streaming: boolean;
-}) {
-  const width = process.stdout.columns ?? 80;
-  const left = `  nodetool chat  `;
-  const mid = `${provider} • ${model}`;
-  const right = `  agent: ${agentMode ? "ON " : "OFF"}  msgs: ${msgCount}  `;
-  const pad = Math.max(0, width - left.length - mid.length - right.length);
-
-  return (
-    <Box>
-      <Text backgroundColor="blue" color="white" bold>{left}</Text>
-      <Text backgroundColor="black" color="cyan">{mid}</Text>
-      <Text backgroundColor="black" color="gray">{" ".repeat(pad)}</Text>
-      {streaming
-        ? <Text backgroundColor="black" color="yellow"><Spinner type="dots" /> streaming</Text>
-        : <Text backgroundColor="blue" color="white">{right}</Text>}
-    </Box>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Individual message rendering
 // ---------------------------------------------------------------------------
 
 function UserMessage({ content }: { content: string }) {
   const width = process.stdout.columns ?? 80;
-  const prefix = "  You  ";
-  const padded = "─".repeat(Math.max(0, width - prefix.length - 2));
   return (
-    <Box flexDirection="column" marginTop={1}>
+    <Box flexDirection="column">
       <Box>
-        <Text color="cyan" bold>{prefix}</Text>
-        <Text color="gray" dimColor>{padded}</Text>
-      </Box>
-      <Box marginLeft={2} marginBottom={1}>
-        <Text>{content}</Text>
+        <Text color="cyan" bold>{">"} </Text>
+        <Text bold>{content}</Text>
+        <Text color="gray" dimColor>{" ".repeat(Math.max(0, width - content.length - 2))}</Text>
       </Box>
     </Box>
   );
 }
 
 function AssistantMessage({ content, rendered }: { content: string; rendered?: string }) {
-  const width = process.stdout.columns ?? 80;
-  const prefix = "  Assistant  ";
-  const padded = "─".repeat(Math.max(0, width - prefix.length - 2));
   return (
-    <Box flexDirection="column" marginTop={1}>
+    <Box flexDirection="column" marginTop={1} marginBottom={1}>
       <Box>
-        <Text color="green" bold>{prefix}</Text>
-        <Text color="gray" dimColor>{padded}</Text>
-      </Box>
-      <Box marginLeft={2} marginBottom={1}>
+        <Text color="green">{"●"} </Text>
         <Text>{rendered ?? content}</Text>
       </Box>
     </Box>
@@ -145,18 +100,26 @@ function AssistantMessage({ content, rendered }: { content: string; rendered?: s
 }
 
 function ToolMessage({ toolName, content }: { toolName: string; content: string }) {
+  const lines = content.split("\n").slice(0, 5);
   return (
-    <Box marginLeft={2} marginBottom={1}>
-      <Text color="yellow">⚙ {toolName}: </Text>
-      <Text color="gray" dimColor>{content.slice(0, 120)}{content.length > 120 ? "…" : ""}</Text>
+    <Box flexDirection="column" marginLeft={2} marginBottom={1}>
+      {lines.map((line, i) => (
+        <Box key={i}>
+          <Text color="gray" dimColor>{i === 0 ? "└ " : "  "}</Text>
+          {i === 0
+            ? <><Text color="white" dimColor>{toolName}  </Text><Text color="gray" dimColor>{line}</Text></>
+            : <Text color="gray" dimColor>{line}</Text>
+          }
+        </Box>
+      ))}
     </Box>
   );
 }
 
 function SystemMessage({ content }: { content: string }) {
   return (
-    <Box marginLeft={2} marginBottom={1}>
-      <Text color="magenta" italic>{content}</Text>
+    <Box marginTop={1} marginBottom={1}>
+      <Text color="gray" dimColor>{content}</Text>
     </Box>
   );
 }
@@ -171,20 +134,51 @@ function ChatMessageItem({ msg }: { msg: ChatMessage }) {
 }
 
 // ---------------------------------------------------------------------------
+// Autocomplete menu
+// ---------------------------------------------------------------------------
+
+const CMD_WIDTH = 18;
+
+function AutocompleteMenu({
+  matches,
+  selectedIndex,
+}: {
+  matches: Array<{ cmd: string; desc: string }>;
+  selectedIndex: number;
+}) {
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      {matches.map(({ cmd, desc }, i) => {
+        const selected = i === selectedIndex;
+        return (
+          <Box key={cmd}>
+            <Text color={selected ? "cyan" : "gray"} bold={selected}>
+              {cmd.padEnd(CMD_WIDTH)}
+            </Text>
+            <Text color={selected ? "cyan" : undefined} dimColor={!selected}>
+              {desc}
+            </Text>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Help panel
 // ---------------------------------------------------------------------------
 
 function HelpPanel() {
   return (
     <Box flexDirection="column" marginLeft={2} marginTop={1} marginBottom={1}>
-      <Text bold color="cyan">Available commands:</Text>
       {Object.entries(COMMANDS).map(([cmd, desc]) => (
         <Box key={cmd}>
           <Text color="yellow">{cmd.padEnd(14)}</Text>
-          <Text color="gray">{desc}</Text>
+          <Text color="gray" dimColor>{desc}</Text>
         </Box>
       ))}
-      <Box marginTop={1}><Text color="gray" dimColor>↑/↓ cycle history • Tab: complete command • Ctrl+C: exit</Text></Box>
+      <Box marginTop={1}><Text color="gray" dimColor>↑/↓ history · Tab: complete · Ctrl+C: exit</Text></Box>
     </Box>
   );
 }
@@ -223,20 +217,20 @@ export function App({
   const [streamLabel, setStreamLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [acIndex, setAcIndex] = useState(0);
 
   // Refs to hold latest values without causing re-renders in async callbacks
   const chatHistoryRef = useRef(chatHistory);
   const providerRef = useRef(provider);
   const modelRef = useRef(model);
   const agentModeRef = useRef(agentMode);
+  const abortRef = useRef(false);
 
   useEffect(() => { chatHistoryRef.current = chatHistory; }, [chatHistory]);
   useEffect(() => { providerRef.current = provider; }, [provider]);
   useEffect(() => { modelRef.current = model; }, [model]);
   useEffect(() => { agentModeRef.current = agentMode; }, [agentMode]);
-
-  // Message counter (excludes welcome/system)
-  const msgCount = messages.filter(m => m.role !== "system").length;
+  useEffect(() => { setAcIndex(0); }, [inputValue]);
 
   // Unique ID generator
   const nextId = useRef(0);
@@ -375,6 +369,7 @@ export function App({
     // Add user message to display
     await addMessage("user", trimmed);
 
+    abortRef.current = false;
     setStreaming(true);
     setStreamContent("");
     setStreamLabel("thinking");
@@ -397,6 +392,7 @@ export function App({
 
         let assistantContent = "";
         for await (const msg of agent.execute(ctx)) {
+          if (abortRef.current) break;
           if (msg.type === "chunk") {
             const chunk = msg as { content?: string };
             assistantContent += chunk.content ?? "";
@@ -440,6 +436,7 @@ export function App({
           tools,
           callbacks: {
             onChunk: (text) => {
+              if (abortRef.current) throw new Error("aborted");
               assistantContent += text;
               setStreamContent(assistantContent);
               setStreamLabel("streaming");
@@ -463,9 +460,11 @@ export function App({
         }
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg);
-      await addMessage("system", `Error: ${msg}`);
+      if (!abortRef.current) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(msg);
+        await addMessage("system", `Error: ${msg}`);
+      }
     } finally {
       setStreaming(false);
       setStreamContent("");
@@ -476,45 +475,82 @@ export function App({
   // ---------------------------------------------------------------------------
   // Keyboard: history navigation and tab completion
   // ---------------------------------------------------------------------------
-  useInput((input, key) => {
-    if (streaming) return; // block input while streaming
+  // Autocomplete matches — derived from inputValue
+  const acMatches = inputValue.startsWith("/") && !streaming
+    ? Object.entries(COMMANDS)
+        .filter(([cmd]) => cmd.startsWith(inputValue.split(" ")[0].toLowerCase()))
+        .map(([cmd, desc]) => ({ cmd, desc }))
+    : [];
+  const acOpen = acMatches.length > 0;
 
-    if (key.upArrow) {
-      setInputHistory(hist => {
-        if (hist.length === 0) return hist;
-        setHistoryIndex(prev => {
-          if (prev === -1) setHistoryDraft(inputValue);
-          const next = Math.min(prev + 1, hist.length - 1);
-          setInputValue(hist[next] ?? "");
-          return next;
-        });
-        return hist;
-      });
+  useInput((input, key) => {
+    // Escape or Ctrl+C: cancel streaming, or exit when idle
+    if (key.escape || (key.ctrl && input === "c")) {
+      if (streaming) {
+        abortRef.current = true;
+      } else {
+        saveSettings({ provider, model, agentMode }).then(() => exit());
+      }
       return;
     }
 
-    if (key.downArrow) {
-      setHistoryIndex(prev => {
-        if (prev <= 0) {
-          setInputValue(historyDraft);
-          return -1;
-        }
-        const next = prev - 1;
+    if (streaming) return; // block other input while streaming
+
+    // Autocomplete navigation
+    if (acOpen) {
+      if (key.upArrow) {
+        setAcIndex(i => (i <= 0 ? acMatches.length - 1 : i - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setAcIndex(i => (i >= acMatches.length - 1 ? 0 : i + 1));
+        return;
+      }
+      if (key.tab) {
+        const selected = acMatches[acIndex] ?? acMatches[0];
+        if (selected) setInputValue(selected.cmd + " ");
+        setAcIndex(0);
+        return;
+      }
+      if (key.return) {
+        const selected = acMatches[acIndex] ?? acMatches[0];
+        if (selected) handleSubmit(selected.cmd);
+        setAcIndex(0);
+        return;
+      }
+    }
+
+    // History navigation (only when autocomplete is closed)
+    if (!acOpen) {
+      if (key.upArrow) {
         setInputHistory(hist => {
-          setInputValue(hist[next] ?? "");
+          if (hist.length === 0) return hist;
+          setHistoryIndex(prev => {
+            if (prev === -1) setHistoryDraft(inputValue);
+            const next = Math.min(prev + 1, hist.length - 1);
+            setInputValue(hist[next] ?? "");
+            return next;
+          });
           return hist;
         });
-        return next;
-      });
-      return;
-    }
+        return;
+      }
 
-    // Tab: complete command names
-    if (input === "\t" && inputValue.startsWith("/")) {
-      const partial = inputValue.toLowerCase();
-      const match = COMMAND_NAMES.find(c => c.startsWith(partial) && c !== partial);
-      if (match) setInputValue(match + " ");
-      return;
+      if (key.downArrow) {
+        setHistoryIndex(prev => {
+          if (prev <= 0) {
+            setInputValue(historyDraft);
+            return -1;
+          }
+          const next = prev - 1;
+          setInputHistory(hist => {
+            setInputValue(hist[next] ?? "");
+            return hist;
+          });
+          return next;
+        });
+        return;
+      }
     }
   });
 
@@ -523,15 +559,6 @@ export function App({
   // ---------------------------------------------------------------------------
   return (
     <Box flexDirection="column">
-      {/* Status bar */}
-      <StatusBar
-        provider={provider}
-        model={model}
-        agentMode={agentMode}
-        msgCount={msgCount}
-        streaming={streaming}
-      />
-
       {/* Past messages — Static never re-renders past content */}
       <Static items={messages}>
         {(msg) => (
@@ -546,47 +573,58 @@ export function App({
 
       {/* Live streaming area */}
       {streaming && (
-        <Box flexDirection="column" marginLeft={2} marginTop={1}>
+        <Box flexDirection="column" marginTop={1} marginBottom={1}>
           <Box>
-            <Text color="green" bold>  Assistant  </Text>
-            <Text color="gray" dimColor>{"─".repeat(Math.max(0, (process.stdout.columns ?? 80) - 16))}</Text>
+            <Text color="green">{"●"} </Text>
+            <Text>{streamContent}</Text>
           </Box>
-          <Box marginLeft={2}>
-            <Text color="green" dimColor>{streamContent}</Text>
-          </Box>
-          <Box marginLeft={2} marginTop={1}>
-            <Spinner type="dots" />
-            <Text color="gray" dimColor> {streamLabel}</Text>
-          </Box>
+          {streamLabel && (
+            <Box marginLeft={2}>
+              <Text color="gray" dimColor><Spinner type="dots" /> {streamLabel}</Text>
+            </Box>
+          )}
         </Box>
       )}
 
       {/* Error display */}
       {error && (
-        <Box marginLeft={2} marginTop={1}>
+        <Box marginBottom={1}>
           <Text color="red">✗ {error}</Text>
         </Box>
       )}
 
+      {/* Autocomplete menu */}
+      {acOpen && (
+        <AutocompleteMenu
+          matches={acMatches}
+          selectedIndex={Math.min(acIndex, acMatches.length - 1)}
+        />
+      )}
+
+      {/* Separator */}
+      <Box>
+        <Text color="gray" dimColor>{"─".repeat(process.stdout.columns ?? 80)}</Text>
+      </Box>
+
       {/* Input bar */}
-      <Box marginTop={1}>
-        <Text color="cyan" bold>{streaming ? "  " : "> "}</Text>
+      <Box>
+        <Text color="cyan" bold>{"> "}</Text>
         {streaming
-          ? <Text color="gray" dimColor>processing...</Text>
+          ? <Text color="gray" dimColor>{streamLabel || "thinking…"}</Text>
           : (
             <TextInput
               value={inputValue}
               onChange={setInputValue}
               onSubmit={handleSubmit}
-              placeholder="Type a message or /help for commands"
+              placeholder=""
             />
           )
         }
       </Box>
 
-      {/* Hint line */}
+      {/* Bottom status */}
       <Box>
-        <Text color="gray" dimColor>  ↑↓ history  Tab: complete  /help: commands  Ctrl+C: exit</Text>
+        <Text color="gray" dimColor>  {agentMode ? "agent mode · " : ""}{provider} · {model}</Text>
       </Box>
     </Box>
   );
