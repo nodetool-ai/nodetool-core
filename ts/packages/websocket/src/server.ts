@@ -7,8 +7,9 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { join } from "node:path";
+import { join, resolve, dirname } from "node:path";
 import { homedir } from "node:os";
+import { existsSync, readdirSync } from "node:fs";
 import { createLogger } from "@nodetool/config";
 import { WebSocketServer } from "ws";
 import { NodeRegistry } from "@nodetool/node-sdk";
@@ -23,6 +24,36 @@ import {
 } from "@nodetool/runtime";
 import { getSecret } from "@nodetool/security";
 import { UnifiedWebSocketRunner, type WebSocketConnection } from "./unified-websocket-runner.js";
+import {
+  Tool,
+  GoogleSearchTool,
+  GoogleNewsTool,
+  GoogleImagesTool,
+  GoogleGroundedSearchTool,
+  GoogleImageGenerationTool,
+  OpenAIWebSearchTool,
+  OpenAIImageGenerationTool,
+  OpenAITextToSpeechTool,
+  BrowserTool,
+  ScreenshotTool,
+  ReadFileTool,
+  WriteFileTool,
+  ListDirectoryTool,
+  DownloadFileTool,
+  HttpRequestTool,
+  ExtractPDFTextTool,
+  ExtractPDFTablesTool,
+  ConvertPDFToMarkdownTool,
+  CalculatorTool,
+  SearchEmailTool,
+  ArchiveEmailTool,
+  AddLabelToEmailTool,
+  DataForSEOSearchTool,
+  DataForSEONewsTool,
+  DataForSEOImagesTool,
+  SaveAssetTool,
+  ReadAssetTool,
+} from "@nodetool/agents";
 import { handleNodeHttpRequest, type HttpApiOptions } from "./http-api.js";
 import {
   SQLiteAdapterFactory,
@@ -84,11 +115,113 @@ try {
 }
 
 // ---------------------------------------------------------------------------
+// Metadata root detection — find Python package_metadata directories
+// ---------------------------------------------------------------------------
+
+function hasMetadataLayout(root: string): boolean {
+  return (
+    existsSync(join(root, "src", "nodetool", "package_metadata")) ||
+    existsSync(join(root, "nodetool", "package_metadata"))
+  );
+}
+
+function detectMetadataRoots(): string[] {
+  if (process.env["METADATA_ROOTS"]) {
+    return process.env["METADATA_ROOTS"].split(":").filter(Boolean);
+  }
+
+  const candidates = new Set<string>();
+  let cur = resolve(process.cwd());
+  for (let i = 0; i < 8; i++) {
+    candidates.add(cur);
+    const parent = dirname(cur);
+    if (parent === cur) break;
+    cur = parent;
+  }
+
+  // Also check siblings in the workspace root (e.g. nodetool-* repos)
+  // Walk up from cwd to find the workspace root
+  cur = resolve(process.cwd());
+  for (let i = 0; i < 6; i++) {
+    try {
+      for (const entry of readdirSync(cur, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        if (entry.name.toLowerCase().startsWith("nodetool")) {
+          candidates.add(join(cur, entry.name));
+        }
+      }
+    } catch {
+      // ignore
+    }
+    const parent = dirname(cur);
+    if (parent === cur) break;
+    cur = parent;
+  }
+
+  return [...candidates].filter(hasMetadataLayout);
+}
+
+const metadataRoots = detectMetadataRoots();
+log.info("Metadata roots", { roots: metadataRoots });
+
+// ---------------------------------------------------------------------------
 // Node registry
 // ---------------------------------------------------------------------------
 
 const registry = new NodeRegistry();
+registry.loadPythonMetadata({ roots: metadataRoots, maxDepth: 8 });
 registerBaseNodes(registry);
+
+// ---------------------------------------------------------------------------
+// Built-in tool registry for chat tool execution
+// ---------------------------------------------------------------------------
+
+const builtinToolClasses: (new () => Tool)[] = [
+  GoogleSearchTool,
+  GoogleNewsTool,
+  GoogleImagesTool,
+  GoogleGroundedSearchTool,
+  GoogleImageGenerationTool,
+  OpenAIWebSearchTool,
+  OpenAIImageGenerationTool,
+  OpenAITextToSpeechTool,
+  BrowserTool,
+  ScreenshotTool,
+  ReadFileTool,
+  WriteFileTool,
+  ListDirectoryTool,
+  DownloadFileTool,
+  HttpRequestTool,
+  ExtractPDFTextTool,
+  ExtractPDFTablesTool,
+  ConvertPDFToMarkdownTool,
+  CalculatorTool,
+  SearchEmailTool,
+  ArchiveEmailTool,
+  AddLabelToEmailTool,
+  DataForSEOSearchTool,
+  DataForSEONewsTool,
+  DataForSEOImagesTool,
+  SaveAssetTool,
+  ReadAssetTool,
+];
+
+const toolClassMap = new Map<string, new () => Tool>();
+for (const cls of builtinToolClasses) {
+  const instance = new cls();
+  toolClassMap.set(instance.name, cls);
+}
+
+async function resolveTools(toolNames: string[]): Promise<Tool[]> {
+  const tools: Tool[] = [];
+  for (const name of toolNames) {
+    const cls = toolClassMap.get(name);
+    if (cls) {
+      tools.push(new cls());
+    }
+  }
+  return tools;
+}
 
 // ---------------------------------------------------------------------------
 // HTTP + WebSocket server
@@ -97,7 +230,7 @@ registerBaseNodes(registry);
 const host = process.env["HOST"] ?? "127.0.0.1";
 const port = Number(process.env["PORT"] ?? 7777);
 
-const apiOptions: HttpApiOptions = {};
+const apiOptions: HttpApiOptions = { metadataRoots };
 
 // Adapter: bridge ws.WebSocket to WebSocketConnection interface
 class WsAdapter implements WebSocketConnection {
@@ -177,6 +310,7 @@ server.on("upgrade", (request, socket, head) => {
     const runner = new UnifiedWebSocketRunner({
       resolveExecutor: (node) => registry.resolve(node),
       resolveProvider,
+      resolveTools,
     });
     log.info("WebSocket client connected");
     void runner.run(new WsAdapter(ws)).catch((error) => {
