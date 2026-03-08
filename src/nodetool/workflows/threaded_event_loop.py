@@ -286,7 +286,9 @@ class ThreadedEventLoop:
                     vram_before = torch.cuda.memory_allocated() / (1024 * 1024)
                     torch.cuda.empty_cache()
                     vram_after = torch.cuda.memory_allocated() / (1024 * 1024)
-                    log.info(f"Cleared CUDA cache in thread {threading.get_ident()}: {vram_before:.1f}MB -> {vram_after:.1f}MB")
+                    log.info(
+                        f"Cleared CUDA cache in thread {threading.get_ident()}: {vram_before:.1f}MB -> {vram_after:.1f}MB"
+                    )
                 else:
                     log.debug("CUDA not available, skipping cache clear.")
             except Exception as e:

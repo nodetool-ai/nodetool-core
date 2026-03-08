@@ -97,9 +97,7 @@ class TestApifyProviderInitialization:
 
     def test_init_with_custom_settings(self, mock_api_key):
         """Test initialization with custom country and language codes."""
-        provider = ApifyProvider(
-            api_key=mock_api_key, country_code="gb", language_code="en-GB"
-        )
+        provider = ApifyProvider(api_key=mock_api_key, country_code="gb", language_code="en-GB")
         assert provider.country_code == "gb"
         assert provider.language_code == "en-GB"
 
@@ -114,13 +112,9 @@ class TestApifyProviderInitialization:
 class TestApifyProviderSearch:
     """Tests for ApifyProvider search methods."""
 
-    async def test_search_organic(
-        self, apify_provider, mock_search_response, mock_dataset_response
-    ):
+    async def test_search_organic(self, apify_provider, mock_search_response, mock_dataset_response):
         """Test organic search with mocked responses."""
-        with patch.object(
-            apify_provider, "_get_client", return_value=AsyncMock()
-        ) as mock_get_client:
+        with patch.object(apify_provider, "_get_client", return_value=AsyncMock()) as mock_get_client:
             mock_client = mock_get_client.return_value
 
             # Mock the run response
@@ -143,13 +137,9 @@ class TestApifyProviderSearch:
             assert len(result["organic_results"]) > 0
             assert result["organic_results"][0]["title"] == "Test Result 1"
 
-    async def test_search_news(
-        self, apify_provider, mock_search_response, mock_news_response
-    ):
+    async def test_search_news(self, apify_provider, mock_search_response, mock_news_response):
         """Test news search with mocked responses."""
-        with patch.object(
-            apify_provider, "_get_client", return_value=AsyncMock()
-        ) as mock_get_client:
+        with patch.object(apify_provider, "_get_client", return_value=AsyncMock()) as mock_get_client:
             mock_client = mock_get_client.return_value
 
             # Mock the run response
@@ -181,9 +171,7 @@ class TestApifyProviderSearch:
 
     async def test_search_images_reverse_not_supported(self, apify_provider):
         """Test reverse image search is not supported."""
-        result = await apify_provider.search_images(
-            keyword=None, image_url="https://example.com/image.jpg"
-        )
+        result = await apify_provider.search_images(keyword=None, image_url="https://example.com/image.jpg")
         assert "error" in result
         assert result["error"] == "Reverse image search is not currently supported by ApifyProvider."
 
@@ -207,9 +195,7 @@ class TestApifyProviderSearch:
 
     async def test_error_handling(self, apify_provider):
         """Test error handling when actor run fails."""
-        with patch.object(
-            apify_provider, "_get_client", return_value=AsyncMock()
-        ) as mock_get_client:
+        with patch.object(apify_provider, "_get_client", return_value=AsyncMock()) as mock_get_client:
             mock_client = mock_get_client.return_value
 
             # Mock failed run response

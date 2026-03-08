@@ -34,7 +34,7 @@ class TestVideoExportOptimization:
             tmp_path = tmp.name
 
         try:
-            reader = imageio.get_reader(tmp_path, format='ffmpeg')
+            reader = imageio.get_reader(tmp_path, format="ffmpeg")
             read_frame = reader.get_data(0)
             reader.close()
 
@@ -60,7 +60,7 @@ class TestVideoExportOptimization:
             tmp_path = tmp.name
 
         try:
-            reader = imageio.get_reader(tmp_path, format='ffmpeg')
+            reader = imageio.get_reader(tmp_path, format="ffmpeg")
             read_frame = reader.get_data(0)
             reader.close()
 
@@ -84,7 +84,7 @@ class TestVideoExportOptimization:
             tmp_path = tmp.name
 
         try:
-            reader = imageio.get_reader(tmp_path, format='ffmpeg')
+            reader = imageio.get_reader(tmp_path, format="ffmpeg")
             read_frame = reader.get_data(0)
             reader.close()
 
@@ -101,7 +101,7 @@ class TestVideoExportOptimization:
         # If frames are same size, mixed types should work due to lazy conversion loop.
 
         frame1 = np.full((64, 64, 3), 100, dtype=np.uint8)
-        frame2 = np.full((64, 64, 3), 0.5, dtype=np.float32) # should become ~127
+        frame2 = np.full((64, 64, 3), 0.5, dtype=np.float32)  # should become ~127
         frames = [frame1, frame2]
 
         video_bytes = export_to_video_bytes(frames, fps=2)
@@ -111,7 +111,7 @@ class TestVideoExportOptimization:
             tmp_path = tmp.name
 
         try:
-            reader = imageio.get_reader(tmp_path, format='ffmpeg')
+            reader = imageio.get_reader(tmp_path, format="ffmpeg")
             f1 = reader.get_data(0)
             f2 = reader.get_data(1)
             reader.close()

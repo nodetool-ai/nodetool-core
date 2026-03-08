@@ -307,9 +307,7 @@ class TestMistralVisionSupport:
             role="user",
             content=[
                 MessageTextContent(text="What is in this image?"),
-                MessageImageContent(
-                    image=ImageRef(data=pixel_png)
-                ),
+                MessageImageContent(image=ImageRef(data=pixel_png)),
             ],
         )
 
@@ -345,9 +343,7 @@ class TestMistralVisionSupport:
             role="user",
             content=[
                 MessageTextContent(text="Describe this image"),
-                MessageImageContent(
-                    image=ImageRef(uri="https://example.com/image.jpg")
-                ),
+                MessageImageContent(image=ImageRef(uri="https://example.com/image.jpg")),
             ],
         )
 

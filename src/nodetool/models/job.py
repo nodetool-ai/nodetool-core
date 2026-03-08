@@ -56,7 +56,9 @@ class Job(DBModel):
     logs: list[dict] | None = DBField(default=None)
 
     # Fields from RunState - execution state
-    status: str | None = DBField(default="scheduled")  # scheduled | running | suspended | completed | failed | cancelled | recovering
+    status: str | None = DBField(
+        default="scheduled"
+    )  # scheduled | running | suspended | completed | failed | cancelled | recovering
     updated_at: datetime | None = DBField(default=None)
 
     # Suspension state (populated when status=suspended)
@@ -151,7 +153,17 @@ class Job(DBModel):
                 limit=limit,
                 order_by="started_at",
                 reverse=True,
-                columns=["id", "user_id", "job_type", "workflow_id", "started_at", "finished_at", "error", "cost", "status"],
+                columns=[
+                    "id",
+                    "user_id",
+                    "job_type",
+                    "workflow_id",
+                    "started_at",
+                    "finished_at",
+                    "error",
+                    "cost",
+                    "status",
+                ],
             )
             return items, key
         elif user_id:
@@ -160,7 +172,17 @@ class Job(DBModel):
                 limit=limit,
                 order_by="started_at",
                 reverse=True,
-                columns=["id", "user_id", "job_type", "workflow_id", "started_at", "finished_at", "error", "cost", "status"],
+                columns=[
+                    "id",
+                    "user_id",
+                    "job_type",
+                    "workflow_id",
+                    "started_at",
+                    "finished_at",
+                    "error",
+                    "cost",
+                    "status",
+                ],
             )
             return items, key
         elif started_after:
@@ -169,7 +191,17 @@ class Job(DBModel):
                 order_by="started_at",
                 reverse=True,
                 limit=limit,
-                columns=["id", "user_id", "job_type", "workflow_id", "started_at", "finished_at", "error", "cost", "status"],
+                columns=[
+                    "id",
+                    "user_id",
+                    "job_type",
+                    "workflow_id",
+                    "started_at",
+                    "finished_at",
+                    "error",
+                    "cost",
+                    "status",
+                ],
             )
             return items, key
         else:

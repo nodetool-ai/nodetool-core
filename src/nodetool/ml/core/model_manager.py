@@ -327,9 +327,7 @@ class ModelManager:
             keys = cls._models_by_node.pop(node_id, None)
             if keys:
                 for key in list(keys):
-                    is_still_referenced = any(
-                        key in mapped_keys for mapped_keys in cls._models_by_node.values()
-                    )
+                    is_still_referenced = any(key in mapped_keys for mapped_keys in cls._models_by_node.values())
                     if is_still_referenced:
                         continue
 

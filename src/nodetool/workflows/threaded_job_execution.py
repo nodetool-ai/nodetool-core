@@ -91,6 +91,7 @@ class ThreadedJobExecution(JobExecution):
             # When a GPU node's inference thread is blocked (e.g. nunchaku hang),
             # the CancelledError may not reach the finally block that releases the lock.
             from nodetool.workflows.workflow_runner import force_release_gpu_lock
+
             force_release_gpu_lock()
 
             self._set_status("cancelled")

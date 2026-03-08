@@ -213,7 +213,9 @@ class AnthropicProvider(BaseProvider):
 
                         # Retry on rate limit or server errors
                         if response.status in (429, 500, 502, 503, 504):
-                            log.warning(f"Anthropic API error: HTTP {response.status}, attempt {attempt + 1}/{max_retries}")
+                            log.warning(
+                                f"Anthropic API error: HTTP {response.status}, attempt {attempt + 1}/{max_retries}"
+                            )
                             if attempt < max_retries - 1:
                                 delay = base_delay * (2**attempt)
                                 await asyncio.sleep(delay)
@@ -681,7 +683,7 @@ class AnthropicProvider(BaseProvider):
                 # Fallback: check text content?
                 for block in response.content:
                     if block.type == "text":
-                         content.append(block.text)
+                        content.append(block.text)
         else:
             # Standard processing
             for block in response.content:

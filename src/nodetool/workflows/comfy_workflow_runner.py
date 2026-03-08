@@ -44,6 +44,7 @@ COMFY_WS_TIMEOUT: int = int(os.environ.get("COMFY_WS_TIMEOUT", "300"))
 # Event translator
 # ---------------------------------------------------------------------------
 
+
 class ComfyEventTranslator:
     """Stateful translator that converts raw Comfy WS messages into
     ``ProcessingMessage`` instances.

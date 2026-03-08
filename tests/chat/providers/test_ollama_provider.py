@@ -344,7 +344,7 @@ class TestOllamaProvider(BaseProviderTest):
         """Test parsing Gemma-style bracket-wrapped function calls."""
         provider = self.create_provider()
         # Single function call in brackets
-        text = "[get_weather(city=\"London\")]"
+        text = '[get_weather(city="London")]'
         calls, _cleaned = provider._parse_function_calls(text)
         assert len(calls) == 1
         assert calls[0].name == "get_weather"
@@ -353,7 +353,7 @@ class TestOllamaProvider(BaseProviderTest):
     def test_parse_gemma_multiple_bracket_calls(self):
         """Test parsing multiple Gemma-style function calls in brackets."""
         provider = self.create_provider()
-        text = "[get_weather(city=\"London\"), get_weather(city=\"Paris\")]"
+        text = '[get_weather(city="London"), get_weather(city="Paris")]'
         calls, _cleaned = provider._parse_function_calls(text)
         assert len(calls) == 2
         assert calls[0].args == {"city": "London"}
@@ -362,7 +362,7 @@ class TestOllamaProvider(BaseProviderTest):
     def test_parse_plain_calls_still_work(self):
         """Existing plain function call parsing remains unchanged."""
         provider = self.create_provider()
-        text = "get_weather(city=\"London\")"
+        text = 'get_weather(city="London")'
         calls, _cleaned = provider._parse_function_calls(text)
         assert len(calls) == 1
         assert calls[0].name == "get_weather"

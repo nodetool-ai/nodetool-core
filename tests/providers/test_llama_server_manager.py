@@ -65,9 +65,7 @@ class TestResolveLlamaCppCachedFile:
             "nodetool.providers.llama_server_manager.get_llama_cpp_cache_dir",
             return_value=str(cache_dir),
         ):
-            result = _resolve_llama_cpp_cached_file(
-                "ggml-org/gemma-3-1b-it-GGUF", "gemma-3-1b-it-Q4_K_M.gguf"
-            )
+            result = _resolve_llama_cpp_cached_file("ggml-org/gemma-3-1b-it-GGUF", "gemma-3-1b-it-Q4_K_M.gguf")
             assert result is not None
             assert result == str(model_file)
 

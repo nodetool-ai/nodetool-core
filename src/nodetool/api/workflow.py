@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 
 import asyncio
 import base64
@@ -257,10 +257,9 @@ async def index(
     )
     # Batch fetch all thumbnails to avoid N+1 queries
     thumbnail_urls = await find_thumbnails_batch(workflows)
-    workflow_responses = await asyncio.gather(*[
-        from_model(workflow, thumbnail_url=thumbnail_urls[workflow.id])
-        for workflow in workflows
-    ])
+    workflow_responses = await asyncio.gather(
+        *[from_model(workflow, thumbnail_url=thumbnail_urls[workflow.id]) for workflow in workflows]
+    )
     return WorkflowList(workflows=workflow_responses, next=cursor)
 
 
@@ -275,10 +274,9 @@ async def public(
     workflows, cursor = await WorkflowModel.paginate(limit=limit, start_key=cursor, columns=column_list)
     # Batch fetch all thumbnails to avoid N+1 queries
     thumbnail_urls = await find_thumbnails_batch(workflows)
-    workflow_responses = await asyncio.gather(*[
-        from_model(workflow, thumbnail_url=thumbnail_urls[workflow.id])
-        for workflow in workflows
-    ])
+    workflow_responses = await asyncio.gather(
+        *[from_model(workflow, thumbnail_url=thumbnail_urls[workflow.id]) for workflow in workflows]
+    )
     return WorkflowList(workflows=workflow_responses, next=cursor)
 
 
@@ -532,6 +530,7 @@ async def get_workflow_app(id: str, user: str = Depends(current_user)) -> HTMLRe
 
     # Inject runtime configuration using JSON for safety
     import json as json_module
+
     api_url = Environment.get_api_url()
     ws_url = Environment.get_ws_url()
 
@@ -986,6 +985,7 @@ async def delete_version(
 
     return {"success": True}
 
+
 @router.post("/{id}/autosave")
 async def autosave_workflow(
     id: str,
@@ -1209,4 +1209,3 @@ async def gradio_export(
         raise HTTPException(status_code=500, detail=f"Error exporting workflow: {e}") from e
 
     return code
-

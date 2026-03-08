@@ -358,7 +358,7 @@ class TestRunDSLFiles:
         runner = CliRunner()
 
         # Create a simple DSL file using the core Graph type directly
-        dsl_code = '''
+        dsl_code = """
 from nodetool.types.api_graph import Graph, Node
 
 # Create a graph object directly
@@ -368,17 +368,19 @@ graph = Graph(
     ],
     edges=[]
 )
-'''
+"""
         with runner.isolated_filesystem():
             with open("test_workflow.py", "w") as f:
                 f.write(dsl_code)
 
             # Mock the run_workflow to avoid actual execution
             import nodetool.workflows.run_workflow as run_mod
+
             original_run = run_mod.run_workflow
 
             async def mock_run_workflow(*args, **kwargs):
                 from nodetool.types.job import JobUpdate
+
                 yield JobUpdate(type="job_update", status="completed", job_id="test123", message="Done")
 
             run_mod.run_workflow = mock_run_workflow
@@ -395,11 +397,11 @@ graph = Graph(
         runner = CliRunner()
 
         # Create a DSL file without a graph object
-        dsl_code = '''
+        dsl_code = """
 from nodetool.types.api_graph import Graph
 # No graph object defined
 x = 42
-'''
+"""
         with runner.isolated_filesystem():
             with open("test_workflow.py", "w") as f:
                 f.write(dsl_code)
@@ -413,10 +415,10 @@ x = 42
         runner = CliRunner()
 
         # Create a DSL file with wrong graph type
-        dsl_code = '''
+        dsl_code = """
 # graph is a string, not a Graph object
 graph = "not a graph"
-'''
+"""
         with runner.isolated_filesystem():
             with open("test_workflow.py", "w") as f:
                 f.write(dsl_code)
@@ -431,16 +433,7 @@ graph = "not a graph"
 
         # Create a simple JSON workflow file
         workflow_json = {
-            "graph": {
-                "nodes": [
-                    {
-                        "id": "1",
-                        "type": "nodetool.math.Add",
-                        "data": {"a": 5.0, "b": 3.0}
-                    }
-                ],
-                "edges": []
-            }
+            "graph": {"nodes": [{"id": "1", "type": "nodetool.math.Add", "data": {"a": 5.0, "b": 3.0}}], "edges": []}
         }
 
         with runner.isolated_filesystem():
@@ -449,10 +442,12 @@ graph = "not a graph"
 
             # Mock the run_workflow
             import nodetool.workflows.run_workflow as run_mod
+
             original_run = run_mod.run_workflow
 
             async def mock_run_workflow(*args, **kwargs):
                 from nodetool.types.job import JobUpdate
+
                 yield JobUpdate(type="job_update", status="completed", job_id="test123", message="Done")
 
             run_mod.run_workflow = mock_run_workflow
@@ -468,7 +463,7 @@ graph = "not a graph"
         runner = CliRunner()
 
         # DSL code to pipe via stdin
-        dsl_code = '''
+        dsl_code = """
 from nodetool.types.api_graph import Graph, Node
 
 # Create a graph object directly
@@ -478,14 +473,16 @@ graph = Graph(
     ],
     edges=[]
 )
-'''
+"""
 
         # Mock the run_workflow
         import nodetool.workflows.run_workflow as run_mod
+
         original_run = run_mod.run_workflow
 
         async def mock_run_workflow(*args, **kwargs):
             from nodetool.types.job import JobUpdate
+
             yield JobUpdate(type="job_update", status="completed", job_id="test123", message="Done")
 
         run_mod.run_workflow = mock_run_workflow
@@ -506,10 +503,12 @@ graph = Graph(
 
         # Mock the run_workflow
         import nodetool.workflows.run_workflow as run_mod
+
         original_run = run_mod.run_workflow
 
         async def mock_run_workflow(*args, **kwargs):
             from nodetool.types.job import JobUpdate
+
             yield JobUpdate(type="job_update", status="completed", job_id="test123", message="Done")
 
         run_mod.run_workflow = mock_run_workflow
@@ -525,11 +524,11 @@ graph = Graph(
         runner = CliRunner()
 
         # DSL code without graph object
-        dsl_code = '''
+        dsl_code = """
 from nodetool.types.api_graph import Graph
 # No graph defined
 x = 42
-'''
+"""
 
         result = runner.invoke(cli, ["run", "--stdin"], input=dsl_code)
         assert result.exit_code == 1
@@ -635,8 +634,7 @@ class TestDeploySecretSync:
         cli_module._sync_secrets_to_deployment("docker02", DummyDeployment())
 
         assert any(
-            "Skipping secret sync for 'docker02'" in line and "table not initialized" in line
-            for line in printed
+            "Skipping secret sync for 'docker02'" in line and "table not initialized" in line for line in printed
         )
 
     def test_export_encrypted_secrets_payload_uses_resource_scope(self, monkeypatch: pytest.MonkeyPatch):
@@ -692,6 +690,7 @@ class TestCliAsyncRunnerCleanup:
         monkeypatch.setattr(db_sqlite, "shutdown_all_sqlite_pools", fake_shutdown_all_sqlite_pools)
         assert cli_mod._run_async(do_work()) == 123
         assert called["value"] is True
+
     def test_node_tools_import_is_clean(self):
         """Test that importing node_tools does not trigger heavy imports."""
         script = """

@@ -10,7 +10,6 @@ different platforms (self-hosted, RunPod, GCP). It handles:
 - Validation and error handling
 """
 
-
 import logging
 from pathlib import Path
 from typing import Any, Optional
@@ -405,9 +404,9 @@ class DeploymentManager:
                             results["valid"] = False
 
                     elif isinstance(deployment, SSHDeployment | LocalDeployment):
-                         if not deployment.port:
-                             results["errors"].append(f"{deployment_name}: No port configured")
-                             results["valid"] = False
+                        if not deployment.port:
+                            results["errors"].append(f"{deployment_name}: No port configured")
+                            results["valid"] = False
 
             except Exception as e:
                 results["errors"].append(f"{deployment_name}: {str(e)}")

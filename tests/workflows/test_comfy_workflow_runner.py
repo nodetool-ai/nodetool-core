@@ -154,9 +154,7 @@ class TestExecuted:
     def test_executed_removes_from_running(self):
         t = _make_translator()
         t.translate({"type": "executing", "data": {"node": "node_1", "prompt_id": PROMPT_ID}})
-        t.translate(
-            {"type": "executed", "data": {"node": "node_1", "output": {}, "prompt_id": PROMPT_ID}}
-        )
+        t.translate({"type": "executed", "data": {"node": "node_1", "output": {}, "prompt_id": PROMPT_ID}})
         # On finalize, node_1 should not be finalized again
         msgs = t.translate({"type": "execution_success", "data": {"prompt_id": PROMPT_ID}})
         node_updates = [m for m in msgs if isinstance(m, NodeUpdate)]
@@ -171,9 +169,7 @@ class TestExecuted:
 class TestExecutionCached:
     def test_emits_completed_with_cached_result(self):
         t = _make_translator()
-        msgs = t.translate(
-            {"type": "execution_cached", "data": {"nodes": ["n1", "n2"], "prompt_id": PROMPT_ID}}
-        )
+        msgs = t.translate({"type": "execution_cached", "data": {"nodes": ["n1", "n2"], "prompt_id": PROMPT_ID}})
         assert len(msgs) == 2
         for m in msgs:
             assert isinstance(m, NodeUpdate)

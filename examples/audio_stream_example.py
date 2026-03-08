@@ -5,6 +5,7 @@ This example shows how to use AudioStream with ProcessingContext for
 realtime-style audio processing with high latency tolerance, using pydub
 and numpy for audio manipulation.
 """
+
 import asyncio
 
 import numpy as np
@@ -40,7 +41,7 @@ async def example_audio_stream_processing():
         sample_rate=sample_rate,
         channels=1,
         timestamp=(0.0, duration),
-        metadata={"note": "A4", "frequency": frequency}
+        metadata={"note": "A4", "frequency": frequency},
     )
 
     print("Created AudioStream:")
@@ -75,7 +76,7 @@ async def example_audio_stream_processing():
         sample_rate=sample_rate,
         channels=1,
         timestamp=(0.0, duration),
-        metadata={"note": "A4", "frequency": frequency, "effect": "volume_reduced"}
+        metadata={"note": "A4", "frequency": frequency, "effect": "volume_reduced"},
     )
 
     print("Created processed AudioStream:")
@@ -103,7 +104,7 @@ async def example_audio_stream_processing():
         sample_rate=sample_rate,
         channels=2,
         timestamp=(0.0, duration),
-        metadata={"type": "stereo", "left": "440Hz", "right": "880Hz"}
+        metadata={"type": "stereo", "left": "440Hz", "right": "880Hz"},
     )
 
     print("Created stereo AudioStream:")
@@ -128,7 +129,7 @@ async def example_audio_stream_processing():
 
     chunks = []
     for i in range(0, len(full_audio), chunk_size):
-        chunk_data = full_audio[i:i + chunk_size]
+        chunk_data = full_audio[i : i + chunk_size]
         start_time = i / sample_rate
         end_time = (i + len(chunk_data)) / sample_rate
 
@@ -137,13 +138,15 @@ async def example_audio_stream_processing():
             sample_rate=sample_rate,
             channels=1,
             timestamp=(start_time, end_time),
-            metadata={"chunk_index": len(chunks)}
+            metadata={"chunk_index": len(chunks)},
         )
         chunks.append(chunk_stream)
 
-        print(f"Chunk {len(chunks)}: "
-              f"timestamp=({chunk_stream.timestamp[0]:.2f}s, {chunk_stream.timestamp[1]:.2f}s), "
-              f"duration={chunk_stream.duration_seconds():.3f}s")
+        print(
+            f"Chunk {len(chunks)}: "
+            f"timestamp=({chunk_stream.timestamp[0]:.2f}s, {chunk_stream.timestamp[1]:.2f}s), "
+            f"duration={chunk_stream.duration_seconds():.3f}s"
+        )
 
     print(f"\nTotal chunks created: {len(chunks)}")
     print()

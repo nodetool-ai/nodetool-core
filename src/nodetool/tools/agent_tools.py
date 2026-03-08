@@ -92,7 +92,6 @@ class AgentTools:
 
                     elif isinstance(event, PlanningUpdate):
                         if ctx:
-
                             await ctx.info(f"Plan: {event.phase} - {event.content}")
                         events.append(event.model_dump())
 

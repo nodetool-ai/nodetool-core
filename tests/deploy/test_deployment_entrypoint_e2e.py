@@ -25,6 +25,7 @@ pytest_plugins = ()
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 
+
 class TestDockerfileConsistency:
     """Validate Dockerfile is consistent with docker-compose."""
 
@@ -71,7 +72,7 @@ class TestDockerfileConsistency:
             compose_data = yaml.safe_load(f)
 
         # Parse Dockerfile CMD instruction (JSON array format)
-        cmd_match = re.search(r'CMD\s+(\[.*?\])', dockerfile_content)
+        cmd_match = re.search(r"CMD\s+(\[.*?\])", dockerfile_content)
         assert cmd_match, "CMD instruction not found in Dockerfile"
         dockerfile_cmd = json.loads(cmd_match.group(1))
 
@@ -273,8 +274,7 @@ def live_server_container() -> LiveServerContainer:
         run_result = _run_runtime(runtime, run_args, timeout=90)
         if run_result.returncode != 0:
             pytest.fail(
-                "Failed to start container:\n"
-                f"runtime={runtime}\nstdout={run_result.stdout}\nstderr={run_result.stderr}"
+                f"Failed to start container:\nruntime={runtime}\nstdout={run_result.stdout}\nstderr={run_result.stderr}"
             )
 
         try:
@@ -1000,8 +1000,6 @@ class TestServerEntrypointProductionAdminTokenE2E:
         )
         assert response.status_code == 200, response.text
         assert isinstance(response.json(), dict)
-
-
 
 
 # Mark all as integration tests

@@ -48,6 +48,7 @@ class TestGetProvider:
     def clear_cache(self):
         """Clear provider cache before each test."""
         from nodetool.providers import clear_provider_cache
+
         clear_provider_cache()
 
     @pytest.mark.asyncio
@@ -93,12 +94,15 @@ class TestGetProvider:
                 return "test-key-123"
             return None
 
-        with patch(
-            "nodetool.providers.get_registered_provider",
-            return_value=(MockProviderWithSecrets, {}),
-        ), patch(
-            "nodetool.providers.get_secret",
-            side_effect=mock_get_secret,
+        with (
+            patch(
+                "nodetool.providers.get_registered_provider",
+                return_value=(MockProviderWithSecrets, {}),
+            ),
+            patch(
+                "nodetool.providers.get_secret",
+                side_effect=mock_get_secret,
+            ),
         ):
             provider = await ctx.get_provider(Provider.OpenAI)
             assert provider.secrets.get("TEST_API_KEY") == "test-key-123"
@@ -113,9 +117,7 @@ class TestRunProviderPrediction:
         ctx = ProcessingContext(user_id="test")
 
         mock_provider = MockProvider()
-        mock_provider._generate_message_mock.return_value = Message(
-            role="assistant", content="Hello, world!"
-        )
+        mock_provider._generate_message_mock.return_value = Message(role="assistant", content="Hello, world!")
 
         with patch.object(ctx, "get_provider", return_value=mock_provider):
             with patch("nodetool.models.prediction.Prediction.create", new_callable=AsyncMock):
@@ -180,9 +182,10 @@ class TestRunProviderPrediction:
 
         mock_provider = MockProvider()
 
-        with patch.object(ctx, "get_provider", return_value=mock_provider), patch(
-            "nodetool.models.prediction.Prediction.create", new_callable=AsyncMock
-        ) as mock_create:
+        with (
+            patch.object(ctx, "get_provider", return_value=mock_provider),
+            patch("nodetool.models.prediction.Prediction.create", new_callable=AsyncMock) as mock_create,
+        ):
             await ctx.run_provider_prediction(
                 node_id="test_node",
                 provider=Provider.OpenAI,
@@ -206,9 +209,10 @@ class TestRunProviderPrediction:
         mock_provider = MockProvider()
         mock_provider._generate_message_mock.side_effect = RuntimeError("API error")
 
-        with patch.object(ctx, "get_provider", return_value=mock_provider), patch(
-            "nodetool.models.prediction.Prediction.create", new_callable=AsyncMock
-        ) as mock_create:
+        with (
+            patch.object(ctx, "get_provider", return_value=mock_provider),
+            patch("nodetool.models.prediction.Prediction.create", new_callable=AsyncMock) as mock_create,
+        ):
             with pytest.raises(RuntimeError, match="API error"):
                 await ctx.run_provider_prediction(
                     node_id="test_node",

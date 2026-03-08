@@ -539,10 +539,7 @@ async def get_thumbnail(
 
     # Check if asset type supports thumbnails
     if not asset.has_thumbnail:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Asset type '{asset.content_type}' does not support thumbnails"
-        )
+        raise HTTPException(status_code=400, detail=f"Asset type '{asset.content_type}' does not support thumbnails")
 
     storage = require_scope().get_asset_storage()
     thumb_key = asset.thumb_file_name
@@ -556,10 +553,7 @@ async def get_thumbnail(
         thumbnail = await _generate_and_upload_thumbnail(asset, storage, width, height)
 
         if thumbnail is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to generate thumbnail"
-            )
+            raise HTTPException(status_code=500, detail="Failed to generate thumbnail")
 
         # Return the freshly generated thumbnail
         thumbnail.seek(0)

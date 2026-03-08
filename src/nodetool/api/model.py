@@ -840,9 +840,7 @@ async def check_huggingface_cache_status(
 
         if item.model_type in LLAMA_CPP_MODEL_TYPES:
             if item.path:
-                downloaded = await asyncio.to_thread(
-                    is_llama_cpp_model_cached, item.repo_id, item.path
-                )
+                downloaded = await asyncio.to_thread(is_llama_cpp_model_cached, item.repo_id, item.path)
                 return HFFastCacheStatusResponse(key=item.key, downloaded=downloaded)
 
             # llama_cpp models should generally specify a GGUF path. If absent,

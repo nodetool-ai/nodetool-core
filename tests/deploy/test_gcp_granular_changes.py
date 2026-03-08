@@ -29,7 +29,7 @@ class TestGCPGranularChanges(unittest.TestCase):
                 max_instances=5,
                 concurrency=80,
                 timeout=3600,
-                gpu_type="nvidia-l4", # Implies gpu_count=1
+                gpu_type="nvidia-l4",  # Implies gpu_count=1
             ),
             storage=GCPStorageConfig(
                 gcs_bucket="test-bucket",
@@ -68,26 +68,21 @@ class TestGCPGranularChanges(unittest.TestCase):
                         "annotations": {
                             "autoscaling.knative.dev/minScale": "1",
                             "autoscaling.knative.dev/maxScale": "5",
-                            "run.googleapis.com/gpu": "1"
+                            "run.googleapis.com/gpu": "1",
                         }
                     },
                     "spec": {
                         "containers": [
                             {
                                 "image": "us-docker.pkg.dev/test-project/nodetool/test-service:latest",
-                                "resources": {
-                                    "limits": {
-                                        "cpu": "4000m",
-                                        "memory": "16Gi"
-                                    }
-                                },
-                                "env": self.expected_env_list
+                                "resources": {"limits": {"cpu": "4000m", "memory": "16Gi"}},
+                                "env": self.expected_env_list,
                             }
                         ],
                         "serviceAccountName": "test-sa@test-project.iam.gserviceaccount.com",
                         "containerConcurrency": 80,
-                        "timeoutSeconds": 3600
-                    }
+                        "timeoutSeconds": 3600,
+                    },
                 }
             }
         }
@@ -140,7 +135,9 @@ class TestGCPGranularChanges(unittest.TestCase):
     def test_env_var_added_locally(self, mock_get_service):
         service_dict = self._get_base_service_dict()
         # Remove AUTH_PROVIDER from remote
-        env_list = [e for e in service_dict["spec"]["template"]["spec"]["containers"][0]["env"] if e["name"] != "AUTH_PROVIDER"]
+        env_list = [
+            e for e in service_dict["spec"]["template"]["spec"]["containers"][0]["env"] if e["name"] != "AUTH_PROVIDER"
+        ]
         service_dict["spec"]["template"]["spec"]["containers"][0]["env"] = env_list
         mock_get_service.return_value = service_dict
 

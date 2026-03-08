@@ -1064,10 +1064,7 @@ class TestModel3DWithAssociatedFiles:
         material_ref = AssetRef(data=mtl_data, uri="test.mtl")
 
         # Create Model3DRef with material
-        result = await context.model3d_from_bytes(
-            model_data,
-            format="obj"
-        )
+        result = await context.model3d_from_bytes(model_data, format="obj")
         result.material_file = material_ref
 
         assert isinstance(result, Model3DRef)
@@ -1085,11 +1082,7 @@ class TestModel3DWithAssociatedFiles:
         texture2 = ImageRef(data=b"texture2 data", uri="texture2.png")
 
         # Create Model3DRef with textures
-        model3d_ref = Model3DRef(
-            data=model_data,
-            format="glb",
-            texture_files=[texture1, texture2]
-        )
+        model3d_ref = Model3DRef(data=model_data, format="glb", texture_files=[texture1, texture2])
 
         assert isinstance(model3d_ref, Model3DRef)
         assert len(model3d_ref.texture_files) == 2
@@ -1109,10 +1102,7 @@ class TestModel3DWithAssociatedFiles:
 
         # Create complete OBJ model
         model3d_ref = Model3DRef(
-            data=obj_data,
-            format="obj",
-            material_file=material_ref,
-            texture_files=[diffuse_texture, normal_texture]
+            data=obj_data, format="obj", material_file=material_ref, texture_files=[diffuse_texture, normal_texture]
         )
 
         assert model3d_ref.format == "obj"
@@ -1136,12 +1126,7 @@ class TestModel3DWithAssociatedFiles:
         material_ref = AssetRef(data=b"mtl data", uri="test.mtl")
         texture = ImageRef(data=b"texture data", uri="texture.png")
 
-        model3d_ref = Model3DRef(
-            data=b"obj data",
-            format="obj",
-            material_file=material_ref,
-            texture_files=[texture]
-        )
+        model3d_ref = Model3DRef(data=b"obj data", format="obj", material_file=material_ref, texture_files=[texture])
 
         # Test that it can be serialized (Pydantic model_dump)
         serialized = model3d_ref.model_dump()
@@ -1151,4 +1136,3 @@ class TestModel3DWithAssociatedFiles:
         assert serialized["material_file"] is not None
         assert len(serialized["texture_files"]) == 1
         assert serialized["texture_files"][0]["type"] == "image"
-

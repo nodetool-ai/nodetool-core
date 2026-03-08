@@ -173,7 +173,9 @@ async def process_regular_chat(
                 console.print(chunk.content, end="", highlight=False)
                 if messages[-1].role == "assistant":
                     if not isinstance(messages[-1].content, str):
-                        raise TypeError(f"Expected last message content to be str, got {type(messages[-1].content).__name__}")
+                        raise TypeError(
+                            f"Expected last message content to be str, got {type(messages[-1].content).__name__}"
+                        )
                     messages[-1].content += current_chunk  # type: ignore[operator]
                 else:
                     messages.append(Message(role="assistant", content=current_chunk))

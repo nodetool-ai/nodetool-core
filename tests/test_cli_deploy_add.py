@@ -1,4 +1,5 @@
 """Tests for nodetool deploy add command."""
+
 import os
 
 import pytest
@@ -14,25 +15,27 @@ def mock_config_path(tmp_path, monkeypatch):
 
     # Mock get_deployment_config_path to return our temp file
     import nodetool.config.deployment as deployment_config
+
     monkeypatch.setattr(deployment_config, "get_deployment_config_path", lambda: config_file)
     return config_file
+
 
 def test_deploy_add_docker(mock_config_path, monkeypatch):
     runner = CliRunner()
 
     # Using explicit values for all prompts to be safe
     inputs = [
-        "192.168.1.100", # Host
-        "user",          # SSH user
-        "~/.ssh/id_rsa", # SSH key path
-        "my-image",      # Image name
-        "v1",            # Image tag
+        "192.168.1.100",  # Host
+        "user",  # SSH user
+        "~/.ssh/id_rsa",  # SSH key path
+        "my-image",  # Image name
+        "v1",  # Image tag
         "my-container",  # Container name
-        "8000",          # Port
-        "n",             # GPU (no)
-        "n",             # Workflows (no)
-        "/tmp/ws",       # Workspace
-        "/tmp/hf",       # HF Cache
+        "8000",  # Port
+        "n",  # GPU (no)
+        "n",  # Workflows (no)
+        "/tmp/ws",  # Workspace
+        "/tmp/hf",  # HF Cache
     ]
 
     # Set env var to avoid detecting real home directories which might confuse defaults check

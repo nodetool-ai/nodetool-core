@@ -112,14 +112,10 @@ class SerpProvider(abc.ABC):
     ) -> dict[str, Any] | ErrorResponse: ...
 
     @abc.abstractmethod
-    async def search_youtube(
-        self, query: str, num_results: int = 10
-    ) -> dict[str, Any] | ErrorResponse: ...
+    async def search_youtube(self, query: str, num_results: int = 10) -> dict[str, Any] | ErrorResponse: ...
 
     @abc.abstractmethod
-    async def search_scholar(
-        self, query: str, num_results: int = 10
-    ) -> dict[str, Any] | ErrorResponse: ...
+    async def search_scholar(self, query: str, num_results: int = 10) -> dict[str, Any] | ErrorResponse: ...
 
     @abc.abstractmethod
     async def search_trends(
@@ -127,14 +123,10 @@ class SerpProvider(abc.ABC):
     ) -> dict[str, Any] | ErrorResponse: ...
 
     @abc.abstractmethod
-    async def search_yelp(
-        self, query: str, location: str, num_results: int = 10
-    ) -> dict[str, Any] | ErrorResponse: ...
+    async def search_yelp(self, query: str, location: str, num_results: int = 10) -> dict[str, Any] | ErrorResponse: ...
 
     @abc.abstractmethod
-    async def search_duckduckgo(
-        self, query: str, num_results: int = 10
-    ) -> dict[str, Any] | ErrorResponse: ...
+    async def search_duckduckgo(self, query: str, num_results: int = 10) -> dict[str, Any] | ErrorResponse: ...
 
     @abc.abstractmethod
     async def close(self) -> None:

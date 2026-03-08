@@ -497,9 +497,7 @@ class TestFakeProviderResetCounts:
             name="Fake Image Model",
             provider=Provider.Fake,
         )
-        await provider.text_to_image(
-            TextToImageParams(model=image_model, prompt="Test")
-        )
+        await provider.text_to_image(TextToImageParams(model=image_model, prompt="Test"))
 
         async for _ in provider.text_to_speech("Test", "fake-tts"):
             pass
@@ -511,9 +509,7 @@ class TestFakeProviderResetCounts:
             name="Fake Video Model",
             provider=Provider.Fake,
         )
-        await provider.text_to_video(
-            TextToVideoParams(model=video_model, prompt="Test")
-        )
+        await provider.text_to_video(TextToVideoParams(model=video_model, prompt="Test"))
 
         await provider.generate_embedding("Test", "fake-embedding")
 

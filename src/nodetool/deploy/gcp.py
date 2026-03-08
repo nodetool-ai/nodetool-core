@@ -92,33 +92,23 @@ class GCPDeployer:
 
         # 2. GPU
         remote_gpu_count = annotations.get("run.googleapis.com/gpu", "0")
-        expected_gpu_count = self.deployment.resources.gpu_count or (
-            1 if self.deployment.resources.gpu_type else 0
-        )
+        expected_gpu_count = self.deployment.resources.gpu_count or (1 if self.deployment.resources.gpu_type else 0)
         if str(expected_gpu_count) != str(remote_gpu_count):
             changes.append(f"GPU Count: {remote_gpu_count} -> {expected_gpu_count}")
 
         # 3. Scaling
         remote_min = annotations.get("autoscaling.knative.dev/minScale", "0")
         if str(self.deployment.resources.min_instances) != str(remote_min):
-            changes.append(
-                f"Min Instances: {remote_min} -> {self.deployment.resources.min_instances}"
-            )
+            changes.append(f"Min Instances: {remote_min} -> {self.deployment.resources.min_instances}")
 
         remote_max = annotations.get("autoscaling.knative.dev/maxScale", "0")
         if str(self.deployment.resources.max_instances) != str(remote_max):
-            changes.append(
-                f"Max Instances: {remote_max} -> {self.deployment.resources.max_instances}"
-            )
+            changes.append(f"Max Instances: {remote_max} -> {self.deployment.resources.max_instances}")
 
         # 4. Concurrency & Timeout
         remote_concurrency = spec.get("containerConcurrency")
-        if remote_concurrency and str(self.deployment.resources.concurrency) != str(
-            remote_concurrency
-        ):
-            changes.append(
-                f"Concurrency: {remote_concurrency} -> {self.deployment.resources.concurrency}"
-            )
+        if remote_concurrency and str(self.deployment.resources.concurrency) != str(remote_concurrency):
+            changes.append(f"Concurrency: {remote_concurrency} -> {self.deployment.resources.concurrency}")
 
         remote_timeout = spec.get("timeoutSeconds")
         if remote_timeout and str(self.deployment.resources.timeout) != str(remote_timeout):
@@ -126,13 +116,8 @@ class GCPDeployer:
 
         # 5. Service Account
         remote_sa = spec.get("serviceAccountName")
-        if (
-            self.deployment.iam.service_account
-            and self.deployment.iam.service_account != remote_sa
-        ):
-            changes.append(
-                f"Service Account: {remote_sa} -> {self.deployment.iam.service_account}"
-            )
+        if self.deployment.iam.service_account and self.deployment.iam.service_account != remote_sa:
+            changes.append(f"Service Account: {remote_sa} -> {self.deployment.iam.service_account}")
 
         # 6. Environment Variables
         remote_env_list = container.get("env", [])

@@ -25,6 +25,7 @@ class HfTools:
             Cache directory path and summary of cached models
         """
         from huggingface_hub.constants import HF_HUB_CACHE
+
         cached_models = await read_cached_hf_models()
 
         total_size = sum(model.size_on_disk or 0 for model in cached_models)
@@ -96,6 +97,7 @@ class HfTools:
         """
         try:
             from huggingface_hub import HfApi
+
             token = await get_hf_token()
             api = HfApi(token=token) if token else HfApi()
             file_infos = api.list_repo_files(repo_id=repo_id, repo_type=repo_type, revision=revision)
@@ -155,6 +157,7 @@ class HfTools:
 
         try:
             from huggingface_hub import HfApi
+
             token = await get_hf_token()
             api = HfApi(token=token) if token else HfApi()
 
@@ -194,6 +197,7 @@ class HfTools:
         """
         try:
             from huggingface_hub import HfApi
+
             token = await get_hf_token()
             api = HfApi(token=token) if token else HfApi()
 

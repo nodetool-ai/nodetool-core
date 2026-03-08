@@ -25,6 +25,7 @@ class MockJobExecution(JobExecution):
     def push_input_value(self, input_name: str, value: object, source_handle: str) -> None:
         pass
 
+
 @pytest.fixture
 def mock_job_model():
     job = MagicMock(spec=Job)
@@ -37,6 +38,7 @@ def mock_job_model():
     job.update = AsyncMock()
     return job
 
+
 @pytest.fixture
 def mock_execution(mock_job_model):
     context = MagicMock(spec=ProcessingContext)
@@ -44,13 +46,9 @@ def mock_execution(mock_job_model):
 
     # We need to mock _install_log_handler during initialization to avoid side effects
     with patch("nodetool.workflows.job_execution.JobLogHandler.install_handler"):
-        execution = MockJobExecution(
-            job_id="test_job_id",
-            context=context,
-            request=request,
-            job_model=mock_job_model
-        )
+        execution = MockJobExecution(job_id="test_job_id", context=context, request=request, job_model=mock_job_model)
     return execution
+
 
 @pytest.mark.asyncio
 async def test_finalize_state_handles_db_exception(mock_execution):
@@ -70,6 +68,7 @@ async def test_finalize_state_handles_db_exception(mock_execution):
             args, _ = mock_log.exception.call_args
             assert "JobExecution.finalize_state: failed to persist state" in args[0]
 
+
 @pytest.mark.asyncio
 async def test_finalize_state_success(mock_execution, mock_job_model):
     """Test successful finalization of job state."""
@@ -80,7 +79,7 @@ async def test_finalize_state_success(mock_execution, mock_job_model):
     # Mock Job.get to return our mock job
     with patch("nodetool.models.job.Job.get", return_value=mock_job_model):
         # Mock _uninstall_log_handler to return some logs
-        with patch.object(mock_execution, '_uninstall_log_handler', return_value=[{"msg": "test log"}]):
+        with patch.object(mock_execution, "_uninstall_log_handler", return_value=[{"msg": "test log"}]):
             await mock_execution.finalize_state()
 
             # Verify job status updated
@@ -91,6 +90,7 @@ async def test_finalize_state_success(mock_execution, mock_job_model):
             kwargs = mock_job_model.update.call_args.kwargs
             assert "finished_at" in kwargs
             assert kwargs["logs"] == [{"msg": "test log"}]
+
 
 @pytest.mark.asyncio
 async def test_finalize_state_failed_job(mock_execution, mock_job_model):
@@ -109,6 +109,7 @@ async def test_finalize_state_failed_job(mock_execution, mock_job_model):
 
         # Verify update called
         mock_job_model.update.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_finalize_state_cancelled_job(mock_execution, mock_job_model):

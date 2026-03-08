@@ -171,6 +171,7 @@ class TestAsyncTake:
     @pytest.mark.asyncio
     async def test_take_less_than_available(self):
         """Test taking fewer items than available."""
+
         async def gen():
             for i in range(10):
                 yield i
@@ -181,6 +182,7 @@ class TestAsyncTake:
     @pytest.mark.asyncio
     async def test_take_exact_count(self):
         """Test taking exact number of available items."""
+
         async def gen():
             for i in range(3):
                 yield i
@@ -191,6 +193,7 @@ class TestAsyncTake:
     @pytest.mark.asyncio
     async def test_take_more_than_available(self):
         """Test taking more items than available."""
+
         async def gen():
             for i in range(3):
                 yield i
@@ -201,6 +204,7 @@ class TestAsyncTake:
     @pytest.mark.asyncio
     async def test_take_zero(self):
         """Test taking zero items."""
+
         async def gen():
             for i in range(5):
                 yield i
@@ -211,6 +215,7 @@ class TestAsyncTake:
     @pytest.mark.asyncio
     async def test_take_from_empty(self):
         """Test taking from empty iterable."""
+
         async def gen():
             return
             yield  # pragma: no cover
@@ -221,6 +226,7 @@ class TestAsyncTake:
     @pytest.mark.asyncio
     async def test_take_strings(self):
         """Test taking string items."""
+
         async def gen():
             for s in ["a", "b", "c", "d"]:
                 yield s
@@ -235,6 +241,7 @@ class TestAsyncSlice:
     @pytest.mark.asyncio
     async def test_slice_with_stop(self):
         """Test slicing with start and stop."""
+
         async def gen():
             for i in range(10):
                 yield i
@@ -245,6 +252,7 @@ class TestAsyncSlice:
     @pytest.mark.asyncio
     async def test_slice_without_stop(self):
         """Test slicing with only start (no stop)."""
+
         async def gen():
             for i in range(10):
                 yield i
@@ -255,6 +263,7 @@ class TestAsyncSlice:
     @pytest.mark.asyncio
     async def test_slice_start_zero(self):
         """Test slicing from start."""
+
         async def gen():
             for i in range(10):
                 yield i
@@ -265,6 +274,7 @@ class TestAsyncSlice:
     @pytest.mark.asyncio
     async def test_slice_beyond_end(self):
         """Test slicing beyond end of iterable."""
+
         async def gen():
             for i in range(5):
                 yield i
@@ -275,6 +285,7 @@ class TestAsyncSlice:
     @pytest.mark.asyncio
     async def test_slice_empty_result(self):
         """Test slicing with start beyond end."""
+
         async def gen():
             for i in range(5):
                 yield i
@@ -285,6 +296,7 @@ class TestAsyncSlice:
     @pytest.mark.asyncio
     async def test_slice_from_empty(self):
         """Test slicing from empty iterable."""
+
         async def gen():
             return
             yield  # pragma: no cover
@@ -295,6 +307,7 @@ class TestAsyncSlice:
     @pytest.mark.asyncio
     async def test_slice_strings(self):
         """Test slicing string items."""
+
         async def gen():
             for s in ["a", "b", "c", "d", "e"]:
                 yield s
@@ -309,6 +322,7 @@ class TestAsyncFirst:
     @pytest.mark.asyncio
     async def test_first_from_nonempty(self):
         """Test getting first item from nonempty iterable."""
+
         async def gen():
             for i in range(5):
                 yield i
@@ -319,6 +333,7 @@ class TestAsyncFirst:
     @pytest.mark.asyncio
     async def test_first_from_empty_without_default(self):
         """Test getting first from empty iterable without default."""
+
         async def gen():
             return
             yield  # pragma: no cover
@@ -329,6 +344,7 @@ class TestAsyncFirst:
     @pytest.mark.asyncio
     async def test_first_from_empty_with_default(self):
         """Test getting first from empty iterable with default."""
+
         async def gen():
             return
             yield  # pragma: no cover
@@ -339,6 +355,7 @@ class TestAsyncFirst:
     @pytest.mark.asyncio
     async def test_first_strings(self):
         """Test getting first string item."""
+
         async def gen():
             for s in ["a", "b", "c"]:
                 yield s
@@ -349,6 +366,7 @@ class TestAsyncFirst:
     @pytest.mark.asyncio
     async def test_first_with_falsey_default(self):
         """Test that Falsey default values work correctly."""
+
         async def gen():
             return
             yield  # pragma: no cover
@@ -369,6 +387,7 @@ class TestAsyncList:
     @pytest.mark.asyncio
     async def test_list_from_nonempty(self):
         """Test consuming nonempty iterable into list."""
+
         async def gen():
             for i in range(5):
                 yield i
@@ -379,6 +398,7 @@ class TestAsyncList:
     @pytest.mark.asyncio
     async def test_list_from_empty(self):
         """Test consuming empty iterable into list."""
+
         async def gen():
             return
             yield  # pragma: no cover
@@ -389,6 +409,7 @@ class TestAsyncList:
     @pytest.mark.asyncio
     async def test_list_strings(self):
         """Test consuming string iterable into list."""
+
         async def gen():
             for s in ["a", "b", "c"]:
                 yield s
@@ -399,6 +420,7 @@ class TestAsyncList:
     @pytest.mark.asyncio
     async def test_list_single_item(self):
         """Test consuming single item iterable."""
+
         async def gen():
             yield 42
 
@@ -412,6 +434,7 @@ class TestAsyncMerge:
     @pytest.mark.asyncio
     async def test_merge_two_iterables(self):
         """Test merging two async iterables."""
+
         async def gen1():
             yield 1
             yield 2
@@ -426,6 +449,7 @@ class TestAsyncMerge:
     @pytest.mark.asyncio
     async def test_merge_three_iterables(self):
         """Test merging three async iterables."""
+
         async def gen1():
             yield 1
 
@@ -441,6 +465,7 @@ class TestAsyncMerge:
     @pytest.mark.asyncio
     async def test_merge_empty_iterables(self):
         """Test merging empty iterables."""
+
         async def gen1():
             return
             yield  # pragma: no cover
@@ -455,6 +480,7 @@ class TestAsyncMerge:
     @pytest.mark.asyncio
     async def test_merge_with_empty_first(self):
         """Test merging when first iterable is empty."""
+
         async def gen1():
             return
             yield  # pragma: no cover
@@ -469,6 +495,7 @@ class TestAsyncMerge:
     @pytest.mark.asyncio
     async def test_merge_with_empty_last(self):
         """Test merging when last iterable is empty."""
+
         async def gen1():
             yield 1
             yield 2
@@ -483,6 +510,7 @@ class TestAsyncMerge:
     @pytest.mark.asyncio
     async def test_merge_strings(self):
         """Test merging string iterables."""
+
         async def gen1():
             yield "a"
             yield "b"
@@ -497,6 +525,7 @@ class TestAsyncMerge:
     @pytest.mark.asyncio
     async def test_merge_single_iterable(self):
         """Test merging single iterable."""
+
         async def gen1():
             yield 1
             yield 2
@@ -1286,9 +1315,7 @@ class TestAsyncPartition:
                 yield i
 
         # Partition numbers that are divisible by 2 or 3
-        matching, not_matching = await async_partition(
-            lambda x: x % 2 == 0 or x % 3 == 0, gen()
-        )
+        matching, not_matching = await async_partition(lambda x: x % 2 == 0 or x % 3 == 0, gen())
         assert matching == [0, 2, 3, 4, 6, 8, 9, 10, 12, 14, 15, 16, 18]
         assert not_matching == [1, 5, 7, 11, 13, 17, 19]
 

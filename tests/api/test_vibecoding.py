@@ -96,9 +96,7 @@ async def test_generate_requires_access(client: TestClient, headers: dict[str, s
 
 
 @pytest.mark.asyncio
-async def test_generate_returns_streaming_response(
-    client: TestClient, headers: dict[str, str], workflow: Workflow
-):
+async def test_generate_returns_streaming_response(client: TestClient, headers: dict[str, str], workflow: Workflow):
     """Test that generate returns a streaming response."""
     await workflow.save()
 
@@ -121,9 +119,7 @@ async def test_generate_returns_streaming_response(
 
 
 @pytest.mark.asyncio
-async def test_workflow_app_injects_config(
-    client: TestClient, headers: dict[str, str], workflow: Workflow
-):
+async def test_workflow_app_injects_config(client: TestClient, headers: dict[str, str], workflow: Workflow):
     """Test that the /app endpoint injects runtime configuration."""
     # Set html_app on workflow
     workflow.html_app = "<!DOCTYPE html><html><head></head><body>Test</body></html>"
@@ -140,9 +136,7 @@ async def test_workflow_app_injects_config(
 
 
 @pytest.mark.asyncio
-async def test_workflow_app_no_html_returns_404(
-    client: TestClient, headers: dict[str, str], workflow: Workflow
-):
+async def test_workflow_app_no_html_returns_404(client: TestClient, headers: dict[str, str], workflow: Workflow):
     """Test that /app endpoint returns 404 when no HTML app is configured."""
     workflow.html_app = None
     await workflow.save()

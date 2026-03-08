@@ -413,5 +413,3 @@ async def test_get_public_workflow_app(client: TestClient, workflow: Workflow, h
     assert "<h1>Public App</h1>" in response.text
     # Verify config injection
     assert "window.NODETOOL_WORKFLOW_ID" in response.text
-
-

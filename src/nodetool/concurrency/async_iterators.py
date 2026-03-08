@@ -215,9 +215,7 @@ async def async_filter(
             yield item
 
 
-async def async_map(
-    func: Callable[[T], R] | Callable[[T], object], aiterable: AsyncIterable[T]
-) -> AsyncIterator[R]:
+async def async_map(func: Callable[[T], R] | Callable[[T], object], aiterable: AsyncIterable[T]) -> AsyncIterator[R]:
     """
     Map a function over an async iterable, transforming each item.
 
@@ -407,9 +405,7 @@ async def async_partition(
     return matching, not_matching
 
 
-async def async_chunked(
-    aiterable: AsyncIterable[T], chunk_size: int
-) -> AsyncIterator[list[T]]:
+async def async_chunked(aiterable: AsyncIterable[T], chunk_size: int) -> AsyncIterator[list[T]]:
     """
     Chunk an async iterable into fixed-size lists.
 

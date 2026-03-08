@@ -90,15 +90,15 @@ class WebSocketProtocolTester:
             self.mode = "text"
         else:
             # If we got something else (like a stray system_stats that wasn't filtered), try again
-             if msg.get("type") == "system_stats":
-                 msg = self.receive()
+            if msg.get("type") == "system_stats":
+                msg = self.receive()
 
-             if msg.get("message") == "Mode set to text":
-                 self.mode = "text"
-             else:
-                 # It might be that we received the confirmation in binary format
-                 # but we want to assert we are in text mode for future sends
-                 self.mode = "text"
+            if msg.get("message") == "Mode set to text":
+                self.mode = "text"
+            else:
+                # It might be that we received the confirmation in binary format
+                # but we want to assert we are in text mode for future sends
+                self.mode = "text"
 
     def set_mode_binary(self):
         """Switch to binary mode."""
@@ -110,7 +110,7 @@ class WebSocketProtocolTester:
         if msg.get("message") == "Mode set to binary":
             self.mode = "binary"
         else:
-             self.mode = "binary"
+            self.mode = "binary"
 
 
 @pytest.fixture

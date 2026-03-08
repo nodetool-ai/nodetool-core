@@ -198,9 +198,7 @@ class RunPodDeployer:
                 status_info["live_status"] = "active"
                 status_info["endpoint_id"] = live_endpoint.get("id")
                 status_info["gpu_ids"] = live_endpoint.get("gpuIds")
-                status_info["worker_count"] = (
-                    f"{live_endpoint.get('workersMin')}-{live_endpoint.get('workersMax')}"
-                )
+                status_info["worker_count"] = f"{live_endpoint.get('workersMin')}-{live_endpoint.get('workersMax')}"
                 if live_endpoint.get("id"):
                     status_info["urls"] = {
                         "runsync": f"https://api.runpod.ai/v2/{live_endpoint.get('id')}/runsync",

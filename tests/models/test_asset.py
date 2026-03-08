@@ -186,12 +186,7 @@ async def test_paginate_assets_by_node_and_job_id(user_id: str):
     )
 
     # Query by both node_id and job_id
-    assets, _last_key = await Asset.paginate(
-        user_id=user_id,
-        node_id=node_id,
-        job_id=job_id,
-        limit=10
-    )
+    assets, _last_key = await Asset.paginate(user_id=user_id, node_id=node_id, job_id=job_id, limit=10)
 
     assert len(assets) == 1
     assert assets[0].name == "asset_both_ids"

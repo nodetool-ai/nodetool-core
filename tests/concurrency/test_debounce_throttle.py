@@ -440,9 +440,7 @@ class TestAdaptiveThrottle:
 
         # initial outside bounds
         with pytest.raises(ValueError, match="initial_interval must be between"):
-            AdaptiveThrottle(
-                min_interval=0.1, max_interval=1.0, initial_interval=2.0
-            )
+            AdaptiveThrottle(min_interval=0.1, max_interval=1.0, initial_interval=2.0)
 
     @pytest.mark.asyncio
     async def test_get_current_interval(self):

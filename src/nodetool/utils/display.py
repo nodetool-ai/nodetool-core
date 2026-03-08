@@ -11,6 +11,7 @@ from nodetool.config.deployment import (
 
 console = Console()
 
+
 def show_deployment_details(deployment_name, deployment, state=None):
     """
     Display detailed information about a specific deployment.

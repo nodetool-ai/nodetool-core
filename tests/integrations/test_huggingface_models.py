@@ -131,9 +131,7 @@ class TestParseGgufFlatFilename(unittest.TestCase):
 
     def test_simple_filename_without_manifest(self):
         """Simple filenames where repo and filename have no underscores."""
-        repo_id, repo, filename = huggingface_models._parse_gguf_flat_filename(
-            "ggml-org_gemma-GGUF_gemma-Q4.gguf", {}
-        )
+        repo_id, repo, filename = huggingface_models._parse_gguf_flat_filename("ggml-org_gemma-GGUF_gemma-Q4.gguf", {})
         self.assertEqual(repo_id, "ggml-org/gemma-GGUF")
         self.assertEqual(repo, "gemma-GGUF")
         self.assertEqual(filename, "gemma-Q4.gguf")
@@ -152,18 +150,14 @@ class TestParseGgufFlatFilename(unittest.TestCase):
         lookup = {
             "myorg_myrepo_model_v2.gguf": ("myorg/myrepo", "model_v2.gguf"),
         }
-        repo_id, repo, filename = huggingface_models._parse_gguf_flat_filename(
-            "myorg_myrepo_model_v2.gguf", lookup
-        )
+        repo_id, repo, filename = huggingface_models._parse_gguf_flat_filename("myorg_myrepo_model_v2.gguf", lookup)
         self.assertEqual(repo_id, "myorg/myrepo")
         self.assertEqual(repo, "myrepo")
         self.assertEqual(filename, "model_v2.gguf")
 
     def test_bare_filename_fallback(self):
         """Filenames without underscores fall back gracefully."""
-        repo_id, repo, filename = huggingface_models._parse_gguf_flat_filename(
-            "standalone-model.gguf", {}
-        )
+        repo_id, repo, filename = huggingface_models._parse_gguf_flat_filename("standalone-model.gguf", {})
         self.assertEqual(repo_id, "")
         self.assertEqual(repo, "")
         self.assertEqual(filename, "standalone-model.gguf")
@@ -202,13 +196,9 @@ class TestParseGgufFlatFilename(unittest.TestCase):
                 "ggufFile": {"rfilename": "gemma-3-1b-it-Q4_K_M.gguf", "size": 100},
                 "metadata": {"author": "ggml-org", "repo_id": "ggml-org/gemma-3-1b-it-GGUF"},
             }
-            (Path(tmpdir) / "manifest=ggml-org=gemma-3-1b-it-GGUF=latest.json").write_text(
-                json.dumps(manifest)
-            )
+            (Path(tmpdir) / "manifest=ggml-org=gemma-3-1b-it-GGUF=latest.json").write_text(json.dumps(manifest))
             # Create GGUF file
-            (Path(tmpdir) / "ggml-org_gemma-3-1b-it-GGUF_gemma-3-1b-it-Q4_K_M.gguf").write_bytes(
-                b"\x00" * 100
-            )
+            (Path(tmpdir) / "ggml-org_gemma-3-1b-it-GGUF_gemma-3-1b-it-Q4_K_M.gguf").write_bytes(b"\x00" * 100)
 
             with patch(
                 "nodetool.providers.llama_server_manager.get_llama_cpp_cache_dir",
@@ -251,12 +241,8 @@ class TestParseGgufFlatFilename(unittest.TestCase):
                 "ggufFile": {"rfilename": "gemma-3-1b-it-Q4_K_M.gguf", "size": 100},
                 "metadata": {"author": "ggml-org", "repo_id": "ggml-org/gemma-3-1b-it-GGUF"},
             }
-            (Path(tmpdir) / "manifest=ggml-org=gemma-3-1b-it-GGUF=latest.json").write_text(
-                json.dumps(manifest)
-            )
-            (Path(tmpdir) / "ggml-org_gemma-3-1b-it-GGUF_gemma-3-1b-it-Q4_K_M.gguf").write_bytes(
-                b"\x00" * 100
-            )
+            (Path(tmpdir) / "manifest=ggml-org=gemma-3-1b-it-GGUF=latest.json").write_text(json.dumps(manifest))
+            (Path(tmpdir) / "ggml-org_gemma-3-1b-it-GGUF_gemma-3-1b-it-Q4_K_M.gguf").write_bytes(b"\x00" * 100)
 
             with patch(
                 "nodetool.providers.llama_server_manager.get_llama_cpp_cache_dir",

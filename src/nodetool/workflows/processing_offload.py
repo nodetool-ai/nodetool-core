@@ -274,4 +274,3 @@ def _joblib_dump_to_bytes(estimator: Any) -> bytes:
     stream = BytesIO()
     joblib.dump(estimator, stream)
     return stream.getvalue()
-

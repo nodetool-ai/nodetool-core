@@ -140,9 +140,7 @@ class NodeInbox:
             self._buffer_limit,
         )
 
-    async def put(
-        self, handle: str, item: Any, metadata: dict[str, Any] | None = None
-    ) -> None:
+    async def put(self, handle: str, item: Any, metadata: dict[str, Any] | None = None) -> None:
         """Enqueue an item for a handle and notify any waiters.
 
         If buffer_limit is set and the handle's buffer is full, this method

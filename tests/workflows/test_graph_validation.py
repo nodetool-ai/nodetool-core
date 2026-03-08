@@ -1,6 +1,7 @@
 """
 Tests for graph validation logic in workflows/graph.py.
 """
+
 from typing import List
 
 import pytest
@@ -11,8 +12,10 @@ from nodetool.workflows.graph import Graph
 
 # Define nodes with specific types for testing validation
 
+
 class StringProducerNode(BaseNode):
     """Node that produces a string output."""
+
     @classmethod
     def get_node_type(cls) -> str:
         return "tests.workflows.test_graph_validation.StringProducerNode"
@@ -20,8 +23,10 @@ class StringProducerNode(BaseNode):
     async def process(self, context) -> str:
         return "test_string"
 
+
 class IntProducerNode(BaseNode):
     """Node that produces an int output."""
+
     @classmethod
     def get_node_type(cls) -> str:
         return "tests.workflows.test_graph_validation.IntProducerNode"
@@ -29,8 +34,10 @@ class IntProducerNode(BaseNode):
     async def process(self, context) -> int:
         return 42
 
+
 class StringConsumerNode(BaseNode):
     """Node that consumes a string input."""
+
     input_str: str = ""
 
     @classmethod
@@ -40,8 +47,10 @@ class StringConsumerNode(BaseNode):
     async def process(self, context):
         return {"result": self.input_str}
 
+
 class IntConsumerNode(BaseNode):
     """Node that consumes an int input."""
+
     input_int: int = 0
 
     @classmethod
@@ -51,8 +60,10 @@ class IntConsumerNode(BaseNode):
     async def process(self, context):
         return {"result": self.input_int}
 
+
 class ListStringConsumerNode(BaseNode):
     """Node that consumes a list of strings."""
+
     input_list: List[str] = []  # noqa: RUF012
 
     @classmethod

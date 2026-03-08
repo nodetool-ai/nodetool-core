@@ -72,6 +72,7 @@ class TestWorkflowModel:
         old_updated_at = workflow.updated_at
         # Simulate a small delay
         import time
+
         time.sleep(0.01)
         workflow.before_save()
         assert workflow.updated_at > old_updated_at

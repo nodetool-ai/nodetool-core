@@ -27,11 +27,7 @@ async def example_simple_3d_model():
     glb_data = b"fake GLB binary data"
 
     # Create a Model3DRef for the GLB file
-    model = Model3DRef(
-        data=glb_data,
-        format="glb",
-        metadata={"vertices": 1000, "faces": 500}
-    )
+    model = Model3DRef(data=glb_data, format="glb", metadata={"vertices": 1000, "faces": 500})
 
     print(f"Model format: {model.format}")
     print(f"Model metadata: {model.metadata}")
@@ -78,21 +74,12 @@ async def example_complex_3d_model():
     normal_texture_data = b"fake PNG data for normal map"
 
     # Create the material file reference
-    material_file = AssetRef(
-        data=mtl_data,
-        uri="cube.mtl"
-    )
+    material_file = AssetRef(data=mtl_data, uri="cube.mtl")
 
     # Create texture image references
-    diffuse_texture = ImageRef(
-        data=diffuse_texture_data,
-        uri="diffuse.png"
-    )
+    diffuse_texture = ImageRef(data=diffuse_texture_data, uri="diffuse.png")
 
-    normal_texture = ImageRef(
-        data=normal_texture_data,
-        uri="normal.png"
-    )
+    normal_texture = ImageRef(data=normal_texture_data, uri="normal.png")
 
     # Create the complete Model3DRef with all associated files
     model = Model3DRef(
@@ -100,12 +87,7 @@ async def example_complex_3d_model():
         format="obj",
         material_file=material_file,
         texture_files=[diffuse_texture, normal_texture],
-        metadata={
-            "vertices": 8,
-            "faces": 12,
-            "has_materials": True,
-            "has_textures": True
-        }
+        metadata={"vertices": 8, "faces": 12, "has_materials": True, "has_textures": True},
     )
 
     print(f"Model format: {model.format}")
@@ -172,10 +154,7 @@ async def example_format_conversion():
     )
 
     # Original model
-    original_model = Model3DRef(
-        data=b"original 3D model data",
-        format="glb"
-    )
+    original_model = Model3DRef(data=b"original 3D model data", format="glb")
 
     print("Original model:")
     print(f"  Format: {original_model.format}")

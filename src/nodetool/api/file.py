@@ -55,9 +55,10 @@ async def get_file_info(path: str) -> FileInfo:
 def ensure_within_root(root: str, path: str, error_message: str) -> str:
     """
     Ensure the given path is contained within root, normalizing for case-insensitive filesystems.
+    Resolves symlinks to prevent directory traversal attacks.
     """
-    normalized_root = os.path.normcase(os.path.abspath(root))
-    normalized_path = os.path.normcase(os.path.abspath(path))
+    normalized_root = os.path.normcase(os.path.realpath(root))
+    normalized_path = os.path.normcase(os.path.realpath(path))
     root_prefix = normalized_root if normalized_root.endswith(os.sep) else normalized_root + os.sep
     if normalized_path != normalized_root and not normalized_path.startswith(root_prefix):
         raise HTTPException(status_code=403, detail=error_message)
@@ -223,7 +224,7 @@ def _is_safe_path(path: str) -> bool:
                 if p == sensitive_abs or p.startswith(sensitive_abs + os.sep):
                     # If we are inside a safe root (e.g. /home/user), ignore the broader sensitive path (e.g. /home)
                     if is_in_safe_root:
-                         pass
+                        pass
                     else:
                         return False
 

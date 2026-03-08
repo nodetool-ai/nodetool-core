@@ -20,7 +20,6 @@ from nodetool.security.startup_checks import (
 def reset_environment_settings():
     """Reset Environment settings before and after each test to ensure clean state."""
 
-
     yield
 
 
@@ -64,7 +63,6 @@ class TestCheckAuthProvider:
         monkeypatch.setenv("ENV", "production")
         monkeypatch.setenv("AUTH_PROVIDER", "local")
 
-
         result = check_auth_provider()
         assert result is not None
         assert result.severity == "CRITICAL"
@@ -75,7 +73,6 @@ class TestCheckAuthProvider:
         monkeypatch.setenv("ENV", "production")
         monkeypatch.setenv("AUTH_PROVIDER", "static")
 
-
         result = check_auth_provider()
         assert result is None
 
@@ -83,7 +80,6 @@ class TestCheckAuthProvider:
         """Test that no warning is returned in production with supabase auth."""
         monkeypatch.setenv("ENV", "production")
         monkeypatch.setenv("AUTH_PROVIDER", "supabase")
-
 
         result = check_auth_provider()
         assert result is None
@@ -97,7 +93,6 @@ class TestCheckDebugMode:
         monkeypatch.setenv("ENV", "development")
         monkeypatch.setenv("DEBUG", "1")
 
-
         result = check_debug_mode()
         assert result is None
 
@@ -105,7 +100,6 @@ class TestCheckDebugMode:
         """Test that warning is returned in production with DEBUG enabled."""
         monkeypatch.setenv("ENV", "production")
         monkeypatch.setenv("DEBUG", "1")
-
 
         result = check_debug_mode()
         assert result is not None
@@ -117,7 +111,6 @@ class TestCheckDebugMode:
         monkeypatch.setenv("ENV", "production")
         monkeypatch.setenv("DEBUG", "true")
 
-
         result = check_debug_mode()
         assert result is not None
         assert result.severity == "CRITICAL"
@@ -127,7 +120,6 @@ class TestCheckDebugMode:
         monkeypatch.setenv("ENV", "production")
         monkeypatch.delenv("DEBUG", raising=False)
 
-
         result = check_debug_mode()
         assert result is None
 
@@ -136,7 +128,6 @@ class TestCheckDebugMode:
         monkeypatch.setenv("ENV", "production")
         monkeypatch.setenv("DEBUG", "false")
 
-
         result = check_debug_mode()
         assert result is None
 
@@ -144,7 +135,6 @@ class TestCheckDebugMode:
         """Test that no warning is returned in production with DEBUG=0."""
         monkeypatch.setenv("ENV", "production")
         monkeypatch.setenv("DEBUG", "0")
-
 
         result = check_debug_mode()
         assert result is None
@@ -158,7 +148,6 @@ class TestCheckSecretsMasterKey:
         monkeypatch.setenv("ENV", "development")
         monkeypatch.delenv("SECRETS_MASTER_KEY", raising=False)
 
-
         result = check_secrets_master_key()
         assert result is None
 
@@ -166,7 +155,6 @@ class TestCheckSecretsMasterKey:
         """Test that warning is returned in production without master key."""
         monkeypatch.setenv("ENV", "production")
         monkeypatch.delenv("SECRETS_MASTER_KEY", raising=False)
-
 
         result = check_secrets_master_key()
         assert result is not None
@@ -177,7 +165,6 @@ class TestCheckSecretsMasterKey:
         """Test that no warning is returned in production with master key set."""
         monkeypatch.setenv("ENV", "production")
         monkeypatch.setenv("SECRETS_MASTER_KEY", "test-key-12345")
-
 
         result = check_secrets_master_key()
         assert result is None
@@ -193,7 +180,6 @@ class TestCheckDatabaseConfiguration:
         monkeypatch.delenv("POSTGRES_DB", raising=False)
         monkeypatch.delenv("DB_PATH", raising=False)
 
-
         result = check_database_configuration()
         assert result is None
 
@@ -203,7 +189,6 @@ class TestCheckDatabaseConfiguration:
         monkeypatch.delenv("SUPABASE_URL", raising=False)
         monkeypatch.delenv("POSTGRES_DB", raising=False)
         monkeypatch.delenv("DB_PATH", raising=False)
-
 
         result = check_database_configuration()
         assert result is not None
@@ -217,7 +202,6 @@ class TestCheckDatabaseConfiguration:
         monkeypatch.delenv("POSTGRES_DB", raising=False)
         monkeypatch.setenv("DB_PATH", "/tmp/test.db")
 
-
         result = check_database_configuration()
         assert result is not None
         assert result.severity == "WARNING"
@@ -230,7 +214,6 @@ class TestCheckDatabaseConfiguration:
         monkeypatch.setenv("POSTGRES_DB", "nodetool")
         monkeypatch.delenv("DB_PATH", raising=False)
 
-
         result = check_database_configuration()
         assert result is None
 
@@ -240,7 +223,6 @@ class TestCheckDatabaseConfiguration:
         monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
         monkeypatch.delenv("POSTGRES_DB", raising=False)
         monkeypatch.delenv("DB_PATH", raising=False)
-
 
         result = check_database_configuration()
         assert result is None
@@ -253,14 +235,12 @@ class TestCheckCorsWildcard:
         """Test that no warning is returned in development mode."""
         monkeypatch.setenv("ENV", "development")
 
-
         result = check_cors_wildcard()
         assert result is None
 
     def test_warning_in_production(self, monkeypatch):
         """Test that warning is returned in production mode."""
         monkeypatch.setenv("ENV", "production")
-
 
         result = check_cors_wildcard()
         assert result is not None
@@ -276,7 +256,6 @@ class TestCheckTerminalWebsocket:
         monkeypatch.setenv("ENV", "development")
         monkeypatch.setenv("NODETOOL_ENABLE_TERMINAL_WS", "1")
 
-
         result = check_terminal_websocket()
         assert result is None
 
@@ -284,7 +263,6 @@ class TestCheckTerminalWebsocket:
         """Test that warning is returned in production with terminal enabled."""
         monkeypatch.setenv("ENV", "production")
         monkeypatch.setenv("NODETOOL_ENABLE_TERMINAL_WS", "1")
-
 
         result = check_terminal_websocket()
         assert result is not None
@@ -296,7 +274,6 @@ class TestCheckTerminalWebsocket:
         monkeypatch.setenv("ENV", "production")
         monkeypatch.setenv("NODETOOL_ENABLE_TERMINAL_WS", "0")
 
-
         result = check_terminal_websocket()
         assert result is None
 
@@ -307,7 +284,6 @@ class TestRunStartupSecurityChecks:
     def test_returns_warnings_list(self, monkeypatch):
         """Test that run_startup_security_checks returns a list of warnings."""
         monkeypatch.setenv("ENV", "development")
-
 
         result = run_startup_security_checks()
         assert isinstance(result, list)
@@ -321,7 +297,6 @@ class TestRunStartupSecurityChecks:
         monkeypatch.delenv("SUPABASE_URL", raising=False)
         monkeypatch.delenv("POSTGRES_DB", raising=False)
         monkeypatch.delenv("DB_PATH", raising=False)
-
 
         result = run_startup_security_checks(raise_on_critical=False)
         assert len(result) > 0
@@ -337,7 +312,6 @@ class TestRunStartupSecurityChecks:
         monkeypatch.delenv("POSTGRES_DB", raising=False)
         monkeypatch.delenv("DB_PATH", raising=False)
 
-
         with pytest.raises(RuntimeError) as exc_info:
             run_startup_security_checks(raise_on_critical=True)
         assert "Critical security issues found" in str(exc_info.value)
@@ -350,7 +324,6 @@ class TestRunStartupSecurityChecks:
         monkeypatch.setenv("SECRETS_MASTER_KEY", "test-key-12345")
         monkeypatch.setenv("POSTGRES_DB", "nodetool")
         monkeypatch.setenv("NODETOOL_ENABLE_TERMINAL_WS", "0")
-
 
         result = run_startup_security_checks(raise_on_critical=True)
         # CORS warning is expected in production

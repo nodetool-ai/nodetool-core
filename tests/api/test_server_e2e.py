@@ -108,6 +108,8 @@ class TestDeployRoutersConfiguration:
         assert any("/admin/" in path for path in all_paths)
         # Check for storage routes
         assert any("/storage/" in path for path in all_paths)
+
+
 class TestEndpointsAvailability:
     """E2E tests for endpoint availability after server startup."""
 

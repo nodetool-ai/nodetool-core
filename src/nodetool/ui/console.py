@@ -47,6 +47,7 @@ except ImportError:
     class Static:  # type: ignore[no-redef]
         pass
 
+
 # Use TYPE_CHECKING to avoid circular imports at runtime
 if TYPE_CHECKING:
     from nodetool.metadata.types import LogEntry, Step, Task, ToolCall
@@ -195,7 +196,9 @@ class AgentConsole:
         if self._external_update_callback:
             self._external_update_callback()
 
-    def start_live(self, initial_content: Any, show_agent_output_widget: bool = False, agent_output_title: str = "Agent Output") -> None:
+    def start_live(
+        self, initial_content: Any, show_agent_output_widget: bool = False, agent_output_title: str = "Agent Output"
+    ) -> None:
         """
         Start the Rich Live display with initial content (table or tree).
 
@@ -286,7 +289,7 @@ class AgentConsole:
 
         self.agent_output_buffer = "".join(text for _, text in self.agent_output_segments)
         if len(self.agent_output_buffer) > _MAX_AGENT_OUTPUT_CHARS:
-            self.agent_output_buffer = self.agent_output_buffer[-_MAX_AGENT_OUTPUT_CHARS :]
+            self.agent_output_buffer = self.agent_output_buffer[-_MAX_AGENT_OUTPUT_CHARS:]
             # Keep segment list consistent with truncated buffer.
             rebuilt: list[tuple[bool, str]] = []
             remaining = self.agent_output_buffer

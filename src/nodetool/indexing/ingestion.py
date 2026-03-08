@@ -16,17 +16,21 @@ from markitdown import MarkItDown
 _pymupdf = None
 _pymupdf4llm = None
 
+
 def _get_pymupdf():
     global _pymupdf
     if _pymupdf is None:
         import pymupdf
+
         _pymupdf = pymupdf
     return _pymupdf
+
 
 def _get_pymupdf4llm():
     global _pymupdf4llm
     if _pymupdf4llm is None:
         import pymupdf4llm
+
         _pymupdf4llm = pymupdf4llm
     return _pymupdf4llm
 

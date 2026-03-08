@@ -118,9 +118,7 @@ class TestDockerAPIIntegration:
         """Return the API base URL for the test container."""
         return "http://localhost:8777"
 
-    def _wait_for_container(
-        self, container_name: str, timeout: int = 120
-    ) -> docker.models.containers.Container:
+    def _wait_for_container(self, container_name: str, timeout: int = 120) -> docker.models.containers.Container:
         """Wait for container to be healthy and return it."""
         client = docker.from_env()
         start_time = time.time()
@@ -186,9 +184,7 @@ class TestDockerAPIIntegration:
         # This test documents the expected behavior
         pytest.skip("Docker image build test skipped in CI (time-intensive)")
 
-    def test_container_starts_with_existing_image(
-        self, docker_client, temp_workspace, api_base_url
-    ):
+    def test_container_starts_with_existing_image(self, docker_client, temp_workspace, api_base_url):
         """
         Test that a container can start with the nodetool:local image.
 

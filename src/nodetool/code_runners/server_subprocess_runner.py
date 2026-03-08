@@ -69,6 +69,7 @@ def _ensure_executable(p: Path) -> None:
         # Ignore permission errors (file might not exist or we don't have permission)
         # This is a best-effort operation
         import logging
+
         logging.getLogger(__name__).debug("Failed to make file executable: %s: %s", p, e)
 
 

@@ -81,6 +81,7 @@ class ProviderEmbeddingFunction(EmbeddingFunction[Documents]):
             # We're in an async context - try nest_asyncio to preserve ResourceScope
             try:
                 import nest_asyncio
+
                 nest_asyncio.apply()
                 # Use the running loop with nest_asyncio to preserve context
                 embeddings = loop.run_until_complete(

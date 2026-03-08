@@ -1,4 +1,4 @@
-﻿"""
+"""
 Hyper3D (Rodin) provider implementation for 3D model generation.
 
 Hyper3D API Documentation: https://developer.hyper3d.ai/api-specification/overview
@@ -121,11 +121,7 @@ class RodinProvider(BaseProvider):
             return await response.json()
 
     async def _poll_task_status(
-        self,
-        session: aiohttp.ClientSession,
-        subscription_key: str,
-        poll_interval: float,
-        max_attempts: int
+        self, session: aiohttp.ClientSession, subscription_key: str, poll_interval: float, max_attempts: int
     ) -> None:
         """Poll for task completion."""
         for attempt in range(max_attempts):
@@ -400,11 +396,7 @@ class RodinProvider(BaseProvider):
         return RODIN_3D_MODELS
 
     async def text_to_3d(
-        self,
-        params: TextTo3DParams,
-        timeout_s: int | None = None,
-        context: Any = None,
-        node_id: str | None = None
+        self, params: TextTo3DParams, timeout_s: int | None = None, context: Any = None, node_id: str | None = None
     ) -> bytes:
         """Generate a 3D model from text prompt.
 
@@ -428,7 +420,7 @@ class RodinProvider(BaseProvider):
                 prompt=params.prompt,
                 seed=params.seed,
                 geometry_file_format=params.output_format,
-                tier="Gen-2"
+                tier="Gen-2",
             )
             log.debug(f"Task submitted: uuid={task_uuid}")
 
@@ -441,7 +433,7 @@ class RodinProvider(BaseProvider):
         params: ImageTo3DParams,
         timeout_s: int | None = None,
         context: Any = None,
-        node_id: str | None = None
+        node_id: str | None = None,
     ) -> bytes:
         """Generate a 3D model from image.
 
@@ -465,7 +457,7 @@ class RodinProvider(BaseProvider):
                 prompt=params.prompt,
                 seed=params.seed,
                 geometry_file_format=params.output_format,
-                tier="Gen-2"
+                tier="Gen-2",
             )
             log.debug(f"Task submitted: uuid={task_uuid}")
 

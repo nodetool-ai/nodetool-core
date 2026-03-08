@@ -144,7 +144,6 @@ class SuspendableNode(BaseNode):
         log.info(f"Suspending workflow at node {self._id}: {reason}")
 
         try:
-
             log.info(
                 f"Node {self._id} requesting suspension: {reason}\n"
                 f"State keys: {list(state.keys())}\n"

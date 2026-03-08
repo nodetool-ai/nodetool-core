@@ -541,9 +541,7 @@ class MiniMaxProvider(AnthropicProvider):
                 if status_code != 0:
                     status_msg = base_resp.get("status_msg", "Unknown error")
                     log.error(f"MiniMax TTS API returned error: {status_code} - {status_msg}")
-                    raise RuntimeError(
-                        f"MiniMax text-to-speech generation failed: {status_msg} (code: {status_code})"
-                    )
+                    raise RuntimeError(f"MiniMax text-to-speech generation failed: {status_msg} (code: {status_code})")
 
                 # Extract audio data from response
                 data = result.get("data", {})
@@ -603,9 +601,7 @@ class MiniMaxProvider(AnthropicProvider):
             ):
                 if response.status != 200:
                     error_text = await response.text()
-                    raise RuntimeError(
-                        f"MiniMax video task poll failed with status {response.status}: {error_text}"
-                    )
+                    raise RuntimeError(f"MiniMax video task poll failed with status {response.status}: {error_text}")
                 result = await response.json()
 
             base_resp = result.get("base_resp", {})
@@ -692,9 +688,7 @@ class MiniMaxProvider(AnthropicProvider):
         ):
             if response.status != 200:
                 error_text = await response.text()
-                raise RuntimeError(
-                    f"MiniMax file upload failed with status {response.status}: {error_text}"
-                )
+                raise RuntimeError(f"MiniMax file upload failed with status {response.status}: {error_text}")
             result = await response.json()
 
         file_id = result.get("file_id") or result.get("file", {}).get("file_id")
@@ -765,9 +759,7 @@ class MiniMaxProvider(AnthropicProvider):
             ):
                 if response.status != 200:
                     error_text = await response.text()
-                    raise RuntimeError(
-                        f"MiniMax video generation failed with status {response.status}: {error_text}"
-                    )
+                    raise RuntimeError(f"MiniMax video generation failed with status {response.status}: {error_text}")
                 result = await response.json()
 
             base_resp = result.get("base_resp", {})
@@ -793,9 +785,7 @@ class MiniMaxProvider(AnthropicProvider):
             ):
                 if dl_resp.status != 200:
                     error_text = await dl_resp.text()
-                    raise RuntimeError(
-                        f"MiniMax video download failed with status {dl_resp.status}: {error_text}"
-                    )
+                    raise RuntimeError(f"MiniMax video download failed with status {dl_resp.status}: {error_text}")
                 video_bytes = await dl_resp.read()
 
             log.debug(f"Generated video, size: {len(video_bytes)} bytes")
@@ -880,9 +870,7 @@ class MiniMaxProvider(AnthropicProvider):
             ):
                 if response.status != 200:
                     error_text = await response.text()
-                    raise RuntimeError(
-                        f"MiniMax video generation failed with status {response.status}: {error_text}"
-                    )
+                    raise RuntimeError(f"MiniMax video generation failed with status {response.status}: {error_text}")
                 result = await response.json()
 
             base_resp = result.get("base_resp", {})
@@ -908,9 +896,7 @@ class MiniMaxProvider(AnthropicProvider):
             ):
                 if dl_resp.status != 200:
                     error_text = await dl_resp.text()
-                    raise RuntimeError(
-                        f"MiniMax video download failed with status {dl_resp.status}: {error_text}"
-                    )
+                    raise RuntimeError(f"MiniMax video download failed with status {dl_resp.status}: {error_text}")
                 video_bytes = await dl_resp.read()
 
             log.debug(f"Generated video from image, size: {len(video_bytes)} bytes")

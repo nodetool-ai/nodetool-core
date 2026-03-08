@@ -77,14 +77,12 @@ class WorkflowMessageProcessor(MessageProcessor):
             if not isinstance(node_name, str) or not node_name.strip():
                 continue
 
-            if (
-                message_name is None
-                and (node_type == "nodetool.input.MessageInput" or node_type.endswith(".MessageInput"))
+            if message_name is None and (
+                node_type == "nodetool.input.MessageInput" or node_type.endswith(".MessageInput")
             ):
                 message_name = node_name.strip()
-            if (
-                messages_name is None
-                and (node_type == "nodetool.input.MessageListInput" or node_type.endswith(".MessageListInput"))
+            if messages_name is None and (
+                node_type == "nodetool.input.MessageListInput" or node_type.endswith(".MessageListInput")
             ):
                 messages_name = node_name.strip()
 
@@ -116,12 +114,8 @@ class WorkflowMessageProcessor(MessageProcessor):
             processing_context, last_message.workflow_id
         )
         # Prefer explicit names from UI, then detected graph names, then legacy defaults.
-        message_input_name = (
-            last_message.workflow_message_input_name or detected_message_name or "message"
-        )
-        messages_input_name = (
-            last_message.workflow_messages_input_name or detected_messages_name or "messages"
-        )
+        message_input_name = last_message.workflow_message_input_name or detected_message_name or "message"
+        messages_input_name = last_message.workflow_messages_input_name or detected_messages_name or "messages"
         params = {
             message_input_name: _serialize_message(last_message),
             messages_input_name: [_serialize_message(msg) for msg in chat_history],

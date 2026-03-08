@@ -16,12 +16,9 @@ def test_show_deployment_details_executes_without_error(mock_console):
     deployment = DockerDeployment(
         host="127.0.0.1",
         image=ImageConfig(name="test/image", tag="latest"),
-        container=ContainerConfig(name="test-container", port=8000)
+        container=ContainerConfig(name="test-container", port=8000),
     )
-    state = {
-        "status": "running",
-        "last_deployed": "2024-01-01T12:00:00"
-    }
+    state = {"status": "running", "last_deployed": "2024-01-01T12:00:00"}
 
     show_deployment_details("test-deployment", deployment, state)
 

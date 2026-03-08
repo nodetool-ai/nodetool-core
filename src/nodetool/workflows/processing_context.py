@@ -1658,7 +1658,11 @@ class ProcessingContext:
                         return BytesIO(await _in_thread(_numpy_image_to_png_bytes, obj))
                     elif isinstance(asset_ref, AudioRef):
                         # Encode numpy audio array as WAV/PCM bytes
-                        return BytesIO(await _in_thread(_numpy_audio_to_wav_bytes, obj, asset_ref.metadata.get("sample_rate", 44100)))
+                        return BytesIO(
+                            await _in_thread(
+                                _numpy_audio_to_wav_bytes, obj, asset_ref.metadata.get("sample_rate", 44100)
+                            )
+                        )
                     elif isinstance(asset_ref, VideoRef):
                         # Encode numpy video array as MP4 using shared utility (T,H,W,C)
                         try:

@@ -675,10 +675,7 @@ class MigrationRunner:
                 continue
 
             # This ALTER TABLE migration was baselined — re-execute it
-            log.info(
-                f"Repairing incorrectly baselined ALTER TABLE migration: "
-                f"{migration.version} ({migration.name})"
-            )
+            log.info(f"Repairing incorrectly baselined ALTER TABLE migration: {migration.version} ({migration.name})")
 
             try:
                 assert self._adapter is not None, "Adapter is required"

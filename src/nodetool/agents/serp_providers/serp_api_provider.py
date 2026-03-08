@@ -430,9 +430,7 @@ class SerpApiProvider(SerpProvider):
 
         return _remove_base64_images(result_data)
 
-    async def search_youtube(
-        self, query: str, num_results: int = 10
-    ) -> dict[str, Any] | ErrorResponse:
+    async def search_youtube(self, query: str, num_results: int = 10) -> dict[str, Any] | ErrorResponse:
         """
         Searches YouTube using SerpApi's YouTube engine.
         """
@@ -455,9 +453,7 @@ class SerpApiProvider(SerpProvider):
 
         return _remove_base64_images(result_data)
 
-    async def search_scholar(
-        self, query: str, num_results: int = 10
-    ) -> dict[str, Any] | ErrorResponse:
+    async def search_scholar(self, query: str, num_results: int = 10) -> dict[str, Any] | ErrorResponse:
         """
         Searches Google Scholar using SerpApi's Google Scholar engine.
         """
@@ -507,9 +503,7 @@ class SerpApiProvider(SerpProvider):
 
         return _remove_base64_images(result_data)
 
-    async def search_yelp(
-        self, query: str, location: str, num_results: int = 10
-    ) -> dict[str, Any] | ErrorResponse:
+    async def search_yelp(self, query: str, location: str, num_results: int = 10) -> dict[str, Any] | ErrorResponse:
         """
         Searches Yelp using SerpApi's Yelp engine.
         """
@@ -531,9 +525,7 @@ class SerpApiProvider(SerpProvider):
 
         return _remove_base64_images(result_data)
 
-    async def search_duckduckgo(
-        self, query: str, num_results: int = 10
-    ) -> dict[str, Any] | ErrorResponse:
+    async def search_duckduckgo(self, query: str, num_results: int = 10) -> dict[str, Any] | ErrorResponse:
         """
         Searches DuckDuckGo using SerpApi's DuckDuckGo engine.
         """

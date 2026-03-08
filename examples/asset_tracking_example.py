@@ -73,11 +73,7 @@ async def query_assets_by_node(user_id: str, node_id: str):
     """Query all assets created by a specific node."""
     from nodetool.models.asset import Asset
 
-    assets, _ = await Asset.paginate(
-        user_id=user_id,
-        node_id=node_id,
-        limit=100
-    )
+    assets, _ = await Asset.paginate(user_id=user_id, node_id=node_id, limit=100)
     return assets
 
 
@@ -85,11 +81,7 @@ async def query_assets_by_job(user_id: str, job_id: str):
     """Query all assets created during a specific job execution."""
     from nodetool.models.asset import Asset
 
-    assets, _ = await Asset.paginate(
-        user_id=user_id,
-        job_id=job_id,
-        limit=100
-    )
+    assets, _ = await Asset.paginate(user_id=user_id, job_id=job_id, limit=100)
     return assets
 
 
@@ -97,9 +89,5 @@ async def query_assets_by_workflow(user_id: str, workflow_id: str):
     """Query all assets created for a specific workflow."""
     from nodetool.models.asset import Asset
 
-    assets, _ = await Asset.paginate(
-        user_id=user_id,
-        workflow_id=workflow_id,
-        limit=100
-    )
+    assets, _ = await Asset.paginate(user_id=user_id, workflow_id=workflow_id, limit=100)
     return assets

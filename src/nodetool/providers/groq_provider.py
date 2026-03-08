@@ -163,4 +163,3 @@ class GroqProvider(OpenAIProvider):
         except Exception as e:
             log.error(f"Error fetching Groq models: {e}")
             return []
-

@@ -453,6 +453,7 @@ class TestDockerDeployer:
     def test_create_directories(self, basic_deployment, mock_state_manager):
         """Test directory creation."""
         import os
+
         mock_ssh = Mock()
         mock_ssh.mkdir = Mock()
 
@@ -487,15 +488,15 @@ class TestDockerDeployer:
         deployer._push_image_to_remote = push_image_spy
 
         results = {"steps": []}
-        with pytest.raises(RuntimeError, match=r"(not found locally|Could not query local Docker daemon for image presence\.)"):
+        with pytest.raises(
+            RuntimeError, match=r"(not found locally|Could not query local Docker daemon for image presence\.)"
+        ):
             deployer._ensure_image(mock_ssh, results)
 
         # Should not attempt remote image transfer when localhost image is missing.
         assert push_image_spy.call_count == 0
 
-    def test_push_image_to_remote_keeps_save_pipe_open_until_load_starts(
-        self, basic_deployment, mock_state_manager
-    ):
+    def test_push_image_to_remote_keeps_save_pipe_open_until_load_starts(self, basic_deployment, mock_state_manager):
         """docker save stdout must be handed to ssh docker load before closing in parent."""
         deployer = DockerDeployer(
             deployment_name="test",
@@ -847,9 +848,7 @@ class TestDockerDeployer:
         mock_ssh = Mock()
         mock_ssh.__enter__ = Mock(return_value=mock_ssh)
         mock_ssh.__exit__ = Mock(return_value=False)
-        mock_ssh.execute = Mock(
-            return_value=(0, "Up 2 hours", "")
-        )
+        mock_ssh.execute = Mock(return_value=(0, "Up 2 hours", ""))
 
         with patch("nodetool.deploy.self_hosted.SSHConnection") as mock_ssh_cls:
             mock_ssh_cls.return_value = mock_ssh
