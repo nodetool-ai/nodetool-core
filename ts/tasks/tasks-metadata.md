@@ -24,14 +24,7 @@ These are used by:
 ---
 
 ### T-META-2 · Node metadata / introspection
-**Status:** 🔴 open
-**Python source:** `metadata/node_metadata.py` — extracts input/output schemas from node classes via Python reflection.
-
-In TypeScript, nodes register themselves with `NodeRegistry`. The metadata comes from static class properties (`inputSchema`, `outputSchema`).
-
-- [ ] **TEST** — Write test: `getNodeMetadata(nodeClass)` returns `{ type, inputs: [{ name, type, required, default }], outputs: [...], description }`.
-- [ ] **TEST** — Write test: `getNodeMetadata` works for streaming nodes (marks `is_streaming_output: true`).
-- [ ] **IMPL** — Create `ts/packages/node-sdk/src/node-metadata.ts`. Export `getNodeMetadata(nodeClass)` that reads static class properties. Update `NodeRegistry` to use this.
+**Status:** 🟢 done — `node-metadata.ts` with `getNodeMetadata()` and `getRegisteredNodeMetadata()`.
 
 ---
 
@@ -101,11 +94,7 @@ Deferred.
 ---
 
 ### T-MSG-6 · Workflow API graph representation
-**Status:** 🔴 open
-**Python source:** `types/api_graph.py` — lightweight graph representation for API responses (no internal runtime metadata).
-
-- [ ] **TEST** — Write test: `toApiGraph(graph)` strips runtime-only fields from nodes; result is JSON-serializable without cycles.
-- [ ] **IMPL** — Create `ts/packages/models/src/api-graph.ts`. Port `ApiGraph`, `ApiNode`, `ApiEdge` types. Add `toApiGraph(graph)` conversion function.
+**Status:** 🟢 done — `api-graph.ts` with `ApiNode`, `ApiEdge`, `ApiGraph` types and `toApiGraph()` converter.
 
 ---
 

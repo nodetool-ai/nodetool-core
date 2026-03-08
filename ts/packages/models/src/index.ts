@@ -73,3 +73,12 @@ export { Prediction } from "./prediction.js";
 export type { AggregateResult, ProviderAggregateResult, ModelAggregateResult } from "./prediction.js";
 
 export { Workspace } from "./workspace.js";
+
+// ── API Graph ───────────────────────────────────────────────────────
+export {
+  toApiNode,
+  toApiEdge,
+  toApiGraph,
+  removeConnectedSlots,
+} from "./api-graph.js";
+export type { ApiNode, ApiEdge, ApiGraph } from "./api-graph.js";

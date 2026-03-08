@@ -21,6 +21,7 @@ import type {
   ProcessingMessage,
   ControlEvent,
 } from "@nodetool/protocol";
+import { TypeMetadata } from "@nodetool/protocol";
 
 const log = createLogger("nodetool.kernel.runner");
 import type { ProcessingContext } from "@nodetool/runtime";
@@ -234,6 +235,9 @@ export class WorkflowRunner {
       // Process graph (spawn actors)
       await this._processGraph();
 
+      // Post-completion: drain any edges that still have pending/open state
+      this._drainActiveEdges();
+
       const status = this._cancelled ? "cancelled" : "completed";
       log.info("Workflow completed", { jobId: request.job_id, status });
 
@@ -252,6 +256,8 @@ export class WorkflowRunner {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       log.error("Workflow failed", { jobId: request.job_id, error: message });
+      // Drain active edges on error for front-end cleanup
+      this._drainActiveEdges();
       this._emit({
         type: "job_update",
         status: "failed",
@@ -361,7 +367,9 @@ export class WorkflowRunner {
   // -----------------------------------------------------------------------
 
   private _detectMultiEdgeListInputs(): void {
-    // Find handles that receive more than one edge (list aggregation)
+    // Find handles that receive more than one edge AND whose property type
+    // is a list type.  Non-list handles with multiple edges should NOT be
+    // marked for aggregation (Python parity: _classify_list_inputs).
     const handleEdgeCounts = new Map<string, number>(); // key = nodeId:handle
     for (const edge of this._graph.edges) {
       if (isControlEdge(edge)) continue;
@@ -372,6 +380,24 @@ export class WorkflowRunner {
     for (const [key, count] of handleEdgeCounts) {
       if (count > 1) {
         const [nodeId, handle] = key.split(":");
+
+        // Look up the target node to check its property type
+        const node = this._graph.findNode(nodeId);
+        if (!node) continue;
+
+        // Validate that the handle's type is a list type
+        const propertyTypes = node.propertyTypes;
+        if (propertyTypes) {
+          const typeStr = propertyTypes[handle];
+          if (typeStr) {
+            const meta = TypeMetadata.fromString(typeStr);
+            if (!meta.isListType()) {
+              // Multiple edges to non-list property — skip aggregation
+              continue;
+            }
+          }
+        }
+
         if (!this._multiEdgeListInputs.has(nodeId)) {
           this._multiEdgeListInputs.set(nodeId, new Set());
         }
@@ -690,6 +716,38 @@ export class WorkflowRunner {
       status: "active",
       counter,
     });
+  }
+
+  // -----------------------------------------------------------------------
+  // Drain active edges (Python parity: drain_active_edges)
+  // -----------------------------------------------------------------------
+
+  /**
+   * Post a "drained" EdgeUpdate for any edge whose target handle still has
+   * buffered items or open upstream sources. Called during post-completion
+   * cleanup to ensure front-end consumers stop listening to streams and
+   * clear any spinners.
+   */
+  private _drainActiveEdges(): void {
+    if (!this._graph || this._graph.edges.length === 0) return;
+    for (const edge of this._graph.edges) {
+      try {
+        const inbox = this._inboxes.get(edge.target);
+        if (!inbox) continue;
+        const edgeId = edge.id ?? `${edge.source}:${edge.sourceHandle}->${edge.target}:${edge.targetHandle}`;
+        if (inbox.hasBuffered(edge.targetHandle) || inbox.isOpen(edge.targetHandle)) {
+          this._emit({
+            type: "edge_update",
+            workflow_id: this.jobId,
+            edge_id: edgeId,
+            status: "drained",
+            counter: this._edgeCounters.get(edgeId) ?? null,
+          });
+        }
+      } catch {
+        // Best effort — ignore errors during draining
+      }
+    }
   }
 
   // -----------------------------------------------------------------------

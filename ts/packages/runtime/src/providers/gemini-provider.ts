@@ -4,6 +4,11 @@ import { BaseProvider } from "./base-provider.js";
 
 const log = createLogger("nodetool.runtime.providers.gemini");
 import type {
+  ASRModel,
+  EmbeddingModel,
+  ImageModel,
+  ImageToImageParams,
+  ImageToVideoParams,
   LanguageModel,
   Message,
   MessageContent,
@@ -12,7 +17,12 @@ import type {
   MessageTextContent,
   ProviderStreamItem,
   ProviderTool,
+  StreamingAudioChunk,
+  TextToImageParams,
+  TextToVideoParams,
   ToolCall,
+  TTSModel,
+  VideoModel,
 } from "./types.js";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
@@ -563,6 +573,509 @@ export class GeminiProvider extends BaseProvider {
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     };
   }
+
+  // ---------------------------------------------------------------------------
+  // Model listing — image, TTS, ASR, video, embedding
+  // ---------------------------------------------------------------------------
+
+  async getAvailableImageModels(): Promise<ImageModel[]> {
+    return [
+      { id: "gemini-2.0-flash-preview-image-generation", name: "Gemini 2.0 Flash Image Gen", provider: "gemini" },
+      { id: "imagen-3.0-generate-002", name: "Imagen 3.0", provider: "gemini" },
+    ];
+  }
+
+  async getAvailableTTSModels(): Promise<TTSModel[]> {
+    const voices = [
+      "Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Aoede",
+      "Callirrhoe", "Autonoe", "Enceladus", "Iapetus", "Umbriel", "Algieba",
+      "Despina", "Erinome", "Algenib", "Rasalgethi", "Laomedeia", "Achernar",
+      "Alnilam", "Schedar", "Gacrux", "Pulcherrima", "Achird", "Zubenelgenubi",
+      "Vindemiatrix", "Sadachbia", "Sadaltager", "Sulafat",
+    ];
+    return [
+      { id: "gemini-2.5-pro-preview-tts", name: "Gemini 2.5 Pro TTS", provider: "gemini", voices },
+    ];
+  }
+
+  async getAvailableASRModels(): Promise<ASRModel[]> {
+    return [
+      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "gemini" },
+      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "gemini" },
+    ];
+  }
+
+  override async getAvailableVideoModels(): Promise<VideoModel[]> {
+    return [
+      { id: "veo-3.1-generate-preview", name: "Veo 3.1 Preview", provider: "gemini" },
+      { id: "veo-2.0-generate-001", name: "Veo 2.0", provider: "gemini" },
+    ];
+  }
+
+  async getAvailableEmbeddingModels(): Promise<EmbeddingModel[]> {
+    return [
+      { id: "text-embedding-004", name: "Text Embedding 004", provider: "gemini", dimensions: 768 },
+      { id: "gemini-embedding-001", name: "Gemini Embedding 001", provider: "gemini", dimensions: 3072 },
+    ];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Embeddings
+  // ---------------------------------------------------------------------------
+
+  override async generateEmbedding(args: {
+    text: string | string[];
+    model: string;
+    dimensions?: number;
+  }): Promise<number[][]> {
+    const { text, model, dimensions } = args;
+    if (!text || (Array.isArray(text) && text.length === 0)) {
+      throw new Error("text must not be empty");
+    }
+
+    const texts = typeof text === "string" ? [text] : text;
+
+    // Gemini embedContent supports a single content; batch by calling per text
+    const embeddings: number[][] = [];
+    for (const t of texts) {
+      const body: Record<string, unknown> = {
+        content: { parts: [{ text: t }] },
+      };
+      if (dimensions) {
+        body.outputDimensionality = dimensions;
+      }
+
+      const url = `${GEMINI_API_BASE}/models/${model}:embedContent?key=${this.apiKey}`;
+      const response = await this._fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Gemini embedding error ${response.status}: ${errText}`);
+      }
+
+      const data = (await response.json()) as { embedding?: { values?: number[] } };
+      if (!data.embedding?.values) {
+        throw new Error("No embedding returned from Gemini API");
+      }
+      embeddings.push(data.embedding.values);
+    }
+
+    return embeddings;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Text-to-image
+  // ---------------------------------------------------------------------------
+
+  override async textToImage(params: TextToImageParams): Promise<Uint8Array> {
+    if (!params.prompt) {
+      throw new Error("The input prompt cannot be empty.");
+    }
+
+    const modelId = params.model.id;
+
+    if (modelId.startsWith("gemini-")) {
+      // Use generateContent with IMAGE response modality
+      const body = {
+        contents: [{ role: "user" as const, parts: [{ text: params.prompt }] }],
+        generationConfig: {
+          responseModalities: ["IMAGE", "TEXT"],
+        },
+      };
+
+      const url = `${GEMINI_API_BASE}/models/${modelId}:generateContent?key=${this.apiKey}`;
+      const response = await this._fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Gemini text-to-image failed ${response.status}: ${errText}`);
+      }
+
+      const data = (await response.json()) as GeminiResponse;
+      const parts = data.candidates?.[0]?.content?.parts;
+      if (!parts) throw new Error("No candidates in response");
+
+      for (const part of parts) {
+        if (part.inlineData?.data) {
+          return Uint8Array.from(Buffer.from(part.inlineData.data, "base64"));
+        }
+      }
+      throw new Error("No image data returned in response");
+    }
+
+    // Imagen models use generateImages endpoint
+    const body: Record<string, unknown> = {
+      instances: [{ prompt: params.prompt }],
+      parameters: { sampleCount: 1 },
+    };
+
+    const url = `${GEMINI_API_BASE}/models/${modelId}:generateImages?key=${this.apiKey}`;
+    const response = await this._fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Gemini image generation failed ${response.status}: ${errText}`);
+    }
+
+    const data = (await response.json()) as {
+      predictions?: Array<{ bytesBase64Encoded?: string }>;
+      generatedImages?: Array<{ image?: { imageBytes?: string } }>;
+    };
+
+    // Try predictions format first (Vertex-style), then generatedImages
+    const b64 =
+      data.predictions?.[0]?.bytesBase64Encoded ??
+      data.generatedImages?.[0]?.image?.imageBytes;
+
+    if (!b64) throw new Error("No image data in response");
+    return Uint8Array.from(Buffer.from(b64, "base64"));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Image-to-image
+  // ---------------------------------------------------------------------------
+
+  override async imageToImage(image: Uint8Array, params: ImageToImageParams): Promise<Uint8Array> {
+    if (!params.prompt) {
+      throw new Error("The input prompt cannot be empty.");
+    }
+
+    const modelId = params.model.id;
+    if (!modelId.startsWith("gemini-")) {
+      throw new Error(`Model ${modelId} does not support image-to-image. Only gemini-* models supported.`);
+    }
+
+    const imageBase64 = Buffer.from(image).toString("base64");
+
+    const body = {
+      contents: [{
+        role: "user" as const,
+        parts: [
+          { text: params.prompt },
+          { inlineData: { mimeType: "image/png", data: imageBase64 } },
+        ],
+      }],
+      generationConfig: {
+        responseModalities: ["IMAGE", "TEXT"],
+      },
+    };
+
+    const url = `${GEMINI_API_BASE}/models/${modelId}:generateContent?key=${this.apiKey}`;
+    const response = await this._fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Gemini image-to-image failed ${response.status}: ${errText}`);
+    }
+
+    const data = (await response.json()) as GeminiResponse;
+    const parts = data.candidates?.[0]?.content?.parts;
+    if (!parts) throw new Error("No candidates in response");
+
+    for (const part of parts) {
+      if (part.inlineData?.data) {
+        return Uint8Array.from(Buffer.from(part.inlineData.data, "base64"));
+      }
+    }
+    throw new Error("No image data returned in response");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Text-to-speech
+  // ---------------------------------------------------------------------------
+
+  override async *textToSpeech(args: {
+    text: string;
+    model: string;
+    voice?: string;
+    speed?: number;
+  }): AsyncGenerator<StreamingAudioChunk> {
+    const { text, model, voice = "Puck" } = args;
+
+    const body = {
+      contents: [{ role: "user" as const, parts: [{ text }] }],
+      generationConfig: {
+        responseModalities: ["AUDIO"],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: voice },
+          },
+        },
+      },
+    };
+
+    const url = `${GEMINI_API_BASE}/models/${model}:generateContent?key=${this.apiKey}`;
+    const response = await this._fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Gemini TTS failed ${response.status}: ${errText}`);
+    }
+
+    const data = (await response.json()) as GeminiResponse;
+    const parts = data.candidates?.[0]?.content?.parts;
+    if (!parts) throw new Error("No audio in response");
+
+    for (const part of parts) {
+      if (part.inlineData?.data) {
+        const raw = Buffer.from(part.inlineData.data, "base64");
+        // Gemini TTS returns raw PCM int16 at 24kHz
+        const samples = new Int16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
+        yield { samples };
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Automatic speech recognition
+  // ---------------------------------------------------------------------------
+
+  override async automaticSpeechRecognition(args: {
+    audio: Uint8Array;
+    model: string;
+    language?: string;
+    prompt?: string;
+    temperature?: number;
+  }): Promise<string> {
+    const { audio, model, language, temperature = 0 } = args;
+
+    if (!audio || audio.length === 0) {
+      throw new Error("audio must not be empty");
+    }
+
+    // Detect MIME type from audio header
+    let mimeType = "audio/wav";
+    if (audio[0] === 0x52 && audio[1] === 0x49 && audio[2] === 0x46 && audio[3] === 0x46) {
+      mimeType = "audio/wav"; // RIFF
+    } else if (audio[0] === 0x49 && audio[1] === 0x44 && audio[2] === 0x33) {
+      mimeType = "audio/mp3"; // ID3
+    } else if (audio[0] === 0xff && (audio[1] === 0xfb || audio[1] === 0xf3)) {
+      mimeType = "audio/mp3"; // MPEG sync
+    } else if (audio[0] === 0x66 && audio[1] === 0x4c && audio[2] === 0x61 && audio[3] === 0x43) {
+      mimeType = "audio/flac"; // fLaC
+    } else if (audio[0] === 0x4f && audio[1] === 0x67 && audio[2] === 0x67 && audio[3] === 0x53) {
+      mimeType = "audio/ogg"; // OggS
+    }
+
+    let promptText = args.prompt ?? "Transcribe this audio to text.";
+    if (language) {
+      promptText = `${promptText} The audio is in ${language}.`;
+    }
+
+    const audioBase64 = Buffer.from(audio).toString("base64");
+
+    const body = {
+      contents: [{
+        role: "user" as const,
+        parts: [
+          { inlineData: { mimeType, data: audioBase64 } },
+          { text: promptText },
+        ],
+      }],
+      generationConfig: {
+        temperature,
+      },
+    };
+
+    const url = `${GEMINI_API_BASE}/models/${model}:generateContent?key=${this.apiKey}`;
+    const response = await this._fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Gemini ASR failed ${response.status}: ${errText}`);
+    }
+
+    const data = (await response.json()) as GeminiResponse;
+    const parts = data.candidates?.[0]?.content?.parts;
+    if (!parts) return "";
+
+    return parts
+      .filter((p) => p.text !== undefined)
+      .map((p) => p.text!)
+      .join("");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Text-to-video (Veo models — async operation with polling)
+  // ---------------------------------------------------------------------------
+
+  override async textToVideo(params: TextToVideoParams): Promise<Uint8Array> {
+    if (!params.prompt) {
+      throw new Error("The input prompt cannot be empty.");
+    }
+
+    const modelId = params.model.id;
+    if (!modelId.startsWith("veo-")) {
+      throw new Error(`Model ${modelId} is not a Veo model. Only Veo models support text-to-video.`);
+    }
+
+    const body: Record<string, unknown> = {
+      instances: [{ prompt: params.prompt }],
+    };
+    const parameters: Record<string, unknown> = {};
+    if (params.negativePrompt) parameters.negativePrompt = params.negativePrompt;
+    if (params.aspectRatio) parameters.aspectRatio = params.aspectRatio;
+    if (params.seed != null) parameters.seed = params.seed;
+    if (Object.keys(parameters).length > 0) body.parameters = parameters;
+
+    // Initiate async generation
+    const url = `${GEMINI_API_BASE}/models/${modelId}:generateVideos?key=${this.apiKey}`;
+    const response = await this._fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Gemini video generation failed ${response.status}: ${errText}`);
+    }
+
+    const operation = (await response.json()) as {
+      name?: string;
+      done?: boolean;
+      response?: {
+        generatedVideos?: Array<{ video?: { uri?: string } }>;
+      };
+    };
+
+    // Poll for completion
+    const maxWait = 600_000; // 10 minutes
+    const pollInterval = 10_000;
+    let elapsed = 0;
+    let current = operation;
+
+    while (!current.done && elapsed < maxWait) {
+      await new Promise((r) => setTimeout(r, pollInterval));
+      elapsed += pollInterval;
+
+      if (!current.name) throw new Error("No operation name for polling");
+      const pollUrl = `${GEMINI_API_BASE}/${current.name}?key=${this.apiKey}`;
+      const pollResp = await this._fetch(pollUrl);
+      if (!pollResp.ok) {
+        const errText = await pollResp.text();
+        throw new Error(`Poll failed ${pollResp.status}: ${errText}`);
+      }
+      current = (await pollResp.json()) as typeof operation;
+    }
+
+    if (!current.done) throw new Error("Video generation timed out");
+
+    const videoUri = current.response?.generatedVideos?.[0]?.video?.uri;
+    if (!videoUri) throw new Error("No video URI in response");
+
+    // Download the video
+    const dlResp = await this._fetch(`${videoUri}&key=${this.apiKey}`);
+    if (!dlResp.ok) throw new Error(`Video download failed: ${dlResp.status}`);
+    return new Uint8Array(await dlResp.arrayBuffer());
+  }
+
+  // ---------------------------------------------------------------------------
+  // Image-to-video (Veo models)
+  // ---------------------------------------------------------------------------
+
+  override async imageToVideo(image: Uint8Array, params: ImageToVideoParams): Promise<Uint8Array> {
+    if (!image || image.length === 0) {
+      throw new Error("Input image cannot be empty.");
+    }
+
+    const modelId = params.model.id;
+    if (!modelId.startsWith("veo-")) {
+      throw new Error(`Model ${modelId} is not a Veo model. Only Veo models support image-to-video.`);
+    }
+
+    const imageBase64 = Buffer.from(image).toString("base64");
+    const prompt = params.prompt ?? "Animate this image";
+
+    const body: Record<string, unknown> = {
+      instances: [{
+        prompt,
+        image: { bytesBase64Encoded: imageBase64, mimeType: "image/png" },
+      }],
+    };
+    const parameters: Record<string, unknown> = {};
+    if (params.negativePrompt) parameters.negativePrompt = params.negativePrompt;
+    if (params.aspectRatio) parameters.aspectRatio = params.aspectRatio;
+    if (params.seed != null) parameters.seed = params.seed;
+    if (Object.keys(parameters).length > 0) body.parameters = parameters;
+
+    const url = `${GEMINI_API_BASE}/models/${modelId}:generateVideos?key=${this.apiKey}`;
+    const response = await this._fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Gemini image-to-video failed ${response.status}: ${errText}`);
+    }
+
+    const operation = (await response.json()) as {
+      name?: string;
+      done?: boolean;
+      response?: {
+        generatedVideos?: Array<{ video?: { uri?: string } }>;
+      };
+    };
+
+    // Poll for completion
+    const maxWait = 600_000;
+    const pollInterval = 10_000;
+    let elapsed = 0;
+    let current = operation;
+
+    while (!current.done && elapsed < maxWait) {
+      await new Promise((r) => setTimeout(r, pollInterval));
+      elapsed += pollInterval;
+
+      if (!current.name) throw new Error("No operation name for polling");
+      const pollUrl = `${GEMINI_API_BASE}/${current.name}?key=${this.apiKey}`;
+      const pollResp = await this._fetch(pollUrl);
+      if (!pollResp.ok) {
+        const errText = await pollResp.text();
+        throw new Error(`Poll failed ${pollResp.status}: ${errText}`);
+      }
+      current = (await pollResp.json()) as typeof operation;
+    }
+
+    if (!current.done) throw new Error("Image-to-video generation timed out");
+
+    const videoUri = current.response?.generatedVideos?.[0]?.video?.uri;
+    if (!videoUri) throw new Error("No video URI in response");
+
+    const dlResp = await this._fetch(`${videoUri}&key=${this.apiKey}`);
+    if (!dlResp.ok) throw new Error(`Video download failed: ${dlResp.status}`);
+    return new Uint8Array(await dlResp.arrayBuffer());
+  }
+
+  // ---------------------------------------------------------------------------
+  // Error detection
+  // ---------------------------------------------------------------------------
 
   isContextLengthError(error: unknown): boolean {
     const msg = String(error).toLowerCase();

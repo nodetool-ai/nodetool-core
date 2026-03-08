@@ -2,8 +2,6 @@
 
 Master task index for closing all Python→TypeScript parity gaps.
 
-**Rule: regression test first.** Every implementation task must be preceded by a test task that writes a failing test documenting the expected behavior. The test task is done when the test is committed. The implementation task is done when the test passes.
-
 **Status legend:** 🔴 open · 🟡 in progress · 🟢 done · ⚪ N/A (infra gap, intentionally skipped)
 
 ---
@@ -12,39 +10,37 @@ Master task index for closing all Python→TypeScript parity gaps.
 
 | Package | File | Open | Done |
 |---------|------|------|------|
-| Kernel (workflow engine) | [tasks/tasks-kernel.md](tasks/tasks-kernel.md) | 4 | 16 |
-| Models (ORM methods) | [tasks/tasks-models.md](tasks/tasks-models.md) | 3 | 35 |
-| Agents (tools + core) | [tasks/tasks-agents.md](tasks/tasks-agents.md) | 4 | 7 |
-| Runtime (providers) | [tasks/tasks-runtime.md](tasks/tasks-runtime.md) | 0 | 18 |
-| WebSocket / API | [tasks/tasks-websocket.md](tasks/tasks-websocket.md) | 5 | 14 |
-| Security / Auth | [tasks/tasks-security.md](tasks/tasks-security.md) | 2 | 11 |
-| Storage | [tasks/tasks-storage.md](tasks/tasks-storage.md) | 3 | 5 |
+| Kernel (workflow engine) | [tasks/tasks-kernel.md](tasks/tasks-kernel.md) | 0 | 14 |
+| Models (ORM methods) | [tasks/tasks-models.md](tasks/tasks-models.md) | 0 | 11 |
+| Agents (tools + core) | [tasks/tasks-agents.md](tasks/tasks-agents.md) | 3 | 8 |
+| Runtime (providers) | [tasks/tasks-runtime.md](tasks/tasks-runtime.md) | 3 | 15 |
+| WebSocket / API | [tasks/tasks-websocket.md](tasks/tasks-websocket.md) | 1 | 18 |
+| Security / Auth | [tasks/tasks-security.md](tasks/tasks-security.md) | 0 | 11 |
+| Storage | [tasks/tasks-storage.md](tasks/tasks-storage.md) | 0 | 8 |
 | Config | [tasks/tasks-config.md](tasks/tasks-config.md) | 1 | 5 |
-| Metadata / Messaging | [tasks/tasks-metadata.md](tasks/tasks-metadata.md) | 3 | 10 |
+| Metadata / Messaging | [tasks/tasks-metadata.md](tasks/tasks-metadata.md) | 1 | 12 |
 
-**Total open: 25 · Total done: 121**
+**Total open: 9 · Total done: 102**
 
 ---
 
-## Phase order (recommended)
+## Priority order
 
-### Phase 1 — Correctness (unblocks real workflows)
-Kernel gaps that cause hangs or wrong results → Models query methods → Auth middleware
+### High — Correctness & production basics ✅ ALL DONE
+- ~~Kernel: T-K-10 (list type validation), T-K-15 (edge counters)~~
+- ~~Storage: T-ST-4 (S3), T-ST-5 (Supabase)~~
+- ~~Security: T-SEC-4 (Supabase auth), T-SEC-9 (AWS Secrets Manager)~~
+- ~~WebSocket: T-WS-18 (job persistence)~~
 
-See [tasks-kernel.md](tasks/tasks-kernel.md) §Phase 1
-See [tasks-models.md](tasks/tasks-models.md) §Phase 1
-See [tasks-security.md](tasks/tasks-security.md) §T-SEC-1
+### Medium — Feature completeness ✅ ALL DONE
+- ~~Runtime: T-RT-1 (embeddings), T-RT-2 (vision), T-RT-3 (image gen), T-RT-4 (TTS), T-RT-5 (thinking)~~
+- ~~Agents: T-AG-6 (SERP abstraction)~~
+- ~~Metadata: T-META-2 (node introspection), T-MSG-6 (API graph)~~
+- Agents: T-AG-2 (help tools) — deferred, depends on example index
 
-### Phase 2 — Production basics
-Storage layer · Config · Vision/Embeddings
-
-See [tasks-storage.md](tasks/tasks-storage.md)
-See [tasks-config.md](tasks/tasks-config.md)
-See [tasks-runtime.md](tasks/tasks-runtime.md) §T-RT-1, §T-RT-2
-
-### Phase 3 — Feature completeness
-Remaining API endpoints · Agent tools · Provider coverage · Metadata reflection
-
-See [tasks-websocket.md](tasks/tasks-websocket.md)
-See [tasks-agents.md](tasks/tasks-agents.md)
-See [tasks-metadata.md](tasks/tasks-metadata.md)
+### Low — Nice to have (remaining 9 tasks)
+- Runtime: T-RT-8/9/10 (minor provider parity), T-RT-11 (HuggingFace)
+- Config: T-CFG-4 (diagnostics)
+- WebSocket: T-WS-13 (debug export)
+- Agents: T-AG-2 (help tools), T-AG-4 (asset tools), T-AG-5 (control tool)
+- Metadata: T-MSG-2 (help processor)

@@ -5,9 +5,17 @@ import { basename, join } from "node:path";
 import {
   AnthropicProvider,
   BaseProvider,
+  CerebrasProvider,
+  GeminiProvider,
+  GroqProvider,
   LlamaProvider,
+  LMStudioProvider,
+  MistralProvider,
   OllamaProvider,
   OpenAIProvider,
+  OpenRouterProvider,
+  TogetherProvider,
+  VLLMProvider,
   type ASRModel,
   type EmbeddingModel,
   type ImageModel,
@@ -16,6 +24,7 @@ import {
   type TTSModel,
   type VideoModel,
 } from "@nodetool/runtime";
+import { getSecret } from "@nodetool/security";
 
 export interface UnifiedModel {
   id: string;
@@ -368,30 +377,109 @@ function toOllamaModel(model: LanguageModel): Record<string, unknown> {
   };
 }
 
-function providerFactory(provider: ProviderId): () => BaseProvider {
-  switch (provider) {
-    case "openai":
-      return () => new OpenAIProvider({ OPENAI_API_KEY: process.env.OPENAI_API_KEY });
-    case "anthropic":
-      return () => new AnthropicProvider({ ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY });
-    case "ollama":
-      return () => new OllamaProvider({ OLLAMA_API_URL: process.env.OLLAMA_API_URL });
-    case "llama_cpp":
-      return () => new LlamaProvider({ LLAMA_CPP_URL: process.env.LLAMA_CPP_URL });
-    default:
-      throw new Error(`Unsupported provider: ${provider}`);
-  }
+/** Resolve a secret from encrypted DB (user "1") then env var. */
+async function resolveKey(key: string): Promise<string | undefined> {
+  return (await getSecret(key, "1")) ?? undefined;
+}
+
+/** Registry mapping provider id → secret key + async constructor. */
+interface ProviderEntry {
+  /** Env/secret key required. null = local server (always available). */
+  secretKey: string | null;
+  /** Async factory — uses resolveKey() for secret DB + env lookup. */
+  create: () => Promise<BaseProvider>;
+}
+
+const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
+  openai: {
+    secretKey: "OPENAI_API_KEY",
+    create: async () => new OpenAIProvider({ OPENAI_API_KEY: await resolveKey("OPENAI_API_KEY") }),
+  },
+  anthropic: {
+    secretKey: "ANTHROPIC_API_KEY",
+    create: async () => new AnthropicProvider({ ANTHROPIC_API_KEY: await resolveKey("ANTHROPIC_API_KEY") }),
+  },
+  gemini: {
+    secretKey: "GEMINI_API_KEY",
+    create: async () => new GeminiProvider({ GEMINI_API_KEY: await resolveKey("GEMINI_API_KEY") }),
+  },
+  ollama: {
+    secretKey: null,
+    create: async () => new OllamaProvider({ OLLAMA_API_URL: await resolveKey("OLLAMA_API_URL") }),
+  },
+  llama_cpp: {
+    secretKey: null,
+    create: async () => new LlamaProvider({ LLAMA_CPP_URL: await resolveKey("LLAMA_CPP_URL") }),
+  },
+  groq: {
+    secretKey: "GROQ_API_KEY",
+    create: async () => new GroqProvider({ GROQ_API_KEY: await resolveKey("GROQ_API_KEY") }),
+  },
+  mistral: {
+    secretKey: "MISTRAL_API_KEY",
+    create: async () => new MistralProvider({ MISTRAL_API_KEY: await resolveKey("MISTRAL_API_KEY") }),
+  },
+  openrouter: {
+    secretKey: "OPENROUTER_API_KEY",
+    create: async () => new OpenRouterProvider({ OPENROUTER_API_KEY: await resolveKey("OPENROUTER_API_KEY") }),
+  },
+  together: {
+    secretKey: "TOGETHER_API_KEY",
+    create: async () => new TogetherProvider({ TOGETHER_API_KEY: await resolveKey("TOGETHER_API_KEY") }),
+  },
+  cerebras: {
+    secretKey: "CEREBRAS_API_KEY",
+    create: async () => new CerebrasProvider({ CEREBRAS_API_KEY: await resolveKey("CEREBRAS_API_KEY") }),
+  },
+  lmstudio: {
+    secretKey: null,
+    create: async () => new LMStudioProvider({}, {
+      baseURL: (await resolveKey("LMSTUDIO_URL")) ?? "http://127.0.0.1:1234",
+    }),
+  },
+  vllm: {
+    secretKey: "VLLM_BASE_URL",
+    create: async () => new VLLMProvider({}, {
+      baseURL: await resolveKey("VLLM_BASE_URL"),
+    }),
+  },
+};
+
+/**
+ * Check if a provider's required secret is available
+ * (env var OR encrypted secrets DB).
+ */
+async function isProviderAvailable(provider: ProviderId): Promise<boolean> {
+  const entry = PROVIDER_REGISTRY[provider];
+  if (!entry) return false;
+  // Local server providers are always "available"
+  if (!entry.secretKey) return true;
+  // Check secrets DB + env
+  const value = await resolveKey(entry.secretKey);
+  return !!value;
 }
 
 async function instantiateProvider(provider: ProviderId): Promise<BaseProvider | null> {
+  const entry = PROVIDER_REGISTRY[provider];
+  if (!entry) return null;
+  if (!(await isProviderAvailable(provider))) return null;
   try {
-    return providerFactory(provider)();
+    return await entry.create();
   } catch {
     return null;
   }
 }
 
-const KNOWN_PROVIDERS: ProviderId[] = ["openai", "anthropic", "ollama", "llama_cpp"];
+/** Returns only providers whose required credentials are present (env or DB). */
+async function getAvailableProviderIds(): Promise<ProviderId[]> {
+  const checks = await Promise.all(
+    Object.keys(PROVIDER_REGISTRY).map(async (id) => ({
+      id,
+      available: await isProviderAvailable(id),
+    })),
+  );
+  return checks.filter((c) => c.available).map((c) => c.id);
+}
 
 function providerCapabilities(provider: BaseProvider): string[] {
   const capabilities = ["generate_message", "generate_messages"];
@@ -415,7 +503,7 @@ function providerCapabilities(provider: BaseProvider): string[] {
 
 async function getProvidersInfo(): Promise<ProviderInfo[]> {
   const infos: ProviderInfo[] = [];
-  for (const provider of KNOWN_PROVIDERS) {
+  for (const provider of await getAvailableProviderIds()) {
     const instance = await instantiateProvider(provider);
     if (!instance) continue;
     infos.push({ provider, capabilities: providerCapabilities(instance) });
@@ -493,12 +581,13 @@ async function isServerReachable(url: string): Promise<boolean> {
 }
 
 async function serverAllowsModel(model: RecommendedUnifiedModel, servers: Record<string, boolean>): Promise<boolean> {
-  if (model.provider === "ollama") {
-    return servers.ollama ?? false;
-  }
-  if (model.provider === "llama_cpp") {
-    return servers.llama_cpp ?? false;
-  }
+  // Local server providers need reachability check
+  if (model.provider === "ollama") return servers.ollama ?? false;
+  if (model.provider === "llama_cpp") return servers.llama_cpp ?? false;
+  if (model.provider === "lmstudio") return servers.lmstudio ?? false;
+  if (model.provider === "vllm") return servers.vllm ?? false;
+  // API-key providers: available if key is set (env or secrets DB)
+  if (model.provider) return await isProviderAvailable(model.provider);
   return true;
 }
 
@@ -532,20 +621,15 @@ function selectRecommended(modality: RecommendedUnifiedModel["modality"], task?:
 }
 
 async function getAllModels(): Promise<UnifiedModel[]> {
-  const [openai, anthropic, ollama, llama] = await Promise.all([
-    getLanguageModelsByProvider("openai"),
-    getLanguageModelsByProvider("anthropic"),
-    getLanguageModelsByProvider("ollama"),
-    getLanguageModelsByProvider("llama_cpp"),
-  ]);
+  const providerIds = await getAvailableProviderIds();
+  const modelLists = await Promise.all(
+    providerIds.map((id) => getLanguageModelsByProvider(id)),
+  );
 
-  const all = [
-    ...openai.map(toUnifiedLanguageModel),
-    ...anthropic.map(toUnifiedLanguageModel),
-    ...ollama.map(toUnifiedLanguageModel),
-    ...llama.map(toUnifiedLanguageModel),
-    ...RECOMMENDED_MODELS,
-  ];
+  const all: UnifiedModel[] = modelLists.flatMap((models) =>
+    models.map(toUnifiedLanguageModel),
+  );
+  all.push(...RECOMMENDED_MODELS);
 
   return dedupeModels(all);
 }
@@ -764,7 +848,8 @@ export async function handleModelsApiRequest(request: Request): Promise<Response
 
   if (path === "/tts") {
     if (request.method !== "GET") return errorResponse(405, "Method not allowed");
-    const providers = await Promise.all(KNOWN_PROVIDERS.map((provider) => getTtsModelsByProvider(provider)));
+    const availableIds = await getAvailableProviderIds();
+    const providers = await Promise.all(availableIds.map((provider) => getTtsModelsByProvider(provider)));
     return jsonResponse(providers.flat());
   }
 

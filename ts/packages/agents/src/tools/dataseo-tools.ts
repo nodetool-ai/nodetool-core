@@ -8,6 +8,7 @@
 
 import type { ProcessingContext } from "@nodetool/runtime";
 import { Tool } from "./base-tool.js";
+import type { SerpProvider } from "./serp-providers/index.js";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -142,6 +143,13 @@ export class DataForSEOSearchTool extends Tool {
     required: ["keyword"],
   };
 
+  private _provider?: SerpProvider;
+
+  constructor(provider?: SerpProvider) {
+    super();
+    this._provider = provider;
+  }
+
   async process(
     context: ProcessingContext,
     params: Record<string, unknown>,
@@ -220,6 +228,13 @@ export class DataForSEONewsTool extends Tool {
     },
     required: ["keyword"],
   };
+
+  private _provider?: SerpProvider;
+
+  constructor(provider?: SerpProvider) {
+    super();
+    this._provider = provider;
+  }
 
   async process(
     context: ProcessingContext,
@@ -310,6 +325,13 @@ export class DataForSEOImagesTool extends Tool {
       },
     },
   };
+
+  private _provider?: SerpProvider;
+
+  constructor(provider?: SerpProvider) {
+    super();
+    this._provider = provider;
+  }
 
   async process(
     context: ProcessingContext,

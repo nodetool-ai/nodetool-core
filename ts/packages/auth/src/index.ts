@@ -7,6 +7,7 @@ export {
 export { LocalAuthProvider } from "./providers/local-provider.js";
 export { StaticTokenProvider } from "./providers/static-token-provider.js";
 export { MultiUserAuthProvider, type MultiUserAuthProviderOptions } from "./providers/multi-user-provider.js";
+export { SupabaseAuthProvider, type SupabaseAuthProviderOptions } from "./providers/supabase-provider.js";
 
 export {
   createAuthMiddleware,

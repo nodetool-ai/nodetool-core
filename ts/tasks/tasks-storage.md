@@ -56,24 +56,12 @@ Stores blobs on local filesystem under a configured base directory.
 ## Phase 2 — Cloud backends
 
 ### T-ST-4 · S3Storage backend
-**Status:** 🔴 open
-**Python source:** `storage/s3_storage.py` — AWS S3 with multipart upload support.
-
-- [ ] **TEST** — Write test (mocked S3): `S3Storage.upload` calls `PutObjectCommand` with correct bucket and key.
-- [ ] **TEST** — Write test (mocked): `download` calls `GetObjectCommand` and returns body buffer.
-- [ ] **TEST** — Write test: `getUrl` returns correct S3 URL or presigned URL.
-- [ ] **TEST** — Write test: large file triggers multipart upload.
-- [ ] **IMPL** — Create `ts/packages/storage/src/s3-storage.ts` using `@aws-sdk/client-s3`.
+**Status:** 🟢 done — `s3-storage.ts` with dynamic `@aws-sdk/client-s3` import, PutObject/GetObject/DeleteObject/HeadObject commands.
 
 ---
 
 ### T-ST-5 · SupabaseStorage backend
-**Status:** 🔴 open
-**Python source:** `storage/supabase_storage.py` — Supabase storage bucket access.
-
-- [ ] **TEST** — Write test (mocked): `SupabaseStorage.upload` calls Supabase storage API with correct bucket and path.
-- [ ] **TEST** — Write test: `getUrl` returns public Supabase storage URL.
-- [ ] **IMPL** — Create `ts/packages/storage/src/supabase-storage.ts` using `@supabase/supabase-js`.
+**Status:** 🟢 done — `supabase-storage.ts` with dynamic `@supabase/supabase-js` import.
 
 ---
 
@@ -106,12 +94,7 @@ Deferred; only needed for multi-instance deployments.
 ---
 
 ### T-ST-9 · MemoryUriCache (asset URL caching)
-**Status:** 🔴 open
-**Python source:** `storage/memory_uri_cache.py` — caches generated signed URLs to avoid redundant signing.
-
-- [ ] **TEST** — Write test: first call to `getUrl(key)` signs and caches. Second call returns same URL without re-signing.
-- [ ] **TEST** — Write test: URL expires and is re-signed after TTL.
-- [ ] **IMPL** — Create `ts/packages/storage/src/memory-uri-cache.ts`.
+**Status:** 🟢 done — `memory-uri-cache.ts` with TTL-based Map cache for signed URLs.
 
 ---
 

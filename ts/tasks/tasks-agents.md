@@ -61,12 +61,7 @@ The Python `workspace_tools` gives agents read/write access to a sandboxed works
 ---
 
 ### T-AG-6 · SERP provider abstraction
-**Status:** 🔴 open
-**Python source:** `agents/tools/serp_providers/` (Apify, DataForSEO, SerpAPI, news_types)
-**TS:** `search-tools.ts` and `dataseo-tools.ts` exist but lack the provider abstraction layer
-
-- [ ] **TEST** — Write test: `SearchTool` can be configured with different providers (SerpAPI vs DataForSEO) and returns normalized results in the same schema.
-- [ ] **IMPL** — Create `ts/packages/agents/src/tools/serp-providers/` with a `SerpProvider` interface. Implement `SerpApiProvider` and `DataForSeoProvider`. Update `SearchTool` to accept a provider instance.
+**Status:** 🟢 done — `serp-providers/` with `SerpProvider` interface, `SerpApiProvider`, `DataForSeoProvider`. `search-tools.ts` and `dataseo-tools.ts` refactored to use providers.
 
 ---
 

@@ -3,10 +3,14 @@
  *
  * Port of src/nodetool/agents/tools/serp_tools.py (GoogleSearchTool,
  * GoogleNewsTool, GoogleImagesTool).
+ *
+ * Internally delegates to the SerpApiProvider abstraction when available.
  */
 
 import type { ProcessingContext } from "@nodetool/runtime";
 import { Tool } from "./base-tool.js";
+import type { SerpProvider } from "./serp-providers/index.js";
+import { SerpApiProvider } from "./serp-providers/serpapi-provider.js";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -46,6 +50,19 @@ async function serpApiFetch(params: SerpApiParams): Promise<unknown> {
   return res.json();
 }
 
+/**
+ * Resolve a SerpProvider.  If an explicit provider is supplied, use it;
+ * otherwise create a SerpApiProvider from the context's API key.
+ */
+async function resolveProvider(
+  context: ProcessingContext,
+  provider?: SerpProvider,
+): Promise<SerpProvider> {
+  if (provider) return provider;
+  const apiKey = await getSerpApiKey(context);
+  return new SerpApiProvider(apiKey);
+}
+
 /* ------------------------------------------------------------------ */
 /*  GoogleSearchTool                                                  */
 /* ------------------------------------------------------------------ */
@@ -70,6 +87,13 @@ export class GoogleSearchTool extends Tool {
     required: ["keyword"],
   };
 
+  private _provider?: SerpProvider;
+
+  constructor(provider?: SerpProvider) {
+    super();
+    this._provider = provider;
+  }
+
   async process(
     context: ProcessingContext,
     params: Record<string, unknown>,
@@ -77,8 +101,22 @@ export class GoogleSearchTool extends Tool {
     const keyword = params.keyword as string | undefined;
     if (!keyword) return { error: "keyword is required" };
 
-    const apiKey = await getSerpApiKey(context);
     const numResults = (params.num_results as number) ?? 10;
+
+    if (this._provider) {
+      const results = await this._provider.search(keyword, { numResults });
+      return {
+        success: true,
+        results: results.map((r) => ({
+          title: r.title ?? null,
+          link: r.url ?? null,
+          snippet: r.snippet ?? null,
+        })),
+      };
+    }
+
+    // Legacy direct API call path
+    const apiKey = await getSerpApiKey(context);
 
     const data = (await serpApiFetch({
       engine: "google",
@@ -130,6 +168,13 @@ export class GoogleNewsTool extends Tool {
     },
     required: ["keyword"],
   };
+
+  private _provider?: SerpProvider;
+
+  constructor(provider?: SerpProvider) {
+    super();
+    this._provider = provider;
+  }
 
   async process(
     context: ProcessingContext,
@@ -193,6 +238,13 @@ export class GoogleImagesTool extends Tool {
     },
     required: ["keyword"],
   };
+
+  private _provider?: SerpProvider;
+
+  constructor(provider?: SerpProvider) {
+    super();
+    this._provider = provider;
+  }
 
   async process(
     context: ProcessingContext,

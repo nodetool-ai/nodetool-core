@@ -84,6 +84,9 @@ export interface NodeDescriptor {
 
   /** Whether this node is dynamic (runtime outputs). */
   is_dynamic?: boolean;
+
+  /** Property type strings keyed by property name (e.g. { values: "list[int]" }). */
+  propertyTypes?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------

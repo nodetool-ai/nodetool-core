@@ -44,6 +44,15 @@ export {
   DataForSEONewsTool,
   DataForSEOImagesTool,
 } from "./tools/dataseo-tools.js";
+export type {
+  SerpProvider,
+  SearchResult,
+  SearchOptions,
+} from "./tools/serp-providers/index.js";
+export {
+  SerpApiProvider,
+  DataForSeoProvider,
+} from "./tools/serp-providers/index.js";
 export {
   BrowserTool,
   ScreenshotTool,

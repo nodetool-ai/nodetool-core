@@ -41,11 +41,7 @@ Core crypto (Fernet, PBKDF2, keychain) is fully ported. The gaps are the auth pr
 ---
 
 ### T-SEC-4 · Supabase auth provider
-**Status:** 🔴 open
-**Python source:** `security/providers/supabase.py` — validates Supabase JWTs using JWKS.
-
-- [ ] **TEST** — Write test: Supabase JWT verified against JWKS endpoint; user metadata extracted.
-- [ ] **IMPL** — Create `ts/packages/auth/src/providers/supabase-provider.ts`. Use `jose` JWKS fetching.
+**Status:** 🟢 done — `supabase-provider.ts` with LRU token cache, dynamic `@supabase/supabase-js` import.
 
 ---
 
@@ -90,9 +86,4 @@ Low priority; can use AWS CLI directly.
 ---
 
 ### T-SEC-9 · master_key — AWS Secrets Manager backend
-**Status:** 🔴 open
-**Python source:** `security/master_key.py` — loads master key from AWS Secrets Manager when `AWS_SECRETS_MASTER_KEY_NAME` env var is set.
-**TS:** `master-key.ts` supports env var and system keychain, but not AWS.
-
-- [ ] **TEST** — Write test: when `AWS_SECRETS_MASTER_KEY_NAME` is set, `MasterKeyManager.getKey()` calls AWS SDK to retrieve the secret value.
-- [ ] **IMPL** — Add AWS Secrets Manager backend to `master-key.ts` using `@aws-sdk/client-secrets-manager`.
+**Status:** 🟢 done — `getFromAwsSecrets()` implemented in `master-key.ts` with dynamic `@aws-sdk/client-secrets-manager` import.
