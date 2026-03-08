@@ -369,3 +369,50 @@ export type MessageOfType<T extends MessageType> = Extract<
   ProcessingMessage,
   { type: T }
 >;
+
+// ---------------------------------------------------------------------------
+// Utility functions
+// ---------------------------------------------------------------------------
+
+/**
+ * Recursively sanitize memory:// URIs from a message payload.
+ * Replaces any string starting with "memory://" with an empty string.
+ * Mirrors Python's sanitize_memory_uris_for_client().
+ */
+export function sanitizeMemoryUris<T>(value: T): T {
+  if (typeof value === "string") {
+    return (value.startsWith("memory://") ? "" : value) as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map(sanitizeMemoryUris) as T;
+  }
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      result[k] = sanitizeMemoryUris(v);
+    }
+    return result as T;
+  }
+  return value;
+}
+
+/**
+ * Encode a BinaryUpdate into a single Buffer/Uint8Array suitable for
+ * binary WebSocket transmission.
+ * Format: JSON header (node_id + output_name) + null byte + raw binary.
+ * Mirrors Python's BinaryUpdate.encode().
+ */
+export function encodeBinaryUpdate(update: BinaryUpdate): Uint8Array {
+  const header = JSON.stringify({
+    type: update.type,
+    node_id: update.node_id,
+    output_name: update.output_name,
+  });
+  const headerBytes = new TextEncoder().encode(header);
+  const separator = new Uint8Array([0]); // null byte separator
+  const result = new Uint8Array(headerBytes.length + 1 + update.binary.length);
+  result.set(headerBytes, 0);
+  result.set(separator, headerBytes.length);
+  result.set(update.binary, headerBytes.length + 1);
+  return result;
+}
