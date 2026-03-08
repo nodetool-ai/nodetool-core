@@ -43,9 +43,10 @@ import asyncio
 import json
 import readline
 import sys
+import uuid
 from contextlib import suppress
 from datetime import UTC, datetime
-from enum import Enum, StrEnum
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Optional
 
 import msgpack
@@ -82,6 +83,7 @@ class ChatWebSocketClient:
         self.current_model = "gpt-4o"
         self.current_tools = None
         self.current_workflow = None
+        self.current_thread_id: Optional[str] = None
 
     def print_message(self, timestamp: str, role: str, content: str) -> None:
         """Print a message to the terminal."""
@@ -149,11 +151,16 @@ class ChatWebSocketClient:
             self.print_message(datetime.now().strftime("%H:%M:%S"), "system", "Not connected")
             return
 
+        # Ensure we have a thread_id for the session
+        if not self.current_thread_id:
+            self.current_thread_id = str(uuid.uuid4())
+
         # Construct message
         message: dict[str, Any] = {
             "role": "user",
             "content": content,
             "model": self.current_model,
+            "thread_id": self.current_thread_id,
             "timestamp": datetime.now(UTC).isoformat(),
         }
 
