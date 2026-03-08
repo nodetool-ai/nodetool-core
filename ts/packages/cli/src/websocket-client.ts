@@ -75,6 +75,7 @@ export class WebSocketChatClient {
   private isContentEvent(type: string | null): boolean {
     return (
       type === "chunk" ||
+      type === "message" ||
       type === "tool_call" ||
       type === "job_update" ||
       type === "error" ||
@@ -106,7 +107,7 @@ export class WebSocketChatClient {
     provider: string,
     tools?: unknown[],
   ): AsyncGenerator<ChatEvent> {
-    this.send({ command: "chat_message", data: { content, thread_id: threadId, model, provider, tools: tools ?? [] } });
+    this.send({ command: "chat_message", data: { role: "user", content, thread_id: threadId, model, provider, tools: tools ?? [] } });
     while (true) {
       const event = await this.nextContent();
       if (!event) {
@@ -115,7 +116,16 @@ export class WebSocketChatClient {
       }
       const type = event.type as string;
       if (type === "chunk") {
+        // Done chunk signals completion — matches Python's {"type": "chunk", "done": true}
+        if (event.done === true) {
+          yield { type: "done" };
+          return;
+        }
         yield { type: "chunk", content: typeof event.content === "string" ? event.content : "" };
+      } else if (type === "message") {
+        // Message events (assistant tool calls, tool results, final assistant) — skip in CLI stream
+        // The final assistant message after done chunk won't reach here since we return on done
+        continue;
       } else if (type === "job_update" || type === "generation_stopped") {
         yield { type: "done" };
         return;

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { getSecret } from "@nodetool/security";
 import { pack, unpack } from "msgpackr";
 import { createLogger } from "@nodetool/config";
 import { WorkflowRunner, type NodeExecutor } from "@nodetool/kernel";
@@ -17,15 +18,33 @@ import type {
   MessageContent,
   BaseProvider,
   ProcessingContext,
+  ToolCall as ProviderToolCall,
 } from "@nodetool/runtime";
 import { ProcessingContext as RuntimeProcessingContext } from "@nodetool/runtime";
+import type { Chunk } from "@nodetool/protocol";
 import type {
   UnifiedCommandType,
   WebSocketCommandEnvelope,
   WebSocketMode,
 } from "@nodetool/protocol";
+import type { Tool } from "@nodetool/agents";
 
 const log = createLogger("nodetool.websocket.runner");
+
+/**
+ * Default system prompt for regular chat — matches Python's REGULAR_SYSTEM_PROMPT.
+ */
+const REGULAR_SYSTEM_PROMPT = `You are a helpful assistant.
+
+# IMAGE TOOLS
+When using image tools, you will get an image url as result.
+ALWAYS EMBED THE IMAGE AS MARKDOWN IMAGE TAG.
+
+# File types
+References to documents, images, videos or audio files are objects with following structure:
+- type: either document, image, video, audio
+- uri: either local "file:///path/to/file" or "http://"
+`;
 
 export interface WebSocketReceiveFrame {
   type: string;
@@ -93,6 +112,8 @@ export interface UnifiedWebSocketRunnerOptions {
   defaultProvider?: string;
   resolveExecutor: (node: { id: string; type: string; [key: string]: unknown }) => NodeExecutor;
   resolveProvider?: (providerId: string) => Promise<BaseProvider>;
+  /** Resolve server-side Tool instances by name (for tool execution in chat). */
+  resolveTools?: (toolNames: string[], userId: string) => Promise<Tool[]>;
   getSystemStats?: () => Record<string, unknown>;
   workspaceResolver?: (workflowId: string, userId: string) => Promise<string | null>;
 }
@@ -107,6 +128,7 @@ export class UnifiedWebSocketRunner {
   private defaultProvider: string;
   private resolveExecutor: UnifiedWebSocketRunnerOptions["resolveExecutor"];
   private resolveProvider?: UnifiedWebSocketRunnerOptions["resolveProvider"];
+  private resolveTools?: UnifiedWebSocketRunnerOptions["resolveTools"];
   private getSystemStats: () => Record<string, unknown>;
   private workspaceResolver?: UnifiedWebSocketRunnerOptions["workspaceResolver"];
 
@@ -176,6 +198,7 @@ export class UnifiedWebSocketRunner {
     this.defaultProvider = options.defaultProvider ?? "ollama";
     this.resolveExecutor = options.resolveExecutor;
     this.resolveProvider = options.resolveProvider;
+    this.resolveTools = options.resolveTools;
     this.workspaceResolver = options.workspaceResolver;
     this.getSystemStats =
       options.getSystemStats ??
@@ -305,6 +328,7 @@ export class UnifiedWebSocketRunner {
       userId,
       workspaceDir,
       assetOutputMode: this.mode === "text" ? "data_uri" : "raw",
+      secretResolver: getSecret,
     });
 
     const runner = new WorkflowRunner(jobId, {
@@ -540,33 +564,77 @@ export class UnifiedWebSocketRunner {
     return thread.id;
   }
 
-  private dbMessageToProviderMessage(m: Message): ProviderMessage {
+  private dbMessageToProviderMessage(m: Message): ProviderMessage | null {
+    const role = m.role as ProviderMessage["role"];
+    // Filter out non-standard roles (e.g. "agent_execution") that providers can't handle
+    if (!role || !["user", "assistant", "system", "tool"].includes(role)) {
+      return null;
+    }
     return {
-      role: (m.role as ProviderMessage["role"]) ?? "user",
+      role,
       content: (Array.isArray(m.content) ? (m.content as MessageContent[]) : m.content as string | null) ?? "",
-      toolCallId: null,
+      toolCallId: typeof m.tool_call_id === "string" ? m.tool_call_id : null,
       toolCalls: Array.isArray(m.tool_calls) ? (m.tool_calls as Array<{ id: string; name: string; args: Record<string, unknown> }>) : null,
       threadId: m.thread_id,
     };
   }
 
+  /**
+   * Save a message dict to the database.
+   * Mirrors Python's _save_message_to_db_async: pops id, type, user_id before create.
+   */
+  private async saveMessageToDb(messageData: Record<string, unknown>): Promise<void> {
+    const data = { ...messageData };
+    delete data.id;
+    delete data.type;
+    const threadId = typeof data.thread_id === "string" ? data.thread_id : "";
+    delete data.thread_id;
+    const userId = this.userId ?? "1";
+    delete data.user_id;
+
+    await Message.create({
+      thread_id: threadId,
+      user_id: userId,
+      ...data,
+    });
+  }
+
+  /**
+   * Handle an incoming chat message.
+   *
+   * Mirrors Python's full 3-layer flow:
+   *   handle_chat_message → handle_message_impl → process_messages
+   *     → _run_processor + RegularChatProcessor.process()
+   *
+   * The processor sends messages to a queue. _run_processor reads them:
+   *   - type === "message" → persist to DB AND forward to client
+   *   - anything else → forward to client only
+   *
+   * RegularChatProcessor.process():
+   *   1. Prepend system prompt if first message isn't system role
+   *   2. while True: messages_to_send = chat_history + unprocessed_messages
+   *   3. Stream chunks (type: "chunk") — forwarded to client (not persisted)
+   *   4. On tool call: build assistant Message + tool result Message (type: "message")
+   *      → persisted to DB AND forwarded to client
+   *   5. If unprocessed_messages empty, break
+   *   6. Send done chunk + final assistant Message
+   */
   async handleChatMessage(data: Record<string, unknown>, requestSeq?: number): Promise<void> {
     const threadId = await this.ensureThreadExists(typeof data.thread_id === "string" ? data.thread_id : undefined);
     data.thread_id = threadId;
-    const providerId = (typeof data.provider === "string" ? data.provider : this.defaultProvider) as string;
-    const model = (typeof data.model === "string" ? data.model : this.defaultModel) as string;
-    const content = typeof data.content === "string" ? data.content : "";
+
+    // Apply defaults — matches Python's handle_chat_message
+    if (!data.model) data.model = this.defaultModel;
+    if (!data.provider) data.provider = this.defaultProvider;
+
+    const providerId = data.provider as string;
+    const model = data.model as string;
+    const workflowId = typeof data.workflow_id === "string" ? data.workflow_id : null;
+    const userId = this.userId ?? "1";
     log.debug("Chat message", { threadId, model, provider: providerId });
 
-    await Message.create({
-      user_id: this.userId ?? "1",
-      thread_id: threadId,
-      role: "user",
-      content,
-      provider: providerId,
-      model,
-      workflow_id: typeof data.workflow_id === "string" ? data.workflow_id : null,
-    });
+    // Save user message to DB — matches Python's _save_message_to_db_async(data)
+    await this.saveMessageToDb(data);
 
     if (requestSeq !== undefined && requestSeq !== this.chatRequestSeq) return;
 
@@ -575,13 +643,19 @@ export class UnifiedWebSocketRunner {
       return;
     }
 
-    const [messages] = await Message.paginate(threadId, { limit: 1000 });
-    const providerMessages = messages.map((m) => this.dbMessageToProviderMessage(m));
+    // Load history from DB, filter out agent_execution — matches Python's get_chat_history_from_db
+    const [dbMessages] = await Message.paginate(threadId, { limit: 1000 });
+    const chatHistory: ProviderMessage[] = [];
+    for (const m of dbMessages) {
+      const pm = this.dbMessageToProviderMessage(m);
+      if (pm) chatHistory.push(pm);
+    }
+
     const provider = await this.resolveProvider(providerId);
 
-    let finalText = "";
+    // Build provider-format tool schemas from raw tool data
     const rawTools = Array.isArray(data.tools) ? data.tools : [];
-    const tools: ProviderTool[] = rawTools.map((t) => {
+    const providerToolSchemas: ProviderTool[] = rawTools.map((t) => {
       const tool = t as Record<string, unknown>;
       return {
         name: typeof tool.name === "string" ? tool.name : "",
@@ -589,35 +663,201 @@ export class UnifiedWebSocketRunner {
         inputSchema: typeof tool.inputSchema === "object" ? (tool.inputSchema as Record<string, unknown>) : undefined,
       };
     });
-    for await (const item of provider.generateMessagesTraced({ messages: providerMessages, model, tools })) {
-      if ("type" in item && item.type === "chunk") {
-        const contentPart = typeof item.content === "string" ? item.content : "";
-        finalText += contentPart;
-        await this.sendMessage({ ...item, thread_id: threadId });
-      } else {
-        const toolItem = item as { id: string; name: string; args: Record<string, unknown> };
-        await this.sendMessage({
-          type: "tool_call_update",
-          thread_id: threadId,
-          tool_call_id: toolItem.id,
-          name: toolItem.name,
-          args: toolItem.args,
-        });
-      }
-    }
 
-    await Message.create({
-      user_id: this.userId ?? "1",
-      thread_id: threadId,
-      role: "assistant",
-      content: finalText,
-      provider: providerId,
-      model,
-      workflow_id: typeof data.workflow_id === "string" ? data.workflow_id : null,
+    // Resolve server-side Tool instances for execution
+    const toolNames = providerToolSchemas.map((t) => t.name).filter(Boolean);
+    let serverTools: Tool[] = [];
+    if (toolNames.length > 0 && this.resolveTools) {
+      serverTools = await this.resolveTools(toolNames, userId);
+    }
+    const serverToolMap = new Map(serverTools.map((t) => [t.name, t]));
+
+    // Create a processing context for tool execution
+    const ctx = new RuntimeProcessingContext({
+      jobId: randomUUID(),
+      userId,
+      workspaceDir: null,
+      secretResolver: getSecret,
     });
 
-    log.debug("Chat complete", { threadId, chars: finalText.length });
-    await this.sendMessage({ type: "job_update", status: "completed", thread_id: threadId });
+    // Prepend system prompt if first message isn't system role — matches Python
+    if (chatHistory.length === 0 || chatHistory[0].role !== "system") {
+      chatHistory.unshift({
+        role: "system",
+        content: REGULAR_SYSTEM_PROMPT,
+        toolCallId: null,
+        toolCalls: null,
+        threadId: null,
+      });
+    }
+
+    let content = "";
+    let unprocessedMessages: ProviderMessage[] = [];
+
+    // Tool execution loop — mirrors Python's RegularChatProcessor.process()
+    try {
+      while (true) {
+        if (requestSeq !== undefined && requestSeq !== this.chatRequestSeq) return;
+
+        const messagesToSend = [...chatHistory, ...unprocessedMessages];
+        unprocessedMessages = [];
+
+        const stream = provider.generateMessagesTraced({
+          messages: messagesToSend,
+          model,
+          tools: providerToolSchemas.length > 0 ? providerToolSchemas : undefined,
+        });
+
+        for await (const item of stream) {
+          if (requestSeq !== undefined && requestSeq !== this.chatRequestSeq) return;
+
+          if ("type" in item && (item as Chunk).type === "chunk") {
+            // --- Text chunk --- forward to client (not persisted)
+            const chunk = item as Chunk;
+            const text = chunk.content ?? "";
+            content += text;
+            // Set thread_id if not already set — matches Python
+            if (!chunk.thread_id) chunk.thread_id = threadId;
+            await this.sendMessage({ ...chunk });
+          } else if ("name" in item && "id" in item) {
+            // --- Tool call from provider ---
+            const tc = item as ProviderToolCall;
+            log.info("Tool call", { tool: tc.name, args: tc.args });
+
+            // Build assistant Message with tool_calls — matches Python's assistant_msg
+            const assistantMsgData: Record<string, unknown> = {
+              type: "message",
+              role: "assistant",
+              tool_calls: [{ id: tc.id, name: tc.name, args: tc.args, result: null }],
+              thread_id: threadId,
+              workflow_id: workflowId,
+              provider: providerId,
+              model,
+            };
+            // Persist to DB and forward to client — matches _run_processor for type: "message"
+            await this.saveMessageToDb(assistantMsgData);
+            await this.sendMessage(assistantMsgData);
+
+            // Add assistant message to unprocessed for next provider round
+            unprocessedMessages.push({
+              role: "assistant",
+              content: null,
+              toolCalls: [{ id: tc.id, name: tc.name, args: tc.args }],
+              toolCallId: null,
+              threadId,
+            });
+
+            // Execute tool
+            let toolResult: unknown;
+            const serverTool = serverToolMap.get(tc.name);
+            if (serverTool) {
+              try {
+                toolResult = await serverTool.process(ctx, tc.args);
+              } catch (err) {
+                const errMsg = err instanceof Error ? err.message : String(err);
+                log.error("Tool execution failed", { tool: tc.name, error: errMsg });
+                toolResult = { error: errMsg };
+              }
+            } else if (this.clientToolsManifest[tc.name]) {
+              // Client-side tool via ToolBridge
+              await this.sendMessage({
+                type: "tool_call",
+                thread_id: threadId,
+                tool_call_id: tc.id,
+                name: tc.name,
+                args: tc.args,
+              });
+              const clientResult = await this.toolBridge.createWaiter(tc.id);
+              toolResult = clientResult.result ?? clientResult.content ?? clientResult;
+            } else {
+              toolResult = { error: `Tool "${tc.name}" not available` };
+            }
+
+            const toolResultJson = JSON.stringify(toolResult);
+
+            // Build tool result Message — matches Python's tool_msg
+            const toolMsgData: Record<string, unknown> = {
+              type: "message",
+              role: "tool",
+              tool_call_id: tc.id,
+              name: tc.name,
+              content: toolResultJson,
+              thread_id: threadId,
+              workflow_id: workflowId,
+              provider: providerId,
+              model,
+            };
+            // Persist to DB and forward to client — matches _run_processor for type: "message"
+            await this.saveMessageToDb(toolMsgData);
+            await this.sendMessage(toolMsgData);
+
+            // Add tool result to unprocessed for next provider round
+            unprocessedMessages.push({
+              role: "tool",
+              content: toolResultJson,
+              toolCallId: tc.id,
+              toolCalls: null,
+              threadId,
+            });
+          }
+        }
+
+        // If no unprocessed messages, generation is complete — matches Python's break condition
+        if (unprocessedMessages.length === 0) {
+          break;
+        }
+        log.debug("Unprocessed messages", { count: unprocessedMessages.length });
+      }
+
+      // Signal completion — matches Python's done chunk + final assistant Message
+      await this.sendMessage({
+        type: "chunk",
+        content: "",
+        done: true,
+        thread_id: threadId,
+      });
+
+      // Final assistant message — persisted and forwarded (type: "message")
+      const finalMsgData: Record<string, unknown> = {
+        type: "message",
+        role: "assistant",
+        content: content || null,
+        thread_id: threadId,
+        workflow_id: workflowId,
+        provider: providerId,
+        model,
+      };
+      await this.saveMessageToDb(finalMsgData);
+      await this.sendMessage(finalMsgData);
+
+      log.debug("Chat complete", { threadId, chars: content.length });
+    } catch (err) {
+      // Match Python's error handling in RegularChatProcessor
+      const errMsg = err instanceof Error ? err.message : String(err);
+      log.error("Chat processing error", { threadId, error: errMsg });
+      await this.sendMessage({
+        type: "error",
+        message: errMsg,
+        thread_id: threadId,
+        workflow_id: workflowId,
+      });
+      // Signal completion even on error — matches Python
+      await this.sendMessage({
+        type: "chunk",
+        content: "",
+        done: true,
+        thread_id: threadId,
+      });
+      await this.sendMessage({
+        type: "message",
+        role: "assistant",
+        content: `I encountered an error: ${errMsg}`,
+        thread_id: threadId,
+        workflow_id: workflowId,
+        provider: providerId,
+        model,
+      });
+    }
   }
 
   async handleInference(data: Record<string, unknown>, requestSeq: number): Promise<void> {
@@ -665,6 +905,7 @@ export class UnifiedWebSocketRunner {
         await this.sendMessage({ ...(item as unknown as Record<string, unknown>), seq: requestSeq });
       } else if ("name" in item) {
         const toolItem = item as { id: string; name: string; args: Record<string, unknown> };
+        log.info("Tool call", { tool: toolItem.name, args: toolItem.args });
         await this.sendMessage({ type: "tool_call", id: toolItem.id, name: toolItem.name, args: toolItem.args, seq: requestSeq });
       }
     }

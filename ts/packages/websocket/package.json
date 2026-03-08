@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "@nodetool/agents": "*",
     "@nodetool/auth": "*",
     "@nodetool/base-nodes": "*",
     "@nodetool/config": "*",
