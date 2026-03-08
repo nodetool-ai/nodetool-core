@@ -22,3 +22,28 @@ export {
   getNodeInputTypes,
   getDownstreamSubgraph,
 } from "./graph-utils.js";
+export {
+  TriggerWorkflowManager,
+  type TriggerJob,
+  type StartJobFn,
+  type HasTriggerNodesFn,
+} from "./trigger-manager.js";
+export {
+  WorkflowSuspendedError,
+  SuspendableState,
+  type SuspendableNode,
+} from "./suspendable.js";
+export {
+  TriggerState,
+  TriggerInactivityTimeout,
+} from "./trigger.js";
+export {
+  DurableInbox,
+  MemoryDurableInboxStore,
+  type DurableInboxStore,
+  type DurableMessage,
+} from "./durable-inbox.js";
+export {
+  TriggerWakeupService,
+  type TriggerInput,
+} from "./trigger-wakeup.js";
