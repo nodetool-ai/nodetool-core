@@ -265,30 +265,47 @@ async function updateWorkflow(
   }
 
   const existing = (await Workflow.get(id)) as Workflow | null;
-  if (!existing) {
+
+  if (existing && existing.user_id !== userId) {
     throw new Error("Workflow not found");
   }
 
-  if (existing.user_id !== userId) {
-    throw new Error("Workflow not found");
+  if (existing) {
+    existing.name = body.name;
+    existing.tool_name = body.tool_name ?? null;
+    existing.description = body.description ?? "";
+    existing.tags = body.tags ?? [];
+    existing.package_name = body.package_name ?? null;
+    if (body.thumbnail !== undefined) existing.thumbnail = body.thumbnail;
+    existing.access = body.access === "public" ? "public" : "private";
+    existing.graph = body.graph;
+    existing.settings = body.settings ?? null;
+    if (body.run_mode !== undefined && body.run_mode !== null) existing.run_mode = body.run_mode;
+    existing.workspace_id = body.workspace_id ?? null;
+    existing.html_app = body.html_app ?? null;
+    await existing.save();
+    return existing;
   }
 
-  existing.name = body.name;
-  existing.tool_name = body.tool_name ?? null;
-  existing.package_name = body.package_name ?? null;
-  existing.path = body.path ?? null;
-  existing.tags = body.tags ?? [];
-  existing.description = body.description ?? "";
-  existing.thumbnail = body.thumbnail ?? null;
-  existing.thumbnail_url = body.thumbnail_url ?? null;
-  existing.access = body.access === "public" ? "public" : "private";
-  existing.graph = body.graph;
-  existing.settings = body.settings ?? null;
-  existing.run_mode = body.run_mode ?? existing.run_mode ?? "workflow";
-  existing.workspace_id = body.workspace_id ?? null;
-  existing.html_app = body.html_app ?? null;
-  await existing.save();
-  return existing;
+  // Upsert: create the workflow if it doesn't exist
+  return (await Workflow.create({
+    id,
+    user_id: userId,
+    name: body.name,
+    tool_name: body.tool_name ?? null,
+    package_name: body.package_name ?? null,
+    path: body.path ?? null,
+    tags: body.tags ?? [],
+    description: body.description ?? "",
+    thumbnail: body.thumbnail ?? null,
+    thumbnail_url: body.thumbnail_url ?? null,
+    access: body.access === "public" ? "public" : "private",
+    graph: body.graph,
+    settings: body.settings ?? null,
+    run_mode: body.run_mode ?? "workflow",
+    workspace_id: body.workspace_id ?? null,
+    html_app: body.html_app ?? null,
+  })) as Workflow;
 }
 
 // ── Autosave ──────────────────────────────────────────────────────────

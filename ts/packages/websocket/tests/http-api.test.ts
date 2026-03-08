@@ -126,20 +126,24 @@ describe("HTTP API: metadata + workflows", () => {
     expect(updated.name).toBe("Workflow B");
     expect(updated.run_mode).toBe("tool");
 
-    const missingUpdateReq = new Request("http://localhost/api/workflows/does-not-exist", {
+    // PUT upserts: creates the workflow if it doesn't exist
+    const upsertReq = new Request("http://localhost/api/workflows/does-not-exist", {
       method: "PUT",
       headers: {
         "content-type": "application/json",
         "x-user-id": "user-1",
       },
       body: JSON.stringify({
-        name: "Missing",
+        name: "Upserted",
         access: "private",
         graph: { nodes: [], edges: [] },
       }),
     });
-    const missingUpdateRes = await handleApiRequest(missingUpdateReq);
-    expect(missingUpdateRes.status).toBe(404);
+    const upsertRes = await handleApiRequest(upsertReq);
+    expect(upsertRes.status).toBe(200);
+    const upserted = (await jsonBody(upsertRes)) as Record<string, unknown>;
+    expect(upserted.name).toBe("Upserted");
+    expect(upserted.id).toBe("does-not-exist");
 
     const deleteReq = new Request(`http://localhost/api/workflows/${workflowId}`, {
       method: "DELETE",

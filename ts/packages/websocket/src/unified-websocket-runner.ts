@@ -379,14 +379,34 @@ export class UnifiedWebSocketRunner {
     return null;
   }
 
+  /**
+   * Normalize a raw graph so that the kernel's NodeDescriptor contract is met.
+   * The web-UI / Python serialisation stores node properties under `data`;
+   * the kernel expects them under `properties`.
+   */
+  private normalizeGraph(graph: { nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> }): { nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> } {
+    const nodes = graph.nodes.map((n) => {
+      if (n.properties === undefined && n.data !== undefined) {
+        const { data, ...rest } = n;
+        return { ...rest, properties: data };
+      }
+      return n;
+    });
+    return { nodes, edges: graph.edges };
+  }
+
   private async getWorkflowGraph(req: RunJobRequest): Promise<{ nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> }> {
-    if (req.graph) return req.graph;
-    if (!req.workflow_id || !this.userId) {
+    let graph: { nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> };
+    if (req.graph) {
+      graph = req.graph;
+    } else if (req.workflow_id && this.userId) {
+      const workflow = await Workflow.find(this.userId, req.workflow_id);
+      if (!workflow) throw new Error(`Workflow not found: ${req.workflow_id}`);
+      graph = workflow.graph as { nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> };
+    } else {
       throw new Error("workflow_id or graph is required");
     }
-    const workflow = await Workflow.find(this.userId, req.workflow_id);
-    if (!workflow) throw new Error(`Workflow not found: ${req.workflow_id}`);
-    return workflow.graph as { nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> };
+    return this.normalizeGraph(graph);
   }
 
   async runJob(req: RunJobRequest): Promise<void> {
@@ -874,16 +894,18 @@ export class UnifiedWebSocketRunner {
 
     const provider = await this.resolveProvider(providerId);
 
-    // Build provider-format tool schemas from raw tool data
+    // Build provider-format tool schemas from raw tool data, filtering out entries with no name
     const rawTools = Array.isArray(data.tools) ? data.tools : [];
-    const providerToolSchemas: ProviderTool[] = rawTools.map((t) => {
-      const tool = t as Record<string, unknown>;
-      return {
-        name: typeof tool.name === "string" ? tool.name : "",
-        description: typeof tool.description === "string" ? tool.description : undefined,
-        inputSchema: typeof tool.inputSchema === "object" ? (tool.inputSchema as Record<string, unknown>) : undefined,
-      };
-    });
+    const providerToolSchemas: ProviderTool[] = rawTools
+      .map((t) => {
+        const tool = t as Record<string, unknown>;
+        return {
+          name: typeof tool.name === "string" ? tool.name : "",
+          description: typeof tool.description === "string" ? tool.description : undefined,
+          inputSchema: typeof tool.inputSchema === "object" ? (tool.inputSchema as Record<string, unknown>) : undefined,
+        };
+      })
+      .filter((t) => t.name.length > 0);
 
     // Resolve server-side Tool instances for execution
     const toolNames = providerToolSchemas.map((t) => t.name).filter(Boolean);
@@ -927,6 +949,8 @@ export class UnifiedWebSocketRunner {
     let unprocessedMessages: ProviderMessage[] = [];
 
     // Tool execution loop — mirrors Python's RegularChatProcessor.process()
+    const MAX_TOOL_ROUNDS = 10;
+    let toolRound = 0;
     let shouldIncludeTools = true;
     try {
       while (true) {
@@ -1048,7 +1072,12 @@ export class UnifiedWebSocketRunner {
         if (unprocessedMessages.length === 0) {
           break;
         }
-        log.debug("Unprocessed messages", { count: unprocessedMessages.length });
+        toolRound++;
+        if (toolRound >= MAX_TOOL_ROUNDS) {
+          log.warn("Max tool rounds reached, stopping tool loop", { rounds: toolRound });
+          break;
+        }
+        log.debug("Unprocessed messages", { count: unprocessedMessages.length, round: toolRound });
       }
 
       // Log provider call for cost tracking — matches Python's _log_provider_call()
@@ -1323,10 +1352,11 @@ export class UnifiedWebSocketRunner {
         throw new Error(`Workflow ${workflowId} not found`);
       }
 
-      const graph = workflow.graph as { nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> };
+      const rawGraph = workflow.graph as { nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> };
 
-      // Detect message input names from graph — matches Python
-      const { messageName, messagesName } = this.detectMessageInputNames(graph);
+      // Detect message input names from raw graph (reads node.data) — matches Python
+      const { messageName, messagesName } = this.detectMessageInputNames(rawGraph);
+      const graph = this.normalizeGraph(rawGraph);
       const messageInputName = (typeof data.workflow_message_input_name === "string" ? data.workflow_message_input_name : null)
         ?? messageName ?? "message";
       const messagesInputName = (typeof data.workflow_messages_input_name === "string" ? data.workflow_messages_input_name : null)
@@ -1910,17 +1940,19 @@ export class UnifiedWebSocketRunner {
     }
 
     const rawTools = Array.isArray(data.tools) ? data.tools : [];
-    const tools: ProviderTool[] = rawTools.map((t) => {
-      const tool = t as Record<string, unknown>;
-      return {
-        name: typeof tool.name === "string" ? tool.name : "",
-        description: typeof tool.description === "string" ? tool.description : undefined,
-        inputSchema: typeof tool.inputSchema === "object" ? (tool.inputSchema as Record<string, unknown>) : undefined,
-      };
-    });
+    const tools: ProviderTool[] = rawTools
+      .map((t) => {
+        const tool = t as Record<string, unknown>;
+        return {
+          name: typeof tool.name === "string" ? tool.name : "",
+          description: typeof tool.description === "string" ? tool.description : undefined,
+          inputSchema: typeof tool.inputSchema === "object" ? (tool.inputSchema as Record<string, unknown>) : undefined,
+        };
+      })
+      .filter((t) => t.name.length > 0);
 
     const provider = await this.resolveProvider(providerId);
-    for await (const item of provider.generateMessagesTraced({ messages, model, tools })) {
+    for await (const item of provider.generateMessagesTraced({ messages, model, tools: tools.length > 0 ? tools : undefined })) {
       if (requestSeq !== this.chatRequestSeq) break; // cancelled
       if ("type" in item && item.type === "chunk") {
         await this.sendMessage({ ...(item as unknown as Record<string, unknown>), seq: requestSeq });
