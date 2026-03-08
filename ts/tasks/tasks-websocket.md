@@ -47,10 +47,11 @@ Parity gaps between `src/nodetool/api/` (Python FastAPI) and `ts/packages/websoc
 **Status:** 🟢 done — `POST /admin/secrets/import` (admin-gated)
 
 ### T-WS-13 · Debug export API
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python:** `api/debug.py` — exports debug bundle (logs, env info, version)
 
-- [ ] **IMPL** — Create debug export handler. Redact secrets from env before including.
+- [x] **IMPL** — `packages/websocket/src/debug-api.ts`: `POST /api/debug/export` with diagnostics, system info, providers, timestamp. Recursive secret redaction via regex patterns.
+- [x] **TEST** — `packages/websocket/tests/debug-export.test.ts` (14 tests): redactSecrets, buildDebugExport, endpoint integration.
 
 ### T-WS-14 · Memory / model lifecycle API
 **Status:** ⚪ N/A — GPU/PyTorch specific, not applicable to Node.js

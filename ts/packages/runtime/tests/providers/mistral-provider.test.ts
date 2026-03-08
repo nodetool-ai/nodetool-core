@@ -180,4 +180,79 @@ describe("MistralProvider", () => {
 
     expect(items.length).toBeGreaterThanOrEqual(1);
   });
+
+  it("generates embeddings via OpenAI client", async () => {
+    const embeddingsCreate = vi.fn().mockResolvedValue({
+      data: [
+        { embedding: [0.1, 0.2, 0.3] },
+        { embedding: [0.4, 0.5, 0.6] },
+      ],
+    });
+
+    const provider = new MistralProvider(
+      { MISTRAL_API_KEY: "k" },
+      {
+        client: {
+          chat: { completions: { create: vi.fn() } },
+          embeddings: { create: embeddingsCreate },
+        } as any,
+      }
+    );
+
+    const result = await provider.generateEmbedding({
+      text: ["hello", "world"],
+      model: "mistral-embed",
+    });
+
+    expect(result).toEqual([
+      [0.1, 0.2, 0.3],
+      [0.4, 0.5, 0.6],
+    ]);
+    expect(embeddingsCreate).toHaveBeenCalledWith({
+      model: "mistral-embed",
+      input: ["hello", "world"],
+    });
+  });
+
+  it("uses default model mistral-embed when model is empty", async () => {
+    const embeddingsCreate = vi.fn().mockResolvedValue({
+      data: [{ embedding: [1.0, 2.0] }],
+    });
+
+    const provider = new MistralProvider(
+      { MISTRAL_API_KEY: "k" },
+      {
+        client: {
+          chat: { completions: { create: vi.fn() } },
+          embeddings: { create: embeddingsCreate },
+        } as any,
+      }
+    );
+
+    await provider.generateEmbedding({ text: "test", model: "" });
+    expect(embeddingsCreate).toHaveBeenCalledWith({
+      model: "mistral-embed",
+      input: ["test"],
+    });
+  });
+
+  it("throws on empty text for embeddings", async () => {
+    const provider = new MistralProvider(
+      { MISTRAL_API_KEY: "k" },
+      {
+        client: {
+          chat: { completions: { create: vi.fn() } },
+          embeddings: { create: vi.fn() },
+        } as any,
+      }
+    );
+
+    await expect(
+      provider.generateEmbedding({ text: [], model: "mistral-embed" })
+    ).rejects.toThrow("text must not be empty");
+
+    await expect(
+      provider.generateEmbedding({ text: [""], model: "mistral-embed" })
+    ).rejects.toThrow("text must not be empty");
+  });
 });

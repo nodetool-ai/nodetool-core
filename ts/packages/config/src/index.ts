@@ -21,3 +21,9 @@ export {
   type LoggingOptions,
   type Logger,
 } from "./logging.js";
+
+export {
+  diagnoseEnvironment,
+  maskSecret,
+  type DiagnosticResult,
+} from "./diagnostics.js";

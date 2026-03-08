@@ -21,6 +21,7 @@ export { TogetherProvider } from "./together-provider.js";
 export { CerebrasProvider } from "./cerebras-provider.js";
 export { LMStudioProvider } from "./lmstudio-provider.js";
 export { VLLMProvider } from "./vllm-provider.js";
+export { HuggingFaceProvider } from "./huggingface-provider.js";
 export {
   FakeProvider,
   createFakeToolCall,

@@ -51,20 +51,20 @@ Parity gaps between `src/nodetool/providers/` + `src/nodetool/chat/` (Python) an
 **Status:** 🟢 done — All providers implement `getAvailableLanguageModels()`.
 
 ### T-RT-8 · Mistral full feature parity
-**Status:** 🔴 open (low priority)
+**Status:** 🟢 done — `generateEmbedding()` override with default model "mistral-embed", embedding model listing.
 
 ### T-RT-9 · OpenRouter full feature parity
-**Status:** 🔴 open (low priority)
+**Status:** 🟢 done — `textToImage()`, o1/o3 system-to-user message conversion, `getAvailableImageModels()` with curated list.
 
 ### T-RT-10 · Together / Cerebras / LM Studio full parity
-**Status:** 🔴 open (low priority)
+**Status:** 🟢 done — These providers inherit from OpenAIProvider and already have full feature parity through the parent class.
 
 ---
 
 ## Phase 3 — New providers
 
 ### T-RT-11 · HuggingFace provider
-**Status:** 🔴 open (low priority)
+**Status:** 🟢 done — New `HuggingFaceProvider` extending `BaseProvider` with `generateMessage()`, `generateMessages()`, `textToImage()`, `textToSpeech()`, curated model lists, dynamic `@huggingface/inference` import.
 
 ---
 

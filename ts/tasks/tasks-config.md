@@ -47,12 +47,11 @@ TypeScript has no equivalent. Each package reads `process.env` directly.
 ---
 
 ### T-CFG-4 · Environment diagnostics
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `config/env_diagnostics.py` — validates required env vars on startup, logs missing/misconfigured vars.
 
-- [ ] **TEST** — Write test: `diagnoseEnvironment()` returns warnings for missing optional settings and errors for missing required ones.
-- [ ] **TEST** — Write test: `diagnoseEnvironment()` returns empty arrays when all required settings are present.
-- [ ] **IMPL** — Create `ts/packages/config/src/diagnostics.ts`. Uses the settings registry to find all registered settings and checks their env vars.
+- [x] **TEST** — `packages/config/tests/diagnostics.test.ts` (9 tests): maskSecret, diagnoseEnvironment with set/unset/secret/non-secret settings.
+- [x] **IMPL** — `packages/config/src/diagnostics.ts`: `diagnoseEnvironment()` + `maskSecret()`, exported from index.
 
 ---
 

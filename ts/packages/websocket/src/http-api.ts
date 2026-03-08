@@ -24,6 +24,7 @@ import { handleCostRequest } from "./cost-api.js";
 import { handleSkillsRequest, handleFontsRequest } from "./skills-api.js";
 import { handleUsersRequest } from "./users-api.js";
 import { handleCollectionRequest } from "./collection-api.js";
+import { handleDebugExportRequest } from "./debug-api.js";
 
 const log = createLogger("nodetool.websocket.http");
 
@@ -1912,6 +1913,10 @@ export async function handleApiRequest(
   if (pathname === "/api/collections" || pathname.startsWith("/api/collections/")) {
     const res = await handleCollectionRequest(request, pathname, options);
     if (res) return res;
+  }
+
+  if (pathname === "/api/debug/export") {
+    return handleDebugExportRequest(request);
   }
 
   if (pathname === "/admin/secrets/import") {

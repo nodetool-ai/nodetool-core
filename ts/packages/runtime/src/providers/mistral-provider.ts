@@ -93,4 +93,23 @@ export class MistralProvider extends OpenAIProvider {
       },
     ];
   }
+
+  override async generateEmbedding(args: {
+    text: string | string[];
+    model: string;
+    dimensions?: number;
+  }): Promise<number[][]> {
+    const input = Array.isArray(args.text) ? args.text : [args.text];
+    if (input.length === 0 || input.every((v) => !v)) {
+      throw new Error("text must not be empty");
+    }
+
+    const model = args.model || "mistral-embed";
+    const response = await this.getClient().embeddings.create({
+      model,
+      input,
+    });
+
+    return response.data.map((row) => row.embedding as number[]);
+  }
 }

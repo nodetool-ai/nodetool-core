@@ -112,6 +112,7 @@ export {
   WorkspaceListTool,
 } from "./tools/workspace-tools.js";
 export { ListProviderModelsTool } from "./tools/model-tools.js";
+export { SaveAssetTool, ReadAssetTool } from "./tools/asset-tools.js";
 
 // Utilities
 export { extractJSON } from "./utils/json-parser.js";

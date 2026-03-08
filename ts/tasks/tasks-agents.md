@@ -41,12 +41,12 @@ The Python `workspace_tools` gives agents read/write access to a sandboxed works
 ---
 
 ### T-AG-4 · asset_tools
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `agents/tools/asset_tools.py`
 **Dependency:** Storage layer (see [tasks-storage.md](tasks-storage.md))
 
-- [ ] **TEST** — Write todo test: `CreateAssetTool.execute({ name, content, contentType })` stores binary content and returns asset URL.
-- [ ] **IMPL** — Depends on `AbstractStorage` port. Deferred.
+- [x] **TEST** — 19 tests in `packages/agents/tests/tools/asset-tools.test.ts` covering save, read, round-trip, error handling, and edge cases.
+- [x] **IMPL** — `SaveAssetTool` and `ReadAssetTool` in `packages/agents/src/tools/asset-tools.ts`. Uses `StorageAdapter` from `ProcessingContext`.
 
 ---
 
