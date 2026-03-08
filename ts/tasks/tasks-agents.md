@@ -21,12 +21,7 @@ The Python `workspace_tools` gives agents read/write access to a sandboxed works
 ---
 
 ### T-AG-2 · help_tools
-**Status:** 🔴 open
-**Python source:** `agents/tools/help_tools.py`
-**Dependency:** Semantic/keyword search over node and example metadata
-
-- [ ] **TEST** — Write todo tests: `SearchNodesTool` and `SearchExamplesTool` return relevant results given a query string.
-- [ ] **IMPL** — Depends on metadata reflection (see [tasks-metadata.md](tasks-metadata.md)). Deferred until `node_metadata.py` is ported.
+**Status:** ⚪ N/A — Python module deleted (obsolete). `SearchNodesTool` moved inline to `graph_planner.py`; `SearchExamplesTool` removed.
 
 ---
 

@@ -56,12 +56,7 @@ These are used by:
 ---
 
 ### T-MSG-2 · Help message processor
-**Status:** 🔴 open (deferred)
-**Python source:** `messaging/help_message_processor.py` — answers questions about available nodes and examples using keyword search.
-**Dependency:** node metadata (T-META-2) + example index.
-
-- [ ] **TEST** (todo) — `HelpMessageProcessor.process("how do I resize an image?")` returns message mentioning relevant node names.
-- [ ] **IMPL** — Deferred until T-META-2 is done and an example index exists.
+**Status:** ⚪ N/A — Python module already deleted (obsolete). No TS port needed.
 
 ---
 

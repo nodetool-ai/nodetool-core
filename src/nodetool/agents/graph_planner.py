@@ -123,7 +123,6 @@ if TYPE_CHECKING:
     from nodetool.workflows.types import Chunk
 
 from nodetool.agents.tools.base import Tool
-from nodetool.agents.tools.help_tools import SearchNodesTool
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.typecheck import typecheck
 from nodetool.metadata.types import Message, ToolCall
@@ -140,6 +139,92 @@ from nodetool.workflows.types import Chunk, PlanningUpdate
 
 # Set up logger for this module
 logger = get_logger(__name__)
+
+TYPES = [
+    "str", "int", "float", "bool", "list", "dict", "tuple",
+    "union", "enum", "any", "bytes", "audio", "image", "video",
+    "document", "dataframe",
+]
+
+
+class SearchNodesTool(Tool):
+    """Keyword search over registered nodetool nodes."""
+
+    name: str = "search_nodes"
+    description: str = """
+        Performs keyword search on nodetool nodes.
+        Supply a list of words to search for as array, including synonyms and related words.
+        By default returns only matching node_type strings (token-saving).
+        Set include_description/include_properties to fetch more detail only when needed.
+        """
+    input_schema: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "array", "items": {"type": "string"}},
+            "include_description": {"type": "boolean", "default": False},
+            "include_properties": {"type": "boolean", "default": False},
+            "n_results": {"type": "integer", "default": 10},
+            "input_type": {"type": "string", "enum": TYPES},
+            "output_type": {"type": "string", "enum": TYPES},
+            "exclude_namespaces": {"type": "array", "items": {"type": "string"}},
+        },
+    }
+
+    def __init__(self, *args, **kwargs):
+        self.exclude_namespaces = kwargs.pop("exclude_namespaces", [])
+        super().__init__(*args, **kwargs)
+
+    async def process(self, context: ProcessingContext, params: dict[str, Any]):
+        assert "query" in params, "query is required"
+        query = params["query"]
+        if isinstance(query, str):
+            query = [query]
+        include_description = bool(params.get("include_description", False))
+        include_properties = bool(params.get("include_properties", False))
+        input_type = params.get("input_type")
+        output_type = params.get("output_type")
+        n_results = params.get("n_results", 10)
+        exclude_namespaces = params.get("exclude_namespaces", self.exclude_namespaces)
+
+        from nodetool.chat.search_nodes import search_nodes
+
+        results = search_nodes(
+            query=query,
+            input_type=input_type,
+            output_type=output_type,
+            n_results=n_results,
+            exclude_namespaces=exclude_namespaces,
+        )
+
+        if not include_description and not include_properties:
+            return [node_type.node_type for node_type in results]
+
+        enriched: list[dict[str, Any]] = []
+        for node_type in results:
+            item: dict[str, Any] = {"node_type": node_type.node_type}
+            if include_description:
+                item["title"] = node_type.title
+                item["description"] = node_type.description
+            if include_properties:
+                item["properties"] = [
+                    {
+                        "name": prop.name,
+                        "type": prop.type.type,
+                        "description": getattr(prop, "description", None),
+                        "default": getattr(prop, "default", None),
+                        "required": bool(getattr(prop, "required", False)),
+                    }
+                    for prop in node_type.properties
+                ]
+                item["outputs"] = [
+                    {"name": out.name, "type": out.type.type if out.type else "any"}
+                    for out in node_type.outputs
+                ]
+                item["is_dynamic"] = node_type.is_dynamic
+            enriched.append(item)
+
+        return enriched
+
 
 class NodeSpecification(BaseModel):
     """Model for node specification in workflow design."""
