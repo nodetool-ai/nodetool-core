@@ -171,59 +171,6 @@ class TestAgentMessageProcessorThreadId:
             assert msg["thread_id"] == test_thread_id, f"Chunk thread_id should be {test_thread_id}"
 
 
-class TestHelpMessageProcessorThreadId:
-    """Tests for help_message_processor setting thread_id on chunks."""
-
-    @pytest.mark.asyncio
-    async def test_help_message_processor_sets_thread_id(self, test_thread_id, test_user_id, processing_context):
-        """Test that HelpMessageProcessor sets thread_id on chunks."""
-        from nodetool.messaging.help_message_processor import (
-            HelpMessageProcessor,
-        )
-
-        # Create a mock provider
-        mock_provider = MagicMock()
-
-        # Create chunks without thread_id
-        async def mock_generate_messages(*args, **kwargs):
-            yield Chunk(content="Help response ")
-            yield Chunk(content="text")
-            yield Chunk(content="", done=True)
-
-        mock_provider.generate_messages = mock_generate_messages
-
-        processor = HelpMessageProcessor(provider=mock_provider)
-
-        # Create test message with thread_id
-        test_message = Message(
-            thread_id=test_thread_id,
-            role="user",
-            content="How do I use this?",
-            provider=Provider.OpenAI,
-            model="gpt-4",
-        )
-
-        sent_messages = []
-
-        async def capture_send(msg):
-            sent_messages.append(msg)
-
-        processor.send_message = capture_send
-
-        # Process the message
-        await processor.process([test_message], processing_context)
-
-        # Check that chunks have thread_id set
-        chunk_messages = [msg for msg in sent_messages if msg.get("type") == "chunk"]
-        assert len(chunk_messages) > 0, "Should have sent chunk messages"
-
-        for msg in chunk_messages:
-            assert "thread_id" in msg, "Chunk message should include thread_id"
-            # The thread_id in help processor is set, verify it's present
-            if msg.get("thread_id") is not None:
-                assert msg["thread_id"] == test_thread_id, f"Chunk thread_id should be {test_thread_id}"
-
-
 class TestWorkflowMessageProcessorThreadId:
     """Tests for workflow_message_processor setting thread_id on chunks."""
 

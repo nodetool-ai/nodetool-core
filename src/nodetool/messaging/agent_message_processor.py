@@ -129,7 +129,7 @@ class AgentMessageProcessor(MessageProcessor):
             log.debug(f"Using MCP tools for omnipotent agent mode: {[tool.name for tool in selected_tools]}")
 
         # Include UI proxy tools if client provided a manifest via tool bridge
-        # This mirrors HelpMessageProcessor behavior so the Agent can call frontend tools.
+        # This allows the Agent to call frontend tools.
         try:
             if (
                 hasattr(processing_context, "tool_bridge")
@@ -137,7 +137,7 @@ class AgentMessageProcessor(MessageProcessor):
                 and hasattr(processing_context, "client_tools_manifest")
                 and processing_context.client_tools_manifest
             ):
-                from .help_message_processor import (
+                from .ui_tool_proxy import (
                     UIToolProxy,
                 )  # local proxy that forwards to frontend
 

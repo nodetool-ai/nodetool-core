@@ -30,7 +30,7 @@ class FakeContext:
 
 @pytest.mark.asyncio
 async def test_ui_tool_proxy_error_payload_returns_error_dict(monkeypatch):
-    from nodetool.messaging.help_message_processor import UIToolProxy
+    from nodetool.messaging.ui_tool_proxy import UIToolProxy
 
     tool = UIToolProxy(
         {
