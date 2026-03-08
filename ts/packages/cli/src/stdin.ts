@@ -16,6 +16,7 @@ import { processChat } from "@nodetool/chat";
 import { Agent } from "@nodetool/agents";
 import { createProvider, WebSocketProvider } from "./providers.js";
 import { WebSocketChatClient } from "./websocket-client.js";
+import { getSecret } from "@nodetool/security";
 
 export interface StdinModeOptions {
   provider: string;
@@ -57,7 +58,7 @@ export async function runStdinMode(opts: StdinModeOptions): Promise<void> {
         tools: [],
       });
 
-      const ctx = new ProcessingContext({ jobId: crypto.randomUUID(), workspaceDir: opts.workspaceDir });
+      const ctx = new ProcessingContext({ jobId: crypto.randomUUID(), userId: "1", workspaceDir: opts.workspaceDir, secretResolver: getSecret });
       let taskResult: string | null = null;
 
       for await (const msg of agent.execute(ctx)) {
@@ -103,7 +104,7 @@ export async function runStdinMode(opts: StdinModeOptions): Promise<void> {
         messages: chatHistory,
         model: opts.model,
         provider: directProvider!,
-        context: new ProcessingContext({ jobId: crypto.randomUUID(), workspaceDir: opts.workspaceDir }),
+        context: new ProcessingContext({ jobId: crypto.randomUUID(), userId: "1", workspaceDir: opts.workspaceDir, secretResolver: getSecret }),
         tools: [],
         callbacks: {
           onChunk: (text) => { process.stdout.write(text); },

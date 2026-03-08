@@ -39,6 +39,7 @@ import { createProvider, DEFAULT_MODELS, WebSocketProvider } from "./providers.j
 import { WebSocketChatClient } from "./websocket-client.js";
 import { renderMarkdown } from "./markdown.js";
 import { saveSettings } from "./settings.js";
+import { getSecret } from "@nodetool/security";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -436,7 +437,7 @@ export function App({
     setStreamLabel("thinking");
 
     try {
-      const ctx = new ProcessingContext({ jobId: crypto.randomUUID(), workspaceDir });
+      const ctx = new ProcessingContext({ jobId: crypto.randomUUID(), userId: "1", workspaceDir, secretResolver: getSecret });
       const tools = buildTools();
 
       if (agentModeRef.current) {
@@ -562,10 +563,10 @@ export function App({
   // ---------------------------------------------------------------------------
   // Keyboard: history navigation and tab completion
   // ---------------------------------------------------------------------------
-  // Autocomplete matches — derived from inputValue
-  const acMatches = inputValue.startsWith("/") && !streaming
+  // Autocomplete matches — derived from inputValue (close once a space is typed after command)
+  const acMatches = inputValue.startsWith("/") && !streaming && !inputValue.includes(" ")
     ? Object.entries(COMMANDS)
-        .filter(([cmd]) => cmd.startsWith(inputValue.split(" ")[0].toLowerCase()))
+        .filter(([cmd]) => cmd.startsWith(inputValue.toLowerCase()))
         .map(([cmd, desc]) => ({ cmd, desc }))
     : [];
   const acOpen = acMatches.length > 0;
@@ -604,8 +605,11 @@ export function App({
       }
       if (key.return) {
         const selected = acMatches[acIndex] ?? acMatches[0];
-        if (selected) handleSubmit(selected.cmd);
-        setAcIndex(0);
+        if (selected) {
+          // Complete the command (add space so autocomplete closes), don't submit yet
+          setInputValue(selected.cmd + " ");
+          setAcIndex(0);
+        }
         return;
       }
     }
