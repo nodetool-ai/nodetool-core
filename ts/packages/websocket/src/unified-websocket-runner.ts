@@ -775,6 +775,21 @@ export class UnifiedWebSocketRunner {
       return;
     }
 
+    // Route to workflow processor when workflow_target or workflow_id is set — matches Python's handle_message_impl
+    // This check comes BEFORE agent_mode, matching Python's routing priority.
+    const workflowTarget = typeof data.workflow_target === "string" ? data.workflow_target : null;
+    if (workflowTarget === "workflow" || workflowId) {
+      await this.handleWorkflowMessage(data, requestSeq);
+      return;
+    }
+
+    // Route to agent mode if requested — matches Python's handle_message_impl
+    const agentMode = data.agent_mode === true || data.agent_mode === "true";
+    if (agentMode) {
+      await this.handleAgentMessage(data, requestSeq);
+      return;
+    }
+
     // Load history from DB, filter out agent_execution — matches Python's get_chat_history_from_db
     const [dbMessages] = await Message.paginate(threadId, { limit: 1000 });
     const chatHistory: ProviderMessage[] = [];
@@ -1009,6 +1024,663 @@ export class UnifiedWebSocketRunner {
         provider: providerId,
         model,
       });
+    }
+  }
+
+  /**
+   * Detect message input node names from a workflow graph.
+   * Mirrors Python's WorkflowMessageProcessor._detect_message_input_names().
+   *
+   * Scans graph nodes for types ending in .MessageInput / .MessageListInput
+   * and returns their data.name values.
+   */
+  private detectMessageInputNames(
+    graph: { nodes: Array<Record<string, unknown>>; edges: unknown[] },
+  ): { messageName: string | null; messagesName: string | null } {
+    let messageName: string | null = null;
+    let messagesName: string | null = null;
+
+    for (const node of graph.nodes) {
+      const nodeType = typeof node.type === "string" ? node.type : "";
+      const data = typeof node.data === "object" && node.data !== null ? (node.data as Record<string, unknown>) : {};
+      const nodeName = typeof data.name === "string" ? data.name.trim() : "";
+      if (!nodeName) continue;
+
+      if (
+        messageName === null &&
+        (nodeType === "nodetool.input.MessageInput" || nodeType.endsWith(".MessageInput"))
+      ) {
+        messageName = nodeName;
+      }
+      if (
+        messagesName === null &&
+        (nodeType === "nodetool.input.MessageListInput" || nodeType.endsWith(".MessageListInput"))
+      ) {
+        messagesName = nodeName;
+      }
+    }
+
+    return { messageName, messagesName };
+  }
+
+  /**
+   * Convert workflow result dict into a response message with typed content.
+   * Mirrors Python's WorkflowMessageProcessor._create_response_message().
+   *
+   * Converts outputs to MessageContent items:
+   *  - string → { type: "text", text }
+   *  - list → { type: "text", text: joined }
+   *  - dict with type "image"/"video"/"audio" → media content
+   *  - other → { type: "text", text: stringified }
+   */
+  private createWorkflowResponseContent(
+    result: Record<string, unknown>,
+  ): Array<Record<string, unknown>> {
+    const content: Array<Record<string, unknown>> = [];
+
+    for (const [, value] of Object.entries(result)) {
+      if (value === null || value === undefined) continue;
+
+      if (typeof value === "string") {
+        content.push({ type: "text", text: value });
+      } else if (Array.isArray(value)) {
+        content.push({ type: "text", text: value.map(String).join(" ") });
+      } else if (typeof value === "object") {
+        const obj = value as Record<string, unknown>;
+        const assetType = typeof obj.type === "string" ? obj.type : "";
+        if (assetType === "image") {
+          content.push({ type: "image", image: { uri: obj.uri, asset_id: obj.asset_id, data: obj.data } });
+        } else if (assetType === "video") {
+          content.push({ type: "video", video: { uri: obj.uri, asset_id: obj.asset_id, data: obj.data } });
+        } else if (assetType === "audio") {
+          content.push({ type: "audio", audio: { uri: obj.uri, asset_id: obj.asset_id, data: obj.data } });
+        } else {
+          content.push({ type: "text", text: JSON.stringify(obj) });
+        }
+      } else {
+        content.push({ type: "text", text: String(value) });
+      }
+    }
+
+    if (content.length === 0) {
+      content.push({ type: "text", text: "Workflow completed successfully." });
+    }
+
+    return content;
+  }
+
+  /**
+   * Handle a chat message that targets a workflow.
+   *
+   * Mirrors Python's process_messages_for_workflow → WorkflowMessageProcessor/
+   * ChatWorkflowMessageProcessor flow:
+   *   1. Load workflow from DB
+   *   2. Detect message input node names from graph
+   *   3. Prepare params (serialized message + history)
+   *   4. Run workflow via WorkflowRunner
+   *   5. Stream events (job_update, node_update, output_update)
+   *   6. Collect output_update results
+   *   7. Send done chunk + response message with typed content
+   */
+  private async handleWorkflowMessage(data: Record<string, unknown>, _requestSeq?: number): Promise<void> {
+    const threadId = typeof data.thread_id === "string" ? data.thread_id : "";
+    const workflowId = typeof data.workflow_id === "string" ? data.workflow_id : null;
+    const providerId = typeof data.provider === "string" ? data.provider : this.defaultProvider;
+    const model = typeof data.model === "string" ? data.model : this.defaultModel;
+    const userId = this.userId ?? "1";
+    const jobId = randomUUID();
+
+    log.info("Workflow message", { threadId, workflowId, jobId });
+
+    try {
+      if (!workflowId) {
+        throw new Error("workflow_id is required for workflow processing");
+      }
+
+      // Load workflow from DB
+      const workflow = await Workflow.find(userId, workflowId);
+      if (!workflow) {
+        throw new Error(`Workflow ${workflowId} not found`);
+      }
+
+      const graph = workflow.graph as { nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> };
+
+      // Detect message input names from graph — matches Python
+      const { messageName, messagesName } = this.detectMessageInputNames(graph);
+      const messageInputName = (typeof data.workflow_message_input_name === "string" ? data.workflow_message_input_name : null)
+        ?? messageName ?? "message";
+      const messagesInputName = (typeof data.workflow_messages_input_name === "string" ? data.workflow_messages_input_name : null)
+        ?? messagesName ?? "messages";
+
+      // Build chat history for params — matches Python
+      const [dbMessages] = await Message.paginate(threadId, { limit: 1000 });
+      const chatHistorySerialized = dbMessages.map((m) => ({
+        role: m.role,
+        content: m.content,
+        created_at: m.created_at,
+        thread_id: m.thread_id,
+      }));
+
+      // Serialize current message
+      const currentMessage = {
+        role: typeof data.role === "string" ? data.role : "user",
+        content: data.content,
+        thread_id: threadId,
+        workflow_id: workflowId,
+        provider: providerId,
+        model,
+      };
+
+      // Prepare params — matches Python's WorkflowMessageProcessor
+      const params: Record<string, unknown> = {
+        [messageInputName]: currentMessage,
+        [messagesInputName]: [...chatHistorySerialized, currentMessage],
+        ...(typeof data.params === "object" && data.params !== null ? data.params as Record<string, unknown> : {}),
+      };
+
+      // If chat workflow, add legacy params — matches Python's ChatWorkflowMessageProcessor
+      if (workflow.run_mode === "chat") {
+        const legacyChatInput = chatHistorySerialized.map((m) => ({
+          role: m.role,
+          content: typeof m.content === "string" ? m.content : "",
+          created_at: m.created_at,
+        }));
+        params["chat_input"] = legacyChatInput;
+        if (messagesInputName !== "messages") {
+          params["messages"] = legacyChatInput;
+        }
+      }
+
+      // Create processing context
+      const workspaceDir = this.workspaceResolver ? await this.workspaceResolver(workflowId, userId) : null;
+      const context = new RuntimeProcessingContext({
+        jobId,
+        workflowId,
+        userId,
+        workspaceDir,
+        assetOutputMode: this.mode === "text" ? "data_uri" : "raw",
+        secretResolver: getSecret,
+      });
+
+      // Create and run workflow
+      const runner = new WorkflowRunner(jobId, {
+        resolveExecutor: (node) => this.resolveExecutor(node as { id: string; type: string; [key: string]: unknown }),
+        executionContext: context,
+      });
+
+      const active: ActiveJob = {
+        jobId,
+        workflowId,
+        context,
+        runner,
+        graph,
+        finished: false,
+        status: "running",
+      };
+      this.activeJobs.set(jobId, active);
+
+      // Persist job to DB (best-effort)
+      try {
+        await Job.create({
+          id: jobId,
+          workflow_id: workflowId,
+          user_id: userId,
+          status: "running",
+          params,
+          graph,
+        });
+      } catch (error) {
+        this.logError("workflow job persistence failed", error);
+      }
+
+      // Execute workflow and stream messages
+      const executePromise = runner.run(
+        { job_id: jobId, workflow_id: workflowId, params },
+        graph as unknown as { nodes: Array<{ id: string; type: string; [key: string]: unknown }>; edges: Array<{ id: string; source: string; target: string; sourceHandle: string; targetHandle: string; type?: "data" | "control" }> },
+      );
+
+      // Stream events, collect output_update results
+      const result: Record<string, unknown> = {};
+      await this.sendMessage({ type: "job_update", status: "running", job_id: jobId, workflow_id: workflowId });
+
+      let finalOutputs: Record<string, unknown[]> = {};
+      void executePromise
+        .then((r) => { active.status = r.status; active.error = r.error; finalOutputs = r.outputs ?? {}; })
+        .catch((err) => { active.status = "failed"; active.error = err instanceof Error ? err.message : String(err); })
+        .finally(() => { active.finished = true; });
+
+      while (!active.finished || active.context.hasMessages()) {
+        while (active.context.hasMessages()) {
+          const msg = active.context.popMessage();
+          if (!msg) break;
+          const outbound: Record<string, unknown> = {
+            ...(msg as unknown as Record<string, unknown>),
+            job_id: (msg as unknown as Record<string, unknown>).job_id ?? jobId,
+            workflow_id: (msg as unknown as Record<string, unknown>).workflow_id ?? workflowId,
+          };
+
+          // Capture output_update values for the response message
+          if (outbound.type === "output_update") {
+            const nodeId = String(outbound.node_id ?? "");
+            const graphNodes = graph.nodes ?? [];
+            const node = graphNodes.find((n) => n.id === nodeId);
+            const nodeType = typeof node?.type === "string" ? node.type : "";
+            if (nodeType.includes("Output")) {
+              const nodeName = typeof outbound.node_name === "string" ? outbound.node_name : nodeType;
+              result[nodeName] = outbound.value;
+            } else {
+              continue; // Skip non-output node output_updates
+            }
+          }
+
+          await this.sendMessage(outbound);
+        }
+        if (!active.finished) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      }
+
+      // Collect any outputs from the runner result — only Output-type nodes
+      // The kernel considers all leaf nodes as "output nodes", but for the
+      // response message we only want nodes whose type includes "Output"
+      // (matching Python's WorkflowMessageProcessor behavior).
+      for (const [nodeType, values] of Object.entries(finalOutputs)) {
+        if (!nodeType.includes("Output")) continue;
+        if (!result[nodeType] && Array.isArray(values) && values.length > 0) {
+          result[nodeType] = values.length === 1 ? values[0] : values;
+        }
+      }
+
+      // Send terminal job_update if not already sent
+      await this.sendMessage({
+        type: "job_update",
+        status: active.status,
+        job_id: jobId,
+        workflow_id: workflowId,
+        error: active.error,
+        result: { outputs: finalOutputs },
+      });
+
+      // Persist final job status
+      try {
+        const job = (await Job.get(jobId)) as Job | null;
+        if (job) {
+          if (active.status === "completed") job.markCompleted();
+          else if (active.status === "failed") job.markFailed(active.error ?? "Unknown error");
+          else if (active.status === "cancelled") job.markCancelled();
+          await job.save();
+        }
+      } catch (error) {
+        this.logError("workflow job persistence (final) failed", error);
+      }
+
+      this.activeJobs.delete(jobId);
+
+      // Signal completion — done chunk with job_id + workflow_id
+      await this.sendMessage({
+        type: "chunk",
+        content: "",
+        done: true,
+        job_id: jobId,
+        workflow_id: workflowId,
+        thread_id: threadId,
+      });
+
+      // Create response message from workflow outputs — matches Python's _create_response_message
+      const responseContent = this.createWorkflowResponseContent(result);
+      const responseMsg: Record<string, unknown> = {
+        type: "message",
+        role: "assistant",
+        content: responseContent,
+        thread_id: threadId,
+        workflow_id: workflowId,
+        provider: providerId,
+        model,
+        job_id: jobId,
+      };
+      await this.saveMessageToDb(responseMsg);
+      await this.sendMessage(responseMsg);
+
+      log.debug("Workflow message complete", { threadId, workflowId, jobId });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      log.error("Workflow message error", { threadId, workflowId, error: errMsg });
+
+      await this.sendMessage({
+        type: "error",
+        message: `Error processing workflow: ${errMsg}`,
+        job_id: jobId,
+        workflow_id: workflowId,
+        thread_id: threadId,
+      });
+
+      // Send done chunk even on error — matches Python
+      await this.sendMessage({
+        type: "chunk",
+        content: "",
+        done: true,
+        job_id: jobId,
+        workflow_id: workflowId,
+        thread_id: threadId,
+      });
+    }
+  }
+
+  /**
+   * Handle agent mode messages.
+   * Mirrors Python's AgentMessageProcessor.process().
+   *
+   * Creates an Agent with the user's objective and streams execution events
+   * (Chunk, ToolCallUpdate, TaskUpdate, PlanningUpdate, LogUpdate, StepResult)
+   * to the client. Messages with type "message" are persisted to DB.
+   */
+  private async handleAgentMessage(data: Record<string, unknown>, requestSeq?: number): Promise<void> {
+    const threadId = typeof data.thread_id === "string" ? data.thread_id : "";
+    const providerId = data.provider as string;
+    const model = data.model as string;
+    const workflowId = typeof data.workflow_id === "string" ? data.workflow_id : null;
+    const userId = this.userId ?? "1";
+
+    const provider = await this.resolveProvider!(providerId);
+
+    // Extract objective from content
+    const objective = typeof data.content === "string" ? data.content : "Complete the requested task";
+
+    // Generate unique execution ID — matches Python
+    const agentExecutionId = randomUUID();
+
+    // Resolve tools — matches Python's tool resolution
+    const {
+      Agent,
+      ReadFileTool,
+      WriteFileTool,
+      BrowserTool,
+      GoogleSearchTool,
+      getAllMcpTools,
+      resolveTool,
+    } = await import("@nodetool/agents");
+
+    let selectedTools: Tool[] = [];
+    const rawToolNames = Array.isArray(data.tools) ? (data.tools as string[]).filter((t) => typeof t === "string") : [];
+
+    if (rawToolNames.length > 0) {
+      // User explicitly specified tools — resolve by name
+      for (const name of rawToolNames) {
+        const tool = resolveTool(name);
+        if (tool) selectedTools.push(tool);
+      }
+      log.debug("Selected tools for agent", { tools: selectedTools.map((t) => t.name) });
+    } else {
+      // No tools specified — use defaults + MCP tools for omnipotent mode
+      selectedTools = [
+        new ReadFileTool(),
+        new WriteFileTool(),
+        new BrowserTool(),
+        new GoogleSearchTool(),
+        ...getAllMcpTools(),
+      ];
+      log.debug("Using default + MCP tools for agent", { count: selectedTools.length });
+    }
+
+    // Server-side tools from resolveTools option
+    if (rawToolNames.length > 0 && this.resolveTools) {
+      const serverTools = await this.resolveTools(rawToolNames, userId);
+      for (const st of serverTools) {
+        if (!selectedTools.find((t) => t.name === st.name)) {
+          selectedTools.push(st);
+        }
+      }
+    }
+
+    // Create ProcessingContext for agent execution
+    const ctx = new RuntimeProcessingContext({
+      jobId: randomUUID(),
+      userId,
+      workspaceDir: null,
+      secretResolver: getSecret,
+    });
+
+    try {
+      const agent = new Agent({
+        name: "Assistant",
+        objective,
+        provider,
+        model,
+        tools: selectedTools,
+        outputSchema: {
+          type: "object",
+          properties: {
+            markdown: {
+              type: "string",
+              description: "The markdown content of the response",
+            },
+          },
+          required: ["markdown"],
+        },
+      });
+
+      for await (const item of agent.execute(ctx)) {
+        if (requestSeq !== undefined && requestSeq !== this.chatRequestSeq) return;
+
+        const msgType = (item as { type?: string }).type;
+
+        if (msgType === "chunk") {
+          // Stream text chunks to client
+          const chunk = item as { type: string; content?: string; done?: boolean; thinking?: boolean; thread_id?: string };
+          await this.sendMessage({
+            type: "chunk",
+            content: chunk.content ?? "",
+            done: chunk.done ?? false,
+            thinking: chunk.thinking ?? false,
+            thread_id: chunk.thread_id ?? threadId,
+          });
+        } else if (msgType === "tool_call_update") {
+          // Forward tool call updates
+          const tc = item as { name: string; args: Record<string, unknown>; tool_call_id?: string; step_id?: string };
+          await this.sendMessage({
+            type: "tool_call_update",
+            thread_id: threadId,
+            workflow_id: workflowId,
+            tool_call_id: tc.tool_call_id ?? null,
+            name: tc.name,
+            message: `Calling ${tc.name}...`,
+            args: tc.args,
+            step_id: tc.step_id ?? null,
+            agent_execution_id: agentExecutionId,
+          });
+        } else if (msgType === "task_update") {
+          // Send task update as agent_execution message — persisted by _run_processor pattern
+          const tu = item as { task?: unknown; step?: unknown; event?: string };
+          const contentDict = {
+            type: "task_update",
+            event: tu.event,
+            task: tu.task ?? null,
+            step: tu.step ?? null,
+          };
+          const msg: Record<string, unknown> = {
+            type: "message",
+            role: "agent_execution",
+            execution_event_type: "task_update",
+            agent_execution_id: agentExecutionId,
+            content: contentDict,
+            thread_id: threadId,
+            workflow_id: workflowId,
+            provider: providerId,
+            model,
+            agent_mode: true,
+          };
+          await this.saveMessageToDb(msg);
+          await this.sendMessage(msg);
+        } else if (msgType === "planning_update") {
+          // Send planning update as agent_execution message
+          const pu = item as { phase?: string; status?: string; content?: string; node_id?: string };
+          const contentDict = {
+            type: "planning_update",
+            phase: pu.phase,
+            status: pu.status,
+            content: pu.content,
+            node_id: pu.node_id,
+          };
+          const msg: Record<string, unknown> = {
+            type: "message",
+            role: "agent_execution",
+            execution_event_type: "planning_update",
+            agent_execution_id: agentExecutionId,
+            content: contentDict,
+            thread_id: threadId,
+            workflow_id: workflowId,
+            provider: providerId,
+            model,
+            agent_mode: true,
+          };
+          await this.saveMessageToDb(msg);
+          await this.sendMessage(msg);
+
+          // Also send persistent LogUpdate for completed phases — matches Python
+          if (pu.status === "Success" || pu.status === "Failed") {
+            const logMsg: Record<string, unknown> = {
+              type: "message",
+              role: "agent_execution",
+              execution_event_type: "log_update",
+              agent_execution_id: agentExecutionId,
+              content: {
+                type: "log_update",
+                node_id: pu.node_id ?? "agent",
+                node_name: "Agent",
+                content: `${pu.phase}: ${pu.content ?? ""}`,
+                severity: pu.status === "Failed" ? "error" : "info",
+              },
+              thread_id: threadId,
+              workflow_id: workflowId,
+              provider: providerId,
+              model,
+              agent_mode: true,
+            };
+            await this.saveMessageToDb(logMsg);
+            await this.sendMessage(logMsg);
+          }
+        } else if (msgType === "log_update") {
+          // Forward log updates as agent_execution messages
+          const lu = item as { node_id?: string; node_name?: string; content?: string; severity?: string };
+          const msg: Record<string, unknown> = {
+            type: "message",
+            role: "agent_execution",
+            execution_event_type: "log_update",
+            agent_execution_id: agentExecutionId,
+            content: {
+              type: "log_update",
+              node_id: lu.node_id,
+              node_name: lu.node_name,
+              content: lu.content,
+              severity: lu.severity,
+            },
+            thread_id: threadId,
+            workflow_id: workflowId,
+            provider: providerId,
+            model,
+            agent_mode: true,
+          };
+          await this.saveMessageToDb(msg);
+          await this.sendMessage(msg);
+        } else if (msgType === "step_result") {
+          const sr = item as { step?: unknown; result?: unknown; error?: string; is_task_result?: boolean };
+          // Only forward non-task step results — task result handled via agent.results
+          if (!sr.is_task_result) {
+            const contentDict = {
+              type: "step_result",
+              result: sr.result,
+              step: sr.step ?? null,
+              error: sr.error,
+              is_task_result: sr.is_task_result,
+            };
+            const msg: Record<string, unknown> = {
+              type: "message",
+              role: "agent_execution",
+              execution_event_type: "step_result",
+              agent_execution_id: agentExecutionId,
+              content: contentDict,
+              thread_id: threadId,
+              workflow_id: workflowId,
+              provider: providerId,
+              model,
+              agent_mode: true,
+            };
+            await this.saveMessageToDb(msg);
+            await this.sendMessage(msg);
+          }
+        }
+      }
+
+      // Normalize final agent output — matches Python
+      const results = agent.getResults();
+      let content: string;
+      if (typeof results === "string") {
+        content = results;
+      } else if (results && typeof results === "object" && "markdown" in results) {
+        const md = (results as Record<string, unknown>).markdown;
+        content = typeof md === "string" ? md : String(results);
+      } else {
+        content = results != null ? String(results) : "";
+      }
+
+      // Send final assistant message — persisted
+      const finalMsg: Record<string, unknown> = {
+        type: "message",
+        role: "assistant",
+        content,
+        thread_id: threadId,
+        workflow_id: workflowId,
+        provider: providerId,
+        model,
+        agent_mode: true,
+      };
+      await this.saveMessageToDb(finalMsg);
+      await this.sendMessage(finalMsg);
+
+      // Signal completion
+      await this.sendMessage({
+        type: "chunk",
+        content: "",
+        done: true,
+        thread_id: threadId,
+        workflow_id: workflowId,
+      });
+
+      log.debug("Agent execution complete", { threadId });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      log.error("Agent execution error", { threadId, error: errMsg });
+
+      await this.sendMessage({
+        type: "error",
+        message: `Agent execution error: ${errMsg}`,
+        error_type: "agent_error",
+        thread_id: threadId,
+        workflow_id: workflowId,
+      });
+
+      // Signal completion even on error
+      await this.sendMessage({
+        type: "chunk",
+        content: "",
+        done: true,
+        thread_id: threadId,
+        workflow_id: workflowId,
+      });
+
+      // Return error assistant message
+      const errorFinalMsg: Record<string, unknown> = {
+        type: "message",
+        role: "assistant",
+        content: `Agent execution error: ${errMsg}`,
+        thread_id: threadId,
+        workflow_id: workflowId,
+        provider: providerId,
+        model,
+        agent_mode: true,
+      };
+      await this.saveMessageToDb(errorFinalMsg);
+      await this.sendMessage(errorFinalMsg);
     }
   }
 
