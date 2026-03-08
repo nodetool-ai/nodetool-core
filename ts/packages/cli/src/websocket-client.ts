@@ -1,6 +1,7 @@
 /**
  * WebSocket client for connecting the CLI to a NodeTool server.
- * Handles chat (stateful, with thread history) and inference (stateless, for agent mode).
+ * Handles chat (stateful, with thread history), inference (stateless, for agent mode),
+ * and workflow commands (run_job, cancel_job, get_status).
  */
 
 import WebSocket from "ws";
@@ -8,6 +9,16 @@ import WebSocket from "ws";
 export type ChatEvent =
   | { type: "chunk"; content: string }
   | { type: "tool_call"; id: string; name: string; args: Record<string, unknown> }
+  | { type: "tool_result"; id: string; name: string; content: string }
+  | { type: "output_update"; node_id: string; value: unknown; output_type?: string }
+  | { type: "error"; message: string }
+  | { type: "done" };
+
+export type JobEvent =
+  | { type: "job_update"; status: string; job_id?: string; workflow_id?: string; error?: string; result?: unknown }
+  | { type: "node_update"; node_id: string; status: string; error?: string }
+  | { type: "output_update"; node_id: string; value: unknown; output_type?: string }
+  | { type: "node_progress"; node_id: string; progress: number; total?: number }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -60,6 +71,18 @@ export class WebSocketChatClient {
       return;
     }
 
+    // Treat command-level errors (no type field but has error field) as error content events
+    if (!type && typeof msg.error === "string") {
+      const errorEvent: Record<string, unknown> = { type: "error", message: msg.error };
+      const waiter = this.contentWaiters.shift();
+      if (waiter) {
+        waiter(errorEvent);
+      } else {
+        this.contentQueue.push(errorEvent);
+      }
+      return;
+    }
+
     // Route content events to waiting generators
     if (this.isContentEvent(type)) {
       const waiter = this.contentWaiters.shift();
@@ -78,6 +101,9 @@ export class WebSocketChatClient {
       type === "message" ||
       type === "tool_call" ||
       type === "job_update" ||
+      type === "node_update" ||
+      type === "output_update" ||
+      type === "node_progress" ||
       type === "error" ||
       type === "inference_done" ||
       type === "generation_stopped"
@@ -107,6 +133,9 @@ export class WebSocketChatClient {
     provider: string,
     tools?: unknown[],
   ): AsyncGenerator<ChatEvent> {
+    // Drain stale events from previous responses (extra done chunks, final messages, etc.)
+    // that arrived between the previous chat completing and this one starting.
+    this.contentQueue.length = 0;
     this.send({ command: "chat_message", data: { role: "user", content, thread_id: threadId, model, provider, tools: tools ?? [] } });
     while (true) {
       const event = await this.nextContent();
@@ -116,16 +145,46 @@ export class WebSocketChatClient {
       }
       const type = event.type as string;
       if (type === "chunk") {
+        // Yield content from every chunk — including the done chunk which may carry the last piece
+        const chunkContent = typeof event.content === "string" ? event.content : "";
+        if (chunkContent) {
+          yield { type: "chunk", content: chunkContent };
+        }
         // Done chunk signals completion — matches Python's {"type": "chunk", "done": true}
         if (event.done === true) {
           yield { type: "done" };
           return;
         }
-        yield { type: "chunk", content: typeof event.content === "string" ? event.content : "" };
       } else if (type === "message") {
-        // Message events (assistant tool calls, tool results, final assistant) — skip in CLI stream
-        // The final assistant message after done chunk won't reach here since we return on done
+        const role = event.role as string | undefined;
+        if (role === "assistant" && Array.isArray(event.tool_calls)) {
+          // Assistant decided to call tool(s) — yield each one
+          for (const tc of event.tool_calls as Array<Record<string, unknown>>) {
+            yield {
+              type: "tool_call" as const,
+              id: typeof tc.id === "string" ? tc.id : "",
+              name: typeof tc.name === "string" ? tc.name : "",
+              args: (tc.args ?? {}) as Record<string, unknown>,
+            };
+          }
+        } else if (role === "tool") {
+          // Tool result — yield for display
+          yield {
+            type: "tool_result" as const,
+            id: typeof event.tool_call_id === "string" ? event.tool_call_id : "",
+            name: typeof event.name === "string" ? event.name : "",
+            content: typeof event.content === "string" ? event.content : "",
+          };
+        }
+        // Final assistant message (no tool_calls) is ignored — content already streamed via chunks
         continue;
+      } else if (type === "output_update") {
+        yield {
+          type: "output_update" as const,
+          node_id: typeof event.node_id === "string" ? event.node_id : "",
+          value: event.value,
+          output_type: typeof event.output_type === "string" ? event.output_type : undefined,
+        };
       } else if (type === "job_update" || type === "generation_stopped") {
         yield { type: "done" };
         return;
@@ -168,6 +227,108 @@ export class WebSocketChatClient {
         return;
       }
     }
+  }
+
+  /**
+   * Run a workflow job. Streams job_update, node_update, output_update events.
+   * Terminates when a terminal job_update is received (completed/failed/cancelled).
+   */
+  async *runJob(opts: {
+    workflowId?: string;
+    graph?: { nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> };
+    params?: Record<string, unknown>;
+    jobId?: string;
+  }): AsyncGenerator<JobEvent> {
+    this.contentQueue.length = 0;
+    this.send({
+      command: "run_job",
+      data: {
+        workflow_id: opts.workflowId,
+        graph: opts.graph,
+        params: opts.params ?? {},
+        job_id: opts.jobId,
+      },
+    });
+    yield* this.consumeJobEvents();
+  }
+
+  /** Reconnect to a running job's event stream. */
+  async *reconnectJob(jobId: string, workflowId?: string): AsyncGenerator<JobEvent> {
+    this.contentQueue.length = 0;
+    this.send({ command: "reconnect_job", data: { job_id: jobId, workflow_id: workflowId } });
+    yield* this.consumeJobEvents();
+  }
+
+  /** Resume a paused/interrupted job. */
+  async *resumeJob(jobId: string, workflowId?: string): AsyncGenerator<JobEvent> {
+    this.contentQueue.length = 0;
+    this.send({ command: "resume_job", data: { job_id: jobId, workflow_id: workflowId } });
+    yield* this.consumeJobEvents();
+  }
+
+  /** Shared job event consumer used by runJob, reconnectJob, resumeJob. */
+  private async *consumeJobEvents(): AsyncGenerator<JobEvent> {
+    while (true) {
+      const event = await this.nextContent();
+      if (!event) {
+        yield { type: "done" };
+        return;
+      }
+      const type = event.type as string;
+
+      if (type === "job_update") {
+        const status = typeof event.status === "string" ? event.status : "unknown";
+        yield {
+          type: "job_update",
+          status,
+          job_id: typeof event.job_id === "string" ? event.job_id : undefined,
+          workflow_id: typeof event.workflow_id === "string" ? event.workflow_id : undefined,
+          error: typeof event.error === "string" ? event.error : undefined,
+          result: event.result,
+        };
+        if (["completed", "failed", "cancelled", "error"].includes(status)) {
+          yield { type: "done" };
+          return;
+        }
+      } else if (type === "node_update") {
+        yield {
+          type: "node_update",
+          node_id: typeof event.node_id === "string" ? event.node_id : "",
+          status: typeof event.status === "string" ? event.status : "unknown",
+          error: typeof event.error === "string" ? event.error : undefined,
+        };
+      } else if (type === "output_update") {
+        yield {
+          type: "output_update",
+          node_id: typeof event.node_id === "string" ? event.node_id : "",
+          value: event.value,
+          output_type: typeof event.output_type === "string" ? event.output_type : undefined,
+        };
+      } else if (type === "node_progress") {
+        yield {
+          type: "node_progress",
+          node_id: typeof event.node_id === "string" ? event.node_id : "",
+          progress: typeof event.progress === "number" ? event.progress : 0,
+          total: typeof event.total === "number" ? event.total : undefined,
+        };
+      } else if (type === "error") {
+        yield { type: "error", message: typeof event.message === "string" ? event.message : "Unknown error" };
+        return;
+      } else if (type === "generation_stopped") {
+        yield { type: "done" };
+        return;
+      }
+    }
+  }
+
+  /** Cancel a running job. */
+  cancelJob(jobId: string): void {
+    this.send({ command: "cancel_job", data: { job_id: jobId } });
+  }
+
+  /** Get status of a job or all active jobs. */
+  getStatus(jobId?: string): void {
+    this.send({ command: "get_status", data: jobId ? { job_id: jobId } : {} });
   }
 
   /** Stop in-progress generation. Pass threadId for chat, omit for inference. */
