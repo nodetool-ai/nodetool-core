@@ -531,6 +531,34 @@ class SerpApiProvider(SerpProvider):
 
         return _remove_base64_images(result_data)
 
+    async def search_raw(
+        self, engine: str, params: dict[str, Any]
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Generic search method for any SerpAPI engine.
+        """
+        request_params = {
+            "engine": engine,
+            **params,
+        }
+        # Add language/country defaults if not provided
+        if "hl" not in request_params:
+            request_params["hl"] = self.hl
+        if "gl" not in request_params:
+            request_params["gl"] = self.gl
+
+        result_data = await self._make_request(request_params)
+
+        if "error" in result_data and not isinstance(result_data.get("search_metadata"), dict):
+            return result_data
+
+        serpapi_error_status = result_data.get("search_metadata", {}).get("status") == "Error"
+        serpapi_error_message = isinstance(result_data.get("error"), str)
+        if serpapi_error_status or serpapi_error_message:
+            raise ValueError(result_data.get("error", f"SerpApi returned an error: {result_data}"))
+
+        return _remove_base64_images(result_data)
+
     async def search_duckduckgo(
         self, query: str, num_results: int = 10
     ) -> dict[str, Any] | ErrorResponse:

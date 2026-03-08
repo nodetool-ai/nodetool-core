@@ -137,6 +137,19 @@ class SerpProvider(abc.ABC):
     ) -> dict[str, Any] | ErrorResponse: ...
 
     @abc.abstractmethod
+    async def search_raw(
+        self, engine: str, params: dict[str, Any]
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Generic search method that sends a request to any SerpAPI engine.
+        Allows nodes to use any SerpAPI engine without needing a dedicated provider method.
+
+        Args:
+            engine: The SerpAPI engine name (e.g., 'google_events', 'bing', 'walmart').
+            params: Engine-specific parameters (excluding api_key and engine).
+        """
+
+    @abc.abstractmethod
     async def close(self) -> None:
         """
         Clean up any resources (e.g., close HTTP clients).
