@@ -237,3 +237,120 @@ describe("Graph – control node queries", () => {
     expect(graph.getControlledNodes()[0].id).toBe("b");
   });
 });
+
+// ---------------------------------------------------------------------------
+// findEdges (source, sourceHandle) lookup
+// ---------------------------------------------------------------------------
+
+describe("Graph – findEdges", () => {
+  it("returns matching edges for a valid (source, sourceHandle) pair", () => {
+    const nodes = [makeNode("a"), makeNode("b")];
+    const edges = [makeEdge("a", "out", "b", "in")];
+    const graph = new Graph({ nodes, edges });
+    const found = graph.findEdges("a", "out");
+    expect(found).toHaveLength(1);
+    expect(found[0].target).toBe("b");
+    expect(found[0].sourceHandle).toBe("out");
+  });
+
+  it("returns empty array when no edges match", () => {
+    const nodes = [makeNode("a"), makeNode("b")];
+    const edges = [makeEdge("a", "out", "b", "in")];
+    const graph = new Graph({ nodes, edges });
+    expect(graph.findEdges("a", "other_handle")).toEqual([]);
+  });
+
+  it("returns multiple edges when source handle fans out to multiple targets", () => {
+    const nodes = [makeNode("a"), makeNode("b"), makeNode("c")];
+    const edges = [
+      makeEdge("a", "out", "b", "in"),
+      makeEdge("a", "out", "c", "in"),
+    ];
+    const graph = new Graph({ nodes, edges });
+    const found = graph.findEdges("a", "out");
+    expect(found).toHaveLength(2);
+    const targets = found.map((e) => e.target).sort();
+    expect(targets).toEqual(["b", "c"]);
+  });
+
+  it("returns empty array for nonexistent source node", () => {
+    const nodes = [makeNode("a")];
+    const edges: Edge[] = [];
+    const graph = new Graph({ nodes, edges });
+    expect(graph.findEdges("nonexistent", "out")).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateEdgeTypes (TypeMetadata-based)
+// ---------------------------------------------------------------------------
+
+describe("Graph – validateEdgeTypes (TypeMetadata)", () => {
+  /** Helper to build a graph with typed source output and target input. */
+  function makeTypedGraph(sourceType: string, targetType: string): Graph {
+    const nodes = [
+      makeNode("src", { outputs: { out: sourceType } }),
+      makeNode("dst", { properties: { in: { type: targetType } } }),
+    ];
+    const edges = [makeEdge("src", "out", "dst", "in")];
+    return new Graph({ nodes, edges });
+  }
+
+  it("passes for compatible types (string→string)", () => {
+    const graph = makeTypedGraph("string", "string");
+    expect(() => graph.validateEdgeTypes()).not.toThrow();
+  });
+
+  it("passes for compatible types (int→int)", () => {
+    const graph = makeTypedGraph("int", "int");
+    expect(() => graph.validateEdgeTypes()).not.toThrow();
+  });
+
+  it("passes for numeric widening (int→float)", () => {
+    const graph = makeTypedGraph("int", "float");
+    expect(() => graph.validateEdgeTypes()).not.toThrow();
+  });
+
+  it("passes for numeric widening (int→number)", () => {
+    const graph = makeTypedGraph("int", "number");
+    expect(() => graph.validateEdgeTypes()).not.toThrow();
+  });
+
+  it("passes when either side is 'any'", () => {
+    expect(() => makeTypedGraph("any", "string").validateEdgeTypes()).not.toThrow();
+    expect(() => makeTypedGraph("int", "any").validateEdgeTypes()).not.toThrow();
+  });
+
+  it("throws for incompatible types (string→int)", () => {
+    const graph = makeTypedGraph("string", "int");
+    expect(() => graph.validateEdgeTypes()).toThrow(GraphValidationError);
+    expect(() => graph.validateEdgeTypes()).toThrow("Type mismatch");
+  });
+
+  it("passes for list element compatibility (list[int]→list[number])", () => {
+    const graph = makeTypedGraph("list[int]", "list[number]");
+    expect(() => graph.validateEdgeTypes()).not.toThrow();
+  });
+
+  it("throws for incompatible list elements (list[string]→list[int])", () => {
+    const graph = makeTypedGraph("list[string]", "list[int]");
+    expect(() => graph.validateEdgeTypes()).toThrow(GraphValidationError);
+    expect(() => graph.validateEdgeTypes()).toThrow("Type mismatch");
+  });
+
+  it("skips edges with no type information (no throw)", () => {
+    // Source has no outputs defined
+    const g1 = new Graph({
+      nodes: [makeNode("src"), makeNode("dst", { properties: { in: { type: "int" } } })],
+      edges: [makeEdge("src", "out", "dst", "in")],
+    });
+    expect(() => g1.validateEdgeTypes()).not.toThrow();
+
+    // Target has no properties defined
+    const g2 = new Graph({
+      nodes: [makeNode("src", { outputs: { out: "int" } }), makeNode("dst")],
+      edges: [makeEdge("src", "out", "dst", "in")],
+    });
+    expect(() => g2.validateEdgeTypes()).not.toThrow();
+  });
+});

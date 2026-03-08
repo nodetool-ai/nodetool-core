@@ -30,7 +30,11 @@ import type {
   Chunk,
   Prediction,
 } from "../src/messages.js";
-import { TaskUpdateEvent } from "../src/messages.js";
+import {
+  TaskUpdateEvent,
+  sanitizeMemoryUris,
+  encodeBinaryUpdate,
+} from "../src/messages.js";
 
 // ---------------------------------------------------------------------------
 // Helpers: minimal valid instances of each message type
@@ -260,5 +264,155 @@ describe("optional fields default correctly", () => {
     const msg = chunk();
     expect(msg.node_id).toBeUndefined();
     expect(msg.done).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sanitizeMemoryUris
+// ---------------------------------------------------------------------------
+
+describe("sanitizeMemoryUris", () => {
+  it("returns primitive strings unchanged", () => {
+    expect(sanitizeMemoryUris("hello world")).toBe("hello world");
+    expect(sanitizeMemoryUris("")).toBe("");
+    expect(sanitizeMemoryUris("https://example.com")).toBe(
+      "https://example.com"
+    );
+  });
+
+  it("replaces memory:// prefixed strings with empty string", () => {
+    expect(sanitizeMemoryUris("memory://some/path")).toBe("");
+    expect(sanitizeMemoryUris("memory://")).toBe("");
+    expect(sanitizeMemoryUris("memory://abc/def/ghi")).toBe("");
+  });
+
+  it("recursively sanitizes arrays", () => {
+    const input = ["keep", "memory://remove", "also keep"];
+    expect(sanitizeMemoryUris(input)).toEqual(["keep", "", "also keep"]);
+  });
+
+  it("recursively sanitizes nested objects", () => {
+    const input = {
+      a: "memory://foo",
+      b: "safe",
+      nested: { c: "memory://bar", d: "ok" },
+    };
+    expect(sanitizeMemoryUris(input)).toEqual({
+      a: "",
+      b: "safe",
+      nested: { c: "", d: "ok" },
+    });
+  });
+
+  it("handles mixed nesting (objects with arrays containing memory URIs)", () => {
+    const input = {
+      items: ["memory://x", "y"],
+      deep: { list: [{ uri: "memory://z" }, { uri: "keep" }] },
+    };
+    expect(sanitizeMemoryUris(input)).toEqual({
+      items: ["", "y"],
+      deep: { list: [{ uri: "" }, { uri: "keep" }] },
+    });
+  });
+
+  it("returns non-string primitives (numbers, booleans, null) unchanged", () => {
+    expect(sanitizeMemoryUris(42)).toBe(42);
+    expect(sanitizeMemoryUris(true)).toBe(true);
+    expect(sanitizeMemoryUris(false)).toBe(false);
+    expect(sanitizeMemoryUris(null)).toBe(null);
+    expect(sanitizeMemoryUris(undefined)).toBe(undefined);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// encodeBinaryUpdate
+// ---------------------------------------------------------------------------
+
+describe("encodeBinaryUpdate", () => {
+  it("encodes a BinaryUpdate with correct format: JSON header + null byte + raw binary", () => {
+    const update: BinaryUpdate = {
+      type: "binary_update",
+      node_id: "n1",
+      output_name: "img",
+      binary: new Uint8Array([0xde, 0xad, 0xbe, 0xef]),
+    };
+    const encoded = encodeBinaryUpdate(update);
+
+    // Find null byte separator
+    const nullIdx = encoded.indexOf(0);
+    expect(nullIdx).toBeGreaterThan(0);
+
+    // Header before null byte should be valid JSON
+    const headerStr = new TextDecoder().decode(encoded.slice(0, nullIdx));
+    const header = JSON.parse(headerStr);
+    expect(header).toEqual({
+      type: "binary_update",
+      node_id: "n1",
+      output_name: "img",
+    });
+
+    // Binary payload after null byte should match original
+    const payload = encoded.slice(nullIdx + 1);
+    expect(payload).toEqual(new Uint8Array([0xde, 0xad, 0xbe, 0xef]));
+  });
+
+  it("JSON header contains type, node_id, output_name", () => {
+    const update: BinaryUpdate = {
+      type: "binary_update",
+      node_id: "node-42",
+      output_name: "audio_out",
+      binary: new Uint8Array([1]),
+    };
+    const encoded = encodeBinaryUpdate(update);
+    const nullIdx = encoded.indexOf(0);
+    const header = JSON.parse(
+      new TextDecoder().decode(encoded.slice(0, nullIdx))
+    );
+
+    expect(Object.keys(header).sort()).toEqual([
+      "node_id",
+      "output_name",
+      "type",
+    ]);
+    expect(header.type).toBe("binary_update");
+    expect(header.node_id).toBe("node-42");
+    expect(header.output_name).toBe("audio_out");
+  });
+
+  it("binary payload is preserved exactly", () => {
+    const binaryData = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) binaryData[i] = i;
+
+    const update: BinaryUpdate = {
+      type: "binary_update",
+      node_id: "n",
+      output_name: "o",
+      binary: binaryData,
+    };
+    const encoded = encodeBinaryUpdate(update);
+    const nullIdx = encoded.indexOf(0);
+    const payload = encoded.slice(nullIdx + 1);
+    expect(payload).toEqual(binaryData);
+  });
+
+  it("works with empty binary payload", () => {
+    const update: BinaryUpdate = {
+      type: "binary_update",
+      node_id: "n1",
+      output_name: "empty",
+      binary: new Uint8Array(0),
+    };
+    const encoded = encodeBinaryUpdate(update);
+    const nullIdx = encoded.indexOf(0);
+
+    // Header should still be valid
+    const header = JSON.parse(
+      new TextDecoder().decode(encoded.slice(0, nullIdx))
+    );
+    expect(header.node_id).toBe("n1");
+
+    // Nothing after the null byte
+    const payload = encoded.slice(nullIdx + 1);
+    expect(payload.length).toBe(0);
   });
 });
