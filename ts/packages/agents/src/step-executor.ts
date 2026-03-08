@@ -8,6 +8,9 @@
  * or inline JSON extraction.
  */
 
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import { createHash } from "node:crypto";
 import type { BaseProvider, ProcessingContext, Message, ToolCall, ProviderStreamItem } from "@nodetool/runtime";
 import { createLogger } from "@nodetool/config";
 import {
@@ -631,6 +634,60 @@ export class StepExecutor {
   }
 
   /**
+   * Save base64 encoded binary data (images, audio) from tool results to workspace files.
+   * Mirrors Python's StepExecutor._handle_binary_artifact().
+   */
+  private async handleBinaryArtifact(toolResult: unknown): Promise<unknown> {
+    if (typeof toolResult !== "object" || toolResult === null || Array.isArray(toolResult)) {
+      return toolResult;
+    }
+
+    const result = { ...(toolResult as Record<string, unknown>) };
+    const workspaceDir = this.context.workspaceDir;
+    if (!workspaceDir) return result;
+
+    for (const field of ["image", "audio"]) {
+      const value = result[field];
+      if (typeof value !== "string") continue;
+
+      const dataUriMatch = value.match(/^data:([^;]+);base64,(.+)$/s);
+      if (!dataUriMatch) continue;
+
+      const [, mimeType, base64Data] = dataUriMatch;
+      const ext = mimeType!.split("/")[1] ?? "bin";
+      const hash = createHash("sha256").update(base64Data!).digest("hex").slice(0, 16);
+      const filename = `artifact_${hash}.${ext}`;
+
+      const artifactsDir = path.join(workspaceDir, "artifacts");
+      await fs.mkdir(artifactsDir, { recursive: true });
+      const filepath = path.join(artifactsDir, filename);
+
+      await fs.writeFile(filepath, Buffer.from(base64Data!, "base64"));
+      result[field] = filepath;
+      if (!this.sourcesSet.has(filepath)) {
+        this.sources.push(filepath);
+        this.sourcesSet.add(filepath);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Track URLs from browser tool navigation results.
+   * Mirrors Python's _process_special_tool_side_effects().
+   */
+  private trackToolSideEffects(toolName: string, result: unknown): void {
+    if (toolName === "browser" && typeof result === "object" && result !== null) {
+      const url = (result as Record<string, unknown>).url;
+      if (typeof url === "string" && url && !this.sourcesSet.has(url)) {
+        this.sources.push(url);
+        this.sourcesSet.add(url);
+      }
+    }
+  }
+
+  /**
    * Generate a user-facing message for a tool call.
    */
   private generateToolCallMessage(toolCall: ToolCall): string {
@@ -897,7 +954,10 @@ export class StepExecutor {
               toolResult = { error: `Tool execution failed: ${settledResult.reason}` };
             }
 
-            // Track browser URLs for source lineage
+            // Save base64 binary artifacts (images, audio) to workspace files
+            toolResult = await this.handleBinaryArtifact(toolResult);
+
+            // Track browser URLs for source lineage (from args and results)
             if (tc.name === "browser" && tc.args?.["url"]) {
               const url = String(tc.args["url"]);
               if (!this.sourcesSet.has(url)) {
@@ -905,6 +965,7 @@ export class StepExecutor {
                 this.sourcesSet.add(url);
               }
             }
+            this.trackToolSideEffects(tc.name, toolResult);
 
             const resultStr = this.serializeToolResultForHistory(toolResult, tc.name);
             this.history.push({
