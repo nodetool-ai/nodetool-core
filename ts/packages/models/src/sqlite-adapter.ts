@@ -156,6 +156,18 @@ export class SQLiteAdapter implements DatabaseAdapter {
       columnDefs.join(", ") +
       `, PRIMARY KEY (${quoteIdentifier(pk)}))`;
     this.db.exec(sql);
+
+    // Migrate: add any columns defined in the schema but missing from the table
+    const existingCols = new Set(
+      (this.db.pragma(`table_info(${quoteIdentifier(this.tableName)})`) as Array<{ name: string }>)
+        .map((row) => row.name),
+    );
+    for (const [colName, fieldDef] of Object.entries(this.tableSchema.columns)) {
+      if (!existingCols.has(colName)) {
+        const colType = sqliteType(fieldDef.type);
+        this.db.exec(`ALTER TABLE ${quoteIdentifier(this.tableName)} ADD COLUMN ${quoteIdentifier(colName)} ${colType}`);
+      }
+    }
   }
 
   async dropTable(): Promise<void> {
