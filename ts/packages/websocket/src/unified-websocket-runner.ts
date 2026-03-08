@@ -8,6 +8,7 @@ import {
   Message,
   ModelChangeEvent,
   ModelObserver,
+  Prediction,
   Thread,
   Workflow,
   type DBModel,
@@ -27,7 +28,7 @@ import type {
   WebSocketCommandEnvelope,
   WebSocketMode,
 } from "@nodetool/protocol";
-import type { Tool } from "@nodetool/agents";
+import { Tool } from "@nodetool/agents";
 
 const log = createLogger("nodetool.websocket.runner");
 
@@ -105,6 +106,64 @@ class ToolBridge {
   }
 }
 
+/**
+ * Proxy tool that forwards execution to the frontend via ToolBridge.
+ * Mirrors Python's UIToolProxy from messaging/ui_tool_proxy.py.
+ */
+class UIToolProxy extends Tool {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: Record<string, unknown>;
+
+  private bridge: ToolBridge;
+  private sendMsg: (msg: Record<string, unknown>) => Promise<void>;
+
+  constructor(
+    manifest: Record<string, unknown>,
+    bridge: ToolBridge,
+    sendMsg: (msg: Record<string, unknown>) => Promise<void>,
+  ) {
+    super();
+    this.name = typeof manifest.name === "string" ? manifest.name : "";
+    this.description = typeof manifest.description === "string" ? manifest.description : "UI tool";
+    this.inputSchema =
+      typeof manifest.parameters === "object" && manifest.parameters !== null
+        ? (manifest.parameters as Record<string, unknown>)
+        : {};
+    this.bridge = bridge;
+    this.sendMsg = sendMsg;
+  }
+
+  async process(_context: ProcessingContext, params: Record<string, unknown>): Promise<unknown> {
+    const toolCallId = randomUUID();
+    await this.sendMsg({
+      type: "tool_call",
+      tool_call_id: toolCallId,
+      name: this.name,
+      args: params,
+    });
+
+    try {
+      const payload = await Promise.race([
+        this.bridge.createWaiter(toolCallId),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Frontend tool ${this.name} timed out after 60 seconds`)), 60000),
+        ),
+      ]);
+      if ((payload as Record<string, unknown>).ok) {
+        return (payload as Record<string, unknown>).result ?? {};
+      }
+      return { error: `Frontend tool execution failed: ${(payload as Record<string, unknown>).error ?? "Unknown error"}` };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  userMessage(_params: Record<string, unknown>): string {
+    return `Executing frontend tool: ${this.name}`;
+  }
+}
+
 export interface UnifiedWebSocketRunnerOptions {
   userId?: string;
   authToken?: string;
@@ -144,6 +203,21 @@ export class UnifiedWebSocketRunner {
 
   private logError(context: string, error: unknown): void {
     log.error(context, error instanceof Error ? error : new Error(String(error)));
+  }
+
+  /**
+   * Extract text from message content that may be a string or array of content items.
+   * Mirrors Python's _extract_query_text / _extract_objective / _extract_text_content.
+   */
+  private extractTextContent(content: unknown, fallback = ""): string {
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      const texts = (content as Array<Record<string, unknown>>)
+        .filter((c) => c.type === "text" && typeof c.text === "string")
+        .map((c) => c.text as string);
+      return texts.length > 0 ? texts.join(" ") : fallback;
+    }
+    return fallback;
   }
 
   private inferOutputType(value: unknown): string {
@@ -840,7 +914,7 @@ export class UnifiedWebSocketRunner {
 
     // Query collections for RAG context — matches Python's _query_collections()
     const collections = Array.isArray(data.collections) ? (data.collections as string[]).filter((c) => typeof c === "string") : [];
-    const userContent = typeof data.content === "string" ? data.content : "";
+    const userContent = this.extractTextContent(data.content);
     let collectionContext = "";
     if (collections.length > 0 && userContent) {
       collectionContext = await this.queryCollections(collections, userContent);
@@ -853,6 +927,7 @@ export class UnifiedWebSocketRunner {
     let unprocessedMessages: ProviderMessage[] = [];
 
     // Tool execution loop — mirrors Python's RegularChatProcessor.process()
+    let shouldIncludeTools = true;
     try {
       while (true) {
         if (requestSeq !== undefined && requestSeq !== this.chatRequestSeq) return;
@@ -869,7 +944,7 @@ export class UnifiedWebSocketRunner {
         const stream = provider.generateMessagesTraced({
           messages: messagesToSend,
           model,
-          tools: providerToolSchemas.length > 0 ? providerToolSchemas : undefined,
+          tools: shouldIncludeTools && providerToolSchemas.length > 0 ? providerToolSchemas : undefined,
         });
 
         for await (const item of stream) {
@@ -976,6 +1051,9 @@ export class UnifiedWebSocketRunner {
         log.debug("Unprocessed messages", { count: unprocessedMessages.length });
       }
 
+      // Log provider call for cost tracking — matches Python's _log_provider_call()
+      await this._logProviderCall(userId, provider, providerId, model, workflowId);
+
       // Signal completion — matches Python's done chunk + final assistant Message
       await this.sendMessage({
         type: "chunk",
@@ -999,12 +1077,67 @@ export class UnifiedWebSocketRunner {
 
       log.debug("Chat complete", { threadId, chars: content.length });
     } catch (err) {
-      // Match Python's error handling in RegularChatProcessor
       const errMsg = err instanceof Error ? err.message : String(err);
       log.error("Chat processing error", { threadId, error: errMsg });
+
+      // Detect error type — matches Python's separate ConnectError / HTTPStatusError handlers
+      let errorType = "error";
+      let statusCode: number | undefined;
+      let formattedMsg = errMsg;
+
+      // Connection errors (ECONNREFUSED, ENOTFOUND, etc.)
+      if (errMsg.includes("ECONNREFUSED") || errMsg.includes("ENOTFOUND") || errMsg.includes("fetch failed") || errMsg.includes("nodename nor servname")) {
+        errorType = "connection_error";
+        if (errMsg.includes("ENOTFOUND") || errMsg.includes("nodename nor servname")) {
+          formattedMsg = "Connection error: Unable to resolve hostname. Please check your network connection and API endpoint configuration.";
+        } else {
+          formattedMsg = `Connection error: ${errMsg}`;
+        }
+      }
+      // HTTP status errors — check for status code in error
+      else if (err && typeof err === "object" && "status" in err) {
+        const status = (err as { status: number }).status;
+        errorType = "http_status_error";
+        statusCode = status;
+
+        // Try to extract error message from response body
+        let bodyMsg: string | null = null;
+        try {
+          if ("body" in err || "response" in err) {
+            const body = (err as any).body ?? (err as any).response;
+            if (body && typeof body === "object" && "error" in body) {
+              const errorDetail = body.error;
+              if (typeof errorDetail === "object" && errorDetail && "message" in errorDetail) {
+                bodyMsg = String(errorDetail.message);
+              }
+            }
+          }
+        } catch {}
+
+        if (bodyMsg) {
+          formattedMsg = bodyMsg;
+        } else if (status === 400) {
+          formattedMsg = `Bad request: ${errMsg}`;
+        } else if (status === 401) {
+          formattedMsg = "Authentication failed: Invalid API key or token";
+        } else if (status === 403) {
+          formattedMsg = "Access forbidden: You don't have permission for this resource";
+        } else if (status === 404) {
+          formattedMsg = "Not found: The requested resource was not found";
+        } else if (status === 429) {
+          formattedMsg = "Rate limited: Too many requests, please slow down";
+        } else if (status >= 500) {
+          formattedMsg = `Server error (${status}): The service is temporarily unavailable`;
+        } else {
+          formattedMsg = `HTTP error (${status}): ${errMsg}`;
+        }
+      }
+
       await this.sendMessage({
         type: "error",
-        message: errMsg,
+        message: formattedMsg,
+        error_type: errorType,
+        ...(statusCode !== undefined ? { status_code: statusCode } : {}),
         thread_id: threadId,
         workflow_id: workflowId,
       });
@@ -1018,12 +1151,59 @@ export class UnifiedWebSocketRunner {
       await this.sendMessage({
         type: "message",
         role: "assistant",
-        content: `I encountered an error: ${errMsg}`,
+        content: errorType === "connection_error"
+          ? `I encountered a connection error: ${formattedMsg}. Please check your network connection and try again.`
+          : errorType === "http_status_error"
+            ? `I encountered an API error (HTTP ${statusCode}): ${formattedMsg}`
+            : `I encountered an error: ${formattedMsg}`,
         thread_id: threadId,
         workflow_id: workflowId,
         provider: providerId,
         model,
       });
+    }
+  }
+
+  /**
+   * Log a provider call for cost tracking — mirrors Python's _log_provider_call().
+   * Best-effort: never throws, logs warnings on failure.
+   */
+  private async _logProviderCall(
+    userId: string,
+    provider: BaseProvider,
+    providerId: string,
+    model: string,
+    workflowId: string | null,
+  ): Promise<void> {
+    if (!providerId || !model) {
+      log.warn("Cannot log provider call: missing provider or model");
+      return;
+    }
+    try {
+      const cost = provider.cost;
+      await Prediction.create({
+        user_id: userId,
+        provider: providerId,
+        model,
+        cost,
+        workflow_id: workflowId,
+        status: "completed",
+        node_id: "",
+      });
+      log.debug("Logged provider call", { provider: providerId, model, cost });
+    } catch (err) {
+      if (
+        err instanceof TypeError ||
+        err instanceof ReferenceError
+      ) {
+        log.warn("Failed to log provider call due to invalid data", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } else {
+        log.error("Unexpected error logging provider call", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   }
 
@@ -1182,7 +1362,7 @@ export class UnifiedWebSocketRunner {
       if (workflow.run_mode === "chat") {
         const legacyChatInput = chatHistorySerialized.map((m) => ({
           role: m.role,
-          content: typeof m.content === "string" ? m.content : "",
+          content: this.extractTextContent(m.content),
           created_at: m.created_at,
         }));
         params["chat_input"] = legacyChatInput;
@@ -1384,7 +1564,7 @@ export class UnifiedWebSocketRunner {
     const provider = await this.resolveProvider!(providerId);
 
     // Extract objective from content
-    const objective = typeof data.content === "string" ? data.content : "Complete the requested task";
+    const objective = this.extractTextContent(data.content, "Complete the requested task");
 
     // Generate unique execution ID — matches Python
     const agentExecutionId = randomUUID();
@@ -1430,6 +1610,23 @@ export class UnifiedWebSocketRunner {
           selectedTools.push(st);
         }
       }
+    }
+
+    // Include UI proxy tools if client provided a manifest via tool bridge — matches Python
+    if (Object.keys(this.clientToolsManifest).length > 0) {
+      const sendMsg = this.sendMessage.bind(this);
+      for (const [, manifest] of Object.entries(this.clientToolsManifest)) {
+        try {
+          selectedTools.push(new UIToolProxy(manifest, this.toolBridge, sendMsg));
+        } catch (err) {
+          log.warn("Failed to register UI tool proxy", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+      log.debug("Added UI tool proxies to agent", {
+        count: Object.keys(this.clientToolsManifest).length,
+      });
     }
 
     // Create ProcessingContext for agent execution

@@ -51,8 +51,33 @@ export abstract class BaseProvider {
     return cost;
   }
 
+  /** Alias for getTotalCost() — mirrors Python's BaseProvider.cost property. */
+  get cost(): number {
+    return this._cost;
+  }
+
   getTotalCost(): number {
     return this._cost;
+  }
+
+  /**
+   * Log a provider call for cost tracking.
+   * Base implementation logs to debug; subclasses or callers may persist to a Prediction model.
+   */
+  async logProviderCall(args: {
+    userId: string;
+    provider: string;
+    model: string;
+    cost: number;
+    workflowId?: string | null;
+  }): Promise<void> {
+    log.debug("Provider call", {
+      userId: args.userId,
+      provider: args.provider,
+      model: args.model,
+      cost: args.cost,
+      workflowId: args.workflowId ?? null,
+    });
   }
 
   resetCost(): void {
