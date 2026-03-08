@@ -600,6 +600,138 @@ export class UnifiedWebSocketRunner {
   }
 
   /**
+   * Recursively process tool results, handling asset-like objects.
+   * Mirrors Python's RegularChatProcessor._process_tool_result().
+   *
+   * - Asset-like objects (have type + uri/data): materialized via storage
+   * - Date/datetime: converted to ISO string
+   * - Arrays/objects: recursed into
+   * - Primitives: returned as-is
+   */
+  private async processToolResult(obj: unknown, ctx: ProcessingContext): Promise<unknown> {
+    if (obj === null || obj === undefined) return obj;
+
+    // Asset-like objects: { type: "image"|"audio"|"video"|..., uri?: string, data?: ... }
+    if (typeof obj === "object" && !Array.isArray(obj)) {
+      const record = obj as Record<string, unknown>;
+
+      // Check if it's an asset-like object (has type + uri or data)
+      if ("type" in record && ("uri" in record || "data" in record || "asset_id" in record)) {
+        // Use ProcessingContext's normalizeOutputValue to handle asset materialization
+        return ctx.normalizeOutputValue(record, "storage_url");
+      }
+
+      // Date objects
+      if (obj instanceof Date) {
+        return obj.toISOString();
+      }
+
+      // Regular objects — recurse into values
+      const result: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(record)) {
+        result[key] = await this.processToolResult(value, ctx);
+      }
+      return result;
+    }
+
+    // Arrays — recurse into items
+    if (Array.isArray(obj)) {
+      return Promise.all(obj.map((item) => this.processToolResult(item, ctx)));
+    }
+
+    // Uint8Array/Buffer — store as asset
+    if (obj instanceof Uint8Array) {
+      if (!ctx.storage) return obj;
+      const key = `assets/${randomUUID()}.bin`;
+      const uri = await ctx.storage.store(key, obj);
+      return { type: "asset", uri };
+    }
+
+    // Primitives
+    return obj;
+  }
+
+  /**
+   * Query ChromaDB collections and return concatenated context string.
+   * Mirrors Python's RegularChatProcessor._query_collections().
+   */
+  private async queryCollections(collections: string[], queryText: string, nResults = 5): Promise<string> {
+    if (!collections.length || !queryText) return "";
+
+    try {
+      const { ChromaClient } = await import("chromadb");
+      const url = process.env.CHROMA_URL ?? "http://localhost:8000";
+      const parsed = new URL(url);
+      const client = new ChromaClient({
+        host: parsed.hostname,
+        port: Number(parsed.port) || 8000,
+        ssl: parsed.protocol === "https:",
+      });
+
+      const allResults: string[] = [];
+
+      for (const collectionName of collections) {
+        try {
+          const collection = await client.getCollection({ name: collectionName });
+          const results = await collection.query({
+            queryTexts: [queryText],
+            nResults,
+            include: ["documents", "metadatas"],
+          });
+
+          if (results.documents?.[0]?.length) {
+            let collectionResults = `\n\n### Results from ${collectionName}:\n`;
+            for (const doc of results.documents[0]) {
+              if (!doc) continue;
+              const preview = doc.length > 200 ? `${doc.slice(0, 200)}...` : doc;
+              collectionResults += `\n- ${preview}`;
+            }
+            allResults.push(collectionResults);
+          }
+        } catch (err) {
+          log.warn("Collection query failed", { collection: collectionName, error: err instanceof Error ? err.message : String(err) });
+        }
+      }
+
+      return allResults.join("\n");
+    } catch (err) {
+      log.warn("ChromaDB client init failed", { error: err instanceof Error ? err.message : String(err) });
+      return "";
+    }
+  }
+
+  /**
+   * Add collection context as a system message before the last user message.
+   * Mirrors Python's RegularChatProcessor._add_collection_context().
+   */
+  private addCollectionContext(messages: ProviderMessage[], collectionContext: string): ProviderMessage[] {
+    // Find the last user message index
+    let lastUserIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        lastUserIndex = i;
+        break;
+      }
+    }
+
+    if (lastUserIndex >= 0) {
+      const contextMessage: ProviderMessage = {
+        role: "system",
+        content: `Context from knowledge base:\n${collectionContext}`,
+        toolCallId: null,
+        toolCalls: null,
+        threadId: null,
+      };
+      return [
+        ...messages.slice(0, lastUserIndex),
+        contextMessage,
+        ...messages.slice(lastUserIndex),
+      ];
+    }
+    return messages;
+  }
+
+  /**
    * Handle an incoming chat message.
    *
    * Mirrors Python's full 3-layer flow:
@@ -691,6 +823,17 @@ export class UnifiedWebSocketRunner {
       });
     }
 
+    // Query collections for RAG context — matches Python's _query_collections()
+    const collections = Array.isArray(data.collections) ? (data.collections as string[]).filter((c) => typeof c === "string") : [];
+    const userContent = typeof data.content === "string" ? data.content : "";
+    let collectionContext = "";
+    if (collections.length > 0 && userContent) {
+      collectionContext = await this.queryCollections(collections, userContent);
+      if (collectionContext) {
+        log.debug("Retrieved collection context", { chars: collectionContext.length });
+      }
+    }
+
     let content = "";
     let unprocessedMessages: ProviderMessage[] = [];
 
@@ -699,8 +842,14 @@ export class UnifiedWebSocketRunner {
       while (true) {
         if (requestSeq !== undefined && requestSeq !== this.chatRequestSeq) return;
 
-        const messagesToSend = [...chatHistory, ...unprocessedMessages];
+        let messagesToSend = [...chatHistory, ...unprocessedMessages];
         unprocessedMessages = [];
+
+        // Add collection context on first iteration — matches Python
+        if (collectionContext) {
+          messagesToSend = this.addCollectionContext(messagesToSend, collectionContext);
+          collectionContext = ""; // Clear after first use
+        }
 
         const stream = provider.generateMessagesTraced({
           messages: messagesToSend,
@@ -773,7 +922,10 @@ export class UnifiedWebSocketRunner {
               toolResult = { error: `Tool "${tc.name}" not available` };
             }
 
-            const toolResultJson = JSON.stringify(toolResult);
+            // Process tool result — handle asset-like objects, dates, etc.
+            // Matches Python's _process_tool_result()
+            const processedResult = await this.processToolResult(toolResult, ctx);
+            const toolResultJson = JSON.stringify(processedResult);
 
             // Build tool result Message — matches Python's tool_msg
             const toolMsgData: Record<string, unknown> = {

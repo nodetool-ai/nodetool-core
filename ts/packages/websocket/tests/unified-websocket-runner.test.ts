@@ -77,9 +77,11 @@ describe("UnifiedWebSocketRunner", () => {
     expect(res.error).toContain("thread_id is required");
   });
 
-  it("validates stop command reference", async () => {
+  it("stop with empty data cancels in-progress generation", async () => {
     const res = await runner.handleCommand({ command: "stop", data: {} });
-    expect(res.error).toContain("job_id or thread_id is required");
+    expect(res.message).toBe("Stop command processed");
+    expect(res.job_id).toBeNull();
+    expect(res.thread_id).toBeNull();
   });
 
   it("replies pong for ping in receive loop", async () => {
