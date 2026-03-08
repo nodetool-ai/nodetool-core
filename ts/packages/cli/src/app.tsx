@@ -498,6 +498,12 @@ export function App({
             assistantContent += event.content;
             setStreamContent(assistantContent);
             setStreamLabel("streaming");
+          } else if (event.type === "tool_call") {
+            setStreamLabel(`tool: ${event.name}`);
+          } else if (event.type === "tool_result") {
+            const preview = event.content.length > 100 ? event.content.slice(0, 100) + "…" : event.content;
+            await addMessage("tool", preview, { toolName: event.name });
+            setStreamLabel("thinking");
           } else if (event.type === "error") {
             throw new Error(event.message);
           } else if (event.type === "done") {
