@@ -46,15 +46,15 @@ describe("OpenRouterProvider", () => {
     });
   });
 
-  it("reports tool support with o1/o3 exceptions", () => {
+  it("reports tool support with o1/o3 exceptions", async () => {
     const provider = new OpenRouterProvider(
       { OPENROUTER_API_KEY: "k" },
       { client: {} as any }
     );
-    expect(provider.hasToolSupport("gpt-4o")).toBe(true);
-    expect(provider.hasToolSupport("claude-3-opus")).toBe(true);
-    expect(provider.hasToolSupport("openai/o1-mini")).toBe(false);
-    expect(provider.hasToolSupport("openai/o3-mini")).toBe(false);
+    expect(await provider.hasToolSupport("gpt-4o")).toBe(true);
+    expect(await provider.hasToolSupport("claude-3-opus")).toBe(true);
+    expect(await provider.hasToolSupport("openai/o1-mini")).toBe(false);
+    expect(await provider.hasToolSupport("openai/o3-mini")).toBe(false);
   });
 
   it("fetches available language models with extra headers", async () => {

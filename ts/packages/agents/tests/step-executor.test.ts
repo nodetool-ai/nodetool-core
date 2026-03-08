@@ -11,7 +11,7 @@ function createMockProvider(toolCallArgs?: Record<string, unknown>) {
   const args = toolCallArgs ?? { result: { answer: "42" } };
   return {
     provider: "mock",
-    hasToolSupport: () => true,
+    hasToolSupport: async () => true,
     generateMessages: async function* () {
       // Yield a text chunk
       yield { type: "chunk" as const, content: "Working on it...", done: false };

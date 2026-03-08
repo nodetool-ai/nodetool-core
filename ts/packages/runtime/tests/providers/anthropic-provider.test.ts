@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { AnthropicProvider } from "../../src/providers/anthropic-provider.js";
 import type { Message, ProviderTool } from "../../src/providers/types.js";
 
@@ -13,7 +13,7 @@ function makeAsyncIterable(items: unknown[]) {
 }
 
 describe("AnthropicProvider", () => {
-  it("reports tool support and required env", () => {
+  it("reports tool support and required env", async () => {
     const provider = new AnthropicProvider(
       { ANTHROPIC_API_KEY: "k" },
       { client: {} as any }
@@ -21,7 +21,7 @@ describe("AnthropicProvider", () => {
 
     expect(AnthropicProvider.requiredSecrets()).toEqual(["ANTHROPIC_API_KEY"]);
     expect(provider.getContainerEnv()).toEqual({ ANTHROPIC_API_KEY: "k" });
-    expect(provider.hasToolSupport("claude-sonnet")).toBe(true);
+    expect(await provider.hasToolSupport("claude-sonnet")).toBe(true);
   });
 
   it("formats tools with Anthropic schema preparation", () => {
@@ -290,6 +290,173 @@ describe("AnthropicProvider", () => {
     expect(provider.isContextLengthError(new Error("maximum context exceeded"))).toBe(true);
     expect(provider.isContextLengthError(new Error("context window too long"))).toBe(true);
     expect(provider.isContextLengthError(new Error("network timeout"))).toBe(false);
+  });
+
+  describe("getAvailableLanguageModels retry logic", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function makeProvider(fetchFn: any) {
+      return new AnthropicProvider(
+        { ANTHROPIC_API_KEY: "k" },
+        { client: {} as any, fetchFn: fetchFn as any }
+      );
+    }
+
+    function okResponse(data: unknown[]) {
+      return { ok: true, status: 200, json: async () => ({ data }) };
+    }
+
+    function errorResponse(status: number) {
+      return { ok: false, status, json: async () => ({}) };
+    }
+
+    /** Drive the promise forward by advancing fake timers until it resolves. */
+    async function runWithTimers<T>(promise: Promise<T>): Promise<T> {
+      let result: T | undefined;
+      let done = false;
+      promise.then((r) => { result = r; done = true; });
+      while (!done) {
+        await vi.advanceTimersByTimeAsync(5000);
+      }
+      return result as T;
+    }
+
+    it("retries on 429 status and eventually returns empty", async () => {
+      const fetchFn = vi.fn().mockResolvedValue(errorResponse(429));
+      const provider = makeProvider(fetchFn);
+
+      const result = await runWithTimers(provider.getAvailableLanguageModels());
+
+      expect(result).toEqual([]);
+      expect(fetchFn).toHaveBeenCalledTimes(3);
+    });
+
+    it("retries on 500 status and eventually returns empty", async () => {
+      const fetchFn = vi.fn().mockResolvedValue(errorResponse(500));
+      const provider = makeProvider(fetchFn);
+
+      const result = await runWithTimers(provider.getAvailableLanguageModels());
+
+      expect(result).toEqual([]);
+      expect(fetchFn).toHaveBeenCalledTimes(3);
+    });
+
+    it("retries on 502 status and eventually returns empty", async () => {
+      const fetchFn = vi.fn().mockResolvedValue(errorResponse(502));
+      const provider = makeProvider(fetchFn);
+
+      const result = await runWithTimers(provider.getAvailableLanguageModels());
+
+      expect(result).toEqual([]);
+      expect(fetchFn).toHaveBeenCalledTimes(3);
+    });
+
+    it("retries on 503 status and eventually returns empty", async () => {
+      const fetchFn = vi.fn().mockResolvedValue(errorResponse(503));
+      const provider = makeProvider(fetchFn);
+
+      const result = await runWithTimers(provider.getAvailableLanguageModels());
+
+      expect(result).toEqual([]);
+      expect(fetchFn).toHaveBeenCalledTimes(3);
+    });
+
+    it("retries on 504 status and eventually returns empty", async () => {
+      const fetchFn = vi.fn().mockResolvedValue(errorResponse(504));
+      const provider = makeProvider(fetchFn);
+
+      const result = await runWithTimers(provider.getAvailableLanguageModels());
+
+      expect(result).toEqual([]);
+      expect(fetchFn).toHaveBeenCalledTimes(3);
+    });
+
+    it("does NOT retry on 401 auth error — returns empty immediately", async () => {
+      const fetchFn = vi.fn().mockResolvedValue(errorResponse(401));
+      const provider = makeProvider(fetchFn);
+
+      const result = await runWithTimers(provider.getAvailableLanguageModels());
+
+      expect(result).toEqual([]);
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+    });
+
+    it("does NOT retry on 403 auth error — returns empty immediately", async () => {
+      const fetchFn = vi.fn().mockResolvedValue(errorResponse(403));
+      const provider = makeProvider(fetchFn);
+
+      const result = await runWithTimers(provider.getAvailableLanguageModels());
+
+      expect(result).toEqual([]);
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+    });
+
+    it("retries on AbortError (timeout) and eventually returns empty", async () => {
+      const abortError = new DOMException("The operation was aborted", "AbortError");
+      const fetchFn = vi.fn().mockRejectedValue(abortError);
+      const provider = makeProvider(fetchFn);
+
+      const result = await runWithTimers(provider.getAvailableLanguageModels());
+
+      expect(result).toEqual([]);
+      expect(fetchFn).toHaveBeenCalledTimes(3);
+    });
+
+    it("succeeds on retry after first request fails with 500", async () => {
+      const fetchFn = vi
+        .fn()
+        .mockResolvedValueOnce(errorResponse(500))
+        .mockResolvedValueOnce(okResponse([{ id: "claude-sonnet-4" }]));
+      const provider = makeProvider(fetchFn);
+
+      const result = await runWithTimers(provider.getAvailableLanguageModels());
+
+      expect(result).toEqual([
+        { id: "claude-sonnet-4", name: "claude-sonnet-4", provider: "anthropic" },
+      ]);
+      expect(fetchFn).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries on network error (fetch throws) and eventually returns empty", async () => {
+      const fetchFn = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+      const provider = makeProvider(fetchFn);
+
+      const result = await runWithTimers(provider.getAvailableLanguageModels());
+
+      expect(result).toEqual([]);
+      expect(fetchFn).toHaveBeenCalledTimes(3);
+    });
+
+    it("succeeds on retry after network error", async () => {
+      const fetchFn = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("ECONNRESET"))
+        .mockResolvedValueOnce(okResponse([{ id: "claude-haiku-4" }]));
+      const provider = makeProvider(fetchFn);
+
+      const result = await runWithTimers(provider.getAvailableLanguageModels());
+
+      expect(result).toEqual([
+        { id: "claude-haiku-4", name: "claude-haiku-4", provider: "anthropic" },
+      ]);
+      expect(fetchFn).toHaveBeenCalledTimes(2);
+    });
+
+    it("returns empty on non-retryable HTTP error (e.g. 404)", async () => {
+      const fetchFn = vi.fn().mockResolvedValue(errorResponse(404));
+      const provider = makeProvider(fetchFn);
+
+      const result = await runWithTimers(provider.getAvailableLanguageModels());
+
+      expect(result).toEqual([]);
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("throws on missing api key and invalid tool result payload", async () => {

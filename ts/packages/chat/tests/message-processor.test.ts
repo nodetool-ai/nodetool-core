@@ -51,7 +51,7 @@ function createMockProvider(
   let callIndex = 0;
   return {
     provider: "mock",
-    hasToolSupport: () => true,
+    hasToolSupport: async () => true,
     generateMessages: async function* (_args: {
       messages: Message[];
       model: string;

@@ -40,13 +40,13 @@ describe("GroqProvider", () => {
     expect(provider.getContainerEnv()).toEqual({ GROQ_API_KEY: "test-key" });
   });
 
-  it("has tool support for all models", () => {
+  it("has tool support for all models", async () => {
     const provider = new GroqProvider(
       { GROQ_API_KEY: "k" },
       { client: {} as any }
     );
-    expect(provider.hasToolSupport("llama-3.1-70b")).toBe(true);
-    expect(provider.hasToolSupport("mixtral-8x7b")).toBe(true);
+    expect(await provider.hasToolSupport("llama-3.1-70b")).toBe(true);
+    expect(await provider.hasToolSupport("mixtral-8x7b")).toBe(true);
   });
 
   it("fetches available language models", async () => {

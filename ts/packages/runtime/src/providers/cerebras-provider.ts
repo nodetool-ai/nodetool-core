@@ -49,7 +49,7 @@ export class CerebrasProvider extends OpenAIProvider {
     return { CEREBRAS_API_KEY: this.apiKey };
   }
 
-  override hasToolSupport(_model: string): boolean {
+  override async hasToolSupport(_model: string): Promise<boolean> {
     return true;
   }
 

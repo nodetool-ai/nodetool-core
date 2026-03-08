@@ -97,7 +97,7 @@ export class GeminiProvider extends BaseProvider {
     return { GEMINI_API_KEY: this.apiKey };
   }
 
-  hasToolSupport(_model: string): boolean {
+  async hasToolSupport(_model: string): Promise<boolean> {
     return true;
   }
 

@@ -46,12 +46,12 @@ describe("TogetherProvider", () => {
     });
   });
 
-  it("has tool support for all models", () => {
+  it("has tool support for all models", async () => {
     const provider = new TogetherProvider(
       { TOGETHER_API_KEY: "k" },
       { client: {} as any }
     );
-    expect(provider.hasToolSupport("meta-llama/Llama-3-70b")).toBe(true);
+    expect(await provider.hasToolSupport("meta-llama/Llama-3-70b")).toBe(true);
   });
 
   it("fetches available language models", async () => {

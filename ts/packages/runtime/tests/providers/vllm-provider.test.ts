@@ -41,12 +41,12 @@ describe("VLLMProvider", () => {
     expect(env.VLLM_BASE_URL).toBe("http://localhost:8000");
   });
 
-  it("has tool support for all models", () => {
+  it("has tool support for all models", async () => {
     const provider = new VLLMProvider(
       {},
       { baseURL: "http://localhost:8000", client: {} as any }
     );
-    expect(provider.hasToolSupport("some-model")).toBe(true);
+    expect(await provider.hasToolSupport("some-model")).toBe(true);
   });
 
   it("fetches available language models", async () => {

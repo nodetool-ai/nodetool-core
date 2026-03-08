@@ -16,7 +16,7 @@ function makeAsyncIterable(items: unknown[]) {
 }
 
 describe("LlamaProvider", () => {
-  it("requires LLAMA_CPP_URL and reports container env behavior", () => {
+  it("requires LLAMA_CPP_URL and reports container env behavior", async () => {
     expect(LlamaProvider.requiredSecrets()).toEqual(["LLAMA_CPP_URL"]);
     expect(() => new LlamaProvider({})).toThrow("LLAMA_CPP_URL is required");
 
@@ -26,7 +26,7 @@ describe("LlamaProvider", () => {
     );
     expect(provider.baseUrl).toBe("http://127.0.0.1:8080");
     expect(provider.getContainerEnv()).toEqual({});
-    expect(provider.hasToolSupport("any")).toBe(false);
+    expect(await provider.hasToolSupport("any")).toBe(false);
   });
 
   it("lists available language models from /v1/models", async () => {

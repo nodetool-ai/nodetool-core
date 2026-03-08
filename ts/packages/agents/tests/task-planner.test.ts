@@ -13,7 +13,7 @@ function createMockProvider(taskData?: Record<string, unknown>) {
   };
   return {
     provider: "mock",
-    hasToolSupport: () => true,
+    hasToolSupport: async () => true,
     generateMessages: async function* () {
       yield { type: "chunk" as const, content: "Planning...", done: false };
       yield {

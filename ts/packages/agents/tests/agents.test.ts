@@ -25,7 +25,7 @@ function createMockProvider(
   let callIndex = 0;
   return {
     provider: "mock",
-    hasToolSupport: () => true,
+    hasToolSupport: async () => true,
     generateMessages: async function* () {
       const items = responseSequence[callIndex] ?? [];
       callIndex++;

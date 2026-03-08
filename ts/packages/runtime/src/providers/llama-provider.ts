@@ -210,7 +210,7 @@ export class LlamaProvider extends BaseProvider {
     return this._client;
   }
 
-  hasToolSupport(_model: string): boolean {
+  async hasToolSupport(_model: string): Promise<boolean> {
     // Python provider returns False and relies on tool emulation.
     return false;
   }
@@ -351,7 +351,7 @@ export class LlamaProvider extends BaseProvider {
       stream: true,
     };
     if (responseFormat) request.response_format = responseFormat;
-    if (tools.length > 0 && this.hasToolSupport(model)) {
+    if (tools.length > 0 && (await this.hasToolSupport(model))) {
       request.tools = this.formatTools(tools);
     }
 
@@ -401,7 +401,7 @@ export class LlamaProvider extends BaseProvider {
           deltaToolCalls.clear();
         }
 
-        if (choice.finish_reason === "stop" && tools.length > 0 && !this.hasToolSupport(model)) {
+        if (choice.finish_reason === "stop" && tools.length > 0 && !(await this.hasToolSupport(model))) {
           const parsed = parseEmulatedToolCalls(accumulatedText, tools);
           for (const tc of parsed.toolCalls) {
             yield tc;
@@ -449,7 +449,7 @@ export class LlamaProvider extends BaseProvider {
       stream: false,
     };
     if (responseFormat) request.response_format = responseFormat;
-    if (tools.length > 0 && this.hasToolSupport(model)) {
+    if (tools.length > 0 && (await this.hasToolSupport(model))) {
       request.tools = this.formatTools(tools);
     }
 
@@ -465,7 +465,7 @@ export class LlamaProvider extends BaseProvider {
       toolCalls = nativeToolCalls.map((tc: any) =>
         this.buildToolCall(String(tc.id ?? ""), String(tc.function?.name ?? ""), tc.function?.arguments)
       );
-    } else if (tools.length > 0 && !this.hasToolSupport(model)) {
+    } else if (tools.length > 0 && !(await this.hasToolSupport(model))) {
       toolCalls = parseEmulatedToolCalls(content, tools).toolCalls;
     }
 

@@ -102,30 +102,77 @@ export class AnthropicProvider extends BaseProvider {
     return this._client;
   }
 
-  hasToolSupport(_model: string): boolean {
+  async hasToolSupport(_model: string): Promise<boolean> {
     return true;
   }
 
   async getAvailableLanguageModels(): Promise<LanguageModel[]> {
-    const response = await this._fetch("https://api.anthropic.com/v1/models", {
-      headers: {
-        "x-api-key": this.apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-    });
+    const maxRetries = 3;
+    const baseDelay = 1000; // ms
 
-    if (!response.ok) {
-      return [];
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10_000); // 10s total timeout
+
+        const response = await this._fetch("https://api.anthropic.com/v1/models", {
+          headers: {
+            "x-api-key": this.apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+
+        // Don't retry on auth errors
+        if (response.status === 401 || response.status === 403) {
+          log.warn("Anthropic API auth error, not retrying", { status: response.status });
+          return [];
+        }
+
+        // Retry on rate limit or server errors
+        if ([429, 500, 502, 503, 504].includes(response.status)) {
+          log.warn("Anthropic API error, retrying", { status: response.status, attempt: attempt + 1, maxRetries });
+          if (attempt < maxRetries - 1) {
+            await new Promise((r) => setTimeout(r, baseDelay * 2 ** attempt));
+            continue;
+          }
+          return [];
+        }
+
+        if (!response.ok) {
+          log.warn("Failed to fetch Anthropic models", { status: response.status });
+          return [];
+        }
+
+        const payload = (await response.json()) as {
+          data?: Array<{ id?: string; name?: string }>;
+        };
+
+        return (payload.data ?? [])
+          .map((m) => m.id ?? m.name)
+          .filter((id): id is string => typeof id === "string" && id.length > 0)
+          .map((id) => ({ id, name: id, provider: "anthropic" }));
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+
+        // AbortError means timeout
+        if (lastError.name === "AbortError") {
+          log.warn("Anthropic API timeout", { attempt: attempt + 1, maxRetries });
+        } else {
+          log.warn("Anthropic API connection error", { error: lastError.message, attempt: attempt + 1, maxRetries });
+        }
+
+        if (attempt < maxRetries - 1) {
+          await new Promise((r) => setTimeout(r, baseDelay * 2 ** attempt));
+        }
+      }
     }
 
-    const payload = (await response.json()) as {
-      data?: Array<{ id?: string; name?: string }>;
-    };
-
-    return (payload.data ?? [])
-      .map((m) => m.id ?? m.name)
-      .filter((id): id is string => typeof id === "string" && id.length > 0)
-      .map((id) => ({ id, name: id, provider: "anthropic" }));
+    log.error("Failed to fetch Anthropic models after retries", { error: lastError?.message });
+    return [];
   }
 
   private prepareJsonSchema(schema: unknown): unknown {

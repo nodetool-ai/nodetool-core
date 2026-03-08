@@ -59,7 +59,7 @@ export class VLLMProvider extends OpenAIProvider {
     return env;
   }
 
-  override hasToolSupport(_model: string): boolean {
+  override async hasToolSupport(_model: string): Promise<boolean> {
     return true;
   }
 

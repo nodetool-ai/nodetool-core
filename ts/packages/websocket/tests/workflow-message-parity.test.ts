@@ -85,7 +85,7 @@ function mockProvider() {
     },
     async generateMessageTraced() { return {}; },
     generateMessage: vi.fn(),
-    hasToolSupport: () => false,
+    hasToolSupport: async () => false,
     getAvailableLanguageModels: async () => [],
     getAvailableImageModels: async () => [],
     getAvailableVideoModels: async () => [],

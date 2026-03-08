@@ -49,7 +49,7 @@ export class GroqProvider extends OpenAIProvider {
     return { GROQ_API_KEY: this.apiKey };
   }
 
-  override hasToolSupport(_model: string): boolean {
+  override async hasToolSupport(_model: string): Promise<boolean> {
     return true;
   }
 

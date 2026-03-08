@@ -14,7 +14,7 @@ function createMockProvider(toolCallArgs?: Record<string, unknown>) {
   };
   return {
     provider: "mock",
-    hasToolSupport: () => true,
+    hasToolSupport: async () => true,
     generateMessage: vi.fn().mockResolvedValue({
       role: "assistant",
       content: "Working on it...",

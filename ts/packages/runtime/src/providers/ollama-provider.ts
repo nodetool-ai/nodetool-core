@@ -99,9 +99,97 @@ export class OllamaProvider extends BaseProvider {
     return { OLLAMA_API_URL: this.apiUrl };
   }
 
-  hasToolSupport(_model: string): boolean {
-    // Ollama exposes native tools for supported models; leave enabled by default.
-    return true;
+  private _modelInfoCache = new Map<string, Record<string, unknown>>();
+
+  /**
+   * Check if a model supports native tool calling by querying /api/show.
+   * Falls back to true if capabilities can't be determined.
+   */
+  async hasToolSupport(model: string): Promise<boolean> {
+    try {
+      let info = this._modelInfoCache.get(model);
+      if (!info) {
+        const response = await this._fetch(`${this.apiUrl}/api/show`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model }),
+        });
+        if (!response.ok) {
+          log.warn("Failed to fetch model info, assuming tool support", { model, status: response.status });
+          return true;
+        }
+        info = (await response.json()) as Record<string, unknown>;
+        this._modelInfoCache.set(model, info);
+      }
+
+      const capabilities = info.capabilities;
+      if (Array.isArray(capabilities)) {
+        return capabilities.includes("tools");
+      }
+      // No capabilities field — assume supported for backward compatibility
+      return true;
+    } catch (err) {
+      log.warn("Error checking tool support, defaulting to true", { model, error: String(err) });
+      return true;
+    }
+  }
+
+  /**
+   * Format tools as text descriptions for emulation injection into the system prompt.
+   */
+  private _formatToolsForEmulation(tools: ProviderTool[]): string {
+    const lines: string[] = [];
+    for (const tool of tools) {
+      const params = tool.inputSchema?.properties
+        ? Object.entries(tool.inputSchema.properties as Record<string, { type?: string; description?: string }>)
+            .map(([name, prop]) => `${name}: ${prop.type ?? "any"}`)
+            .join(", ")
+        : "";
+      lines.push(`- ${tool.name}(${params}): ${tool.description ?? ""}`);
+    }
+    return lines.join("\n");
+  }
+
+  /**
+   * Parse emulated function calls from model output.
+   * Returns [toolCalls, cleanedContent].
+   */
+  private _parseEmulatedToolCalls(
+    content: string,
+    tools: ProviderTool[],
+  ): [ToolCall[], string] {
+    const toolNames = new Set(tools.map((t) => t.name));
+    const calls: ToolCall[] = [];
+    let cleaned = content;
+
+    // Match patterns like: function_name(key='value', key2=123)
+    // or [func_name(key=value)]
+    const funcPattern = /\[?\b(\w+)\(([^)]*)\)\]?/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = funcPattern.exec(content)) !== null) {
+      const [fullMatch, name, argsStr] = match;
+      if (!toolNames.has(name)) continue;
+
+      // Parse key=value pairs
+      const args: Record<string, unknown> = {};
+      const argPattern = /(\w+)\s*=\s*(?:'([^']*)'|"([^"]*)"|(\S+))/g;
+      let argMatch: RegExpExecArray | null;
+      while ((argMatch = argPattern.exec(argsStr)) !== null) {
+        const key = argMatch[1];
+        const value = argMatch[2] ?? argMatch[3] ?? argMatch[4];
+        // Try to parse as number or boolean
+        if (value === "true") args[key] = true;
+        else if (value === "false") args[key] = false;
+        else if (!isNaN(Number(value)) && value !== "") args[key] = Number(value);
+        else args[key] = value;
+      }
+
+      calls.push({ id: `emulated-${name}-${Date.now()}`, name, args });
+      cleaned = cleaned.replace(fullMatch, "").trim();
+    }
+
+    return [calls, cleaned];
   }
 
   private async imageToBase64(image: MessageImageContent["image"]): Promise<string> {
@@ -272,7 +360,7 @@ export class OllamaProvider extends BaseProvider {
       },
     };
 
-    if ((args.tools ?? []).length > 0 && this.hasToolSupport(args.model)) {
+    if ((args.tools ?? []).length > 0 && (await this.hasToolSupport(args.model))) {
       request.tools = this.formatTools(args.tools ?? []);
     }
 
@@ -303,10 +391,21 @@ export class OllamaProvider extends BaseProvider {
       throw new Error("Ollama provider expects responseFormat; jsonSchema is not supported directly");
     }
 
+    const tools = args.tools ?? [];
+    const useToolEmulation = tools.length > 0 && !(await this.hasToolSupport(args.model));
+
+    // For emulation, inject tool descriptions into messages and strip tools from request
+    let messages = args.messages;
+    let requestTools: ProviderTool[] | undefined = args.tools;
+    if (useToolEmulation) {
+      requestTools = undefined;
+      messages = this._injectToolEmulationPrompt(messages, tools);
+    }
+
     const request = await this.buildChatRequest({
-      messages: args.messages,
+      messages,
       model: args.model,
-      tools: args.tools,
+      tools: requestTools,
       maxTokens: args.maxTokens,
       responseFormat: args.responseFormat,
     });
@@ -317,13 +416,54 @@ export class OllamaProvider extends BaseProvider {
     const response = await this.postJson<{ message?: OllamaChatMessage }>("/api/chat", request);
     const message = response.message ?? {};
     const content = typeof message.content === "string" ? message.content : "";
-    const toolCalls = this.toToolCalls(message.tool_calls);
+
+    let toolCalls: ToolCall[];
+    if (useToolEmulation) {
+      const [emulatedCalls] = this._parseEmulatedToolCalls(content, tools);
+      toolCalls = emulatedCalls;
+    } else {
+      toolCalls = this.toToolCalls(message.tool_calls);
+    }
 
     return {
       role: "assistant",
       content,
       toolCalls,
     };
+  }
+
+  /**
+   * Inject tool emulation instructions into the message list.
+   * Prepends/appends tool descriptions to system message and converts tool messages to user messages.
+   */
+  private _injectToolEmulationPrompt(messages: Message[], tools: ProviderTool[]): Message[] {
+    const toolDescriptions = this._formatToolsForEmulation(tools);
+    const emulationSuffix =
+      `\n\nYou have access to these functions. Call them by writing: function_name(param='value')\n\n${toolDescriptions}\n\nWhen you need a function, write ONLY the function call. After receiving a result, use it in your answer.`;
+
+    const result: Message[] = [];
+    let systemFound = false;
+
+    for (const msg of messages) {
+      if (msg.role === "system" && !systemFound) {
+        systemFound = true;
+        const existingContent = typeof msg.content === "string" ? msg.content : "";
+        result.push({ ...msg, content: existingContent + emulationSuffix });
+      } else if (msg.role === "tool") {
+        // Convert tool result to user message
+        const toolContent = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content ?? null);
+        result.push({ role: "user", content: `Function result: ${toolContent}` });
+      } else {
+        result.push(msg);
+      }
+    }
+
+    // If no system message found, prepend one
+    if (!systemFound) {
+      result.unshift({ role: "system", content: emulationSuffix.trim() });
+    }
+
+    return result;
   }
 
   async *generateMessages(args: {
@@ -343,10 +483,21 @@ export class OllamaProvider extends BaseProvider {
       throw new Error("Ollama provider expects responseFormat; jsonSchema is not supported directly");
     }
 
+    const tools = args.tools ?? [];
+    const useToolEmulation = tools.length > 0 && !(await this.hasToolSupport(args.model));
+
+    // For emulation, inject tool descriptions into messages and strip tools from request
+    let messages = args.messages;
+    let requestTools: ProviderTool[] | undefined = args.tools;
+    if (useToolEmulation) {
+      requestTools = undefined;
+      messages = this._injectToolEmulationPrompt(messages, tools);
+    }
+
     const request = await this.buildChatRequest({
-      messages: args.messages,
+      messages,
       model: args.model,
-      tools: args.tools,
+      tools: requestTools,
       maxTokens: args.maxTokens,
       responseFormat: args.responseFormat,
     });
@@ -367,6 +518,7 @@ export class OllamaProvider extends BaseProvider {
     const decoder = new TextDecoder();
     let buffer = "";
     const reader = response.body.getReader();
+    let accumulatedText = "";
 
     try {
       while (true) {
@@ -387,11 +539,17 @@ export class OllamaProvider extends BaseProvider {
           };
           const message = event.message ?? {};
 
-          for (const tc of this.toToolCalls(message.tool_calls)) {
-            yield tc;
+          if (!useToolEmulation) {
+            for (const tc of this.toToolCalls(message.tool_calls)) {
+              yield tc;
+            }
           }
 
           const content = typeof message.content === "string" ? message.content : "";
+          if (useToolEmulation) {
+            accumulatedText += content;
+          }
+
           if (content.length > 0 || event.done) {
             const chunk: Chunk = {
               type: "chunk",
@@ -399,6 +557,14 @@ export class OllamaProvider extends BaseProvider {
               done: event.done ?? false,
             };
             yield chunk;
+          }
+
+          // When done and using emulation, parse accumulated text for tool calls
+          if (event.done && useToolEmulation) {
+            const [emulatedCalls] = this._parseEmulatedToolCalls(accumulatedText, tools);
+            for (const tc of emulatedCalls) {
+              yield tc;
+            }
           }
         }
       }

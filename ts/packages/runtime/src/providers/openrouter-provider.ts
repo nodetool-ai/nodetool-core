@@ -53,7 +53,7 @@ export class OpenRouterProvider extends OpenAIProvider {
     return { OPENROUTER_API_KEY: this.apiKey };
   }
 
-  override hasToolSupport(model: string): boolean {
+  override async hasToolSupport(model: string): Promise<boolean> {
     const lower = model.toLowerCase();
     if (lower.includes("o1") || lower.includes("o3")) {
       return false;

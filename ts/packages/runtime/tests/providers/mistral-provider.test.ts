@@ -40,13 +40,13 @@ describe("MistralProvider", () => {
     expect(provider.getContainerEnv()).toEqual({ MISTRAL_API_KEY: "test-key" });
   });
 
-  it("has tool support for all models", () => {
+  it("has tool support for all models", async () => {
     const provider = new MistralProvider(
       { MISTRAL_API_KEY: "k" },
       { client: {} as any }
     );
-    expect(provider.hasToolSupport("mistral-large")).toBe(true);
-    expect(provider.hasToolSupport("pixtral-12b")).toBe(true);
+    expect(await provider.hasToolSupport("mistral-large")).toBe(true);
+    expect(await provider.hasToolSupport("pixtral-12b")).toBe(true);
   });
 
   it("fetches available language models", async () => {

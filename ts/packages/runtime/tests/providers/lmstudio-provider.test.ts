@@ -32,9 +32,9 @@ describe("LMStudioProvider", () => {
     expect(env.LMSTUDIO_API_URL).toBe("http://127.0.0.1:1234");
   });
 
-  it("has tool support for all models", () => {
+  it("has tool support for all models", async () => {
     const provider = new LMStudioProvider({}, { client: {} as any });
-    expect(provider.hasToolSupport("some-model")).toBe(true);
+    expect(await provider.hasToolSupport("some-model")).toBe(true);
   });
 
   it("fetches available language models", async () => {

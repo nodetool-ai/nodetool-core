@@ -666,7 +666,7 @@ describe("UnifiedWebSocketRunner: chat_message without thread_id", () => {
           yield { type: "chunk" as const, content: "hi" };
         },
         generateMessage: vi.fn(),
-        hasToolSupport: () => false,
+        hasToolSupport: async () => false,
         getAvailableLanguageModels: async () => [],
         getAvailableImageModels: async () => [],
         getAvailableVideoModels: async () => [],

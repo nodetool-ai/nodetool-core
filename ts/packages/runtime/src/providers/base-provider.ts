@@ -40,7 +40,7 @@ export abstract class BaseProvider {
     return {};
   }
 
-  hasToolSupport(_model: string): boolean {
+  async hasToolSupport(_model: string): Promise<boolean> {
     return true;
   }
 
@@ -255,6 +255,24 @@ export abstract class BaseProvider {
   isContextLengthError(error: unknown): boolean {
     const msg = String(error).toLowerCase();
     return msg.includes("context length") || msg.includes("maximum context");
+  }
+
+  /**
+   * Check if an error is a rate limit error (HTTP 429).
+   * Subclasses may override for provider-specific detection.
+   */
+  isRateLimitError(error: unknown): boolean {
+    const msg = error instanceof Error ? error.message : String(error);
+    return /429|rate.?limit|too many requests/i.test(msg);
+  }
+
+  /**
+   * Check if an error is an authentication error (HTTP 401/403).
+   * Subclasses may override for provider-specific detection.
+   */
+  isAuthError(error: unknown): boolean {
+    const msg = error instanceof Error ? error.message : String(error);
+    return /401|403|unauthorized|forbidden|invalid.*api.*key|authentication/i.test(msg);
   }
 
   protected parseToolCallArgs(raw: unknown): Record<string, unknown> {

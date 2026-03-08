@@ -148,6 +148,76 @@ describe("BaseProvider – isContextLengthError", () => {
   });
 });
 
+describe("BaseProvider – isRateLimitError", () => {
+  const provider = new TestProvider();
+
+  it('returns true for messages containing "429"', () => {
+    expect(provider.isRateLimitError(new Error("HTTP 429 Too Many Requests"))).toBe(true);
+    expect(provider.isRateLimitError("status 429")).toBe(true);
+  });
+
+  it('returns true for messages containing "rate limit" (case-insensitive)', () => {
+    expect(provider.isRateLimitError(new Error("rate limit exceeded"))).toBe(true);
+    expect(provider.isRateLimitError(new Error("Rate Limit"))).toBe(true);
+    expect(provider.isRateLimitError("rate_limit reached")).toBe(true);
+  });
+
+  it('returns true for messages containing "too many requests" (case-insensitive)', () => {
+    expect(provider.isRateLimitError(new Error("too many requests"))).toBe(true);
+    expect(provider.isRateLimitError(new Error("Too Many Requests"))).toBe(true);
+  });
+
+  it("returns false for unrelated errors", () => {
+    expect(provider.isRateLimitError(new Error("400 Bad Request"))).toBe(false);
+    expect(provider.isRateLimitError(new Error("not found"))).toBe(false);
+    expect(provider.isRateLimitError(new Error("timeout"))).toBe(false);
+    expect(provider.isRateLimitError("something else")).toBe(false);
+    expect(provider.isRateLimitError(42)).toBe(false);
+  });
+});
+
+describe("BaseProvider – isAuthError", () => {
+  const provider = new TestProvider();
+
+  it('returns true for messages containing "401"', () => {
+    expect(provider.isAuthError(new Error("HTTP 401"))).toBe(true);
+    expect(provider.isAuthError("status 401")).toBe(true);
+  });
+
+  it('returns true for messages containing "403"', () => {
+    expect(provider.isAuthError(new Error("HTTP 403 Forbidden"))).toBe(true);
+    expect(provider.isAuthError("403 error")).toBe(true);
+  });
+
+  it('returns true for messages containing "unauthorized" (case-insensitive)', () => {
+    expect(provider.isAuthError(new Error("unauthorized"))).toBe(true);
+    expect(provider.isAuthError(new Error("Unauthorized"))).toBe(true);
+  });
+
+  it('returns true for messages containing "forbidden" (case-insensitive)', () => {
+    expect(provider.isAuthError(new Error("forbidden"))).toBe(true);
+    expect(provider.isAuthError(new Error("Forbidden"))).toBe(true);
+  });
+
+  it('returns true for messages containing "invalid api key" (case-insensitive)', () => {
+    expect(provider.isAuthError(new Error("invalid api key"))).toBe(true);
+    expect(provider.isAuthError(new Error("Invalid API Key provided"))).toBe(true);
+  });
+
+  it('returns true for messages containing "authentication" (case-insensitive)', () => {
+    expect(provider.isAuthError(new Error("authentication failed"))).toBe(true);
+    expect(provider.isAuthError(new Error("Authentication required"))).toBe(true);
+  });
+
+  it("returns false for unrelated errors", () => {
+    expect(provider.isAuthError(new Error("400 Bad Request"))).toBe(false);
+    expect(provider.isAuthError(new Error("rate limit"))).toBe(false);
+    expect(provider.isAuthError(new Error("timeout"))).toBe(false);
+    expect(provider.isAuthError("something else")).toBe(false);
+    expect(provider.isAuthError(42)).toBe(false);
+  });
+});
+
 describe("BaseProvider – default method behaviors", () => {
   const provider = new TestProvider();
 
@@ -159,8 +229,8 @@ describe("BaseProvider – default method behaviors", () => {
     expect(provider.getContainerEnv()).toEqual({});
   });
 
-  it("hasToolSupport() returns true", () => {
-    expect(provider.hasToolSupport("any-model")).toBe(true);
+  it("hasToolSupport() returns true", async () => {
+    expect(await provider.hasToolSupport("any-model")).toBe(true);
   });
 
   it("getAvailableLanguageModels() returns []", async () => {

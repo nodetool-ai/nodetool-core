@@ -25,7 +25,7 @@ function createMockProvider(items: ProviderStreamItem[]): BaseProvider {
     async *generateMessagesTraced(...args: any[]) { yield* (this as any).generateMessages(...args); },
     async generateMessageTraced(...args: any[]) { return (this as any).generateMessage(...args); },
     generateMessage: vi.fn(),
-    hasToolSupport: () => true,
+    hasToolSupport: async () => true,
     getAvailableLanguageModels: async () => [],
     getAvailableImageModels: async () => [],
     getAvailableVideoModels: async () => [],

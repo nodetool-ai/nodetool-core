@@ -10,7 +10,7 @@ import type { ProcessingMessage } from "@nodetool/protocol";
 function createMockProvider(delayMs = 0) {
   return {
     provider: "mock",
-    hasToolSupport: () => true,
+    hasToolSupport: async () => true,
     generateMessages: async function* () {
       if (delayMs > 0) {
         await new Promise((r) => setTimeout(r, delayMs));

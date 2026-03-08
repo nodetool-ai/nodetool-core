@@ -390,7 +390,7 @@ describe("UnifiedWebSocketRunner: chat_message stale sequence", () => {
           yield { type: "chunk" as const, content: "Hello!" };
         },
         generateMessage: vi.fn(),
-        hasToolSupport: () => false,
+        hasToolSupport: async () => false,
         getAvailableLanguageModels: async () => [],
         getAvailableImageModels: async () => [],
         getAvailableVideoModels: async () => [],
