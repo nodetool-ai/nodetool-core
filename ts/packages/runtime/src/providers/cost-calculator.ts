@@ -221,6 +221,7 @@ export const PRICING_TIERS: Record<string, PricingTier> = {
  */
 export const MODEL_TO_TIER: Record<string, string> = {
   // GPT-5 Series (newest models) - OpenAI specific
+  "openai:gpt-5": "gpt5Tier",
   "openai:gpt-5.2": "gpt5Tier",
   "openai:gpt-5.2-pro": "gpt5ProTier",
   "openai:gpt-5-mini": "gpt5MiniTier",

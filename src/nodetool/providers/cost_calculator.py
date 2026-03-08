@@ -234,6 +234,7 @@ PRICING_TIERS: dict[str, PricingTier] = {
 #   - tuple[str, str]: (provider, model_id) for provider-specific pricing
 MODEL_TO_TIER: dict[str | tuple[str, str], str] = {
     # GPT-5 Series (newest models) - OpenAI specific
+    ("openai", "gpt-5"): "gpt5_tier",
     ("openai", "gpt-5.2"): "gpt5_tier",
     ("openai", "gpt-5.2-pro"): "gpt5_pro_tier",
     ("openai", "gpt-5-mini"): "gpt5_mini_tier",
