@@ -16,7 +16,8 @@ import type { BaseProvider } from "@nodetool/runtime";
 
 const log = createLogger("nodetool.agents.agent");
 import type { ProcessingContext } from "@nodetool/runtime";
-import type { ProcessingMessage, StepResult } from "@nodetool/protocol";
+import type { ProcessingMessage, StepResult, LogUpdate, TaskUpdate } from "@nodetool/protocol";
+import { TaskUpdateEvent } from "@nodetool/protocol";
 import { BaseAgent } from "./base-agent.js";
 import { TaskPlanner } from "./task-planner.js";
 import { TaskExecutor } from "./task-executor.js";
@@ -166,6 +167,7 @@ export interface AgentOptions {
   planningModel?: string;
   /** Model used for reasoning/refinement within the planner. Defaults to `model`. */
   reasoningModel?: string;
+  description?: string;
   tools?: Tool[];
   inputs?: Record<string, unknown>;
   systemPrompt?: string;
@@ -181,6 +183,7 @@ export interface AgentOptions {
 }
 
 export class Agent extends BaseAgent {
+  private readonly description: string;
   private readonly planningModel: string;
   private readonly reasoningModel: string;
   private readonly maxSteps: number;
@@ -202,6 +205,7 @@ export class Agent extends BaseAgent {
       systemPrompt: opts.systemPrompt,
       maxTokenLimit: opts.maxTokenLimit,
     });
+    this.description = opts.description ?? "";
     this.planningModel = opts.planningModel ?? opts.model;
     this.reasoningModel = opts.reasoningModel ?? opts.model;
     this.maxSteps = opts.maxSteps ?? 10;
@@ -372,6 +376,14 @@ export class Agent extends BaseAgent {
 
     if (!task) {
       log.info("Planning phase started", { name: this.name });
+      yield {
+        type: "log_update",
+        node_id: "agent_planner",
+        node_name: this.name,
+        content: `Planning steps for objective: ${this.objective.slice(0, 100)}...`,
+        severity: "info",
+      } satisfies LogUpdate;
+
       const planner = new TaskPlanner({
         provider: this.provider,
         model: this.planningModel,
@@ -399,12 +411,28 @@ export class Agent extends BaseAgent {
     log.info("Planning complete", { name: this.name, steps: task.steps.length });
     this.task = task;
 
+    if (!this.initialTask) {
+      yield {
+        type: "task_update",
+        event: TaskUpdateEvent.TaskCreated,
+        task: task as unknown as TaskUpdate["task"],
+      } satisfies TaskUpdate;
+    }
+
     // Apply output schema to the last step if specified
     if (this.outputSchema && task.steps.length > 0) {
       task.steps[task.steps.length - 1].outputSchema = JSON.stringify(this.outputSchema);
     }
 
     log.info("Executing task", { name: this.name, title: task.title });
+
+    yield {
+      type: "log_update",
+      node_id: "agent_executor",
+      node_name: this.name,
+      content: `Starting execution of ${task.steps.length} steps...`,
+      severity: "info",
+    } satisfies LogUpdate;
 
     // Execute: run TaskExecutor over the planned steps
     const executor = new TaskExecutor({
@@ -424,7 +452,13 @@ export class Agent extends BaseAgent {
       if (item.type === "step_result") {
         const stepResult = item as StepResult;
         if (stepResult.is_task_result) {
+          log.info("Setting final results", { objective: this.objective.slice(0, 50) });
           this.results = stepResult.result;
+          yield {
+            type: "task_update",
+            event: TaskUpdateEvent.TaskCompleted,
+            task: task as unknown as TaskUpdate["task"],
+          } satisfies TaskUpdate;
         }
       }
       yield item;
