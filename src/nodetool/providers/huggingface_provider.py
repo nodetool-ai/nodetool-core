@@ -1148,6 +1148,66 @@ class HuggingFaceProvider(BaseProvider):
             log.error(f"HuggingFace TTS generation failed: {e}")
             raise RuntimeError(f"HuggingFace TTS generation failed: {str(e)}") from e
 
+    async def automatic_speech_recognition(
+        self,
+        audio: bytes,
+        model: str,
+        language: str | None = None,
+        prompt: str | None = None,
+        temperature: float = 0.0,
+        timeout_s: int | None = None,
+        context: Any = None,
+        **kwargs: Any,
+    ) -> str:
+        """Transcribe audio to text using HuggingFace ASR models.
+
+        Args:
+            audio: Input audio as bytes
+            model: Model identifier
+            language: Optional language code
+            prompt: Optional prompt
+            temperature: Sampling temperature
+            timeout_s: Optional timeout in seconds
+            context: Optional processing context
+            **kwargs: Additional parameters
+
+        Returns:
+            str: Transcribed text
+        """
+        log.debug(f"Transcribing audio with HuggingFace model: {model}")
+
+        if not audio:
+            raise ValueError("audio bytes must not be empty")
+
+        try:
+            client = self.get_client()
+            
+            # Prepare optional parameters
+            # Note: AsyncInferenceClient.automatic_speech_recognition parameters might vary by version
+            # but generally accepts the binary audio data
+            
+            # We call the method directly. 
+            # Based on docs: https://huggingface.co/docs/inference-providers/en/tasks/automatic-speech-recognition
+            # The result object typically contains 'text' field or is a JSON object.
+            
+            result = await client.automatic_speech_recognition(
+                audio,
+                model=model,
+            )
+            
+            log.debug("HuggingFace ASR API call successful")
+            
+            # If it's a dict or object (parsed JSON)
+            if isinstance(result, dict):
+                if "text" in result:
+                    return result["text"]
+                
+            return str(result)
+
+        except Exception as e:
+            log.error(f"HuggingFace ASR failed: {e}")
+            raise RuntimeError(f"HuggingFace ASR failed: {str(e)}") from e
+
     async def get_available_tts_models(self) -> list[TTSModel]:
         """
         Get available HuggingFace TTS models.
@@ -1158,6 +1218,8 @@ class HuggingFaceProvider(BaseProvider):
         Returns:
             List of TTSModel instances for HuggingFace TTS
         """
+
+
         if not self.api_key:
             log.debug("No HuggingFace API key configured, returning empty TTS model list")
             return []
@@ -1198,33 +1260,90 @@ class HuggingFaceProvider(BaseProvider):
             raise ValueError("prompt must not be empty")
 
         try:
-            # Use the text_to_image method from AsyncInferenceClient
             client = self.get_client()
-            image = await client.text_to_image(
-                prompt=params.prompt,
-                model=params.model.id,
-                negative_prompt=params.negative_prompt or None,
-                height=params.height if params.height else None,
-                width=params.width if params.width else None,
-                num_inference_steps=params.num_inference_steps,
-                guidance_scale=params.guidance_scale,
-                seed=params.seed if params.seed and params.seed >= 0 else None,
-                scheduler=params.scheduler if hasattr(params, "scheduler") and params.scheduler else None,
-            )
+
+            # manually construct payload to allow inspecting raw bytes (some providers return JSON with URL)
+            payload = {"inputs": params.prompt}
+            parameters = {}
+
+            if params.negative_prompt:
+                parameters["negative_prompt"] = params.negative_prompt
+            
+            if params.height:
+                parameters["height"] = params.height
+                
+            if params.width:
+                parameters["width"] = params.width
+                
+            if params.num_inference_steps:
+                parameters["num_inference_steps"] = params.num_inference_steps
+                
+            if params.guidance_scale:
+                parameters["guidance_scale"] = params.guidance_scale
+                
+            # Preserve original logic for seed: ignore if 0 or None
+            if params.seed and params.seed >= 0:
+                parameters["seed"] = params.seed
+                
+            if hasattr(params, "scheduler") and params.scheduler:
+                parameters["scheduler"] = params.scheduler
+
+            if parameters:
+                payload["parameters"] = parameters
+
+            # Use post to get raw bytes
+            image_bytes = await client.post(json=payload, model=params.model.id)  # type: ignore
 
             log.debug("HuggingFace text-to-image API call successful")
 
-            # Convert PIL Image to bytes
+            # Check if response is JSON (some providers return a URL in JSON instead of raw bytes)
+            # See: https://huggingface.co/docs/inference-providers/en/tasks/text-to-image#response
+            if image_bytes and image_bytes.startswith(b"{"):
+                try:
+                    data = json.loads(image_bytes)
+                    if isinstance(data, dict):
+                        url = None
+                        # Check common patterns
+                        if "image" in data:
+                            image_val = data["image"]
+                            if isinstance(image_val, dict) and "url" in image_val:
+                                url = image_val["url"]
+                            elif isinstance(image_val, str) and image_val.startswith("http"):
+                                url = image_val
+                        elif "url" in data:
+                            url = data["url"]
+
+                        if url:
+                            log.debug(f"Fetching image from URL: {url}")
+                            async with aiohttp.ClientSession() as session:
+                                async with session.get(url) as resp:
+                                    if resp.status == 200:
+                                        image_bytes = await resp.read()
+                                    else:
+                                        log.warning(f"Failed to fetch image from URL {url}: {resp.status}")
+                except (json.JSONDecodeError, ValueError, Exception) as e:
+                    # Not JSON or failed to process, assume raw bytes
+                    log.debug(f"Failed to process response as JSON, assuming raw bytes: {e}")
+
+            # Convert to PNG using PIL to ensure consistent output format
             import io
+            from PIL import Image
 
-            img_bytes = io.BytesIO()
-            image.save(img_bytes, format="PNG")
-            img_bytes.seek(0)
+            try:
+                if not image_bytes:
+                     raise RuntimeError("No image data received")
 
-            result = img_bytes.read()
-            log.debug(f"Generated {len(result)} bytes of image data")
-
-            return result
+                image = Image.open(io.BytesIO(image_bytes))
+                img_bytes = io.BytesIO()
+                image.save(img_bytes, format="PNG")
+                img_bytes.seek(0)
+                
+                result = img_bytes.read()
+                log.debug(f"Generated {len(result)} bytes of image data")
+                return result
+            except Exception as e:
+                # If we couldn't parse it as an image, generic error
+                raise RuntimeError(f"Failed to parse image data: {str(e)}") from e
 
         except Exception as e:
             log.error(f"HuggingFace text-to-image generation failed: {e}")
@@ -1430,8 +1549,6 @@ class HuggingFaceProvider(BaseProvider):
                 model=params.model.id,
                 **api_params,
             )
-
-            log.debug("HuggingFace text-to-video API call successful")
 
             # video_bytes should be raw video bytes from the API
             log.debug(f"Generated {len(video_bytes)} bytes of video data")
