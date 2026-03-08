@@ -1,4 +1,3 @@
-
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -27,7 +26,7 @@ async def test_terminal_rejects_external_ip_when_auth_disabled(monkeypatch):
     mock_ws = AsyncMock(spec=WebSocket)
     # Important: The mock must have the attributes expected by the endpoint
     mock_ws.client = MagicMock()
-    mock_ws.client.host = "192.168.1.5" # External IP
+    mock_ws.client.host = "192.168.1.5"  # External IP
 
     # The endpoint is an async function (or coroutine function)
     endpoint = terminal_route.endpoint

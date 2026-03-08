@@ -10,7 +10,6 @@ from nodetool.models.condition_builder import Field
 
 
 class Message(DBModel):
-
     @field_validator("tools", "collections", mode="before")
     @classmethod
     def _deserialize_str_list(cls, v: Any) -> Any:
@@ -36,6 +35,7 @@ class Message(DBModel):
             except (json.JSONDecodeError, TypeError):
                 pass
         return v
+
     @classmethod
     def get_table_schema(cls):
         return {

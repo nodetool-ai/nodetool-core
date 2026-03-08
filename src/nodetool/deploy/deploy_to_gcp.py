@@ -123,22 +123,14 @@ def get_gcp_default_env(deployment: GCPDeployment) -> dict[str, str]:
     gcs_mount_path = deployment.storage.gcs_mount_path if deployment.storage else "/mnt/gcs"
 
     env["NODETOOL_SERVER_MODE"] = "private"
-    env["HF_HOME"] = (
-        f"{gcs_mount_path}/.cache/huggingface" if gcs_bucket else "/workspace/.cache/huggingface"
-    )
+    env["HF_HOME"] = f"{gcs_mount_path}/.cache/huggingface" if gcs_bucket else "/workspace/.cache/huggingface"
     env["HF_HUB_CACHE"] = (
-        f"{gcs_mount_path}/.cache/huggingface/hub"
-        if gcs_bucket
-        else "/workspace/.cache/huggingface/hub"
+        f"{gcs_mount_path}/.cache/huggingface/hub" if gcs_bucket else "/workspace/.cache/huggingface/hub"
     )
     env["TRANSFORMERS_CACHE"] = (
-        f"{gcs_mount_path}/.cache/transformers"
-        if gcs_bucket
-        else "/workspace/.cache/transformers"
+        f"{gcs_mount_path}/.cache/transformers" if gcs_bucket else "/workspace/.cache/transformers"
     )
-    env["OLLAMA_MODELS"] = (
-        f"{gcs_mount_path}/.ollama/models" if gcs_bucket else "/workspace/.ollama/models"
-    )
+    env["OLLAMA_MODELS"] = f"{gcs_mount_path}/.ollama/models" if gcs_bucket else "/workspace/.ollama/models"
 
     persistent_paths = deployment.persistent_paths
     if persistent_paths:

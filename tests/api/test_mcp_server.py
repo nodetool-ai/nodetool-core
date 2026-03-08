@@ -573,7 +573,9 @@ class TestCollectionOperations:
     @pytest.mark.asyncio
     async def test_query_collection(self):
         """Test querying a collection."""
-        with patch("nodetool.integrations.vectorstores.chroma.async_chroma_client.get_async_collection") as mock_get_col:
+        with patch(
+            "nodetool.integrations.vectorstores.chroma.async_chroma_client.get_async_collection"
+        ) as mock_get_col:
             mock_collection = AsyncMock()
             mock_collection.query = AsyncMock(
                 return_value={
@@ -592,7 +594,9 @@ class TestCollectionOperations:
             assert len(result["documents"][0]) == 2
 
 
-@pytest.mark.skip(reason="Chat thread tools (list_threads, get_thread, get_thread_messages) are not implemented in mcp_tools")
+@pytest.mark.skip(
+    reason="Chat thread tools (list_threads, get_thread, get_thread_messages) are not implemented in mcp_tools"
+)
 class TestChatOperations:
     """Test chat thread and message MCP tools."""
 

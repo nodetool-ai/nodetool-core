@@ -1,6 +1,5 @@
 """Agent mode management commands."""
 
-
 from nodetool.chat.chat_cli import ChatCLI
 
 from .base import Command
@@ -30,7 +29,9 @@ class AgentCommand(Command):
 
             mcp_tools = get_all_mcp_tools()
             cli.console.print("[bold green]Agent mode: OMNIPOTENT[/bold green]")
-            cli.console.print(f"[cyan]Agent now has access to {len(mcp_tools)} MCP tools for full nodetool control[/cyan]")
+            cli.console.print(
+                f"[cyan]Agent now has access to {len(mcp_tools)} MCP tools for full nodetool control[/cyan]"
+            )
         elif args[0].lower() == "off":
             cli.agent_mode = False
             cli.console.print("[bold red]Agent mode turned OFF[/bold red]")

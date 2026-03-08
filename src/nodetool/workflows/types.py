@@ -41,8 +41,10 @@ def sanitize_memory_uris_for_client(value: Any) -> Any:
                     # No data or asset_id, clear the URI
                     sanitized["uri"] = ""
                 # Recursively sanitize other fields
-                return {k: sanitize_memory_uris_for_client(v) if k not in ("uri", "data", "asset_id") else v
-                        for k, v in sanitized.items()}
+                return {
+                    k: sanitize_memory_uris_for_client(v) if k not in ("uri", "data", "asset_id") else v
+                    for k, v in sanitized.items()
+                }
             else:
                 # Recursively sanitize nested values
                 return {k: sanitize_memory_uris_for_client(v) for k, v in value.items()}

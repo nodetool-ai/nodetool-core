@@ -135,6 +135,7 @@ from .message_processor import MessageProcessor
 
 log = get_logger(__name__)
 
+
 def detect_mime_type(data: bytes) -> str:
     """Detect mime type from bytes magic numbers."""
     if data.startswith(b"\x89PNG\r\n\x1a\n"):

@@ -168,9 +168,7 @@ Content for section 2.
         """Test with custom chunk parameters."""
         text = " ".join(["word"] * 1000)
         doc = Document(text=text, doc_id="md1")
-        ids_docs, _ = chunk_documents_markdown(
-            [doc], chunk_size=100, chunk_overlap=20
-        )
+        ids_docs, _ = chunk_documents_markdown([doc], chunk_size=100, chunk_overlap=20)
 
         assert len(ids_docs) >= 1
 
@@ -221,11 +219,7 @@ class TestFindInputNodes:
 
     def test_find_file_input(self) -> None:
         """Test finding FileInput node."""
-        graph = {
-            "nodes": [
-                {"type": "nodetool.input.FileInput", "data": {"name": "my_file"}}
-            ]
-        }
+        graph = {"nodes": [{"type": "nodetool.input.FileInput", "data": {"name": "my_file"}}]}
         collection_input, file_input = find_input_nodes(graph)
 
         assert collection_input is None
@@ -264,11 +258,7 @@ class TestFindInputNodes:
 
     def test_no_input_nodes(self) -> None:
         """Test graph with no input nodes."""
-        graph = {
-            "nodes": [
-                {"type": "nodetool.text.GenerateText", "data": {"prompt": "test"}}
-            ]
-        }
+        graph = {"nodes": [{"type": "nodetool.text.GenerateText", "data": {"prompt": "test"}}]}
         collection_input, file_input = find_input_nodes(graph)
 
         assert collection_input is None

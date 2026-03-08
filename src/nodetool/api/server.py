@@ -715,10 +715,7 @@ def create_app(
         errors = exc.errors()
         if Environment.is_production():
             # Sanitize error details for production (remove field locations that might expose internals)
-            sanitized_errors = [
-                {"msg": e["msg"], "type": e["type"]}
-                for e in errors
-            ]
+            sanitized_errors = [{"msg": e["msg"], "type": e["type"]} for e in errors]
             return JSONResponse(
                 {
                     "detail": "Request validation failed",
@@ -866,7 +863,9 @@ def create_app(
                         if hostname not in allowed_hosts:
                             log.warning(f"Blocking terminal access from origin {origin} because auth is not enforced.")
                             await websocket.accept()
-                            await websocket.close(code=1008, reason="Terminal access from external origin is not allowed.")
+                            await websocket.close(
+                                code=1008, reason="Terminal access from external origin is not allowed."
+                            )
                             return
                     except Exception as e:
                         log.warning(f"Failed to parse origin {origin}: {e}")

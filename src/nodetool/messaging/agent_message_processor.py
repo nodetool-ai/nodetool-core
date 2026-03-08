@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
 log = get_logger(__name__)
 
+
 def _get_encoding_for_model(model: Optional[str]):
     try:
         import tiktoken  # type: ignore

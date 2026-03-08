@@ -79,7 +79,6 @@ def temp_workspace():
         (workspace / "proxy").mkdir()
         (workspace / "acme").mkdir()
 
-
         yield workspace
 
 

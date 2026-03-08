@@ -136,11 +136,11 @@ class TestExtractJsonFromMessage:
         from nodetool.metadata.types import Message
         from nodetool.utils.message_parsing import extract_json_from_message
 
-        content = '''Here is some text
+        content = """Here is some text
 ```json
 {"key": "value"}
 ```
-More text'''
+More text"""
         msg = Message(role="assistant", content=content)
         result = extract_json_from_message(msg)
         assert result == {"key": "value"}
@@ -150,11 +150,11 @@ More text'''
         from nodetool.metadata.types import Message
         from nodetool.utils.message_parsing import extract_json_from_message
 
-        content = '''Here is some text
+        content = """Here is some text
 ```
 {"key": "value"}
 ```
-More text'''
+More text"""
         msg = Message(role="assistant", content=content)
         result = extract_json_from_message(msg)
         assert result == {"key": "value"}

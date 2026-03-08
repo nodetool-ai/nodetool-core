@@ -299,7 +299,7 @@ class CheckpointManager:
                 # Use the most recent update time as checkpoint time
                 latest_update = max(
                     (state.get("updated_at") for state in states_data if state.get("updated_at")),  # type: ignore
-                    default=None
+                    default=None,
                 )
                 if latest_update:
                     checkpoint_time = latest_update
@@ -412,6 +412,7 @@ class CheckpointManager:
 
 # Optional hook functions for integration with workflow runner
 # These are designed to be called at strategic points without modifying runner code
+
 
 async def create_checkpoint_hook(
     checkpoint_mgr: CheckpointManager | None,

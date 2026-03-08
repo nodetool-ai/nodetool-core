@@ -160,7 +160,12 @@ async def test_control_edge_multiple_triggers():
         Node(
             id="controller",
             type="nodetool.workflows.test_helper.SimpleController",
-            data={"control_threshold": 0.5, "control_mode": "strict", "trigger_on_init": True, "include_properties": False},
+            data={
+                "control_threshold": 0.5,
+                "control_mode": "strict",
+                "trigger_on_init": True,
+                "include_properties": False,
+            },
         ),
         Node(id="accumulator", type="nodetool.workflows.test_helper.IntAccumulator", data={"value": 0}),
     ]

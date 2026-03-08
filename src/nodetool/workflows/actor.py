@@ -1345,7 +1345,9 @@ class NodeActor:
             for param_name, param_value in self._current_control_properties.items():
                 error = node.assign_property(param_name, param_value, allow_undefined_properties=False)
                 if error:
-                    self.logger.error(f"Error assigning control override {param_name} on streaming node {self.node._id}: {error}")
+                    self.logger.error(
+                        f"Error assigning control override {param_name} on streaming node {self.node._id}: {error}"
+                    )
                 else:
                     self.logger.info(
                         f"Applied control override to controlled streaming node {self.node._id}: {param_name}={param_value}"

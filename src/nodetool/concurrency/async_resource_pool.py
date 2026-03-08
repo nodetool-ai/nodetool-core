@@ -347,9 +347,7 @@ class AsyncResourcePool(Generic[T]):
                     break
 
             if pooled is None:
-                raise ValueError(
-                    "Resource was not acquired from this pool or already released"
-                )
+                raise ValueError("Resource was not acquired from this pool or already released")
 
             self._in_use.remove(pooled)
 
@@ -410,10 +408,7 @@ class AsyncResourcePool(Generic[T]):
             # Keep enough resources to satisfy min_size
             while self._available and (self.size - pruned) > self._min_size:
                 candidate = self._available[-1]
-                if (
-                    candidate.is_expired(self._max_age)
-                    or candidate.is_idle_too_long(self._max_idle_time)
-                ):
+                if candidate.is_expired(self._max_age) or candidate.is_idle_too_long(self._max_idle_time):
                     candidate = self._available.pop()
                     await self._close_resource(candidate)
                     pruned += 1

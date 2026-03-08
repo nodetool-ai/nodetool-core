@@ -182,6 +182,7 @@ def get_secret_sync(key: str, default: Optional[str] = None, user_id: Optional[s
             # We're in an async context - need to handle carefully
             try:
                 import nest_asyncio
+
                 nest_asyncio.apply()
                 # Use the running loop with nest_asyncio to preserve context
                 return loop.run_until_complete(get_secret(key, resolved_user_id, default))

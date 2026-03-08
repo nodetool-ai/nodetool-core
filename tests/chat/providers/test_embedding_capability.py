@@ -171,9 +171,7 @@ class TestOllamaEmbeddings:
         async def mock_embed(**kwargs):
             return MockResponse([mock_embedding])
 
-        with patch(
-            "nodetool.providers.ollama_provider.get_ollama_client"
-        ) as mock_get_client:
+        with patch("nodetool.providers.ollama_provider.get_ollama_client") as mock_get_client:
             mock_client = AsyncMock()
             mock_client.embed = mock_embed
             mock_get_client.return_value.__aenter__.return_value = mock_client
@@ -203,9 +201,7 @@ class TestOllamaEmbeddings:
         async def mock_embed(**kwargs):
             return MockResponse(mock_embeddings)
 
-        with patch(
-            "nodetool.providers.ollama_provider.get_ollama_client"
-        ) as mock_get_client:
+        with patch("nodetool.providers.ollama_provider.get_ollama_client") as mock_get_client:
             mock_client = AsyncMock()
             mock_client.embed = mock_embed
             mock_get_client.return_value.__aenter__.return_value = mock_client

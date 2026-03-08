@@ -1,6 +1,7 @@
 """
 Tests for AudioStream type.
 """
+
 import numpy as np
 import pytest
 

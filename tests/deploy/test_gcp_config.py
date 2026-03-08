@@ -1,6 +1,7 @@
 """
 Unit tests for GCP configuration and deployment logic.
 """
+
 from typing import Optional
 from unittest.mock import MagicMock, patch
 
@@ -26,6 +27,7 @@ class TestGCPResourceConfig:
         config = GCPResourceConfig(gpu_type="nvidia-l4", gpu_count=1)
         assert config.gpu_type == "nvidia-l4"
         assert config.gpu_count == 1
+
 
 class TestGCPDeployment:
     """Tests for GCPDeployment model."""
@@ -69,12 +71,7 @@ class TestGCPDeployment:
         )
 
         # Call deploy_to_gcp
-        deploy_to_gcp(
-            deployment,
-            skip_build=True,
-            skip_push=False,
-            skip_permission_setup=True
-        )
+        deploy_to_gcp(deployment, skip_build=True, skip_push=False, skip_permission_setup=True)
 
         # Verify deploy_to_cloud_run was called with correct GPU arguments
         mock_deploy_to_cloud_run.assert_called_once()
@@ -110,12 +107,7 @@ class TestGCPDeployment:
         )
 
         # Call deploy_to_gcp
-        deploy_to_gcp(
-            deployment,
-            skip_build=True,
-            skip_push=False,
-            skip_permission_setup=True
-        )
+        deploy_to_gcp(deployment, skip_build=True, skip_push=False, skip_permission_setup=True)
 
         # Verify deploy_to_cloud_run was called with correct GPU arguments
         mock_deploy_to_cloud_run.assert_called_once()

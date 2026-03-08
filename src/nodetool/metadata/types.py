@@ -104,6 +104,7 @@ class BaseType(BaseModel):
             raise ValueError(f"Unknown type name: {type_name}. Types must derive from BaseType. Data: {data}")
         return NameToType[type_name](**data)
 
+
 class ImageSize(BaseType):
     """
     Represents image dimensions with optional preset.
@@ -119,7 +120,6 @@ class ImageSize(BaseType):
         if self.preset:
             return f"{self.preset} ({self.width}x{self.height})"
         return f"{self.width}x{self.height}"
-
 
 
 class Collection(BaseType):
@@ -1537,6 +1537,7 @@ class TorchTensor(BaseType):
 
     def _validate_nbytes(self) -> None:
         import numpy as np
+
         assert self.value is not None, "No bytes stored"
         itemsize = np.dtype(self.dtype).itemsize
         expected = int(np.prod(self.shape)) * itemsize
@@ -1598,6 +1599,7 @@ class TorchTensor(BaseType):
     @staticmethod
     def from_list(arr: list, **kwargs) -> "TorchTensor":
         import numpy as np
+
         np_arr = np.array(arr)
         return TorchTensor.from_numpy(np_arr, **kwargs)
 
@@ -1616,6 +1618,7 @@ class NPArray(BaseType):
 
     def to_numpy(self) -> "np.ndarray":
         import numpy as np
+
         assert self.value is not None
         return np.frombuffer(self.value, dtype=np.dtype(self.dtype)).reshape(self.shape)
 
@@ -1629,12 +1632,14 @@ class NPArray(BaseType):
     @staticmethod
     def from_list(arr: list, **_kwargs):
         import numpy as np
+
         return NPArray.from_numpy(np.array(arr))
 
 
 def to_numpy(num: float | int | NPArray) -> "np.ndarray":
     if type(num) in (float, int, list):
         import numpy as np
+
         return np.array(num)
     elif type(num) is NPArray:
         return num.to_numpy()
@@ -2452,6 +2457,7 @@ class EmailSearchCriteria(BaseType):
         folder: IMAP folder to search in (defaults to INBOX)
         text: Full-text search across all email fields
     """
+
     type: Literal["email_search_criteria"] = "email_search_criteria"
     from_address: Optional[str] = None
     to_address: Optional[str] = None

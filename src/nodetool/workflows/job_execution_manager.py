@@ -173,7 +173,9 @@ class JobExecutionManager:
                 request, context, job_id=job_id, execution_id=execution_id
             )
         elif request.execution_strategy == ExecutionStrategy.DOCKER:
-            job_exec = await DockerJobExecution.create_and_start(request, context, job_id=job_id, execution_id=execution_id)
+            job_exec = await DockerJobExecution.create_and_start(
+                request, context, job_id=job_id, execution_id=execution_id
+            )
         else:
             raise ValueError(f"Unknown execution strategy: {request.execution_strategy}")
 
@@ -343,6 +345,7 @@ class JobExecutionManager:
         # If any GPU node's inference thread was stuck and didn't release the lock
         # during job cancellation, ensure it's freed for the next server start.
         from nodetool.workflows.workflow_runner import force_release_gpu_lock
+
         force_release_gpu_lock()
 
         log.info("JobExecutionManager shutdown complete")

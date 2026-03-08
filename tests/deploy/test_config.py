@@ -228,7 +228,7 @@ class TestConfigSerialization:
                     host="remote",
                     ssh=SSHConfig(user="root", key_path="/tmp/key"),
                     port=8000,
-                )
+                ),
             }
         )
 

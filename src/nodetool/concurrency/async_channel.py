@@ -4,6 +4,7 @@ Async Channel for producer-consumer patterns.
 Provides a typed wrapper around asyncio.Queue with additional convenience methods
 for send/receive operations and graceful closing.
 """
+
 import asyncio
 from typing import Any, Generic, TypeVar
 
@@ -133,9 +134,7 @@ class AsyncChannel(Generic[T]):
         """
         return self._queue.get_nowait()
 
-    async def receive_or_wait(
-        self, timeout: float | None = None
-    ) -> T | None:
+    async def receive_or_wait(self, timeout: float | None = None) -> T | None:
         """
         Receive an item from the channel with optional timeout.
 
@@ -257,9 +256,7 @@ async def create_channel(
     return AsyncChannel(max_size=max_size)
 
 
-async def fan_in(
-    *channels: AsyncChannel[T], output_max_size: int = 0
-) -> AsyncChannel[T]:
+async def fan_in(*channels: AsyncChannel[T], output_max_size: int = 0) -> AsyncChannel[T]:
     """
     Fan-in multiple channels into a single output channel.
 

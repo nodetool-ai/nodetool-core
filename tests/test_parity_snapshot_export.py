@@ -1,4 +1,5 @@
 """Tests for the parity snapshot export script."""
+
 from __future__ import annotations
 
 import json
@@ -6,7 +7,6 @@ import subprocess
 import sys
 
 import pytest
-
 
 SCRIPT = "scripts/export_parity_snapshot.py"
 
@@ -59,9 +59,7 @@ class TestModelExport:
         data = _run_export("models")
         for name, schema in data["models"].items():
             for col_name, col_def in schema["columns"].items():
-                assert col_def["type"] in valid_types, (
-                    f"{name}.{col_name} has invalid type '{col_def['type']}'"
-                )
+                assert col_def["type"] in valid_types, f"{name}.{col_name} has invalid type '{col_def['type']}'"
 
     def test_asset_model_structure(self) -> None:
         data = _run_export("models")
@@ -97,9 +95,7 @@ class TestLibraryExport:
 
     def test_dbmodel_methods(self) -> None:
         data = _run_export("library")
-        dbmodel = next(
-            (c for c in data["library"] if c["class"] == "DBModel"), None
-        )
+        dbmodel = next((c for c in data["library"] if c["class"] == "DBModel"), None)
         assert dbmodel is not None, "DBModel not found in library export"
         method_names = {m["name"] for m in dbmodel["methods"]}
         assert "save" in method_names

@@ -5,7 +5,6 @@ This module provides REST endpoints for managing users via API.
 Works with all deployment types: Docker, Root, GCP, RunPod.
 """
 
-
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 

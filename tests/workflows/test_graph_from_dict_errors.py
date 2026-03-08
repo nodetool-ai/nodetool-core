@@ -10,12 +10,14 @@ class ValidTestNode(BaseNode):
     def get_node_type(cls):
         return "tests.workflows.ValidTestNode"
 
+
 class StrictNode(BaseNode):
     int_val: int = 0
 
     @classmethod
     def get_node_type(cls):
         return "tests.workflows.StrictNode"
+
 
 class TestGraphFromDictErrors:
     """
@@ -62,7 +64,7 @@ class TestGraphFromDictErrors:
                 {
                     "id": "node1",
                     "type": "tests.workflows.StrictNode",
-                    "data": {"int_val": "not_an_int"}, # Invalid value for int
+                    "data": {"int_val": "not_an_int"},  # Invalid value for int
                 }
             ],
             "edges": [],
@@ -87,7 +89,7 @@ class TestGraphFromDictErrors:
                     "id": "node2",
                     "type": "tests.workflows.ValidTestNode",
                     "data": {},
-                }
+                },
             ],
             "edges": [
                 {
@@ -124,7 +126,7 @@ class TestGraphFromDictErrors:
                 {
                     "source": "node1",
                     "sourceHandle": "output",
-                    "target": "node2", # Non-existent
+                    "target": "node2",  # Non-existent
                     "targetHandle": "input",
                     "id": "edge1",
                 }

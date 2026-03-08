@@ -45,10 +45,13 @@ class TestInspectHfCachedModel:
         """Test error when model is not found in cache."""
         from nodetool.tools.hf_tools import HfTools
 
-        with patch(
-            "nodetool.tools.hf_tools.read_cached_hf_models",
-            return_value=[],
-        ), pytest.raises(ValueError, match="not found in cache"):
+        with (
+            patch(
+                "nodetool.tools.hf_tools.read_cached_hf_models",
+                return_value=[],
+            ),
+            pytest.raises(ValueError, match="not found in cache"),
+        ):
             await HfTools.inspect_hf_cached_model("nonexistent/model")
 
     @pytest.mark.asyncio

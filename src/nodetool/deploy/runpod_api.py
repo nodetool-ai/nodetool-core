@@ -372,11 +372,7 @@ def get_runpod_endpoint_by_name(endpoint_name: str, quiet: bool = False) -> dict
     endpoints_response = make_runpod_api_call("endpoints", "GET")
 
     # Handle response that could be a list or a dict with "endpoints" key
-    endpoints = (
-        endpoints_response
-        if isinstance(endpoints_response, list)
-        else endpoints_response.get("endpoints", [])
-    )
+    endpoints = endpoints_response if isinstance(endpoints_response, list) else endpoints_response.get("endpoints", [])
 
     if not quiet:
         print(f"🔍 Looking for endpoint: '{endpoint_name}'")

@@ -103,4 +103,3 @@ async def test_sqlite_write_lock_timeout_does_not_leak_lock():
             await conn3.commit()
 
         await pool.close_all()
-

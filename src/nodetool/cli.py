@@ -476,7 +476,7 @@ def workflows_run(workflow_id: str, params_json: str | None, params_file: str | 
         raise click.UsageError(
             "--params/--params-file must decode to a JSON object (dict). "
             f"Got type: {type(params).__name__}. "
-            "Example: '{\"param_name\": \"value\"}'"
+            'Example: \'{"param_name": "value"}\''
         )
 
     async def _run() -> dict[str, Any]:
@@ -731,7 +731,7 @@ def jobs_start(
         raise click.UsageError(
             "--params/--params-file must decode to a JSON object (dict). "
             f"Got type: {type(params).__name__}. "
-            "Example: '{\"param_name\": \"value\"}'"
+            'Example: \'{"param_name": "value"}\''
         )
 
     async def _run() -> dict[str, Any]:
@@ -973,8 +973,7 @@ def _run_load_dsl_file(path: str) -> ApiGraph:
     # Look for the standardized `graph` object
     if not hasattr(module, "graph"):
         raise ValueError(
-            f"DSL file '{path}' must define a module-level 'graph' object.\n"
-            "Example: graph = graph(node1, node2, ...)"
+            f"DSL file '{path}' must define a module-level 'graph' object.\nExample: graph = graph(node1, node2, ...)"
         )
 
     graph_obj = module.graph

@@ -262,11 +262,9 @@ class TestDownloadHttpUri:
         import httpx
 
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=httpx.HTTPStatusError(
-            "Not Found",
-            request=MagicMock(),
-            response=MagicMock(status_code=404)
-        ))
+        mock_client.get = AsyncMock(
+            side_effect=httpx.HTTPStatusError("Not Found", request=MagicMock(), response=MagicMock(status_code=404))
+        )
 
         with patch.object(httpx, "AsyncClient") as mock_async_client:
             mock_async_client.return_value.__aenter__ = AsyncMock(return_value=mock_client)

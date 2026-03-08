@@ -4,7 +4,6 @@ HTTP header filtering utilities for the async reverse proxy.
 Filters hop-by-hop headers and other headers that should not be forwarded.
 """
 
-
 # RFC 7230: Hop-by-hop headers that must not be forwarded
 HOP_BY_HOP_HEADERS = {
     "connection",

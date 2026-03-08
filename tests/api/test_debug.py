@@ -34,7 +34,9 @@ class TestSecretRedaction:
     def test_redact_token_values(self):
         """Test that tokens are redacted."""
         # Use a valid JWT-like token (20+ chars with proper format)
-        data = {"token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.abc123def456"}
+        data = {
+            "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.abc123def456"
+        }
         result = _redact_secrets(data)
         assert result["token"] == "[REDACTED]"
 
@@ -58,7 +60,9 @@ class TestSecretRedaction:
             "config": {
                 "api_key": "sk-secretkey12345",
                 "database_url": "postgresql://localhost",
-                "nested": {"token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.abc123def456"},
+                "nested": {
+                    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.abc123def456"
+                },
             }
         }
         result = _redact_secrets(data)
@@ -172,11 +176,13 @@ class TestFilterLogsSinceStart:
     def test_filters_old_lines(self):
         """Lines before start_time are excluded."""
         start = datetime(2024, 1, 15, 10, 0, 0)
-        log = self._make_log([
-            ("2024-01-15 09:00:00", "old message"),
-            ("2024-01-15 10:00:00", "start message"),
-            ("2024-01-15 10:01:00", "new message"),
-        ])
+        log = self._make_log(
+            [
+                ("2024-01-15 09:00:00", "old message"),
+                ("2024-01-15 10:00:00", "start message"),
+                ("2024-01-15 10:01:00", "new message"),
+            ]
+        )
         result = _filter_logs_since_start(log, start)
         assert "old message" not in result
         assert "start message" in result
@@ -215,10 +221,12 @@ class TestFilterLogsSinceStart:
     def test_all_lines_old(self):
         """All lines before start_time returns empty string."""
         start = datetime(2024, 1, 15, 12, 0, 0)
-        log = self._make_log([
-            ("2024-01-15 09:00:00", "old1"),
-            ("2024-01-15 10:00:00", "old2"),
-        ])
+        log = self._make_log(
+            [
+                ("2024-01-15 09:00:00", "old1"),
+                ("2024-01-15 10:00:00", "old2"),
+            ]
+        )
         assert _filter_logs_since_start(log, start) == ""
 
 

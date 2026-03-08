@@ -1,6 +1,5 @@
 """Provider selection command."""
 
-
 from nodetool.chat.chat_cli import ChatCLI
 from nodetool.metadata.types import Provider
 

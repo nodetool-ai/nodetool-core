@@ -122,7 +122,9 @@ class TestGetDownstreamSubgraph:
         node_a = TestInputNode(id="A")
         node_b = TestProcessingNode(id="B")
         edge_ab = Edge(id="e1", source="A", sourceHandle="output", target="B", targetHandle="input_value")
-        edge_ba = Edge(id="e2", source="B", sourceHandle="output", target="A", targetHandle="value") # Assuming A has 'value' input for test
+        edge_ba = Edge(
+            id="e2", source="B", sourceHandle="output", target="A", targetHandle="value"
+        )  # Assuming A has 'value' input for test
 
         graph = Graph(nodes=[node_a, node_b], edges=[edge_ab, edge_ba])
 

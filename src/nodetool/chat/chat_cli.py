@@ -107,7 +107,9 @@ class _ConsoleProxy:
         self._writer: Optional[Callable[[str], None]] = None
         self._clear_cb: Optional[Callable[[], None]] = None
 
-    def set_writer(self, writer: Optional[Callable[[str], None]] = None, clear_cb: Optional[Callable[[], None]] = None) -> None:
+    def set_writer(
+        self, writer: Optional[Callable[[str], None]] = None, clear_cb: Optional[Callable[[], None]] = None
+    ) -> None:
         self._writer = writer
         self._clear_cb = clear_cb
 
@@ -280,7 +282,7 @@ class ChatTextualApp(App[None]):
             return
         cleaned = self._ansi_re.sub("", text).replace("\r", "")
         cleaned = self._rich_tag_re.sub("", cleaned)
-        self._manual_output_buffer += (cleaned + "\n")
+        self._manual_output_buffer += cleaned + "\n"
         self._mark_refresh_dirty()
 
     def _clear_chat_log(self) -> None:
@@ -295,7 +297,9 @@ class ChatTextualApp(App[None]):
             if self.cli.selected_provider
             else "None"
         )
-        model_display = self.cli.selected_model.id if self.cli.selected_model else self.cli.model_id_from_settings or "None"
+        model_display = (
+            self.cli.selected_model.id if self.cli.selected_model else self.cli.model_id_from_settings or "None"
+        )
         agent_display = "ON" if self.cli.agent_mode else "OFF"
         topbar = self.query_one("#topbar", Static)
         topbar.update(f"Provider: {provider_display}    Model: {model_display}    Agent: {agent_display} (/agent)")
@@ -310,12 +314,7 @@ class ChatTextualApp(App[None]):
             # Silently use default if usage attribute is not available
             # This can happen during initialization or with certain model providers
             log.debug("Could not get token usage: %s", e)
-        sidebar_context.update(
-            "Context\n"
-            f"{token_line}\n\n"
-            "MCP\n"
-            "• tools available"
-        )
+        sidebar_context.update(f"Context\n{token_line}\n\nMCP\n• tools available")
 
     def _load_input_history(self) -> None:
         """Load history from prompt_toolkit FileHistory format or plain lines."""
@@ -439,7 +438,11 @@ class ChatTextualApp(App[None]):
 
         prefix_matches = [h for h in self._input_history if h.startswith(current)]
         command_matches = [f"/{name}" for name in self.cli.commands if f"/{name}".startswith(current)]
-        workspace_matches = [c for c in ["pwd", "ls", "cd", "mkdir", "rm", "open", "cat", "cp", "mv", "grep", "cdw"] if c.startswith(current)]
+        workspace_matches = [
+            c
+            for c in ["pwd", "ls", "cd", "mkdir", "rm", "open", "cat", "cp", "mv", "grep", "cdw"]
+            if c.startswith(current)
+        ]
         path_matches = self._path_completion_candidates(current)
 
         candidates = []
@@ -516,9 +519,7 @@ class ChatTextualApp(App[None]):
     async def _process_submitted_input(self, normalized: str, value: str) -> None:
         """Run chat/agent processing in background to keep UI responsive."""
         try:
-            if normalized.startswith(
-                ("pwd", "ls", "cd", "mkdir", "rm", "open", "cat", "cp", "mv", "grep", "cdw")
-            ):
+            if normalized.startswith(("pwd", "ls", "cd", "mkdir", "rm", "open", "cat", "cp", "mv", "grep", "cdw")):
                 parts = normalized.split()
                 self.cli.handle_workspace_command(parts[0], parts[1:] if len(parts) > 1 else [])
                 return
@@ -541,9 +542,7 @@ class ChatTextualApp(App[None]):
                 await self.cli.process_regular_message(value)
         except Exception as exc:
             self._write_chat_log(f"[bold red]Error:[/bold red] {escape(str(exc))}")
-            self._write_chat_log(
-                Syntax(traceback.format_exc(), "python", theme="monokai", line_numbers=True).code
-            )
+            self._write_chat_log(Syntax(traceback.format_exc(), "python", theme="monokai", line_numbers=True).code)
         finally:
             self._busy = False
 

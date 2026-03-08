@@ -106,7 +106,7 @@ def check_secrets_master_key() -> SecurityWarning | None:
                 message=(
                     "SECRETS_MASTER_KEY is not configured. "
                     "This is required for secure secret storage in production. "
-                    "Generate a key with: python -c \"from nodetool.security.crypto import SecretCrypto; print(SecretCrypto.generate_master_key())\""
+                    'Generate a key with: python -c "from nodetool.security.crypto import SecretCrypto; print(SecretCrypto.generate_master_key())"'
                 ),
                 severity="CRITICAL",
             )
@@ -157,8 +157,7 @@ def check_database_configuration() -> SecurityWarning | None:
         if not supabase_url and not postgres_db and not db_path:
             return SecurityWarning(
                 message=(
-                    "No database is configured. "
-                    "Configure SUPABASE_URL, POSTGRES_DB, or DB_PATH for data persistence."
+                    "No database is configured. Configure SUPABASE_URL, POSTGRES_DB, or DB_PATH for data persistence."
                 ),
                 severity="CRITICAL",
             )
@@ -227,17 +226,12 @@ def run_startup_security_checks(raise_on_critical: bool = False) -> list[Securit
             log.error(f"Error running security check {fn_name}: {e}")
 
     if warnings:
-        log.warning(
-            f"Startup security checks found {len(warnings)} issue(s) "
-            f"({len(critical_issues)} critical)"
-        )
+        log.warning(f"Startup security checks found {len(warnings)} issue(s) ({len(critical_issues)} critical)")
     else:
         log.info("Startup security checks passed - no issues found")
 
     if raise_on_critical and critical_issues:
         messages = [w.message for w in critical_issues]
-        raise RuntimeError(
-            f"Critical security issues found: {'; '.join(messages)}"
-        )
+        raise RuntimeError(f"Critical security issues found: {'; '.join(messages)}")
 
     return warnings

@@ -8,6 +8,7 @@ from typing import IO, AsyncIterator
 @dataclass
 class FileMetadata:
     """Batch file metadata to reduce system calls."""
+
     exists: bool
     size: int | None = None
     mtime: datetime | None = None

@@ -56,9 +56,7 @@ class ApifyProvider(SerpProvider):
                 self._client = AsyncClient(timeout=120.0)  # Apify runs can take longer
         return self._client
 
-    async def _run_actor_and_wait(
-        self, actor_id: str, run_input: dict[str, Any]
-    ) -> dict[str, Any] | ErrorResponse:
+    async def _run_actor_and_wait(self, actor_id: str, run_input: dict[str, Any]) -> dict[str, Any] | ErrorResponse:
         """
         Runs an Apify actor and waits for results.
 
@@ -243,17 +241,13 @@ class ApifyProvider(SerpProvider):
         """
         return {"error": "Google Finance search is not supported by ApifyProvider."}
 
-    async def search_jobs(
-        self, query: str, location: str | None = None, num_results: int = 10
-    ) -> Any:
+    async def search_jobs(self, query: str, location: str | None = None, num_results: int = 10) -> Any:
         """
         Searches for jobs. Not currently supported by ApifyProvider.
         """
         return {"error": "Google Jobs search is not supported by ApifyProvider."}
 
-    async def search_lens(
-        self, image_url: str, country: str | None = None, num_results: int = 10
-    ) -> Any:
+    async def search_lens(self, image_url: str, country: str | None = None, num_results: int = 10) -> Any:
         """
         Searches using an image URL (Google Lens). Not currently supported by ApifyProvider.
         """
@@ -331,57 +325,43 @@ class ApifyProvider(SerpProvider):
 
         return _remove_base64_images(result_data)
 
-    async def search_amazon(
-        self, query: str, amazon_domain: str = "amazon.com", num_results: int = 10
-    ) -> Any:
+    async def search_amazon(self, query: str, amazon_domain: str = "amazon.com", num_results: int = 10) -> Any:
         """
         Searches Amazon. Not currently supported by ApifyProvider.
         """
         return {"error": "Amazon search not supported by Apify provider"}
 
-    async def search_amazon_product(
-        self, product_id: str, amazon_domain: str = "amazon.com"
-    ) -> Any:
+    async def search_amazon_product(self, product_id: str, amazon_domain: str = "amazon.com") -> Any:
         """
         Retrieves Amazon product details. Not currently supported by ApifyProvider.
         """
         return {"error": "Amazon product search not supported by Apify provider"}
 
-    async def search_youtube(
-        self, query: str, num_results: int = 10
-    ) -> Any:
+    async def search_youtube(self, query: str, num_results: int = 10) -> Any:
         """
         Searches YouTube. Not currently supported by ApifyProvider.
         """
         return {"error": "YouTube search not supported by Apify provider"}
 
-    async def search_scholar(
-        self, query: str, num_results: int = 10
-    ) -> Any:
+    async def search_scholar(self, query: str, num_results: int = 10) -> Any:
         """
         Searches Google Scholar. Not currently supported by ApifyProvider.
         """
         return {"error": "Scholar search not supported by Apify provider"}
 
-    async def search_trends(
-        self, query: str, date: str | None = None, geo: str | None = None
-    ) -> Any:
+    async def search_trends(self, query: str, date: str | None = None, geo: str | None = None) -> Any:
         """
         Retrieves Google Trends data. Not currently supported by ApifyProvider.
         """
         return {"error": "Trends search not supported by Apify provider"}
 
-    async def search_yelp(
-        self, query: str, location: str, num_results: int = 10
-    ) -> Any:
+    async def search_yelp(self, query: str, location: str, num_results: int = 10) -> Any:
         """
         Searches Yelp. Not currently supported by ApifyProvider.
         """
         return {"error": "Yelp search not supported by Apify provider"}
 
-    async def search_duckduckgo(
-        self, query: str, num_results: int = 10
-    ) -> Any:
+    async def search_duckduckgo(self, query: str, num_results: int = 10) -> Any:
         """
         Searches DuckDuckGo. Not currently supported by ApifyProvider.
         """

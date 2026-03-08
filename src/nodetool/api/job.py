@@ -32,8 +32,6 @@ class JobResponse(BaseModel):
     is_resumable: bool = False
     etag: Optional[str] = None
 
-
-
     model_config = ConfigDict(from_attributes=True)
 
 

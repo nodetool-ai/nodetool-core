@@ -157,7 +157,6 @@ def _collect_installed_packages() -> list[dict[str, str]]:
         return []
 
 
-
 router = APIRouter(prefix="/api/debug", tags=["debug"])
 
 log = get_logger(__name__)

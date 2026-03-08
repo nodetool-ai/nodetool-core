@@ -1,4 +1,3 @@
-
 import base64
 import json
 from unittest.mock import MagicMock, patch
@@ -49,7 +48,7 @@ class TestRunHelpers:
         assert _run_is_dsl_content("graph = Graph()") is True
         assert _run_is_dsl_content("from nodetool.dsl import graph") is True
         assert _run_is_dsl_content("{}") is False  # JSON object
-        assert _run_is_dsl_content("   ") is False # Empty
+        assert _run_is_dsl_content("   ") is False  # Empty
 
         # Test imports check
         assert _run_is_dsl_content("import os\n") is True
@@ -81,19 +80,13 @@ class TestRunHelpers:
         mock_open.return_value.__enter__.return_value = MagicMock()
 
         # Case 1: Full RunJobRequest JSON
-        mock_json_load.return_value = {
-            "workflow_id": "test_wf",
-            "user_id": "json_user",
-            "auth_token": "json_token"
-        }
+        mock_json_load.return_value = {"workflow_id": "test_wf", "user_id": "json_user", "auth_token": "json_token"}
         req = _run_parse_workflow_arg("request.json", "cli_user", "cli_token")
         assert req.workflow_id == "test_wf"
-        assert req.user_id == "json_user" # Should use value from JSON if present
+        assert req.user_id == "json_user"  # Should use value from JSON if present
 
         # Case 2: Workflow definition (graph only)
-        mock_json_load.return_value = {
-            "graph": {"nodes": [], "edges": []}
-        }
+        mock_json_load.return_value = {"graph": {"nodes": [], "edges": []}}
         req = _run_parse_workflow_arg("graph.json", "cli_user", "cli_token")
         assert req.user_id == "cli_user"
         assert req.auth_token == "cli_token"

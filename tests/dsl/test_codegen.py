@@ -64,6 +64,7 @@ def test_nested_generics():
 
 def test_external_types():
     import datetime
+
     # Note: currently codegen does not automatically add module prefix for non-nested classes
     # unless logic is improved. For now, it returns just the class name.
     # If the user needs datetime.date, they might need to ensure imports are handled or fix codegen.

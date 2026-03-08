@@ -417,10 +417,7 @@ class BaseChatRunner(ABC):
         workspace_path = get_system_data_path("agent_workspaces") / user_id / thread_id
         workspace_path.mkdir(parents=True, exist_ok=True)
 
-        processing_context = ProcessingContext(
-            user_id=self.user_id,
-            workspace_dir=str(workspace_path)
-        )
+        processing_context = ProcessingContext(user_id=self.user_id, workspace_dir=str(workspace_path))
 
         # Add UI tool support if available
         if hasattr(self, "tool_bridge") and hasattr(self, "client_tools_manifest"):
@@ -482,10 +479,7 @@ class BaseChatRunner(ABC):
         workspace_path = get_system_data_path("agent_workspaces") / user_id / thread_id
         workspace_path.mkdir(parents=True, exist_ok=True)
 
-        processing_context = ProcessingContext(
-            user_id=self.user_id,
-            workspace_dir=str(workspace_path)
-        )
+        processing_context = ProcessingContext(user_id=self.user_id, workspace_dir=str(workspace_path))
 
         # Add UI tool support if available
         if hasattr(self, "tool_bridge") and hasattr(self, "client_tools_manifest"):

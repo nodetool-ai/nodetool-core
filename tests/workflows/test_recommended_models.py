@@ -73,6 +73,7 @@ class TestOllamaAvailability:
 
         # Save original env
         import os
+
         old_val = os.environ.get("OLLAMA_API_URL")
         try:
             if "OLLAMA_API_URL" in os.environ:
@@ -96,6 +97,7 @@ class TestLlamaServerAvailability:
 
         # Save original env
         import os
+
         old_val = os.environ.get("LLAMA_CPP_URL")
         try:
             if "LLAMA_CPP_URL" in os.environ:

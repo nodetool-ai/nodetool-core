@@ -266,9 +266,7 @@ def resolve_memory_uri(asset_ref: AssetRef, path: str) -> BytesIO | None:
         if data_bytes:
             return BytesIO(data_bytes)
         else:
-            logger.warning(
-                "Could not convert memory object to bytes for asset at %s", path
-            )
+            logger.warning("Could not convert memory object to bytes for asset at %s", path)
             return None
     else:
         logger.warning("Memory URI not found in cache for asset at %s", path)
@@ -291,9 +289,7 @@ async def download_http_uri(uri: str, path: str) -> BytesIO | None:
             response.raise_for_status()
             return BytesIO(response.content)
     except httpx.HTTPError as http_err:
-        logger.warning(
-            "Failed to download asset from URL %s at %s: %s", uri, path, http_err
-        )
+        logger.warning("Failed to download asset from URL %s at %s: %s", uri, path, http_err)
         return None
 
 
@@ -338,9 +334,7 @@ def decode_data_uri(uri: str, path: str) -> BytesIO | None:
         return None
 
 
-async def resolve_asset_content(
-    asset_ref: AssetRef, path: str
-) -> BytesIO | None:
+async def resolve_asset_content(asset_ref: AssetRef, path: str) -> BytesIO | None:
     """Resolve asset content from data or URI.
 
     Supports:

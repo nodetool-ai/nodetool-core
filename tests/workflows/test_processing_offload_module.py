@@ -70,4 +70,3 @@ def test_numpy_audio_mp3_export_and_import_without_mocking():
 
     decoded = _audio_segment_from_file(BytesIO(mp3_bytes))
     assert 50 <= len(decoded) <= 500
-

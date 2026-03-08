@@ -196,9 +196,7 @@ class TestBackwardCompatibleFunctions:
 
     @pytest.mark.asyncio
     async def test_calculate_chat_cost_with_cached_tokens(self):
-        cost = await calculate_chat_cost(
-            "gpt-5.2", input_tokens=1000, output_tokens=500, cached_tokens=200
-        )
+        cost = await calculate_chat_cost("gpt-5.2", input_tokens=1000, output_tokens=500, cached_tokens=200)
         assert cost == pytest.approx(0.0126525, rel=1e-6)
 
     @pytest.mark.asyncio
@@ -247,9 +245,7 @@ class TestPricingTiersCompleteness:
     def test_all_model_tiers_exist(self):
         """Verify all model mappings point to existing tiers."""
         for key, tier_name in MODEL_TO_TIER.items():
-            assert (
-                tier_name in PRICING_TIERS
-            ), f"Model {key} maps to undefined tier {tier_name}"
+            assert tier_name in PRICING_TIERS, f"Model {key} maps to undefined tier {tier_name}"
 
     def test_all_entries_are_provider_keyed(self):
         """Verify all entries in MODEL_TO_TIER are (provider, model) tuples."""
@@ -263,20 +259,14 @@ class TestPricingTiersCompleteness:
         """Verify token-based tiers have input and output pricing."""
         for tier_name, tier in PRICING_TIERS.items():
             if tier.cost_type == CostType.TOKEN_BASED:
-                assert (
-                    tier.input_per_1k_tokens > 0
-                ), f"Tier {tier_name} missing input_per_1k_tokens"
-                assert (
-                    tier.output_per_1k_tokens > 0
-                ), f"Tier {tier_name} missing output_per_1k_tokens"
+                assert tier.input_per_1k_tokens > 0, f"Tier {tier_name} missing input_per_1k_tokens"
+                assert tier.output_per_1k_tokens > 0, f"Tier {tier_name} missing output_per_1k_tokens"
 
     def test_embedding_tiers_have_required_fields(self):
         """Verify embedding tiers have input pricing."""
         for tier_name, tier in PRICING_TIERS.items():
             if tier.cost_type == CostType.EMBEDDING:
-                assert (
-                    tier.input_per_1k_tokens > 0
-                ), f"Tier {tier_name} missing input_per_1k_tokens"
+                assert tier.input_per_1k_tokens > 0, f"Tier {tier_name} missing input_per_1k_tokens"
 
     def test_character_based_tiers_have_required_fields(self):
         """Verify character-based tiers have per_1k_chars pricing."""

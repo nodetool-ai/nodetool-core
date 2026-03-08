@@ -435,9 +435,7 @@ async def test_threaded_job_with_external_event_loop(simple_workflow):
         )
 
         # Create job with external event loop
-        job = await ThreadedJobExecution.create_and_start(
-            request, context, event_loop=external_loop
-        )
+        job = await ThreadedJobExecution.create_and_start(request, context, event_loop=external_loop)
 
         # Job should not own the event loop
         assert not job._owns_event_loop

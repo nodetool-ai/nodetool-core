@@ -343,12 +343,9 @@ class CostCalculator:
         # Try prefix match with provider key - sort by model length descending
         # Only look at tuple keys that match the provider
         provider_prefixes = [
-            key for key in MODEL_TO_TIER
-            if isinstance(key, tuple) and len(key) == 2 and key[0] == provider_lower
+            key for key in MODEL_TO_TIER if isinstance(key, tuple) and len(key) == 2 and key[0] == provider_lower
         ]
-        sorted_provider_prefixes = sorted(
-            provider_prefixes, key=lambda x: len(x[1]), reverse=True
-        )
+        sorted_provider_prefixes = sorted(provider_prefixes, key=lambda x: len(x[1]), reverse=True)
         for prefix_key in sorted_provider_prefixes:
             if model_lower.startswith(prefix_key[1]):
                 return MODEL_TO_TIER[prefix_key]
@@ -374,9 +371,7 @@ class CostCalculator:
         """
         tier_name = CostCalculator.get_tier(model_id, provider)
         if tier_name is None:
-            log.warning(
-                f"No pricing tier found for model: {model_id} (provider: {provider})"
-            )
+            log.warning(f"No pricing tier found for model: {model_id} (provider: {provider})")
             return 0.0
 
         tier = PRICING_TIERS.get(tier_name)

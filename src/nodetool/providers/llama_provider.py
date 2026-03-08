@@ -178,11 +178,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                 if isinstance(msg.content, str):
                     assistant_content = msg.content
                 elif isinstance(msg.content, list):
-                    text_parts = [
-                        part.text
-                        for part in msg.content
-                        if isinstance(part, MessageTextContent)
-                    ]
+                    text_parts = [part.text for part in msg.content if isinstance(part, MessageTextContent)]
                     assistant_content = "\n".join(text_parts)
                 elif msg.content is None:
                     assistant_content = ""
@@ -190,13 +186,9 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                     assistant_content = str(msg.content)
 
                 if msg.tool_calls:
-                    _calls, cleaned_content = self._parse_function_calls(
-                        assistant_content, tools
-                    )
+                    _calls, cleaned_content = self._parse_function_calls(assistant_content, tools)
                     if not _calls:
-                        _calls, cleaned_content = self._parse_non_python_function_calls(
-                            assistant_content, tools
-                        )
+                        _calls, cleaned_content = self._parse_non_python_function_calls(assistant_content, tools)
                     assistant_content = cleaned_content
 
                 normalized.append(
@@ -679,10 +671,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                             name=model_id,
                             provider=Provider.LlamaCpp,
                         )
-                log.debug(
-                    f"Found {server_count} models from llama.cpp server; "
-                    f"returning {len(merged)} merged models"
-                )
+                log.debug(f"Found {server_count} models from llama.cpp server; returning {len(merged)} merged models")
             except Exception as e:
                 log.warning(f"Error querying llama.cpp server: {e}")
         else:

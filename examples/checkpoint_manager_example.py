@@ -17,6 +17,7 @@ from nodetool.workflows.processing_context import ProcessingContext
 # Define some example nodes
 class NumberInput(InputNode):
     """Simple input node that provides a number."""
+
     value: float = 0.0
 
     async def process(self, context: ProcessingContext) -> float:
@@ -25,6 +26,7 @@ class NumberInput(InputNode):
 
 class Add(BaseNode):
     """Add two numbers."""
+
     a: float = 0.0
     b: float = 0.0
 
@@ -36,6 +38,7 @@ class Add(BaseNode):
 
 class Multiply(BaseNode):
     """Multiply two numbers."""
+
     a: float = 0.0
     b: float = 0.0
 
@@ -47,6 +50,7 @@ class Multiply(BaseNode):
 
 class NumberOutput(OutputNode):
     """Output node that displays a number."""
+
     value: float = 0.0
 
     async def process(self, context: ProcessingContext) -> float:

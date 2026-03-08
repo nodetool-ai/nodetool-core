@@ -477,10 +477,7 @@ class SQLiteConnectionPool:
             )
             return False
         except Exception as e:
-            log.warning(
-                "Rollback failed; poisoning connection. "
-                f"(context={context}, error={e}, stats={self._stats()})"
-            )
+            log.warning(f"Rollback failed; poisoning connection. (context={context}, error={e}, stats={self._stats()})")
             return False
 
     async def _acquire_connection(self) -> aiosqlite.Connection:

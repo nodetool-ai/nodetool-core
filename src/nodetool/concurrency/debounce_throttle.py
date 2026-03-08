@@ -181,9 +181,7 @@ class AsyncDebounce:
         Returns:
             True if a task is pending, False otherwise.
         """
-        return bool(self._completion_events) or (
-            self._timer_task is not None and not self._timer_task.done()
-        )
+        return bool(self._completion_events) or (self._timer_task is not None and not self._timer_task.done())
 
 
 class AsyncThrottle:
@@ -227,9 +225,7 @@ class AsyncThrottle:
         self._last_execution: float = 0.0
         self._lock = asyncio.Lock()
 
-    async def execute(
-        self, func: Callable[[], Coroutine[Any, Any, T]], skip_if_throttled: bool = True
-    ) -> T | None:
+    async def execute(self, func: Callable[[], Coroutine[Any, Any, T]], skip_if_throttled: bool = True) -> T | None:
         """
         Execute a function with throttling.
 

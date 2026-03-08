@@ -536,9 +536,7 @@ class TestUnifiedWebSocketRunnerJobSession:
             # Job session should be stopped
             assert runner._job_session is None
 
-    async def test_run_job_uses_session_event_loop(
-        self, unified_runner, mock_websocket, simple_workflow, cleanup_jobs
-    ):
+    async def test_run_job_uses_session_event_loop(self, unified_runner, mock_websocket, simple_workflow, cleanup_jobs):
         """Test that run_job uses the session's shared event loop."""
         with patch.object(Environment, "enforce_auth", return_value=False):
             await unified_runner.connect(mock_websocket)
@@ -572,9 +570,7 @@ class TestUnifiedWebSocketRunnerJobSession:
 
             await unified_runner.disconnect()
 
-    async def test_multiple_jobs_share_event_loop(
-        self, unified_runner, mock_websocket, simple_workflow, cleanup_jobs
-    ):
+    async def test_multiple_jobs_share_event_loop(self, unified_runner, mock_websocket, simple_workflow, cleanup_jobs):
         """Test that multiple jobs in the same session share the event loop."""
         with patch.object(Environment, "enforce_auth", return_value=False):
             await unified_runner.connect(mock_websocket)

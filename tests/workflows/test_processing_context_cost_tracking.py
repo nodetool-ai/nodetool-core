@@ -516,9 +516,7 @@ class TestCostTrackingIntegrationWithPredictions:
             def get_capabilities(self):
                 return {ProviderCapability.GENERATE_MESSAGE}
 
-            async def generate_message(
-                self, messages, model, tools=None, max_tokens=8192, **kwargs
-            ):
+            async def generate_message(self, messages, model, tools=None, max_tokens=8192, **kwargs):
                 # Simulate tracking usage
                 self.track_usage(model=model, input_tokens=100, output_tokens=50)
                 return Message(role="assistant", content="test response")
@@ -527,8 +525,9 @@ class TestCostTrackingIntegrationWithPredictions:
 
         mock_provider = MockProvider()
 
-        with patch.object(ctx, "get_provider", return_value=mock_provider), patch(
-            "nodetool.models.prediction.Prediction.create", new_callable=AsyncMock
+        with (
+            patch.object(ctx, "get_provider", return_value=mock_provider),
+            patch("nodetool.models.prediction.Prediction.create", new_callable=AsyncMock),
         ):
             # Initial cost should be zero
             assert ctx.get_total_cost() == 0.0
@@ -571,17 +570,16 @@ class TestCostTrackingIntegrationWithPredictions:
             def get_capabilities(self):
                 return {ProviderCapability.GENERATE_MESSAGE}
 
-            async def generate_message(
-                self, messages, model, tools=None, max_tokens=8192, **kwargs
-            ):
+            async def generate_message(self, messages, model, tools=None, max_tokens=8192, **kwargs):
                 self.track_usage(model=model, input_tokens=100, output_tokens=50)
                 return Message(role="assistant", content="response")
 
         ctx = ProcessingContext(user_id="test")
         mock_provider = MockProvider()
 
-        with patch.object(ctx, "get_provider", return_value=mock_provider), patch(
-            "nodetool.models.prediction.Prediction.create", new_callable=AsyncMock
+        with (
+            patch.object(ctx, "get_provider", return_value=mock_provider),
+            patch("nodetool.models.prediction.Prediction.create", new_callable=AsyncMock),
         ):
             # First prediction
             await ctx.run_provider_prediction(
@@ -629,16 +627,15 @@ class TestCostTrackingIntegrationWithPredictions:
             def get_capabilities(self):
                 return {ProviderCapability.GENERATE_MESSAGE}
 
-            async def generate_message(
-                self, messages, model, tools=None, max_tokens=8192, **kwargs
-            ):
+            async def generate_message(self, messages, model, tools=None, max_tokens=8192, **kwargs):
                 raise RuntimeError("API error")
 
         ctx = ProcessingContext(user_id="test")
         mock_provider = MockProvider()
 
-        with patch.object(ctx, "get_provider", return_value=mock_provider), patch(
-            "nodetool.models.prediction.Prediction.create", new_callable=AsyncMock
+        with (
+            patch.object(ctx, "get_provider", return_value=mock_provider),
+            patch("nodetool.models.prediction.Prediction.create", new_callable=AsyncMock),
         ):
             with pytest.raises(RuntimeError, match="API error"):
                 await ctx.run_provider_prediction(
@@ -671,9 +668,7 @@ class TestCostTrackingIntegrationWithPredictions:
             def get_capabilities(self):
                 return {ProviderCapability.GENERATE_MESSAGE}
 
-            async def generate_message(
-                self, messages, model, tools=None, max_tokens=8192, **kwargs
-            ):
+            async def generate_message(self, messages, model, tools=None, max_tokens=8192, **kwargs):
                 self.track_usage(model=model, input_tokens=1000, output_tokens=500)
                 return Message(role="assistant", content="OpenAI response")
 
@@ -687,9 +682,7 @@ class TestCostTrackingIntegrationWithPredictions:
             def get_capabilities(self):
                 return {ProviderCapability.GENERATE_MESSAGE}
 
-            async def generate_message(
-                self, messages, model, tools=None, max_tokens=8192, **kwargs
-            ):
+            async def generate_message(self, messages, model, tools=None, max_tokens=8192, **kwargs):
                 self.track_usage(model=model, input_tokens=1000, output_tokens=500)
                 return Message(role="assistant", content="Anthropic response")
 
@@ -702,8 +695,9 @@ class TestCostTrackingIntegrationWithPredictions:
                 return AnthropicProvider()
             raise ValueError("Unknown provider")
 
-        with patch.object(ctx, "get_provider", side_effect=mock_get_provider), patch(
-            "nodetool.models.prediction.Prediction.create", new_callable=AsyncMock
+        with (
+            patch.object(ctx, "get_provider", side_effect=mock_get_provider),
+            patch("nodetool.models.prediction.Prediction.create", new_callable=AsyncMock),
         ):
             # OpenAI prediction
             await ctx.run_provider_prediction(
@@ -732,4 +726,3 @@ class TestCostTrackingIntegrationWithPredictions:
             # Total cost should be sum of both
             total_cost = ctx.get_total_cost()
             assert total_cost > 0.0
-

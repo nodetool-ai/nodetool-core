@@ -555,9 +555,13 @@ async def _get_configured_serp_provider(
             if d4seo_login and d4seo_password:
                 return DataForSEOProvider(api_login=d4seo_login, api_password=d4seo_password), None
             else:
-                return None, {"error": "SERP_PROVIDER is set to 'dataforseo' but DATA_FOR_SEO_LOGIN and/or DATA_FOR_SEO_PASSWORD are not configured."}
+                return None, {
+                    "error": "SERP_PROVIDER is set to 'dataforseo' but DATA_FOR_SEO_LOGIN and/or DATA_FOR_SEO_PASSWORD are not configured."
+                }
         else:
-            return None, {"error": f"Invalid SERP_PROVIDER value '{serp_provider}'. Valid options are: 'serpapi', 'apify', 'dataforseo'."}
+            return None, {
+                "error": f"Invalid SERP_PROVIDER value '{serp_provider}'. Valid options are: 'serpapi', 'apify', 'dataforseo'."
+            }
 
     # Auto-select based on available API keys (SerpApi > Apify > DataForSEO)
     if serpapi_key:
@@ -567,7 +571,9 @@ async def _get_configured_serp_provider(
     elif d4seo_login and d4seo_password:
         return DataForSEOProvider(api_login=d4seo_login, api_password=d4seo_password), None
     else:
-        return None, {"error": "No SERP provider is configured. Please set credentials for SerpApi, Apify, or DataForSEO."}
+        return None, {
+            "error": "No SERP provider is configured. Please set credentials for SerpApi, Apify, or DataForSEO."
+        }
 
 
 if __name__ == "__main__":

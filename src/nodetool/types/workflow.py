@@ -1,4 +1,4 @@
-﻿from typing import Any
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -109,4 +109,3 @@ class AutosaveResponse(BaseModel):
     version: WorkflowVersion | None = None
     message: str
     skipped: bool = False
-

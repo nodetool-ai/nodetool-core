@@ -196,7 +196,7 @@ def _parse_asset_id_from_uri(uri: str) -> str:
         raise ValueError(f"Invalid asset URI: {uri}")
 
     # Remove the asset:// prefix
-    path = uri[len("asset://"):]
+    path = uri[len("asset://") :]
 
     # Remove extension if present (everything after the first dot)
     asset_id = path.split(".")[0] if "." in path else path

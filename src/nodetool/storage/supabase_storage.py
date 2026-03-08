@@ -127,6 +127,7 @@ class SupabaseStorage(AbstractStorage):
             # In async context - try nest_asyncio to preserve ResourceScope
             try:
                 import nest_asyncio
+
                 nest_asyncio.apply()
                 return loop.run_until_complete(self.upload(key, content))
             except ImportError:

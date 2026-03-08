@@ -1,4 +1,5 @@
 """Tests for AsyncChannel utility."""
+
 import asyncio
 
 import pytest

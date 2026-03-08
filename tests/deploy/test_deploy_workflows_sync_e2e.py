@@ -125,8 +125,7 @@ def _start_live_container(
     ]
     run_result = _run_runtime(runtime, run_args, timeout=90)
     assert run_result.returncode == 0, (
-        "Failed to start test container:\n"
-        f"runtime={runtime}\nstdout={run_result.stdout}\nstderr={run_result.stderr}"
+        f"Failed to start test container:\nruntime={runtime}\nstdout={run_result.stdout}\nstderr={run_result.stderr}"
     )
 
     try:
@@ -179,9 +178,10 @@ def test_deploy_workflows_sync_real_e2e():
     deployment_name = "sync-e2e"
     workflow_id = f"sync_workflow_{uuid.uuid4().hex[:8]}"
 
-    with tempfile.TemporaryDirectory(prefix="nodetool-sync-home-") as tmp_home, tempfile.TemporaryDirectory(
-        prefix="nodetool-sync-container-"
-    ) as tmp_container:
+    with (
+        tempfile.TemporaryDirectory(prefix="nodetool-sync-home-") as tmp_home,
+        tempfile.TemporaryDirectory(prefix="nodetool-sync-container-") as tmp_container,
+    ):
         home_path = Path(tmp_home)
         container_workspace = Path(tmp_container) / "workspace"
         container_hf_cache = Path(tmp_container) / "hf-cache"
@@ -313,9 +313,10 @@ def test_deploy_workflows_list_real_e2e():
     deployment_name = "sync-list-e2e"
     workflow_id = f"sync_list_workflow_{uuid.uuid4().hex[:8]}"
 
-    with tempfile.TemporaryDirectory(prefix="nodetool-sync-list-home-") as tmp_home, tempfile.TemporaryDirectory(
-        prefix="nodetool-sync-list-container-"
-    ) as tmp_container:
+    with (
+        tempfile.TemporaryDirectory(prefix="nodetool-sync-list-home-") as tmp_home,
+        tempfile.TemporaryDirectory(prefix="nodetool-sync-list-container-") as tmp_container,
+    ):
         home_path = Path(tmp_home)
         container_workspace = Path(tmp_container) / "workspace"
         container_hf_cache = Path(tmp_container) / "hf-cache"
@@ -426,9 +427,10 @@ def test_deploy_workflows_sync_missing_local_workflow_e2e():
     deployment_name = "sync-missing-e2e"
     missing_workflow_id = f"missing_workflow_{uuid.uuid4().hex[:8]}"
 
-    with tempfile.TemporaryDirectory(prefix="nodetool-sync-missing-home-") as tmp_home, tempfile.TemporaryDirectory(
-        prefix="nodetool-sync-missing-container-"
-    ) as tmp_container:
+    with (
+        tempfile.TemporaryDirectory(prefix="nodetool-sync-missing-home-") as tmp_home,
+        tempfile.TemporaryDirectory(prefix="nodetool-sync-missing-container-") as tmp_container,
+    ):
         home_path = Path(tmp_home)
         container_workspace = Path(tmp_container) / "workspace"
         container_hf_cache = Path(tmp_container) / "hf-cache"

@@ -1,4 +1,3 @@
-
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -41,7 +40,9 @@ async def test_terminal_rejects_evil_origin_when_auth_disabled(monkeypatch):
     mock_runner_class = MagicMock(return_value=mock_runner_instance)
 
     monkeypatch.setattr("nodetool.integrations.websocket.terminal_runner.TerminalWebSocketRunner", mock_runner_class)
-    monkeypatch.setattr("nodetool.integrations.websocket.terminal_runner.TerminalWebSocketRunner.is_enabled", lambda: True)
+    monkeypatch.setattr(
+        "nodetool.integrations.websocket.terminal_runner.TerminalWebSocketRunner.is_enabled", lambda: True
+    )
 
     endpoint = terminal_route.endpoint
     await endpoint(mock_ws)
@@ -49,9 +50,10 @@ async def test_terminal_rejects_evil_origin_when_auth_disabled(monkeypatch):
     # Verify the connection was rejected
     assert mock_ws.close.called, "Connection should have been rejected due to invalid origin"
     _, kwargs = mock_ws.close.call_args
-    assert kwargs.get('code') == 1008
-    reason = kwargs.get('reason', "").lower()
-    assert "origin" in reason or "external" in reason # My fix uses specific reason for origin
+    assert kwargs.get("code") == 1008
+    reason = kwargs.get("reason", "").lower()
+    assert "origin" in reason or "external" in reason  # My fix uses specific reason for origin
+
 
 @pytest.mark.asyncio
 async def test_terminal_allows_localhost_origin(monkeypatch):
@@ -83,7 +85,9 @@ async def test_terminal_allows_localhost_origin(monkeypatch):
     mock_runner_class = MagicMock(return_value=mock_runner_instance)
 
     monkeypatch.setattr("nodetool.integrations.websocket.terminal_runner.TerminalWebSocketRunner", mock_runner_class)
-    monkeypatch.setattr("nodetool.integrations.websocket.terminal_runner.TerminalWebSocketRunner.is_enabled", lambda: True)
+    monkeypatch.setattr(
+        "nodetool.integrations.websocket.terminal_runner.TerminalWebSocketRunner.is_enabled", lambda: True
+    )
 
     endpoint = terminal_route.endpoint
     await endpoint(mock_ws)
@@ -91,6 +95,7 @@ async def test_terminal_allows_localhost_origin(monkeypatch):
     # Verify connection allowed
     assert not mock_ws.close.called, "Connection should be allowed for localhost origin"
     mock_runner_instance.run.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_terminal_allows_missing_origin(monkeypatch):
@@ -122,7 +127,9 @@ async def test_terminal_allows_missing_origin(monkeypatch):
     mock_runner_class = MagicMock(return_value=mock_runner_instance)
 
     monkeypatch.setattr("nodetool.integrations.websocket.terminal_runner.TerminalWebSocketRunner", mock_runner_class)
-    monkeypatch.setattr("nodetool.integrations.websocket.terminal_runner.TerminalWebSocketRunner.is_enabled", lambda: True)
+    monkeypatch.setattr(
+        "nodetool.integrations.websocket.terminal_runner.TerminalWebSocketRunner.is_enabled", lambda: True
+    )
 
     endpoint = terminal_route.endpoint
     await endpoint(mock_ws)

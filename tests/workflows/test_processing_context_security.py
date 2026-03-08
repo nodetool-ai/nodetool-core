@@ -19,10 +19,7 @@ class TestProcessingContextSecurity(unittest.TestCase):
         self.suffix_dir.mkdir()
         self.suffix_file = self.suffix_dir / "pwned.json"
 
-        self.context = ProcessingContext(
-            auth_token="test",
-            workspace_dir=str(self.workspace_dir)
-        )
+        self.context = ProcessingContext(auth_token="test", workspace_dir=str(self.workspace_dir))
         # Create a directory strictly outside workspace to try to write to
         self.target_dir = Path(tempfile.mkdtemp())
         self.target_file = self.target_dir / "pwned.json"
@@ -66,7 +63,7 @@ class TestProcessingContextSecurity(unittest.TestCase):
 
             # If we are here, check if it resolved outside workspace
             if not str(p).startswith(str(self.workspace_dir) + os.sep):
-                 self.fail("Partial path traversal allowed (vulnerability confirmed)")
+                self.fail("Partial path traversal allowed (vulnerability confirmed)")
 
         except ValueError:
             # Expected behavior (secure)

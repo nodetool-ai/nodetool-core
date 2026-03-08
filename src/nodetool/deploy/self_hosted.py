@@ -370,7 +370,7 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
     def _write_text_file(self, ssh, path: str, content: str, mode: str = "644") -> None:
         """Write text content to remote path using a here-doc."""
         sentinel = "__NODETOOL_CONFIG_EOF__"
-        command = f'umask 077 && cat <<\'{sentinel}\' > {_safe_shlex_quote(path)}\n{content}\n{sentinel}\nchmod {_safe_shlex_quote(mode)} {_safe_shlex_quote(path)}'
+        command = f"umask 077 && cat <<'{sentinel}' > {_safe_shlex_quote(path)}\n{content}\n{sentinel}\nchmod {_safe_shlex_quote(mode)} {_safe_shlex_quote(path)}"
         ssh.execute(command, check=True, timeout=30)
 
     def _stop_existing_container(self, ssh, results: dict[str, Any]) -> None:
@@ -530,9 +530,7 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
 
             last_errors = attempt_errors
             if attempt < max_attempts:
-                results["steps"].append(
-                    f"  Waiting for app startup (attempt {attempt}/{max_attempts})..."
-                )
+                results["steps"].append(f"  Waiting for app startup (attempt {attempt}/{max_attempts})...")
                 time.sleep(2)
 
         for err in last_errors:
@@ -754,8 +752,7 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
 
         if self.is_localhost:
             raise RuntimeError(
-                f"Image '{image}' not found locally. "
-                "Pull or build it explicitly before running deploy apply."
+                f"Image '{image}' not found locally. Pull or build it explicitly before running deploy apply."
             )
 
         results["steps"].append("  Image missing on host; pushing from local Docker daemon...")
@@ -781,8 +778,7 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
                 self._log(results, "  Image already present.")
                 return
             raise RuntimeError(
-                f"Image '{image}' not found locally. "
-                "Pull or build it explicitly before running deploy apply."
+                f"Image '{image}' not found locally. Pull or build it explicitly before running deploy apply."
             ) from None
 
         client = None
@@ -792,8 +788,7 @@ class DockerDeployer(BaseSSHDeployer[DockerDeployment]):
             self._log(results, "  Image already present.")
         except ImageNotFound as err:
             raise RuntimeError(
-                f"Image '{image}' not found locally. "
-                "Pull or build it explicitly before running deploy apply."
+                f"Image '{image}' not found locally. Pull or build it explicitly before running deploy apply."
             ) from err
         except DockerException as err:
             raise RuntimeError("Could not query local Docker daemon for image presence.") from err
@@ -990,7 +985,9 @@ class SSHDeployer(BaseSSHDeployer[SSHDeployment | LocalDeployment]):
         try:
             with self._get_executor() as ssh:
                 service_name = self.deployment.service_name or f"nodetool-{self.deployment.port}"
-                _exit, stdout, _ = ssh.execute(f"systemctl --user is-active {_safe_shlex_quote(service_name)}", check=False)
+                _exit, stdout, _ = ssh.execute(
+                    f"systemctl --user is-active {_safe_shlex_quote(service_name)}", check=False
+                )
                 status_info["live_status"] = stdout.strip()
         except Exception as e:
             status_info["live_status_error"] = str(e)
@@ -1026,7 +1023,9 @@ class SSHDeployer(BaseSSHDeployer[SSHDeployment | LocalDeployment]):
         micromamba_bin = f"{workspace}/micromamba/bin/micromamba"
 
         # Check if installed
-        _code, stdout, _ = ssh.execute(f"[ -f {_safe_shlex_quote(micromamba_bin)} ] && echo yes || echo no", check=False)
+        _code, stdout, _ = ssh.execute(
+            f"[ -f {_safe_shlex_quote(micromamba_bin)} ] && echo yes || echo no", check=False
+        )
         if stdout.strip() == "yes":
             self._log(results, "  Micromamba already installed")
             return
@@ -1092,7 +1091,9 @@ class SSHDeployer(BaseSSHDeployer[SSHDeployment | LocalDeployment]):
 
         self._log(results, f"  {action} environment (hardcoded)...")
         # Check if environment actually exists and is valid
-        _code, stdout, _ = ssh.execute(f"[ -d {_safe_shlex_quote(env_dir + '/conda-meta')} ] && echo yes || echo no", check=False)
+        _code, stdout, _ = ssh.execute(
+            f"[ -d {_safe_shlex_quote(env_dir + '/conda-meta')} ] && echo yes || echo no", check=False
+        )
         is_valid_env = stdout.strip() == "yes"
 
         op = "install" if is_valid_env else "create"

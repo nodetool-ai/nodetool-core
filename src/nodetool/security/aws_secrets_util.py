@@ -102,7 +102,6 @@ class AWSSecretsUtil:
             The master key if found, None otherwise.
         """
         try:
-
             client = AWSSecretsUtil.get_aws_client(region)
 
             response = client.get_secret_value(SecretId=secret_name)

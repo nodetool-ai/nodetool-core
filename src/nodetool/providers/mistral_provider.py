@@ -122,7 +122,6 @@ class MistralProvider(OpenAIProvider):
         response_format: dict | None = None,
         **kwargs,
     ):
-
         if TYPE_CHECKING:
             from openai.types.chat import ChatCompletionChunk
 

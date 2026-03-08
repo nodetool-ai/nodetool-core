@@ -212,10 +212,11 @@ def convert_from_sqlite_attributes(attributes: dict[str, Any], fields: dict[str,
         if key in fields:
             result[key] = convert_from_sqlite_format(attributes[key], fields[key].annotation)  # type: ignore
         else:
-            log.warning(f"Field '{key}' not in adapter fields, passing through raw (type={type(attributes[key]).__name__}, value_preview={str(attributes[key])[:80]})")
+            log.warning(
+                f"Field '{key}' not in adapter fields, passing through raw (type={type(attributes[key]).__name__}, value_preview={str(attributes[key])[:80]})"
+            )
             result[key] = attributes[key]
     return result
-
 
 
 def convert_to_sqlite_attributes(attributes: dict[str, Any], fields: dict[str, FieldInfo]) -> dict[str, Any]:
@@ -529,9 +530,7 @@ class SQLiteAdapter(DatabaseAdapter):
         """
         primary_key = self.get_primary_key()
         cols = ", ".join([quote_identifier(key) for key in self.fields])
-        query = (
-            f"SELECT {cols} FROM {quote_identifier(self.table_name)} " f"WHERE {quote_identifier(primary_key)} = ?"
-        )
+        query = f"SELECT {cols} FROM {quote_identifier(self.table_name)} WHERE {quote_identifier(primary_key)} = ?"
 
         async def _get():
             async with self._pool.acquire_context() as conn:
@@ -624,7 +623,10 @@ class SQLiteAdapter(DatabaseAdapter):
             validated_cols = [_validate_column_name(col) for col in columns]
             # Handle "*" specially - it should not be quoted
             cols = ", ".join(
-                [f"{quoted_table}.*" if col == "*" else f"{quoted_table}.{quote_identifier(col)}" for col in validated_cols]
+                [
+                    f"{quoted_table}.*" if col == "*" else f"{quoted_table}.{quote_identifier(col)}"
+                    for col in validated_cols
+                ]
             )
         else:
             cols = ", ".join([f"{quoted_table}.{quote_identifier(col)}" for col in self.fields])
@@ -676,7 +678,8 @@ class SQLiteAdapter(DatabaseAdapter):
                     columns = [col[0] for col in cursor.description]
                     rows = await self._execute_with_timeout(cursor.fetchall())
                     return [
-                        convert_from_sqlite_attributes(dict(zip(columns, row, strict=False)), self.fields) for row in rows
+                        convert_from_sqlite_attributes(dict(zip(columns, row, strict=False)), self.fields)
+                        for row in rows
                     ]
                 return []
 

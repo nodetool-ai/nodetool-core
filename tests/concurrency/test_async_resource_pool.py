@@ -153,9 +153,7 @@ class TestAsyncResourcePoolConcurrency:
         """Test multiple concurrent acquisitions."""
         pool = AsyncResourcePool(factory=async_factory, max_size=3)
 
-        resources = await asyncio.gather(
-            pool.acquire(), pool.acquire(), pool.acquire()
-        )
+        resources = await asyncio.gather(pool.acquire(), pool.acquire(), pool.acquire())
 
         assert pool.size == 3
         assert pool.in_use_count == 3
@@ -172,9 +170,7 @@ class TestAsyncResourcePoolConcurrency:
     @pytest.mark.asyncio
     async def test_max_size_enforcement(self, async_factory):
         """Test that max_size limits concurrent acquisitions."""
-        pool = AsyncResourcePool(
-            factory=async_factory, max_size=2, acquisition_timeout=0.1
-        )
+        pool = AsyncResourcePool(factory=async_factory, max_size=2, acquisition_timeout=0.1)
 
         # Acquire max_size resources
         r1 = await pool.acquire()
@@ -233,9 +229,7 @@ class TestAsyncResourcePoolLifecycle:
             close_log.append(resource)
             resource.close()
 
-        pool = AsyncResourcePool(
-            factory=sync_factory, closer=closer, max_size=5
-        )
+        pool = AsyncResourcePool(factory=sync_factory, closer=closer, max_size=5)
 
         resource = await pool.acquire()
         await pool.release(resource)
@@ -254,9 +248,7 @@ class TestAsyncResourcePoolLifecycle:
             close_log.append(resource)
             await resource.aclose()
 
-        pool = AsyncResourcePool(
-            factory=async_factory, closer=closer, max_size=5
-        )
+        pool = AsyncResourcePool(factory=async_factory, closer=closer, max_size=5)
 
         resource = await pool.acquire()
         await pool.release(resource)
@@ -367,9 +359,7 @@ class TestAsyncResourcePoolClose:
         async def closer(resource: MockResource):
             close_log.append(resource)
 
-        pool = AsyncResourcePool(
-            factory=async_factory, closer=closer, max_size=5
-        )
+        pool = AsyncResourcePool(factory=async_factory, closer=closer, max_size=5)
 
         # Create some resources
         r1 = await pool.acquire()
@@ -391,9 +381,7 @@ class TestAsyncResourcePoolClose:
         async def closer(resource: MockResource):
             close_log.append(resource)
 
-        pool = AsyncResourcePool(
-            factory=async_factory, closer=closer, max_size=1
-        )
+        pool = AsyncResourcePool(factory=async_factory, closer=closer, max_size=1)
 
         # Acquire the only resource
         r1 = await pool.acquire()
@@ -420,9 +408,7 @@ class TestAsyncResourcePoolClose:
         async def closer(resource: MockResource):
             close_log.append(resource)
 
-        async with AsyncResourcePool(
-            factory=async_factory, closer=closer, max_size=5
-        ) as pool:
+        async with AsyncResourcePool(factory=async_factory, closer=closer, max_size=5) as pool:
             r1 = await pool.acquire()
             await pool.release(r1)
 
@@ -517,12 +503,11 @@ class TestAsyncResourcePoolErrors:
     @pytest.mark.asyncio
     async def test_closer_exception_handling(self, async_factory):
         """Test that closer exceptions don't break the pool."""
+
         def bad_closer(resource):
             raise RuntimeError("Closer failed!")
 
-        pool = AsyncResourcePool(
-            factory=async_factory, closer=bad_closer, max_size=5
-        )
+        pool = AsyncResourcePool(factory=async_factory, closer=bad_closer, max_size=5)
 
         resource = await pool.acquire()
 
@@ -541,9 +526,7 @@ class TestAsyncResourcePoolTimedelta:
     @pytest.mark.asyncio
     async def test_max_age_timedelta(self, async_factory):
         """Test max_age with timedelta parameter."""
-        pool = AsyncResourcePool(
-            factory=async_factory, max_size=5, max_age=timedelta(seconds=0.01)
-        )
+        pool = AsyncResourcePool(factory=async_factory, max_size=5, max_age=timedelta(seconds=0.01))
 
         resource = await pool.acquire()
         await pool.release(resource)
@@ -559,9 +542,7 @@ class TestAsyncResourcePoolTimedelta:
     @pytest.mark.asyncio
     async def test_max_idle_time_timedelta(self, async_factory):
         """Test max_idle_time with timedelta parameter."""
-        pool = AsyncResourcePool(
-            factory=async_factory, max_size=5, max_idle_time=timedelta(milliseconds=10)
-        )
+        pool = AsyncResourcePool(factory=async_factory, max_size=5, max_idle_time=timedelta(milliseconds=10))
 
         resource = await pool.acquire()
         await pool.release(resource)

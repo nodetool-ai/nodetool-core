@@ -3,8 +3,8 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from nodetool.metadata.types import (
-    AmazonResult,
     AmazonProductResult,
+    AmazonResult,
     DuckDuckGoResult,
     ImageResult,
     JobResult,

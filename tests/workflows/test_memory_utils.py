@@ -8,7 +8,6 @@ from nodetool.workflows import memory_utils
 
 
 class TestMemoryUtils:
-
     @patch("nodetool.workflows.memory_utils.psutil.Process")
     @patch("nodetool.workflows.memory_utils.os.getpid")
     def test_get_memory_usage_mb(self, mock_getpid, mock_process):
@@ -24,18 +23,18 @@ class TestMemoryUtils:
         with patch.dict("sys.modules", {"torch": MagicMock()}):
             mock_torch = sys.modules["torch"]
             mock_torch.cuda.is_available.return_value = True
-            mock_torch.cuda.memory_allocated.return_value = 209715200 # 200 MB
-            mock_torch.cuda.memory_reserved.return_value = 314572800 # 300 MB
+            mock_torch.cuda.memory_allocated.return_value = 209715200  # 200 MB
+            mock_torch.cuda.memory_reserved.return_value = 314572800  # 300 MB
 
             usage = memory_utils.get_gpu_memory_usage_mb()
             assert usage == (200.0, 300.0)
 
     def test_get_gpu_memory_usage_mb_unavailable(self):
         with patch.dict("sys.modules", {"torch": MagicMock()}):
-             mock_torch = sys.modules["torch"]
-             mock_torch.cuda.is_available.return_value = False
-             usage = memory_utils.get_gpu_memory_usage_mb()
-             assert usage is None
+            mock_torch = sys.modules["torch"]
+            mock_torch.cuda.is_available.return_value = False
+            usage = memory_utils.get_gpu_memory_usage_mb()
+            assert usage is None
 
     @patch("nodetool.workflows.memory_utils.log")
     @patch("nodetool.workflows.memory_utils.get_memory_usage_mb")
@@ -54,7 +53,7 @@ class TestMemoryUtils:
     @patch("nodetool.workflows.memory_utils.get_gpu_memory_usage_mb")
     @patch("gc.collect")
     def test_run_gc(self, mock_gc_collect, mock_get_gpu, mock_get_mem, mock_log):
-        mock_get_mem.side_effect = [100.0, 50.0] # before, after
+        mock_get_mem.side_effect = [100.0, 50.0]  # before, after
         mock_get_gpu.return_value = (200.0, 300.0)
 
         with patch.dict("sys.modules", {"torch": MagicMock()}):
@@ -90,8 +89,8 @@ class TestMemoryUtils:
     @patch("nodetool.workflows.memory_utils.get_gpu_memory_usage_mb")
     @patch("nodetool.workflows.memory_utils.time.time")
     def test_gpu_iteration_tracer(self, mock_time, mock_get_gpu):
-        mock_time.side_effect = [1000.0, 1001.0] # start, end
-        mock_get_gpu.side_effect = [(100.0, 200.0), (110.0, 210.0)] # start, end
+        mock_time.side_effect = [1000.0, 1001.0]  # start, end
+        mock_get_gpu.side_effect = [(100.0, 200.0), (110.0, 210.0)]  # start, end
 
         tracer = memory_utils.GPUIterationTracer(report_interval=1)
         tracer.start_iteration(0)
@@ -119,7 +118,7 @@ class TestMemoryUtils:
         # But wait, `get_memory_usage_mb` is also called in `_take_snapshot`.
 
         with patch("nodetool.workflows.memory_utils.get_memory_usage_mb", return_value=100.0):
-            mock_time.side_effect = list(range(1000, 1100)) # plenty of timestamps
+            mock_time.side_effect = list(range(1000, 1100))  # plenty of timestamps
             mock_get_gpu.return_value = (100.0, 200.0)
 
             session = memory_utils.GPUTraceSession("test_session", log_interval=1)
@@ -139,7 +138,7 @@ class TestMemoryUtils:
         with patch.dict("sys.modules", {"torch": MagicMock()}):
             mock_torch = sys.modules["torch"]
             mock_torch.cuda.is_available.return_value = True
-            mock_torch.cuda.memory_allocated.side_effect = [209715200, 104857600] # 200MB, 100MB
+            mock_torch.cuda.memory_allocated.side_effect = [209715200, 104857600]  # 200MB, 100MB
 
             stats = memory_utils.cleanup_gpu_memory(force=True)
 
@@ -150,17 +149,17 @@ class TestMemoryUtils:
 
     def test_get_gpu_memory_breakdown(self):
         with patch.dict("sys.modules", {"torch": MagicMock()}):
-             mock_torch = sys.modules["torch"]
-             mock_torch.cuda.is_available.return_value = True
-             mock_torch.cuda.device_count.return_value = 1
-             mock_torch.cuda.get_device_properties.return_value.name = "Test GPU"
-             mock_torch.cuda.get_device_properties.return_value.total_memory = 1024*1024*1024 # 1GB
+            mock_torch = sys.modules["torch"]
+            mock_torch.cuda.is_available.return_value = True
+            mock_torch.cuda.device_count.return_value = 1
+            mock_torch.cuda.get_device_properties.return_value.name = "Test GPU"
+            mock_torch.cuda.get_device_properties.return_value.total_memory = 1024 * 1024 * 1024  # 1GB
 
-             breakdown = memory_utils.get_gpu_memory_breakdown()
+            breakdown = memory_utils.get_gpu_memory_breakdown()
 
-             assert breakdown["available"] is True
-             assert len(breakdown["devices"]) == 1
-             assert breakdown["devices"][0]["name"] == "Test GPU"
+            assert breakdown["available"] is True
+            assert len(breakdown["devices"]) == 1
+            assert breakdown["devices"][0]["name"] == "Test GPU"
 
     @patch("nodetool.workflows.memory_utils.log")
     @patch("nodetool.workflows.memory_utils.get_memory_usage_mb")
@@ -181,7 +180,7 @@ class TestMemoryUtils:
     def test_get_memory_uri_cache_stats(self):
         mock_scope = MagicMock()
         mock_cache = MagicMock()
-        mock_cache._cache = {1: 1, 2: 2} # len 2
+        mock_cache._cache = {1: 1, 2: 2}  # len 2
         mock_scope.get_memory_uri_cache.return_value = mock_cache
 
         with patch("nodetool.runtime.resources.maybe_scope", return_value=mock_scope):

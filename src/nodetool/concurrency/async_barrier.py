@@ -113,10 +113,7 @@ class AsyncBarrier:
             self._condition.notify_all()
 
     def __repr__(self) -> str:
-        return (
-            f"AsyncBarrier(parties={self._parties}, "
-            f"waiting={self._count}, remaining={self.remaining})"
-        )
+        return f"AsyncBarrier(parties={self._parties}, waiting={self._count}, remaining={self.remaining})"
 
 
 __all__ = ["AsyncBarrier"]

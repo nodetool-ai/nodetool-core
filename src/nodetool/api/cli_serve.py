@@ -11,6 +11,7 @@ from rich.console import Console
 # Create console instance
 console = Console(stderr=True)
 
+
 def run_serve(
     host: str,
     port: int,

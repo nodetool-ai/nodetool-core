@@ -18,7 +18,7 @@ async def test_sync_workflow_success():
     client.download_huggingface_model.side_effect = mock_download_gen
     client.download_ollama_model.side_effect = mock_download_gen
 
-    client.get_asset.side_effect = Exception("Not found") # To trigger create
+    client.get_asset.side_effect = Exception("Not found")  # To trigger create
     client.create_asset.return_value = {}
     client.upload_asset_file.return_value = {}
 
@@ -32,14 +32,7 @@ async def test_sync_workflow_success():
         workflow_pydantic = MagicMock()
         workflow_pydantic.model_dump.return_value = {
             "id": "wf1",
-            "graph": {
-                "nodes": [
-                    {
-                        "type": "nodetool.constant.string",
-                        "data": {"value": {"asset_id": "asset1"}}
-                    }
-                ]
-            }
+            "graph": {"nodes": [{"type": "nodetool.constant.string", "data": {"value": {"asset_id": "asset1"}}}]},
         }
         mock_get_workflow.return_value = workflow
 
@@ -67,7 +60,7 @@ async def test_sync_workflow_success():
                     # Mock require_scope
                     with patch("nodetool.deploy.workflow_syncer.require_scope") as mock_require_scope:
                         storage = AsyncMock()
-                        storage.download.return_value = None # Should write to stream
+                        storage.download.return_value = None  # Should write to stream
 
                         # Mock BytesIO usage in download
                         async def mock_download(filename, stream):
@@ -85,6 +78,7 @@ async def test_sync_workflow_success():
                         client.upload_asset_file.assert_called_once()
                         client.download_huggingface_model.assert_called_once()
 
+
 @pytest.mark.asyncio
 async def test_sync_workflow_not_found():
     client = AsyncMock(spec=AdminHTTPClient)
@@ -98,6 +92,7 @@ async def test_sync_workflow_not_found():
 
         assert result is False
         console.print.assert_called_with("[red]❌ Workflow not found locally: wf1[/]")
+
 
 @pytest.mark.asyncio
 async def test_sync_workflow_exception():

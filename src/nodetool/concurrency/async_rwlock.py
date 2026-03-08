@@ -183,7 +183,9 @@ class AsyncReaderWriterLock:
         if self._writers > 0:
             return f"AsyncReaderWriterLock(write_locked, readers=0, pending_writers={self._writers_waiting})"
         elif self._readers > 0:
-            return f"AsyncReaderWriterLock(read_locked, readers={self._readers}, pending_writers={self._writers_waiting})"
+            return (
+                f"AsyncReaderWriterLock(read_locked, readers={self._readers}, pending_writers={self._writers_waiting})"
+            )
         else:
             return f"AsyncReaderWriterLock(unlocked, readers=0, pending_writers={self._writers_waiting})"
 

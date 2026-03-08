@@ -427,7 +427,9 @@ class BaseProvider:
         video_models = await self.get_available_video_models()
         embedding_models = await self.get_available_embedding_models()
         model_3d_models = await self.get_available_3d_models()
-        return language_models + image_models + tts_models + asr_models + video_models + embedding_models + model_3d_models  # type: ignore
+        return (
+            language_models + image_models + tts_models + asr_models + video_models + embedding_models + model_3d_models
+        )  # type: ignore
 
     def is_context_length_error(self, error: Exception) -> bool:
         """Return True if the given error indicates a context window overflow.
