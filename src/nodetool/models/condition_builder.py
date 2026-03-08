@@ -14,6 +14,8 @@ class Operator(Enum):
     IN = "IN"
     LIKE = "LIKE"
     CONTAINS = "CONTAINS"
+    IS_NULL = "IS NULL"
+    IS_NOT_NULL = "IS NOT NULL"
 
 
 class LogicalOperator(Enum):
@@ -130,6 +132,14 @@ class Field:
     def like(self, pattern: str | Variable) -> "ConditionBuilder":
         """Creates a 'like' (LIKE) condition for pattern matching."""
         return self._create_condition(Operator.LIKE, pattern)
+
+    def is_null(self) -> "ConditionBuilder":
+        """Creates an 'IS NULL' condition."""
+        return self._create_condition(Operator.IS_NULL, None)
+
+    def is_not_null(self) -> "ConditionBuilder":
+        """Creates an 'IS NOT NULL' condition."""
+        return self._create_condition(Operator.IS_NOT_NULL, None)
 
     # --- Operator Overloads ---
 

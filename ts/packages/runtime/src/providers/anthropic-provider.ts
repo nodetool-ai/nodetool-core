@@ -1,6 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Chunk } from "@nodetool/protocol";
+import { createLogger } from "@nodetool/config";
 import { BaseProvider } from "./base-provider.js";
+
+const log = createLogger("nodetool.runtime.providers.anthropic");
 import type {
   LanguageModel,
   Message,
@@ -99,30 +102,77 @@ export class AnthropicProvider extends BaseProvider {
     return this._client;
   }
 
-  hasToolSupport(_model: string): boolean {
+  async hasToolSupport(_model: string): Promise<boolean> {
     return true;
   }
 
   async getAvailableLanguageModels(): Promise<LanguageModel[]> {
-    const response = await this._fetch("https://api.anthropic.com/v1/models", {
-      headers: {
-        "x-api-key": this.apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-    });
+    const maxRetries = 3;
+    const baseDelay = 1000; // ms
 
-    if (!response.ok) {
-      return [];
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10_000); // 10s total timeout
+
+        const response = await this._fetch("https://api.anthropic.com/v1/models", {
+          headers: {
+            "x-api-key": this.apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+
+        // Don't retry on auth errors
+        if (response.status === 401 || response.status === 403) {
+          log.warn("Anthropic API auth error, not retrying", { status: response.status });
+          return [];
+        }
+
+        // Retry on rate limit or server errors
+        if ([429, 500, 502, 503, 504].includes(response.status)) {
+          log.warn("Anthropic API error, retrying", { status: response.status, attempt: attempt + 1, maxRetries });
+          if (attempt < maxRetries - 1) {
+            await new Promise((r) => setTimeout(r, baseDelay * 2 ** attempt));
+            continue;
+          }
+          return [];
+        }
+
+        if (!response.ok) {
+          log.warn("Failed to fetch Anthropic models", { status: response.status });
+          return [];
+        }
+
+        const payload = (await response.json()) as {
+          data?: Array<{ id?: string; name?: string }>;
+        };
+
+        return (payload.data ?? [])
+          .map((m) => m.id ?? m.name)
+          .filter((id): id is string => typeof id === "string" && id.length > 0)
+          .map((id) => ({ id, name: id, provider: "anthropic" }));
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+
+        // AbortError means timeout
+        if (lastError.name === "AbortError") {
+          log.warn("Anthropic API timeout", { attempt: attempt + 1, maxRetries });
+        } else {
+          log.warn("Anthropic API connection error", { error: lastError.message, attempt: attempt + 1, maxRetries });
+        }
+
+        if (attempt < maxRetries - 1) {
+          await new Promise((r) => setTimeout(r, baseDelay * 2 ** attempt));
+        }
+      }
     }
 
-    const payload = (await response.json()) as {
-      data?: Array<{ id?: string; name?: string }>;
-    };
-
-    return (payload.data ?? [])
-      .map((m) => m.id ?? m.name)
-      .filter((id): id is string => typeof id === "string" && id.length > 0)
-      .map((id) => ({ id, name: id, provider: "anthropic" }));
+    log.error("Failed to fetch Anthropic models after retries", { error: lastError?.message });
+    return [];
   }
 
   private prepareJsonSchema(schema: unknown): unknown {
@@ -406,6 +456,7 @@ export class AnthropicProvider extends BaseProvider {
     messages: Message[];
     model: string;
     tools?: ProviderTool[];
+    toolChoice?: string | "any";
     maxTokens?: number;
     responseFormat?: Record<string, unknown>;
     jsonSchema?: Record<string, unknown>;
@@ -414,6 +465,7 @@ export class AnthropicProvider extends BaseProvider {
     presencePenalty?: number;
     frequencyPenalty?: number;
     audio?: Record<string, unknown>;
+    thinkingBudget?: number;
   }): AsyncGenerator<ProviderStreamItem> {
     if (args.jsonSchema) {
       throw new Error("Anthropic provider expects responseFormat; jsonSchema is not supported directly");
@@ -431,23 +483,71 @@ export class AnthropicProvider extends BaseProvider {
 
     const structured = this.setupStructuredOutput(args.tools, args.responseFormat);
 
+    // Resolve tool_choice: explicit toolChoice arg wins over structured output default.
+    let resolvedToolChoice: Record<string, unknown> | undefined = structured.toolChoice;
+    if (args.toolChoice && !structured.isStructured) {
+      resolvedToolChoice = args.toolChoice === "any"
+        ? { type: "any" }
+        : { type: "tool", name: args.toolChoice };
+    }
+
     const request: Record<string, unknown> = {
       model: args.model,
       messages: anthropicMessages,
       system,
       max_tokens: args.maxTokens ?? 8192,
       ...(structured.tools ? { tools: structured.tools } : {}),
-      ...(structured.toolChoice ? { tool_choice: structured.toolChoice } : {}),
+      ...(resolvedToolChoice ? { tool_choice: resolvedToolChoice } : {}),
       ...(args.temperature != null ? { temperature: args.temperature } : {}),
       ...(args.topP != null ? { top_p: args.topP } : {}),
+      ...(args.thinkingBudget != null ? { thinking: { type: "enabled", budget_tokens: args.thinkingBudget } } : {}),
     };
+
+    log.debug("Anthropic request", { model: args.model });
 
     const stream = (await (this.getClient().messages as any).stream(
       request
     )) as AsyncIterable<any>;
 
+    let streamInputTokens = 0;
+    let streamOutputTokens = 0;
+    let streamCachedTokens = 0;
+
+    // Track in-flight tool_use blocks: index → { id, name, accumulated partial_json }
+    const activeToolBlocks = new Map<number, { id: string; name: string; json: string }>();
+
     for await (const event of stream) {
       const type = String(event?.type ?? "");
+
+      if (type === "message_start" && event?.message?.usage) {
+        streamInputTokens += event.message.usage.input_tokens ?? 0;
+        streamCachedTokens += event.message.usage.cache_read_input_tokens ?? 0;
+      }
+
+      if (type === "message_delta" && event?.usage) {
+        streamOutputTokens += event.usage.output_tokens ?? 0;
+      }
+
+      if (type === "message_stop") {
+        this.trackUsage(args.model, {
+          inputTokens: streamInputTokens,
+          outputTokens: streamOutputTokens,
+          cachedTokens: streamCachedTokens,
+        });
+      }
+
+      // Record the start of a tool_use content block so we can accumulate its JSON.
+      if (type === "content_block_start") {
+        const block = event?.content_block;
+        if (block?.type === "tool_use" && !structured.isStructured) {
+          activeToolBlocks.set(Number(event.index ?? 0), {
+            id: String(block.id ?? ""),
+            name: String(block.name ?? ""),
+            json: "",
+          });
+        }
+        continue;
+      }
 
       if (type === "content_block_delta") {
         const delta = event.delta;
@@ -462,13 +562,22 @@ export class AnthropicProvider extends BaseProvider {
           continue;
         }
 
-        if (structured.isStructured && typeof delta?.partial_json === "string") {
-          const chunk: Chunk = {
-            type: "chunk",
-            content: delta.partial_json,
-            done: false,
-          };
-          yield chunk;
+        if (typeof delta?.partial_json === "string") {
+          if (structured.isStructured) {
+            // Structured output: stream partial JSON as text chunks.
+            const chunk: Chunk = {
+              type: "chunk",
+              content: delta.partial_json,
+              done: false,
+            };
+            yield chunk;
+          } else {
+            // Regular tool call: accumulate the JSON into the active block.
+            const block = activeToolBlocks.get(Number(event.index ?? 0));
+            if (block) {
+              block.json += delta.partial_json;
+            }
+          }
           continue;
         }
 
@@ -484,12 +593,25 @@ export class AnthropicProvider extends BaseProvider {
       }
 
       if (type === "content_block_stop") {
-        const contentBlock = event?.content_block;
-        if (contentBlock?.type === "tool_use" && !structured.isStructured) {
+        // content_block_stop does NOT carry the content_block in the raw API event.
+        // Use the block we recorded from content_block_start + accumulated partial_json.
+        const index = Number(event.index ?? 0);
+        const toolBlock = activeToolBlocks.get(index);
+        if (toolBlock && !structured.isStructured) {
+          activeToolBlocks.delete(index);
+          let parsedArgs: Record<string, unknown> = {};
+          try {
+            const parsed = JSON.parse(toolBlock.json || "{}");
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+              parsedArgs = parsed as Record<string, unknown>;
+            }
+          } catch {
+            // malformed JSON — emit empty args
+          }
           const toolCall: ToolCall = {
-            id: String(contentBlock.id ?? ""),
-            name: String(contentBlock.name ?? ""),
-            args: (contentBlock.input ?? {}) as Record<string, unknown>,
+            id: toolBlock.id,
+            name: toolBlock.name,
+            args: parsedArgs,
           };
           yield toolCall;
         }
@@ -518,6 +640,7 @@ export class AnthropicProvider extends BaseProvider {
     topP?: number;
     presencePenalty?: number;
     frequencyPenalty?: number;
+    thinkingBudget?: number;
   }): Promise<Message> {
     if (args.jsonSchema) {
       throw new Error("Anthropic provider expects responseFormat; jsonSchema is not supported directly");
@@ -544,9 +667,20 @@ export class AnthropicProvider extends BaseProvider {
       ...(structured.toolChoice ? { tool_choice: structured.toolChoice } : {}),
       ...(args.temperature != null ? { temperature: args.temperature } : {}),
       ...(args.topP != null ? { top_p: args.topP } : {}),
+      ...(args.thinkingBudget != null ? { thinking: { type: "enabled", budget_tokens: args.thinkingBudget } } : {}),
     };
 
+    log.debug("Anthropic request", { model: args.model });
+
     const response = await (this.getClient().messages as any).create(request);
+
+    if (response.usage) {
+      this.trackUsage(args.model, {
+        inputTokens: response.usage.input_tokens ?? 0,
+        outputTokens: response.usage.output_tokens ?? 0,
+        cachedTokens: response.usage.cache_read_input_tokens ?? 0,
+      });
+    }
 
     const textParts: string[] = [];
     const toolCalls: ToolCall[] = [];

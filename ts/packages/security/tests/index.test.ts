@@ -14,9 +14,13 @@ describe("security index exports", () => {
 
     // master-key
     expect(mod.getMasterKey).toBeDefined();
+    expect(mod.initMasterKey).toBeDefined();
     expect(mod.clearMasterKeyCache).toBeDefined();
     expect(mod.setMasterKey).toBeDefined();
+    expect(mod.setMasterKeyPersistent).toBeDefined();
+    expect(mod.deleteMasterKey).toBeDefined();
     expect(mod.isUsingEnvKey).toBeDefined();
+    expect(mod.isUsingAwsKey).toBeDefined();
 
     // secret-helper
     expect(mod.getSecret).toBeDefined();
@@ -25,5 +29,7 @@ describe("security index exports", () => {
     expect(mod.getSecretSync).toBeDefined();
     expect(mod.clearSecretCache).toBeDefined();
     expect(mod.clearAllSecretCache).toBeDefined();
+    expect(mod.resetSecretModelLoader).toBeDefined();
+    expect(mod.setSecretModelLoader).toBeDefined();
   });
 });

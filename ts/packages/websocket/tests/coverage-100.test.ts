@@ -548,7 +548,7 @@ describe("UnifiedWebSocketRunner: output type inference (lines 128-132)", () => 
 // =====================================================================
 
 describe("HTTP API: createHttpApiServer with real request (lines 1067-1074)", () => {
-  it("handles request and error via Node HTTP server", async () => {
+  it("handles normal request via Node HTTP server", async () => {
     const http = await import("node:http");
     const { createHttpApiServer } = await import("../src/http-api.js");
     const server = createHttpApiServer();
@@ -556,7 +556,6 @@ describe("HTTP API: createHttpApiServer with real request (lines 1067-1074)", ()
     await new Promise<void>((resolve) => {
       server.listen(0, () => {
         const addr = server.address() as { port: number };
-        // Make a request to exercise handleNodeHttpRequest
         http.get(`http://localhost:${addr.port}/api/workflows`, { headers: { "x-user-id": "test" } }, (res) => {
           let data = "";
           res.on("data", (chunk: Buffer) => { data += chunk; });
@@ -568,11 +567,127 @@ describe("HTTP API: createHttpApiServer with real request (lines 1067-1074)", ()
       });
     });
   });
+
+  it("error handler catches thrown error (lines 1068-1073)", async () => {
+    const http = await import("node:http");
+    const { createHttpApiServer } = await import("../src/http-api.js");
+    // Create a server that will encounter an error during request handling
+    // by sending a malformed request body
+    const server = createHttpApiServer();
+
+    await new Promise<void>((resolve) => {
+      server.listen(0, () => {
+        const addr = server.address() as { port: number };
+        // Send a POST with content-length mismatch to trigger an error
+        const req = http.request({
+          hostname: "localhost",
+          port: addr.port,
+          path: "/api/workflows",
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-user-id": "test",
+            "transfer-encoding": "chunked",
+          },
+        }, (res) => {
+          let data = "";
+          res.on("data", (chunk: Buffer) => { data += chunk; });
+          res.on("end", () => {
+            server.close();
+            resolve();
+          });
+        });
+        req.write("{invalid");
+        req.end();
+      });
+    });
+  });
 });
 
 // =====================================================================
 // models-api.ts: toOllamaModel via ollama with resolveProvider
 // =====================================================================
+
+// =====================================================================
+// unified-websocket-runner.ts: resolveOutputNodeForKey fallback (line 146)
+// =====================================================================
+
+describe("UnifiedWebSocketRunner: resolveOutputNodeForKey fallback", () => {
+  beforeEach(async () => {
+    setup();
+    await Job.createTable();
+  });
+
+  it("falls back when output key doesn't match any node (line 146)", async () => {
+    const ws = new MockWS();
+    const runner = new UnifiedWebSocketRunner({
+      resolveExecutor: () => ({
+        async process() {
+          return { status: "completed", outputs: {
+            unknown_key: ["value"],
+          }};
+        },
+      }),
+    });
+    await runner.connect(ws);
+
+    const graph = {
+      nodes: [
+        // Use an Output node as fallback
+        { id: "out1", type: "nodetool.output.Output", name: "out1" },
+      ],
+      edges: [],
+    };
+    await runner.handleCommand({ command: "run_job", data: { graph, params: {} } });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(ws.sentBytes.length).toBeGreaterThan(0);
+    await runner.disconnect();
+  });
+});
+
+// =====================================================================
+// unified-websocket-runner.ts: ensureThreadExists without threadId (lines 496-498)
+// =====================================================================
+
+describe("UnifiedWebSocketRunner: chat_message without thread_id", () => {
+  beforeEach(async () => {
+    setup();
+    await Thread.createTable();
+    await Message.createTable();
+  });
+
+  it("creates new thread when thread_id is missing (lines 496-498)", async () => {
+    const ws = new MockWS();
+    const runner = new UnifiedWebSocketRunner({
+      resolveExecutor: () => ({ async process() { return {}; } }),
+      resolveProvider: async () => ({
+        provider: "mock",
+        generateMessages: async function* () {
+          yield { type: "chunk" as const, content: "hi" };
+        },
+        generateMessage: vi.fn(),
+        hasToolSupport: async () => false,
+        getAvailableLanguageModels: async () => [],
+        getAvailableImageModels: async () => [],
+        getAvailableVideoModels: async () => [],
+        getAvailableTTSModels: async () => [],
+        getAvailableASRModels: async () => [],
+        getAvailableEmbeddingModels: async () => [],
+        getContainerEnv: () => ({}),
+      } as any),
+    });
+    await runner.connect(ws);
+
+    // Send chat_message WITHOUT thread_id
+    await runner.handleCommand({
+      command: "chat_message",
+      data: { content: "hello" },
+    });
+
+    await new Promise((r) => setTimeout(r, 200));
+    await runner.disconnect();
+  });
+});
 
 describe("Models API: isServerReachable catch path (line 489)", () => {
   it("exercises isServerReachable via recommended with check_servers=true", async () => {

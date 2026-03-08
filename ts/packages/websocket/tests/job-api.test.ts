@@ -164,9 +164,9 @@ describe("HTTP API: jobs", () => {
     expect(response.status).toBe(200);
 
     const data = (await jsonBody(response)) as Record<string, unknown>;
-    expect(data.id).toBe(created.id);
+    expect(data.job_id).toBe(created.id);
     expect(data.status).toBe("cancelled");
-    expect(data.finished_at).not.toBeNull();
+    expect(data.is_completed).toBe(true);
 
     // Verify persisted
     const refreshed = (await Job.get(created.id)) as Job;

@@ -5,8 +5,16 @@ export interface TypeMetadata {
   type: string;
   optional?: boolean;
   values?: Array<string | number>;
-  type_args?: TypeMetadata[];
+  type_args: TypeMetadata[];
   type_name?: string | null;
+}
+
+/** Ensure a raw type object from JSON always has type_args as an array. */
+export function normalizeTypeMetadata(t: TypeMetadata): TypeMetadata {
+  return {
+    ...t,
+    type_args: (t.type_args ?? []).map(normalizeTypeMetadata),
+  };
 }
 
 export interface PropertyMetadata {
@@ -55,6 +63,8 @@ export interface PackageMetadata {
   nodes?: NodeMetadata[];
   examples?: unknown[];
   assets?: unknown[];
+  /** Absolute path to the source root (e.g. /path/to/nodetool-base/src or /path/to/nodetool-base) */
+  sourceFolder?: string;
 }
 
 export interface PythonMetadataLoadOptions {
@@ -164,7 +174,9 @@ export function loadPythonPackageMetadata(
   for (const file of files) {
     let parsed: unknown;
     try {
-      parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+      // Python's json module allows NaN/Infinity which are not valid JSON; replace them with null.
+      const raw = fs.readFileSync(file, "utf8").replace(/\bNaN\b|-?Infinity\b/g, "null");
+      parsed = JSON.parse(raw);
     } catch (error) {
       warnings.push(`Failed to parse JSON ${file}: ${String(error)}`);
       continue;
@@ -173,6 +185,11 @@ export function loadPythonPackageMetadata(
       warnings.push(`Skipping non-object metadata file: ${file}`);
       continue;
     }
+
+    // Infer source folder from the metadata file path:
+    // file is at {root}/nodetool/package_metadata/{name}.json or {root}/src/nodetool/package_metadata/{name}.json
+    const metaDir = path.dirname(file); // .../nodetool/package_metadata
+    const sourceFolder = path.dirname(path.dirname(metaDir)); // strip /nodetool/package_metadata
 
     const pkg: PackageMetadata = {
       name: typeof parsed.name === "string" ? parsed.name : path.basename(file, ".json"),
@@ -183,6 +200,7 @@ export function loadPythonPackageMetadata(
       nodes: Array.isArray(parsed.nodes) ? (parsed.nodes as NodeMetadata[]) : undefined,
       examples: Array.isArray(parsed.examples) ? parsed.examples : undefined,
       assets: Array.isArray(parsed.assets) ? parsed.assets : undefined,
+      sourceFolder,
     };
     packages.push(pkg);
 
@@ -193,7 +211,13 @@ export function loadPythonPackageMetadata(
       if (nodesByType.has(node.node_type)) {
         duplicates.add(node.node_type);
       }
-      nodesByType.set(node.node_type, node);
+      // Normalize type_args to always be an array (some JSON files omit it)
+      const normalized: NodeMetadata = {
+        ...node,
+        properties: (node.properties ?? []).map((p) => ({ ...p, type: normalizeTypeMetadata(p.type) })),
+        outputs: (node.outputs ?? []).map((o) => ({ ...o, type: normalizeTypeMetadata(o.type) })),
+      };
+      nodesByType.set(node.node_type, normalized);
     }
   }
 

@@ -195,7 +195,245 @@ export class IntAccumulator extends BaseNode {
   }
 }
 
-/** All test nodes for easy bulk registration */
+// ---------------------------------------------------------------------------
+// Controller nodes (emit control events via __control__ handle)
+// ---------------------------------------------------------------------------
+
+/**
+ * Source node that emits a single RunEvent on its __control__ output handle.
+ * Connect via a control edge (edge_type: "control") to a controlled node.
+ */
+export class SimpleController extends BaseNode {
+  static readonly nodeType = "nodetool.test.SimpleController";
+  static readonly title = "Simple Controller";
+  static readonly description = "Emits one RunEvent via __control__ handle";
+  static readonly isStreamingOutput = true;
+
+  defaults() {
+    return { threshold: 0.8, mode: "normal" };
+  }
+
+  async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return {};
+  }
+
+  async *genProcess(_inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
+    yield {
+      __control__: {
+        event_type: "run",
+        properties: {
+          threshold: this._props.threshold ?? 0.8,
+          mode: this._props.mode ?? "normal",
+        },
+      },
+    };
+  }
+}
+
+/**
+ * Source node that emits N RunEvents on its __control__ output handle.
+ */
+export class MultiTriggerController extends BaseNode {
+  static readonly nodeType = "nodetool.test.MultiTriggerController";
+  static readonly title = "Multi Trigger Controller";
+  static readonly description = "Emits N RunEvents via __control__ handle";
+  static readonly isStreamingOutput = true;
+
+  defaults() {
+    return { count: 3, threshold: 0.5 };
+  }
+
+  async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return {};
+  }
+
+  async *genProcess(_inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
+    const count = (this._props.count as number) ?? 3;
+    for (let i = 0; i < count; i++) {
+      yield {
+        __control__: {
+          event_type: "run",
+          properties: {
+            threshold: this._props.threshold ?? 0.5,
+            index: i,
+          },
+        },
+      };
+    }
+  }
+}
+
+/**
+ * Source node that emits a StopEvent on its __control__ handle,
+ * causing the controlled node to stop immediately.
+ */
+export class StopEventController extends BaseNode {
+  static readonly nodeType = "nodetool.test.StopEventController";
+  static readonly title = "Stop Event Controller";
+  static readonly description = "Emits a StopEvent via __control__ handle";
+  static readonly isStreamingOutput = true;
+
+  async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return {};
+  }
+
+  async *genProcess(_inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
+    yield { __control__: { event_type: "stop" } };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Streaming nodes
+// ---------------------------------------------------------------------------
+
+/**
+ * Node with is_streaming_input: true.
+ * Called once with empty inputs by the actor.
+ */
+export class StreamingInputProcessor extends BaseNode {
+  static readonly nodeType = "nodetool.test.StreamingInputProcessor";
+  static readonly title = "Streaming Input Processor";
+  static readonly description = "Streaming input node – called once with empty inputs";
+  static readonly isStreamingInput = true;
+
+  async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return { result: "processed" };
+  }
+}
+
+/**
+ * Node with both is_streaming_input and is_streaming_output set.
+ * Called once with empty inputs (streaming input takes priority in actor).
+ */
+export class FullStreamingNode extends BaseNode {
+  static readonly nodeType = "nodetool.test.FullStreamingNode";
+  static readonly title = "Full Streaming Node";
+  static readonly description = "Both streaming input and output";
+  static readonly isStreamingInput = true;
+  static readonly isStreamingOutput = true;
+
+  defaults() {
+    return { count: 2 };
+  }
+
+  async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return { result: "full-streaming" };
+  }
+
+  async *genProcess(_inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
+    const count = (this._props.count as number) ?? 2;
+    for (let i = 0; i < count; i++) {
+      yield { value: i };
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Data processing nodes
+// ---------------------------------------------------------------------------
+
+/**
+ * Accepts a list of numbers and emits their sum.
+ */
+export class ListSumProcessor extends BaseNode {
+  static readonly nodeType = "nodetool.test.ListSumProcessor";
+  static readonly title = "List Sum Processor";
+  static readonly description = "Sums an array of numbers";
+
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const values = (inputs.values ?? []) as number[];
+    const sum = Array.isArray(values)
+      ? values.reduce((a: number, b) => a + (b as number), 0)
+      : 0;
+    return { sum };
+  }
+}
+
+/**
+ * Throws if shouldFail input or prop is true.
+ */
+export class ConditionalErrorProcessor extends BaseNode {
+  static readonly nodeType = "nodetool.test.ConditionalErrorProcessor";
+  static readonly title = "Conditional Error Processor";
+  static readonly description = "Throws only if shouldFail is true";
+
+  defaults() {
+    return { shouldFail: false, message: "conditional error" };
+  }
+
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const shouldFail = (inputs.shouldFail ?? this._props.shouldFail ?? false) as boolean;
+    if (shouldFail) {
+      throw new Error(String(this._props.message ?? "conditional error"));
+    }
+    return { result: "ok" };
+  }
+}
+
+/**
+ * Runs successfully but emits no output values.
+ */
+export class SilentNode extends BaseNode {
+  static readonly nodeType = "nodetool.test.SilentNode";
+  static readonly title = "Silent Node";
+  static readonly description = "Runs but emits no output";
+
+  async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return {};
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Typed input source nodes (run as actors, emit their prop value)
+// ---------------------------------------------------------------------------
+
+export class IntInput extends BaseNode {
+  static readonly nodeType = "nodetool.test.IntInput";
+  static readonly title = "Int Input";
+  static readonly description = "Source node that emits an integer";
+
+  defaults() {
+    return { value: 0 };
+  }
+
+  async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return { value: this._props.value ?? 0 };
+  }
+}
+
+export class FloatInput extends BaseNode {
+  static readonly nodeType = "nodetool.test.FloatInput";
+  static readonly title = "Float Input";
+  static readonly description = "Source node that emits a float";
+
+  defaults() {
+    return { value: 0.0 };
+  }
+
+  async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return { value: this._props.value ?? 0.0 };
+  }
+}
+
+export class StringInput extends BaseNode {
+  static readonly nodeType = "nodetool.test.StringInput";
+  static readonly title = "String Input";
+  static readonly description = "Source node that emits a string";
+
+  defaults() {
+    return { value: "" };
+  }
+
+  async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return { value: this._props.value ?? "" };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Node arrays for bulk registration
+// ---------------------------------------------------------------------------
+
+/** All original test nodes */
 export const ALL_TEST_NODES = [
   Passthrough,
   Add,
@@ -209,3 +447,21 @@ export const ALL_TEST_NODES = [
   StreamingCounter,
   IntAccumulator,
 ] as const;
+
+/** Additional E2E-focused test nodes */
+export const ALL_CONTROLLER_NODES = [
+  SimpleController,
+  MultiTriggerController,
+  StopEventController,
+  StreamingInputProcessor,
+  FullStreamingNode,
+  ListSumProcessor,
+  ConditionalErrorProcessor,
+  SilentNode,
+  IntInput,
+  FloatInput,
+  StringInput,
+] as const;
+
+/** Combined: all test nodes including controller/e2e nodes */
+export const ALL_E2E_NODES = [...ALL_TEST_NODES, ...ALL_CONTROLLER_NODES] as const;

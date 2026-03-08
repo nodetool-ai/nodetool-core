@@ -441,40 +441,20 @@ class BaseChatRunner(ABC):
         provider = await get_provider(last_message.provider)
         log.debug(f"Using provider {provider.__class__.__name__} for model {last_message.model}")
 
-        # Check for help request
-        if last_message.help_mode:
-            log.debug(f"Processing help request with model: {last_message.model}")
-            if not last_message.model:
-                raise ValueError("Model is required")
-            if not last_message.provider:
-                raise ValueError("Provider is required")
+        log.debug(f"Chat history length: {len(chat_history)} messages")
 
-            from nodetool.messaging.help_message_processor import HelpMessageProcessor
+        from nodetool.messaging.regular_chat_processor import RegularChatProcessor
 
-            processor = HelpMessageProcessor(provider)
+        # Create the regular chat processor
+        processor = RegularChatProcessor(provider)
 
-            await self._run_processor(
-                processor=processor,
-                chat_history=chat_history,
-                processing_context=processing_context,
-            )
-
-        # Regular chat processing
-        else:
-            log.debug(f"Chat history length: {len(chat_history)} messages")
-
-            from nodetool.messaging.regular_chat_processor import RegularChatProcessor
-
-            # Create the regular chat processor
-            processor = RegularChatProcessor(provider)
-
-            await self._run_processor(
-                processor=processor,
-                chat_history=chat_history,
-                processing_context=processing_context,
-                collections=last_message.collections,
-                graph=last_message.graph,
-            )
+        await self._run_processor(
+            processor=processor,
+            chat_history=chat_history,
+            processing_context=processing_context,
+            collections=last_message.collections,
+            graph=last_message.graph,
+        )
 
     async def process_agent_messages(self, messages: list[ApiMessage]):
         """
@@ -528,8 +508,7 @@ class BaseChatRunner(ABC):
         Processes messages that are part of a defined workflow.
 
         Routes to different processors:
-        - help_mode=True: Uses HelpMessageProcessor
-        - help_mode=False and run_mode="chat": Uses ChatWorkflowMessageProcessor
+        - run_mode="chat": Uses ChatWorkflowMessageProcessor
         - Otherwise: Uses WorkflowMessageProcessor
         """
         chat_history = messages
@@ -544,22 +523,7 @@ class BaseChatRunner(ABC):
         if not workflow:
             raise ValueError(f"Workflow {last_message.workflow_id} not found")
 
-        # Check for help request first
-        if last_message.help_mode:
-            log.debug(f"Processing help request for workflow {last_message.workflow_id}")
-
-            if not last_message.model:
-                raise ValueError("Model is required for help mode")
-            if not last_message.provider:
-                raise ValueError("Provider is required for help mode")
-
-            provider = await get_provider(last_message.provider)
-
-            from nodetool.messaging.help_message_processor import HelpMessageProcessor
-
-            processor = HelpMessageProcessor(provider)
-        # Regular workflow processing
-        elif workflow.run_mode == "chat":
+        if workflow.run_mode == "chat":
             log.debug(f"Using ChatWorkflowMessageProcessor for workflow {last_message.workflow_id}")
 
             from nodetool.messaging.chat_workflow_message_processor import ChatWorkflowMessageProcessor

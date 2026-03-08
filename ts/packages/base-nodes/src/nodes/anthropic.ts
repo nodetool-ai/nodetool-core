@@ -75,10 +75,11 @@ export class ClaudeAgentNode extends BaseNode {
       if (err.message?.includes("Cannot find module")) {
         throw new Error(
           "Claude Agent SDK (claude-agent-sdk) is not installed. " +
-          "Install it to use the ClaudeAgent node."
+          "Install it to use the ClaudeAgent node.",
+          { cause: e }
         );
       }
-      throw new Error(`Claude Agent error: ${err.message}`);
+      throw new Error(`Claude Agent error: ${err.message}`, { cause: e });
     }
   }
 }

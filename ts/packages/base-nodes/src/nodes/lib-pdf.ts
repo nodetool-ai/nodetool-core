@@ -52,7 +52,7 @@ export class GetPageCountPdfPlumberNode extends BaseNode {
     const pdf = (inputs.pdf ?? this._props.pdf ?? {}) as DocumentRefLike;
     const doc = await loadPdfDocument(pdf);
     const count = doc.numPages;
-    doc.destroy();
+    void doc.destroy();
     return { output: count };
   }
 }
@@ -84,7 +84,7 @@ export class ExtractTextPdfPlumberNode extends BaseNode {
       textParts.push(pageText);
     }
 
-    doc.destroy();
+    void doc.destroy();
     return { output: textParts.join("\n\n") };
   }
 }
@@ -120,7 +120,7 @@ export class ExtractPageMetadataPdfPlumberNode extends BaseNode {
       });
     }
 
-    doc.destroy();
+    void doc.destroy();
     return { output: metadata };
   }
 }
@@ -188,7 +188,7 @@ export class ExtractTablesPdfPlumberNode extends BaseNode {
       }
     }
 
-    doc.destroy();
+    void doc.destroy();
     return { output: tables };
   }
 }
@@ -249,7 +249,7 @@ export class ExtractTextPyMuPdfNode extends BaseNode {
       text += "\n\n";
     }
 
-    doc.destroy();
+    void doc.destroy();
     return { output: text.trim() };
   }
 }
@@ -332,7 +332,7 @@ export class ExtractMarkdownPyMuPdfNode extends BaseNode {
       mdParts.push(lines.join("\n"));
     }
 
-    doc.destroy();
+    void doc.destroy();
     return { output: mdParts.join("\n\n---\n\n") };
   }
 }
@@ -419,7 +419,7 @@ export class ExtractTextBlocksPyMuPdfNode extends BaseNode {
       }
     }
 
-    doc.destroy();
+    void doc.destroy();
     return { output: blocks };
   }
 }
@@ -469,7 +469,7 @@ export class ExtractTextWithStylePyMuPdfNode extends BaseNode {
       }
     }
 
-    doc.destroy();
+    void doc.destroy();
     return { output: styledText };
   }
 }
@@ -537,7 +537,7 @@ export class ExtractTablesPyMuPdfNode extends BaseNode {
       }
     }
 
-    doc.destroy();
+    void doc.destroy();
     return { output: allTables };
   }
 }

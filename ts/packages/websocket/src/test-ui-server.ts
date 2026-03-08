@@ -1,12 +1,28 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createLogger } from "@nodetool/config";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { WebSocketServer } from "ws";
 import { NodeRegistry } from "@nodetool/node-sdk";
 import { registerBaseNodes } from "@nodetool/base-nodes";
 import { UnifiedWebSocketRunner, type WebSocketConnection } from "./unified-websocket-runner.js";
+import { ScriptedProvider, autoScript } from "@nodetool/runtime";
 import { handleNodeHttpRequest, type HttpApiOptions } from "./http-api.js";
+import {
+  SQLiteAdapterFactory,
+  setGlobalAdapterResolver,
+  Secret,
+  Workflow,
+  Job,
+  Message,
+  Thread,
+  Asset,
+} from "@nodetool/models";
+
+const log = createLogger("nodetool.websocket.server");
 
 function htmlPage(): string {
   return `<!doctype html>
@@ -1124,7 +1140,7 @@ export function createTestUiServer(options: TestUiServerOptions = {}) {
       res.end(JSON.stringify(example));
       return;
     }
-    if (url.pathname.startsWith("/api/")) {
+    if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/v1/") || url.pathname.startsWith("/admin/")) {
       void handleNodeHttpRequest(req, res, resolvedApiOptions);
       return;
     }
@@ -1136,8 +1152,7 @@ export function createTestUiServer(options: TestUiServerOptions = {}) {
   const wss = new WebSocketServer({ noServer: true });
 
   wss.on("error", (error: Error) => {
-    // eslint-disable-next-line no-console
-    console.error("[createTestUiServer] WebSocketServer error", error);
+    log.error("WebSocketServer error", error);
   });
 
   server.on("upgrade", (request, socket, head) => {
@@ -1149,15 +1164,23 @@ export function createTestUiServer(options: TestUiServerOptions = {}) {
 
     wss.handleUpgrade(request, socket, head, (ws: any) => {
       ws.on("error", (error: Error) => {
-        // eslint-disable-next-line no-console
-        console.error("[createTestUiServer] websocket client error", error);
+        log.error("WebSocket client error", error);
       });
       const runner = new UnifiedWebSocketRunner({
         resolveExecutor: (node) => registry.resolve(node),
+        resolveProvider: async (_providerId) => new ScriptedProvider([
+          autoScript({
+            plan: {
+              title: "Agent task",
+              steps: [{ id: "s1", instructions: "Complete the objective", depends_on: [] }],
+            },
+            text: "fake agent response from server",
+          }),
+        ]),
       });
+      log.info("WebSocket client connected");
       void runner.run(new WsAdapter(ws)).catch((error) => {
-        // eslint-disable-next-line no-console
-        console.error("[createTestUiServer] runner crashed", error);
+        log.error("Runner crashed", error instanceof Error ? error : new Error(String(error)));
       });
     });
   });
@@ -1185,11 +1208,25 @@ export function createTestUiServer(options: TestUiServerOptions = {}) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
+  // Initialize SQLite adapter pointing at the same DB as the Python side
+  const dbPath = process.env["DB_PATH"] ?? join(homedir(), ".config", "nodetool", "nodetool.sqlite3");
+  try {
+    const factory = new SQLiteAdapterFactory(dbPath);
+    setGlobalAdapterResolver((schema) => factory.getAdapter(schema));
+    await Promise.all([
+      Secret.createTable(),
+      Workflow.createTable(),
+      Job.createTable(),
+      Message.createTable(),
+      Thread.createTable(),
+      Asset.createTable(),
+    ]);
+  } catch {
+    // DB unavailable — secrets will appear unconfigured
+  }
+
   const srv = createTestUiServer();
   void srv.listen().then(() => {
-    // eslint-disable-next-line no-console
-    console.log(
-      `Test UI listening on http://${srv.info.host}:${srv.info.port} (metadata roots: ${srv.info.metadataRoots.join(", ")}, nodes: ${srv.info.metadataCount})`
-    );
+    log.info("Server listening", { host: srv.info.host, port: srv.info.port, metadataRoots: srv.info.metadataRoots, nodes: srv.info.metadataCount });
   });
 }

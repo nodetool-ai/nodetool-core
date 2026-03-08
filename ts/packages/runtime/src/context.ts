@@ -837,7 +837,7 @@ export class ProcessingContext {
     const params = req.params ?? {};
     switch (req.capability) {
       case "generate_message":
-        return provider.generateMessage({
+        return provider.generateMessageTraced({
           messages: (params.messages as Message[]) ?? [],
           model: req.model,
           tools: params.tools as Parameters<BaseProvider["generateMessage"]>[0]["tools"],
@@ -931,7 +931,7 @@ export class ProcessingContext {
       const params = req.params ?? {};
 
       if (req.capability === "generate_messages") {
-        for await (const item of provider.generateMessages({
+        for await (const item of provider.generateMessagesTraced({
           messages: (params.messages as Message[]) ?? [],
           model: req.model,
           tools: params.tools as Parameters<BaseProvider["generateMessages"]>[0]["tools"],

@@ -98,6 +98,11 @@ export interface TextToImageParams {
   width?: number;
   height?: number;
   quality?: string | null;
+  guidanceScale?: number | null;
+  numInferenceSteps?: number | null;
+  seed?: number | null;
+  scheduler?: string | null;
+  safetyCheck?: boolean | null;
 }
 
 export interface ImageToImageParams {
@@ -107,6 +112,11 @@ export interface ImageToImageParams {
   targetWidth?: number | null;
   targetHeight?: number | null;
   quality?: string | null;
+  guidanceScale?: number | null;
+  numInferenceSteps?: number | null;
+  strength?: number | null;
+  seed?: number | null;
+  scheduler?: string | null;
 }
 
 export interface TextToVideoParams {
@@ -116,6 +126,9 @@ export interface TextToVideoParams {
   numFrames?: number | null;
   aspectRatio?: string | null;
   resolution?: string | null;
+  guidanceScale?: number | null;
+  numInferenceSteps?: number | null;
+  seed?: number | null;
 }
 
 export interface ImageToVideoParams {
@@ -125,10 +138,36 @@ export interface ImageToVideoParams {
   numFrames?: number | null;
   aspectRatio?: string | null;
   resolution?: string | null;
+  guidanceScale?: number | null;
+  numInferenceSteps?: number | null;
+  seed?: number | null;
 }
 
 export type ProviderStreamItem = Chunk | ToolCall;
 
 export interface StreamingAudioChunk {
   samples: Int16Array;
+}
+
+export interface Model3D {
+  id: string;
+  name: string;
+  provider: ProviderId;
+  supportedTasks?: string[];
+}
+
+export interface TextTo3DParams {
+  model: Model3D;
+  prompt: string;
+  negativePrompt?: string | null;
+  artStyle?: string | null;
+  outputFormat?: string;
+  seed?: number | null;
+}
+
+export interface ImageTo3DParams {
+  model: Model3D;
+  prompt?: string | null;
+  outputFormat?: string;
+  seed?: number | null;
 }

@@ -9,9 +9,11 @@
     "test": "vitest run",
     "lint": "tsc --noEmit"
   },
-  "dependencies": {},
+  "dependencies": {
+    "jose": "^6.2.0"
+  },
   "devDependencies": {
-    "vitest": "^1.6.1",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.1"
   }
 }

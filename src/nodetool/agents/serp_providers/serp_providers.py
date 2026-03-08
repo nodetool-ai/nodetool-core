@@ -102,6 +102,54 @@ class SerpProvider(abc.ABC):
         """
 
     @abc.abstractmethod
+    async def search_amazon(
+        self, query: str, amazon_domain: str = "amazon.com", num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse: ...
+
+    @abc.abstractmethod
+    async def search_amazon_product(
+        self, product_id: str, amazon_domain: str = "amazon.com"
+    ) -> dict[str, Any] | ErrorResponse: ...
+
+    @abc.abstractmethod
+    async def search_youtube(
+        self, query: str, num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse: ...
+
+    @abc.abstractmethod
+    async def search_scholar(
+        self, query: str, num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse: ...
+
+    @abc.abstractmethod
+    async def search_trends(
+        self, query: str, date: str | None = None, geo: str | None = None
+    ) -> dict[str, Any] | ErrorResponse: ...
+
+    @abc.abstractmethod
+    async def search_yelp(
+        self, query: str, location: str, num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse: ...
+
+    @abc.abstractmethod
+    async def search_duckduckgo(
+        self, query: str, num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse: ...
+
+    @abc.abstractmethod
+    async def search_raw(
+        self, engine: str, params: dict[str, Any]
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Generic search method that sends a request to any SerpAPI engine.
+        Allows nodes to use any SerpAPI engine without needing a dedicated provider method.
+
+        Args:
+            engine: The SerpAPI engine name (e.g., 'google_events', 'bing', 'walmart').
+            params: Engine-specific parameters (excluding api_key and engine).
+        """
+
+    @abc.abstractmethod
     async def close(self) -> None:
         """
         Clean up any resources (e.g., close HTTP clients).

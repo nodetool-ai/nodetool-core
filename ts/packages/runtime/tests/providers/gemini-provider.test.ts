@@ -45,10 +45,10 @@ describe("GeminiProvider", () => {
     expect(GeminiProvider.requiredSecrets()).toEqual(["GEMINI_API_KEY"]);
   });
 
-  it("has tool support for all models", () => {
+  it("has tool support for all models", async () => {
     const provider = new GeminiProvider({ GEMINI_API_KEY: "k" });
-    expect(provider.hasToolSupport("gemini-2.0-flash")).toBe(true);
-    expect(provider.hasToolSupport("gemini-1.5-pro")).toBe(true);
+    expect(await provider.hasToolSupport("gemini-2.0-flash")).toBe(true);
+    expect(await provider.hasToolSupport("gemini-1.5-pro")).toBe(true);
   });
 
   it("converts messages to Gemini format", async () => {

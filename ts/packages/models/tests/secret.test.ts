@@ -137,6 +137,26 @@ describe("Secret model", () => {
     expect(v2).toBe("user2-value");
   });
 
+  it("listAll returns secrets across all users", async () => {
+    await Secret.upsert({ userId: "user-1", key: "KEY_A", value: "a" });
+    await Secret.upsert({ userId: "user-2", key: "KEY_B", value: "b" });
+    await Secret.upsert({ userId: "user-3", key: "KEY_C", value: "c" });
+
+    const all = await Secret.listAll();
+    expect(all.length).toBe(3);
+    const keys = all.map((s) => s.key).sort();
+    expect(keys).toEqual(["KEY_A", "KEY_B", "KEY_C"]);
+  });
+
+  it("listAll respects limit", async () => {
+    await Secret.upsert({ userId: "user-1", key: "KEY_A", value: "a" });
+    await Secret.upsert({ userId: "user-2", key: "KEY_B", value: "b" });
+    await Secret.upsert({ userId: "user-3", key: "KEY_C", value: "c" });
+
+    const limited = await Secret.listAll(2);
+    expect(limited.length).toBe(2);
+  });
+
   it("toSafeObject excludes encrypted_value", async () => {
     const secret = await Secret.upsert({
       userId: "user-1",

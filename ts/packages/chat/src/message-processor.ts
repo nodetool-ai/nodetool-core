@@ -103,9 +103,10 @@ export async function processChat(opts: {
   let messagesToSend: Message[] = messages;
 
   while (true) {
-    let unprocessedMessages: Message[] = [];
+    const toolCallResults: Array<ToolCall & { result: unknown }> = [];
+    let assistantText = "";
 
-    const stream = provider.generateMessages({
+    const stream = provider.generateMessagesTraced({
       messages: messagesToSend,
       model,
       tools: providerTools,
@@ -116,11 +117,12 @@ export async function processChat(opts: {
       if (isChunk(item)) {
         const text = item.content ?? "";
         callbacks?.onChunk?.(text);
+        assistantText += text;
 
         const last = messages[messages.length - 1];
-        if (last && last.role === "assistant" && typeof last.content === "string") {
+        if (last && last.role === "assistant" && typeof last.content === "string" && !last.toolCalls?.length) {
           last.content += text;
-        } else {
+        } else if (!last || last.role !== "assistant" || last.toolCalls?.length) {
           messages.push({ role: "assistant", content: text });
         }
       }
@@ -132,28 +134,36 @@ export async function processChat(opts: {
         const toolResult = await runTool(context, item, tools);
         callbacks?.onToolResult?.(item, (toolResult as ToolCall & { result: unknown }).result);
 
-        // Append assistant message with tool call
-        unprocessedMessages.push({
-          role: "assistant",
-          toolCalls: [item],
-        });
-
-        // Append tool result message
-        unprocessedMessages.push({
-          role: "tool",
-          toolCallId: item.id,
-          content: JSON.stringify(
-            (toolResult as ToolCall & { result: unknown }).result,
-            defaultSerializer,
-          ),
-        });
+        toolCallResults.push(toolResult as ToolCall & { result: unknown });
       }
     }
 
-    // If tool calls were processed, continue the conversation
-    if (unprocessedMessages.length > 0) {
-      messages.push(...unprocessedMessages);
-      messagesToSend = unprocessedMessages;
+    // If tool calls were processed, consolidate into a single assistant message + tool results
+    if (toolCallResults.length > 0) {
+      // Remove the streaming text-only assistant message (if any) — we'll replace it
+      // with a consolidated assistant message that includes both text and tool calls.
+      const last = messages[messages.length - 1];
+      if (last && last.role === "assistant" && !last.toolCalls?.length) {
+        messages.pop();
+      }
+
+      // One assistant message with all tool calls (and any accumulated text)
+      messages.push({
+        role: "assistant",
+        content: assistantText || undefined,
+        toolCalls: toolCallResults,
+      });
+
+      // One tool-result message per tool call
+      for (const tc of toolCallResults) {
+        messages.push({
+          role: "tool",
+          toolCallId: tc.id,
+          content: JSON.stringify(tc.result, defaultSerializer),
+        });
+      }
+
+      messagesToSend = messages;
     } else {
       break;
     }

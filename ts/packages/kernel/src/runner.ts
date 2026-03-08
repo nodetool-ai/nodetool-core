@@ -14,12 +14,16 @@
  *   - Completion detection.
  */
 
+import { createLogger } from "@nodetool/config";
 import type {
   NodeDescriptor,
   Edge,
   ProcessingMessage,
   ControlEvent,
 } from "@nodetool/protocol";
+import { TypeMetadata } from "@nodetool/protocol";
+
+const log = createLogger("nodetool.kernel.runner");
 import type { ProcessingContext } from "@nodetool/runtime";
 import { isControlEdge, isDataEdge } from "@nodetool/protocol";
 import { Graph } from "./graph.js";
@@ -91,6 +95,17 @@ export class WorkflowRunner {
   /** Per-edge message counters (for EdgeUpdate tracking). */
   private _edgeCounters = new Map<string, number>();
 
+  /** Per-edge streaming flag (true if on a streaming path). */
+  private _streamingEdges = new Map<string, boolean>();
+
+  /**
+   * Control edges that have actually routed at least one event.
+   * Used to decide whether to send EOS for __control__ handles.
+   * Edges that never routed an event (e.g., when using manual
+   * dispatchControlEvent()) should NOT close the __control__ handle.
+   */
+  private _controlEdgesRouted = new Set<string>();
+
   /**
    * Multi-edge list inputs: nodeId → set of handles that aggregate
    * multiple edges into a list.
@@ -105,6 +120,12 @@ export class WorkflowRunner {
 
   /** Cancellation flag. */
   private _cancelled = false;
+
+  /** Pending response resolvers for sendControlEvent. nodeId → resolver */
+  private _pendingControlResponses = new Map<
+    string,
+    { resolve: (outputs: Record<string, unknown>) => void; reject: (err: Error) => void }
+  >();
 
   constructor(jobId: string, options: WorkflowRunnerOptions) {
     this.jobId = jobId;
@@ -178,7 +199,15 @@ export class WorkflowRunner {
    */
   async run(request: RunJobRequest, graphData: { nodes: NodeDescriptor[]; edges: Edge[] }): Promise<RunResult> {
     try {
+      log.info("Workflow started", { jobId: request.job_id, workflowId: request.workflow_id });
       this._graph = new Graph(graphData);
+
+      // Python parity: _filter_invalid_edges — silently remove edges
+      // whose source or target node doesn't exist in the graph.
+      this._filterInvalidEdges();
+
+      // Analyze streaming paths (Python parity: _analyze_streaming)
+      this._analyzeStreaming();
 
       // Validate
       this._graph.validate();
@@ -197,13 +226,20 @@ export class WorkflowRunner {
       // Initialize inboxes
       this._initializeInboxes();
 
+      // Initialize all nodes (Python parity: initialize_graph)
+      await this._initializeGraph();
+
       // Dispatch input parameters
       await this._dispatchInputs(request.params ?? {});
 
       // Process graph (spawn actors)
       await this._processGraph();
 
+      // Post-completion: drain any edges that still have pending/open state
+      this._drainActiveEdges();
+
       const status = this._cancelled ? "cancelled" : "completed";
+      log.info("Workflow completed", { jobId: request.job_id, status });
 
       this._emit({
         type: "job_update",
@@ -219,6 +255,9 @@ export class WorkflowRunner {
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      log.error("Workflow failed", { jobId: request.job_id, error: message });
+      // Drain active edges on error for front-end cleanup
+      this._drainActiveEdges();
       this._emit({
         type: "job_update",
         status: "failed",
@@ -239,10 +278,50 @@ export class WorkflowRunner {
    * Cancel the running workflow.
    */
   cancel(): void {
+    log.info("Job cancelled", { jobId: this.jobId });
     this._cancelled = true;
     // Close all inboxes to unblock waiting actors
     for (const inbox of this._inboxes.values()) {
-      inbox.closeAll();
+      void inbox.closeAll();
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Invalid edge filtering (Python parity: _filter_invalid_edges)
+  // -----------------------------------------------------------------------
+
+  /**
+   * Remove edges whose source or target node doesn't exist in the graph.
+   * Reconstructs the graph without dangling edges.
+   */
+  private _filterInvalidEdges(): void {
+    const validEdges = this._graph.edges.filter(
+      (edge) =>
+        this._graph.findNode(edge.source) !== undefined &&
+        this._graph.findNode(edge.target) !== undefined
+    );
+    if (validEdges.length < this._graph.edges.length) {
+      log.warn("Filtered invalid edges", {
+        removed: this._graph.edges.length - validEdges.length,
+        remaining: validEdges.length,
+      });
+      this._graph = new Graph({
+        nodes: [...this._graph.nodes],
+        edges: validEdges,
+      });
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Node initialization
+  // -----------------------------------------------------------------------
+
+  private async _initializeGraph(): Promise<void> {
+    for (const node of this._graph.nodes) {
+      const executor = this._options.resolveExecutor(node);
+      if (executor.initialize) {
+        await executor.initialize();
+      }
     }
   }
 
@@ -267,11 +346,13 @@ export class WorkflowRunner {
         .findIncomingEdges(node.id)
         .filter(isControlEdge);
       if (incomingControl.length > 0) {
+        const uniqueControllerCount = new Set(incomingControl.map(e => e.source)).size;
         handleCounts.set(
           "__control__",
-          (handleCounts.get("__control__") ?? 0) + incomingControl.length
+          (handleCounts.get("__control__") ?? 0) + uniqueControllerCount
         );
       }
+
 
       for (const [handle, count] of handleCounts) {
         inbox.addUpstream(handle, count);
@@ -286,7 +367,9 @@ export class WorkflowRunner {
   // -----------------------------------------------------------------------
 
   private _detectMultiEdgeListInputs(): void {
-    // Find handles that receive more than one edge (list aggregation)
+    // Find handles that receive more than one edge AND whose property type
+    // is a list type.  Non-list handles with multiple edges should NOT be
+    // marked for aggregation (Python parity: _classify_list_inputs).
     const handleEdgeCounts = new Map<string, number>(); // key = nodeId:handle
     for (const edge of this._graph.edges) {
       if (isControlEdge(edge)) continue;
@@ -297,6 +380,24 @@ export class WorkflowRunner {
     for (const [key, count] of handleEdgeCounts) {
       if (count > 1) {
         const [nodeId, handle] = key.split(":");
+
+        // Look up the target node to check its property type
+        const node = this._graph.findNode(nodeId);
+        if (!node) continue;
+
+        // Validate that the handle's type is a list type
+        const propertyTypes = node.propertyTypes;
+        if (propertyTypes) {
+          const typeStr = propertyTypes[handle];
+          if (typeStr) {
+            const meta = TypeMetadata.fromString(typeStr);
+            if (!meta.isListType()) {
+              // Multiple edges to non-list property — skip aggregation
+              continue;
+            }
+          }
+        }
+
         if (!this._multiEdgeListInputs.has(nodeId)) {
           this._multiEdgeListInputs.set(nodeId, new Set());
         }
@@ -376,6 +477,15 @@ export class WorkflowRunner {
       const inbox = this._inboxes.get(node.id)!;
       const executor = this._options.resolveExecutor(node);
 
+      // Compute sticky handles: handles fed by non-streaming edges
+      // are sticky from the start (Python parity: _analyze_streaming).
+      const stickyHandles = new Set<string>();
+      for (const edge of incoming) {
+        if (!this.edgeStreams(edge)) {
+          stickyHandles.add(edge.targetHandle);
+        }
+      }
+
       const actor = new NodeActor({
         node,
         inbox,
@@ -387,6 +497,7 @@ export class WorkflowRunner {
           this._emit(msg as ProcessingMessage);
         },
         executionContext: this._options.executionContext,
+        stickyHandles,
       });
 
       actorPromises.push(
@@ -412,6 +523,13 @@ export class WorkflowRunner {
 
     // Wait for all actors to complete
     await Promise.all(actorPromises);
+
+    // Check for in-flight messages after all actors complete (Python parity: _check_pending_inbox_work)
+    const COMPLETION_CHECK_DELAY_MS = 10;
+    const pendingNodes = this._checkPendingInboxWork();
+    if (pendingNodes.length > 0) {
+      await new Promise<void>(r => setTimeout(r, COMPLETION_CHECK_DELAY_MS));
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -420,6 +538,8 @@ export class WorkflowRunner {
 
   /**
    * Route output values from a node to downstream inboxes.
+   * For control edges: route control events to the __control__ handle.
+   * For data edges: route to the named target handle.
    */
   private async _sendMessages(
     sourceNodeId: string,
@@ -430,7 +550,19 @@ export class WorkflowRunner {
     const outgoing = this._graph.findOutgoingEdges(sourceNodeId);
 
     for (const edge of outgoing) {
-      if (isControlEdge(edge)) continue;
+      if (isControlEdge(edge)) {
+        // Route control events from controller nodes to controlled nodes.
+        // The controller yields { __control__: ControlEvent } on its __control__ handle.
+        const value = outputs[edge.sourceHandle];
+        if (value === undefined) continue;
+        const targetInbox = this._inboxes.get(edge.target);
+        if (!targetInbox) continue;
+        await targetInbox.put("__control__", value);
+        // Track that this edge has routed at least one event
+        const ctrlEdgeId = edge.id ?? `${edge.source}:${edge.sourceHandle}->${edge.target}:${edge.targetHandle}`;
+        this._controlEdgesRouted.add(ctrlEdgeId);
+        continue;
+      }
 
       const value = outputs[edge.sourceHandle];
       if (value === undefined) continue;
@@ -441,15 +573,56 @@ export class WorkflowRunner {
       await targetInbox.put(edge.targetHandle, value);
       this._incrementEdgeCounter(edge);
     }
+
+    // Emit output_update for each produced output handle
+    const sourceNode = this._graph.findNode(sourceNodeId);
+    if (sourceNode) {
+      const declaredOutputs = sourceNode.outputs ?? {};
+      for (const [handle, value] of Object.entries(outputs)) {
+        if (value === undefined) continue;
+        if (handle === "__control__") continue;
+        this._emit({
+          type: "output_update",
+          node_id: sourceNodeId,
+          node_name: sourceNode.name ?? sourceNodeId,
+          output_name: handle,
+          value,
+          output_type: declaredOutputs[handle] ?? "any",
+          metadata: {},
+        });
+      }
+    }
+
+    // Resolve pending sendControlEvent promise if one exists for this node
+    const pending = this._pendingControlResponses.get(sourceNodeId);
+    if (pending) {
+      this._pendingControlResponses.delete(sourceNodeId);
+      pending.resolve(outputs);
+    }
   }
 
   /**
-   * Signal EOS on all outgoing data edges of a completed node.
+   * Signal EOS on all outgoing edges of a completed node.
+   * For control edges: close the __control__ handle of the target.
+   * For data edges: close the named target handle.
    */
   private async _sendEOS(nodeId: string): Promise<void> {
     const outgoing = this._graph.findOutgoingEdges(nodeId);
     for (const edge of outgoing) {
-      if (isControlEdge(edge)) continue;
+      if (isControlEdge(edge)) {
+        // Only send EOS if we actually routed events through this edge.
+        // If no events were routed (e.g., manual dispatchControlEvent() is
+        // used instead), do not close the __control__ handle – the manual
+        // caller is responsible for sending a stop event.
+        const ctrlEdgeId = edge.id ?? `${edge.source}:${edge.sourceHandle}->${edge.target}:${edge.targetHandle}`;
+        if (this._controlEdgesRouted.has(ctrlEdgeId)) {
+          const targetInbox = this._inboxes.get(edge.target);
+          if (targetInbox) {
+            targetInbox.markSourceDone("__control__");
+          }
+        }
+        continue;
+      }
       const targetInbox = this._inboxes.get(edge.target);
       if (targetInbox) {
         targetInbox.markSourceDone(edge.targetHandle);
@@ -494,6 +667,39 @@ export class WorkflowRunner {
     }
   }
 
+  /**
+   * Send a run control event to a specific node and await its output.
+   * Returns a promise that resolves with the node's output from the next
+   * output_update message emitted for that node.
+   */
+  async sendControlEvent(
+    targetNodeId: string,
+    properties: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const inbox = this._inboxes.get(targetNodeId);
+    if (!inbox) {
+      throw new Error(`Target node not found or no inbox: ${targetNodeId}`);
+    }
+
+    // Ensure __control__ handle is registered so the controlled actor's
+    // iterAny() can receive events even without pre-existing control edges.
+    if (!inbox.isOpen("__control__") && !inbox.hasBuffered("__control__")) {
+      inbox.addUpstream("__control__", 1);
+    }
+
+    const promise = new Promise<Record<string, unknown>>((resolve, reject) => {
+      this._pendingControlResponses.set(targetNodeId, { resolve, reject });
+    });
+
+    const event: ControlEvent = {
+      event_type: "run",
+      properties,
+    };
+    await inbox.put("__control__", event);
+
+    return promise;
+  }
+
   // -----------------------------------------------------------------------
   // Edge counters
   // -----------------------------------------------------------------------
@@ -510,6 +716,97 @@ export class WorkflowRunner {
       status: "active",
       counter,
     });
+  }
+
+  // -----------------------------------------------------------------------
+  // Drain active edges (Python parity: drain_active_edges)
+  // -----------------------------------------------------------------------
+
+  /**
+   * Post a "drained" EdgeUpdate for any edge whose target handle still has
+   * buffered items or open upstream sources. Called during post-completion
+   * cleanup to ensure front-end consumers stop listening to streams and
+   * clear any spinners.
+   */
+  private _drainActiveEdges(): void {
+    if (!this._graph || this._graph.edges.length === 0) return;
+    for (const edge of this._graph.edges) {
+      try {
+        const inbox = this._inboxes.get(edge.target);
+        if (!inbox) continue;
+        const edgeId = edge.id ?? `${edge.source}:${edge.sourceHandle}->${edge.target}:${edge.targetHandle}`;
+        if (inbox.hasBuffered(edge.targetHandle) || inbox.isOpen(edge.targetHandle)) {
+          this._emit({
+            type: "edge_update",
+            workflow_id: this.jobId,
+            edge_id: edgeId,
+            status: "drained",
+            counter: this._edgeCounters.get(edgeId) ?? null,
+          });
+        }
+      } catch {
+        // Best effort — ignore errors during draining
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Streaming analysis
+  // -----------------------------------------------------------------------
+
+  private _edgeKey(edge: Edge): string {
+    return edge.id ?? `${edge.source}:${edge.sourceHandle}->${edge.target}:${edge.targetHandle}`;
+  }
+
+  private _analyzeStreaming(): void {
+    this._streamingEdges.clear();
+    const adjacency = new Map<string, Edge[]>();
+
+    for (const edge of this._graph.edges) {
+      if (isControlEdge(edge)) continue;
+      const key = this._edgeKey(edge);
+      this._streamingEdges.set(key, false);
+      const arr = adjacency.get(edge.source) ?? [];
+      arr.push(edge);
+      adjacency.set(edge.source, arr);
+    }
+
+    const queue: string[] = [];
+    const visited = new Set<string>();
+    for (const node of this._graph.nodes) {
+      if (node.is_streaming_output) {
+        queue.push(node.id);
+        visited.add(node.id);
+      }
+    }
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const edge of adjacency.get(current) ?? []) {
+        this._streamingEdges.set(this._edgeKey(edge), true);
+        if (!visited.has(edge.target)) {
+          visited.add(edge.target);
+          queue.push(edge.target);
+        }
+      }
+    }
+  }
+
+  /** Returns true if the given edge is on a streaming path. */
+  edgeStreams(edge: Edge): boolean {
+    return this._streamingEdges.get(this._edgeKey(edge)) ?? false;
+  }
+
+  // -----------------------------------------------------------------------
+  // Pending work detection
+  // -----------------------------------------------------------------------
+
+  private _checkPendingInboxWork(): string[] {
+    const pending: string[] = [];
+    for (const [nodeId, inbox] of this._inboxes) {
+      if (inbox.hasPendingWork()) pending.push(nodeId);
+    }
+    return pending;
   }
 
   // -----------------------------------------------------------------------
@@ -535,8 +832,7 @@ export class WorkflowRunner {
     if (this._options.executionContext) {
       this._options.executionContext.emit(msg);
     }
-    // eslint-disable-next-line no-console
-    console.log("[WorkflowRunner]", this.jobId, msg.type, msg);
+    log.debug("Message emitted", { jobId: this.jobId, type: msg.type });
   }
 
   private _resolveInputNodes(inputName: string): NodeDescriptor[] {

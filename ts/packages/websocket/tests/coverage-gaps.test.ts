@@ -147,8 +147,10 @@ describe("UnifiedWebSocketRunner: chat_message with valid thread_id", () => {
         generateMessages: async function* () {
           yield { type: "chunk" as const, content: "Hello!" };
         },
+        async *generateMessagesTraced(...a: any[]) { yield* (this as any).generateMessages(...a); },
+        async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
         generateMessage: vi.fn(),
-        hasToolSupport: () => false,
+        hasToolSupport: async () => false,
         getAvailableLanguageModels: async () => [],
         getAvailableImageModels: async () => [],
         getAvailableVideoModels: async () => [],
@@ -209,8 +211,10 @@ describe("UnifiedWebSocketRunner: chat_message with valid thread_id", () => {
           yield { id: "tc-1", name: "search", args: { query: "test" } };
           yield { type: "chunk" as const, content: "Result" };
         },
+        async *generateMessagesTraced(...a: any[]) { yield* (this as any).generateMessages(...a); },
+        async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
         generateMessage: vi.fn(),
-        hasToolSupport: () => true,
+        hasToolSupport: async () => true,
         getAvailableLanguageModels: async () => [],
         getAvailableImageModels: async () => [],
         getAvailableVideoModels: async () => [],
@@ -247,8 +251,10 @@ describe("UnifiedWebSocketRunner: chat_message with valid thread_id", () => {
         generateMessages: async function* () {
           throw new Error("Provider exploded");
         },
+        async *generateMessagesTraced(...a: any[]) { yield* (this as any).generateMessages(...a); },
+        async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
         generateMessage: vi.fn(),
-        hasToolSupport: () => false,
+        hasToolSupport: async () => false,
         getAvailableLanguageModels: async () => [],
         getAvailableImageModels: async () => [],
         getAvailableVideoModels: async () => [],
@@ -286,8 +292,10 @@ describe("UnifiedWebSocketRunner: chat_message with valid thread_id", () => {
         generateMessages: async function* () {
           yield { type: "chunk" as const, content: "ok" };
         },
+        async *generateMessagesTraced(...a: any[]) { yield* (this as any).generateMessages(...a); },
+        async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
         generateMessage: vi.fn(),
-        hasToolSupport: () => false,
+        hasToolSupport: async () => false,
         getAvailableLanguageModels: async () => [],
         getAvailableImageModels: async () => [],
         getAvailableVideoModels: async () => [],
@@ -559,6 +567,7 @@ describe("OpenAI API: non-streaming chat completions error", () => {
       generateMessages: async function* () {
         throw new Error("Provider failure");
       },
+      async *generateMessagesTraced(...a: any[]) { yield* (this as any).generateMessages(...a); },
     } as any;
 
     const request = new Request("http://localhost/v1/chat/completions", {
@@ -591,6 +600,7 @@ describe("OpenAI API: SSE stream error", () => {
       generateMessages: async function* () {
         throw new Error("Stream failure");
       },
+      async *generateMessagesTraced(...a: any[]) { yield* (this as any).generateMessages(...a); },
     } as any;
 
     const stream = createSSEStream(

@@ -109,7 +109,7 @@ export class WebSearchNode extends BaseNode {
     }
     const data = (await res.json()) as Record<string, unknown>;
 
-    let content = "";
+    let content: string;
     if (data.choices && Array.isArray(data.choices)) {
       const first = data.choices[0] as Record<string, unknown> | undefined;
       const msg = first?.message as Record<string, unknown> | undefined;

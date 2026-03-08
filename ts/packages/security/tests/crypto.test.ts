@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   generateMasterKey,
   deriveKey,
@@ -8,9 +8,11 @@ import {
 } from "../src/crypto.js";
 import {
   getMasterKey,
+  initMasterKey,
   clearMasterKeyCache,
   setMasterKey,
   isUsingEnvKey,
+  isUsingAwsKey,
 } from "../src/master-key.js";
 import {
   getSecret,
@@ -19,6 +21,8 @@ import {
   getSecretSync,
   clearSecretCache,
   clearAllSecretCache,
+  setSecretModelLoader,
+  resetSecretModelLoader,
 } from "../src/secret-helper.js";
 
 describe("crypto", () => {
@@ -198,6 +202,7 @@ describe("master-key", () => {
   beforeEach(() => {
     clearMasterKeyCache();
     delete process.env["SECRETS_MASTER_KEY"];
+    delete process.env["AWS_SECRETS_MASTER_KEY_NAME"];
   });
 
   afterEach(() => {
@@ -207,44 +212,84 @@ describe("master-key", () => {
     } else {
       delete process.env["SECRETS_MASTER_KEY"];
     }
+    delete process.env["AWS_SECRETS_MASTER_KEY_NAME"];
   });
 
-  it("should return env var when set", () => {
-    process.env["SECRETS_MASTER_KEY"] = "test-master-key-from-env";
-    const key = getMasterKey();
-    expect(key).toBe("test-master-key-from-env");
+  describe("getMasterKey (sync)", () => {
+    it("should return env var when set", () => {
+      process.env["SECRETS_MASTER_KEY"] = "test-master-key-from-env";
+      const key = getMasterKey();
+      expect(key).toBe("test-master-key-from-env");
+    });
+
+    it("should auto-generate a key when no env var", () => {
+      const key = getMasterKey();
+      expect(typeof key).toBe("string");
+      expect(key.length).toBeGreaterThan(0);
+    });
+
+    it("should cache the key across calls", () => {
+      const key1 = getMasterKey();
+      const key2 = getMasterKey();
+      expect(key1).toBe(key2);
+    });
+
+    it("should clear cache", () => {
+      const key1 = getMasterKey();
+      clearMasterKeyCache();
+      // Without env var, a new key will be generated
+      const key2 = getMasterKey();
+      // They could be different since new key is generated
+      expect(typeof key2).toBe("string");
+    });
+
+    it("should allow setting a custom key", () => {
+      setMasterKey("custom-key");
+      expect(getMasterKey()).toBe("custom-key");
+    });
+
+    it("should report env key status", () => {
+      expect(isUsingEnvKey()).toBe(false);
+      process.env["SECRETS_MASTER_KEY"] = "test";
+      expect(isUsingEnvKey()).toBe(true);
+    });
   });
 
-  it("should auto-generate a key when no env var", () => {
-    const key = getMasterKey();
-    expect(typeof key).toBe("string");
-    expect(key.length).toBeGreaterThan(0);
+  describe("initMasterKey (async)", () => {
+    it("should return env var when set", async () => {
+      process.env["SECRETS_MASTER_KEY"] = "async-env-key";
+      const key = await initMasterKey();
+      expect(key).toBe("async-env-key");
+    });
+
+    it("should auto-generate when no sources available", async () => {
+      const key = await initMasterKey();
+      expect(typeof key).toBe("string");
+      expect(key.length).toBeGreaterThan(0);
+    });
+
+    it("should cache across initMasterKey and getMasterKey calls", async () => {
+      const asyncKey = await initMasterKey();
+      const syncKey = getMasterKey();
+      expect(asyncKey).toBe(syncKey);
+    });
+
+    it("should return cached key on subsequent calls", async () => {
+      const key1 = await initMasterKey();
+      const key2 = await initMasterKey();
+      expect(key1).toBe(key2);
+    });
   });
 
-  it("should cache the key across calls", () => {
-    const key1 = getMasterKey();
-    const key2 = getMasterKey();
-    expect(key1).toBe(key2);
-  });
+  describe("isUsingAwsKey", () => {
+    it("should return false when AWS_SECRETS_MASTER_KEY_NAME is not set", () => {
+      expect(isUsingAwsKey()).toBe(false);
+    });
 
-  it("should clear cache", () => {
-    const key1 = getMasterKey();
-    clearMasterKeyCache();
-    // Without env var, a new key will be generated
-    const key2 = getMasterKey();
-    // They could be different since new key is generated
-    expect(typeof key2).toBe("string");
-  });
-
-  it("should allow setting a custom key", () => {
-    setMasterKey("custom-key");
-    expect(getMasterKey()).toBe("custom-key");
-  });
-
-  it("should report env key status", () => {
-    expect(isUsingEnvKey()).toBe(false);
-    process.env["SECRETS_MASTER_KEY"] = "test";
-    expect(isUsingEnvKey()).toBe(true);
+    it("should return true when AWS_SECRETS_MASTER_KEY_NAME is set", () => {
+      process.env["AWS_SECRETS_MASTER_KEY_NAME"] = "my-secret";
+      expect(isUsingAwsKey()).toBe(true);
+    });
   });
 });
 
@@ -253,6 +298,7 @@ describe("secret-helper", () => {
 
   beforeEach(() => {
     clearAllSecretCache();
+    resetSecretModelLoader();
     // Save and clear test env vars
     for (const key of ["TEST_SECRET", "OPENAI_API_KEY", "SUPABASE_URL"]) {
       savedEnv[key] = process.env[key];
@@ -262,6 +308,7 @@ describe("secret-helper", () => {
 
   afterEach(() => {
     clearAllSecretCache();
+    resetSecretModelLoader();
     // Restore env vars
     for (const [key, value] of Object.entries(savedEnv)) {
       if (value !== undefined) {
@@ -296,6 +343,89 @@ describe("secret-helper", () => {
     });
   });
 
+  describe("getSecret with database lookup", () => {
+    it("should find secret from database when env is not set", async () => {
+      // Mock a Secret model that returns a value
+      const mockSecret = {
+        getDecryptedValue: vi.fn(async () => "db-secret-value"),
+      };
+      const mockSecretModel = {
+        find: vi.fn(async (userId: string, key: string) => {
+          if (userId === "user-1" && key === "DB_SECRET") return mockSecret;
+          return null;
+        }),
+      };
+      setSecretModelLoader(Promise.resolve(mockSecretModel));
+
+      const value = await getSecret("DB_SECRET", "user-1");
+      expect(value).toBe("db-secret-value");
+      expect(mockSecretModel.find).toHaveBeenCalledWith("user-1", "DB_SECRET");
+    });
+
+    it("should cache database results", async () => {
+      const mockSecret = {
+        getDecryptedValue: vi.fn(async () => "cached-db-value"),
+      };
+      const mockSecretModel = {
+        find: vi.fn(async () => mockSecret),
+      };
+      setSecretModelLoader(Promise.resolve(mockSecretModel));
+
+      // First call
+      await getSecret("CACHED_KEY", "user-1");
+      // Second call should use cache
+      const value = await getSecret("CACHED_KEY", "user-1");
+      expect(value).toBe("cached-db-value");
+      // find should only be called once
+      expect(mockSecretModel.find).toHaveBeenCalledTimes(1);
+    });
+
+    it("should fall through to env when database returns null", async () => {
+      const mockSecretModel = {
+        find: vi.fn(async () => null),
+      };
+      setSecretModelLoader(Promise.resolve(mockSecretModel));
+
+      process.env["TEST_SECRET"] = "env-fallback";
+      const value = await getSecret("TEST_SECRET", "user-1");
+      expect(value).toBe("env-fallback");
+    });
+
+    it("should fall through to env when database throws", async () => {
+      const mockSecretModel = {
+        find: vi.fn(async () => {
+          throw new Error("DB connection failed");
+        }),
+      };
+      setSecretModelLoader(Promise.resolve(mockSecretModel));
+
+      process.env["TEST_SECRET"] = "env-after-error";
+      const value = await getSecret("TEST_SECRET", "user-1");
+      expect(value).toBe("env-after-error");
+    });
+
+    it("should skip database when no userId provided", async () => {
+      const mockSecretModel = {
+        find: vi.fn(async () => null),
+      };
+      setSecretModelLoader(Promise.resolve(mockSecretModel));
+
+      process.env["TEST_SECRET"] = "no-user-env";
+      const value = await getSecret("TEST_SECRET");
+      expect(value).toBe("no-user-env");
+      // Should not call find since no userId
+      expect(mockSecretModel.find).not.toHaveBeenCalled();
+    });
+
+    it("should skip database when Secret model is not available", async () => {
+      setSecretModelLoader(Promise.resolve(null));
+
+      process.env["TEST_SECRET"] = "no-model-env";
+      const value = await getSecret("TEST_SECRET", "user-1");
+      expect(value).toBe("no-model-env");
+    });
+  });
+
   describe("getSecretRequired", () => {
     it("should return value when found", async () => {
       process.env["TEST_SECRET"] = "required-value";
@@ -308,6 +438,19 @@ describe("secret-helper", () => {
         getSecretRequired("NONEXISTENT_KEY", "user-1")
       ).rejects.toThrow("Required secret 'NONEXISTENT_KEY' not found");
     });
+
+    it("should return database value when env is not set", async () => {
+      const mockSecret = {
+        getDecryptedValue: vi.fn(async () => "required-db-value"),
+      };
+      const mockSecretModel = {
+        find: vi.fn(async () => mockSecret),
+      };
+      setSecretModelLoader(Promise.resolve(mockSecretModel));
+
+      const value = await getSecretRequired("DB_REQUIRED", "user-1");
+      expect(value).toBe("required-db-value");
+    });
   });
 
   describe("hasSecret", () => {
@@ -318,6 +461,29 @@ describe("secret-helper", () => {
 
     it("should return false when not found", async () => {
       expect(await hasSecret("NONEXISTENT_KEY", "user-1")).toBe(false);
+    });
+
+    it("should return true when found in database", async () => {
+      const mockSecret = {
+        getDecryptedValue: vi.fn(async () => "db-exists-value"),
+      };
+      const mockSecretModel = {
+        find: vi.fn(async () => mockSecret),
+      };
+      setSecretModelLoader(Promise.resolve(mockSecretModel));
+
+      expect(await hasSecret("DB_EXISTS", "user-1")).toBe(true);
+    });
+
+    it("should return false when database throws", async () => {
+      const mockSecretModel = {
+        find: vi.fn(async () => {
+          throw new Error("DB error");
+        }),
+      };
+      setSecretModelLoader(Promise.resolve(mockSecretModel));
+
+      expect(await hasSecret("DB_ERROR", "user-1")).toBe(false);
     });
   });
 

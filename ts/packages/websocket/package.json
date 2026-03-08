@@ -8,6 +8,7 @@
   "scripts": {
     "build": "tsc",
     "build:all": "npm run build --workspace @nodetool/protocol && npm run build --workspace @nodetool/runtime && npm run build --workspace @nodetool/kernel && npm run build --workspace @nodetool/node-sdk && npm run build --workspace @nodetool/base-nodes && npm run build --workspace @nodetool/models && npm run build",
+    "dev": "npm run build:all && node dist/server.js",
     "test-ui": "npm run build:all && node dist/test-ui-server.js",
     "devserver": "npm run test-ui",
     "test": "vitest run",
@@ -15,13 +16,18 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@nodetool/agents": "*",
+    "@nodetool/auth": "*",
     "@nodetool/base-nodes": "*",
+    "@nodetool/config": "*",
     "@nodetool/kernel": "*",
     "@nodetool/models": "*",
     "@nodetool/node-sdk": "*",
     "@nodetool/protocol": "*",
     "@nodetool/runtime": "*",
     "@nodetool/security": "*",
+    "chromadb": "^3.3.1",
     "msgpackr": "^1.11.2",
     "ws": "^8.18.3"
   },

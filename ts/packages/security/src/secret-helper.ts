@@ -1,8 +1,16 @@
 /**
  * Helper functions for retrieving secrets at runtime.
  *
- * This module provides utilities to get secret values from environment
- * variables, with hooks for future encrypted database integration.
+ * Resolution order for getSecret():
+ * 1. Forced env priority keys -> environment variable
+ * 2. Local cache
+ * 3. Database (encrypted Secret model) -- if userId provided and Secret model available
+ * 4. Environment variable
+ * 5. Default value
+ *
+ * NOTE on encryption compatibility: TS uses AES-256-GCM while Python uses Fernet.
+ * Secrets encrypted in Python cannot be decrypted in TS and vice versa.
+ * New secrets must be created via the TS endpoints for TS runtime access.
  */
 
 /** Cache for resolved secrets: "userId:key" -> value */
@@ -15,6 +23,49 @@ const FORCE_ENV_PRIORITY = new Set([
   "SUPABASE_SERVICE_ROLE_KEY",
   "SERVER_AUTH_TOKEN",
 ]);
+
+/**
+ * Optional Secret model loader.
+ *
+ * We use dynamic import to avoid a hard dependency on @nodetool/models
+ * from the security package. If the models package is not available,
+ * database lookups are silently skipped.
+ */
+type SecretModel = {
+  find(userId: string, key: string): Promise<{ getDecryptedValue(): Promise<string> } | null>;
+};
+
+let _secretModelPromise: Promise<SecretModel | null> | null = null;
+
+async function loadSecretModel(): Promise<SecretModel | null> {
+  if (_secretModelPromise === null) {
+    _secretModelPromise = (async () => {
+      try {
+        // Dynamic import with variable to prevent TS from resolving the module
+        const moduleName = "@nodetool/models/secret";
+        const mod = await import(/* webpackIgnore: true */ moduleName);
+        return mod.Secret as SecretModel;
+      } catch {
+        return null;
+      }
+    })();
+  }
+  return _secretModelPromise;
+}
+
+/**
+ * Reset the Secret model loader (for testing).
+ */
+export function resetSecretModelLoader(): void {
+  _secretModelPromise = null;
+}
+
+/**
+ * Set a custom Secret model loader (for testing / dependency injection).
+ */
+export function setSecretModelLoader(loader: Promise<SecretModel | null>): void {
+  _secretModelPromise = loader;
+}
 
 /**
  * Clear a specific secret from the local cache.
@@ -39,11 +90,12 @@ export function clearAllSecretCache(): void {
  * Resolution order:
  * 1. Forced env priority keys -> environment variable
  * 2. Local cache
- * 3. Environment variable
- * 4. Default value
+ * 3. Database (encrypted Secret model)
+ * 4. Environment variable
+ * 5. Default value
  *
  * @param key - The secret key (e.g., "OPENAI_API_KEY").
- * @param userId - The user ID (optional, used for cache scoping).
+ * @param userId - The user ID (optional, used for cache scoping and DB lookup).
  * @param defaultValue - Default value if not found.
  * @returns The secret value, or null if not found.
  */
@@ -68,14 +120,33 @@ export async function getSecret(
     return secretCache.get(cacheKey) ?? null;
   }
 
-  // 3. Check environment variable
+  // 3. Check database (if userId provided)
+  if (userId) {
+    try {
+      const SecretModel = await loadSecretModel();
+      if (SecretModel) {
+        const secret = await SecretModel.find(userId, key);
+        if (secret) {
+          const value = await secret.getDecryptedValue();
+          if (value !== null && value !== undefined) {
+            secretCache.set(cacheKey, value);
+            return value;
+          }
+        }
+      }
+    } catch {
+      // Database lookup failed -- fall through to env
+    }
+  }
+
+  // 4. Check environment variable
   const envValue = process.env[key];
   if (envValue !== undefined) {
     secretCache.set(cacheKey, envValue);
     return envValue;
   }
 
-  // 4. Return default
+  // 5. Return default
   if (defaultValue !== undefined) {
     return defaultValue;
   }
@@ -111,7 +182,7 @@ export async function getSecretRequired(
  *
  * @param key - The secret key.
  * @param userId - The user ID (optional).
- * @returns True if the secret exists (in env or cache), false otherwise.
+ * @returns True if the secret exists (in env, cache, or database), false otherwise.
  */
 export async function hasSecret(
   key: string,
@@ -130,11 +201,30 @@ export async function hasSecret(
     return secretCache.get(cacheKey) !== null;
   }
 
+  // Check database
+  if (userId) {
+    try {
+      const SecretModel = await loadSecretModel();
+      if (SecretModel) {
+        const secret = await SecretModel.find(userId, key);
+        if (secret) {
+          const value = await secret.getDecryptedValue();
+          secretCache.set(cacheKey, value);
+          return true;
+        }
+      }
+    } catch {
+      // Database lookup failed
+    }
+  }
+
   return false;
 }
 
 /**
  * Get a secret value synchronously from environment variables only.
+ *
+ * This does NOT check the database. Use getSecret() for full resolution.
  *
  * @param key - The secret key.
  * @param defaultValue - Default value if not found.

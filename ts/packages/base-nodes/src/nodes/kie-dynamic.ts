@@ -48,7 +48,7 @@ function inferOutputType(modelId: string, _text: string): string {
 
 function parseInputParams(text: string): KieParamInfo[] {
   const sectionMatch = text.match(
-    /###\s*input\s+Object\s+Parameters(.*?)(?=\n##\s|\n---|\Z)/is
+    /###\s*input\s+Object\s+Parameters(.*?)(?=\n##\s|\n---|$)/is
   );
   if (!sectionMatch) return [];
   const section = sectionMatch[1];
@@ -69,7 +69,7 @@ function parseInputParams(text: string): KieParamInfo[] {
     const reqMatch = trimmed.match(/\*\*Required\*\*:\s*(Yes|No)/i);
     const required = reqMatch ? reqMatch[1].toLowerCase() === "yes" : false;
 
-    const descMatch = trimmed.match(/\*\*Description\*\*:\s*(.+?)(?=\n\s*-\s*\*\*|\Z)/s);
+    const descMatch = trimmed.match(/\*\*Description\*\*:\s*(.+?)(?=\n\s*-\s*\*\*|$)/s);
     const description = descMatch ? descMatch[1].trim() : "";
 
     let defaultVal: unknown = undefined;

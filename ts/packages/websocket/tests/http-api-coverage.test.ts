@@ -362,14 +362,14 @@ describe("HTTP API: method not allowed for various endpoints", () => {
     expect(res.status).toBe(405);
   });
 
-  it("DELETE /api/messages/:id returns 405", async () => {
+  it("DELETE /api/messages/:id returns 404 for missing message", async () => {
     const res = await handleApiRequest(
       new Request("http://localhost/api/messages/some-id", {
         method: "DELETE",
         headers: { "x-user-id": "user-1" },
       })
     );
-    expect(res.status).toBe(405);
+    expect(res.status).toBe(404);
   });
 
   it("PATCH /api/threads returns 405", async () => {

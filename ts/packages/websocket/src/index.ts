@@ -24,3 +24,9 @@ export {
   resolveProvider,
   type OpenAIApiOptions,
 } from "./openai-api.js";
+export {
+  createMcpServer,
+  createMcpStdioTransport,
+  handleMcpHttpRequest,
+  type McpServerOptions,
+} from "./mcp-server.js";

@@ -138,16 +138,44 @@ describe("NodeActor – streaming output", () => {
 });
 
 describe("NodeActor – on_any sync mode", () => {
-  it("fires on each individual input arrival", async () => {
+  it("waits for all handles before initial fire, then fires on each subsequent item", async () => {
     const node = makeNode({ sync_mode: "on_any" });
     const inbox = new NodeInbox();
     inbox.addUpstream("a", 1);
     inbox.addUpstream("b", 1);
 
     const { executor, calls } = trackingExecutor((inputs) => ({
-      result: Object.values(inputs)[0],
+      result: inputs,
     }));
     const { actor, sentOutputs } = createActor(node, inbox, executor);
+
+    // Put one item on each handle, then a second on "a"
+    await inbox.put("a", "first");
+    await inbox.put("b", "second");
+    await inbox.put("a", "third");
+    inbox.markSourceDone("a");
+    inbox.markSourceDone("b");
+
+    await actor.run();
+
+    // Initial fire after both handles have data, then one more for "third"
+    expect(calls).toHaveLength(2);
+    // First call has both handles
+    expect(calls[0]).toEqual({ a: "first", b: "second" });
+    // Second call updates "a" while "b" retains its last value
+    expect(calls[1]).toEqual({ a: "third", b: "second" });
+  });
+
+  it("fires once when each handle has exactly one item", async () => {
+    const node = makeNode({ sync_mode: "on_any" });
+    const inbox = new NodeInbox();
+    inbox.addUpstream("a", 1);
+    inbox.addUpstream("b", 1);
+
+    const { executor, calls } = trackingExecutor((inputs) => ({
+      result: inputs,
+    }));
+    const { actor } = createActor(node, inbox, executor);
 
     await inbox.put("a", "first");
     await inbox.put("b", "second");
@@ -156,8 +184,9 @@ describe("NodeActor – on_any sync mode", () => {
 
     await actor.run();
 
-    expect(calls.length).toBeGreaterThanOrEqual(2);
-    expect(sentOutputs.length).toBeGreaterThanOrEqual(2);
+    // Only one fire since each handle has exactly one item
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ a: "first", b: "second" });
   });
 });
 

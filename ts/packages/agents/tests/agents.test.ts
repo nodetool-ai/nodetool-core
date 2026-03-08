@@ -25,7 +25,7 @@ function createMockProvider(
   let callIndex = 0;
   return {
     provider: "mock",
-    hasToolSupport: () => true,
+    hasToolSupport: async () => true,
     generateMessages: async function* () {
       const items = responseSequence[callIndex] ?? [];
       callIndex++;
@@ -33,6 +33,8 @@ function createMockProvider(
         yield item;
       }
     },
+    async *generateMessagesTraced(...args: any[]) { yield* (this as any).generateMessages(...args); },
+    async generateMessageTraced(...args: any[]) { return (this as any).generateMessage(...args); },
     generateMessage: vi.fn(),
     getAvailableLanguageModels: vi.fn().mockResolvedValue([]),
     getAvailableImageModels: vi.fn().mockResolvedValue([]),
@@ -276,15 +278,19 @@ describe("TaskPlanner", () => {
     // Should return null due to circular dependencies
     expect(task).toBeNull();
 
-    // Should have an error chunk about circular dependencies
-    const errorChunks = messages.filter(
+    // Should have a planning_update about circular dependencies
+    const errorUpdates = messages.filter(
       (m) =>
-        m.type === "chunk" &&
-        "content" in m &&
-        typeof (m as any).content === "string" &&
-        (m as any).content.includes("circular"),
+        (m.type === "planning_update" &&
+          "content" in m &&
+          typeof (m as any).content === "string" &&
+          (m as any).content.toLowerCase().includes("circular")) ||
+        (m.type === "chunk" &&
+          "content" in m &&
+          typeof (m as any).content === "string" &&
+          (m as any).content.toLowerCase().includes("circular")),
     );
-    expect(errorChunks.length).toBeGreaterThanOrEqual(1);
+    expect(errorUpdates.length).toBeGreaterThanOrEqual(1);
   });
 
   it("includes outputSchema in planner prompt when provided", async () => {

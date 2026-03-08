@@ -2652,3 +2652,102 @@ class ShoppingResult(BaseType):
     reviews: int | None = None
     store_rating: float | None = None
     store_reviews: int | None = None
+
+
+class AmazonResult(BaseType):
+    """Amazon product search result"""
+
+    type: Literal["amazon_result"] = "amazon_result"
+    position: int
+    title: str | None = None
+    asin: str | None = None
+    link: str | None = None
+    price: str | None = None
+    extracted_price: float | None = None
+    rating: float | None = None
+    reviews: int | None = None
+    thumbnail: str | None = None
+    delivery: str | None = None
+    is_prime: bool | None = None
+
+
+class AmazonProductResult(BaseType):
+    """Amazon product detail result"""
+
+    type: Literal["amazon_product_result"] = "amazon_product_result"
+    title: str | None = None
+    asin: str | None = None
+    link: str | None = None
+    price: str | None = None
+    extracted_price: float | None = None
+    rating: float | None = None
+    reviews_total: int | None = None
+    description: str | None = None
+    brand: str | None = None
+    availability: str | None = None
+
+
+class YouTubeResult(BaseType):
+    """YouTube video search result"""
+
+    type: Literal["youtube_result"] = "youtube_result"
+    position: int
+    title: str | None = None
+    link: str | None = None
+    channel: str | None = None
+    channel_link: str | None = None
+    published_date: str | None = None
+    views: int | None = None
+    length: str | None = None
+    description: str | None = None
+    thumbnail: str | None = None
+
+
+class ScholarResult(BaseType):
+    """Google Scholar search result"""
+
+    type: Literal["scholar_result"] = "scholar_result"
+    position: int
+    title: str | None = None
+    link: str | None = None
+    snippet: str | None = None
+    publication_info: str | None = None
+    cited_by_count: int | None = None
+    cited_by_link: str | None = None
+    year: str | None = None
+
+
+class TrendResult(BaseType):
+    """Google Trends data point"""
+
+    type: Literal["trend_result"] = "trend_result"
+    query: str | None = None
+    date: str | None = None
+    value: int | None = None
+
+
+class YelpResult(BaseType):
+    """Yelp business search result"""
+
+    type: Literal["yelp_result"] = "yelp_result"
+    position: int
+    title: str | None = None
+    link: str | None = None
+    rating: float | None = None
+    reviews: int | None = None
+    price: str | None = None
+    address: str | None = None
+    phone: str | None = None
+    categories: list[str] | None = None
+    snippet: str | None = None
+
+
+class DuckDuckGoResult(BaseType):
+    """DuckDuckGo search result"""
+
+    type: Literal["duckduckgo_result"] = "duckduckgo_result"
+    position: int
+    title: str | None = None
+    link: str | None = None
+    snippet: str | None = None
+    displayed_link: str | None = None

@@ -57,6 +57,8 @@ export type { JobStatus } from "./job.js";
 export { Workflow } from "./workflow.js";
 export type { AccessLevel, WorkflowGraph } from "./workflow.js";
 
+export { WorkflowVersion } from "./workflow-version.js";
+
 export { Asset } from "./asset.js";
 
 export { Message } from "./message.js";
@@ -66,3 +68,17 @@ export { Thread } from "./thread.js";
 export { Secret } from "./secret.js";
 
 export { OAuthCredential } from "./oauth-credential.js";
+
+export { Prediction } from "./prediction.js";
+export type { AggregateResult, ProviderAggregateResult, ModelAggregateResult } from "./prediction.js";
+
+export { Workspace } from "./workspace.js";
+
+// ── API Graph ───────────────────────────────────────────────────────
+export {
+  toApiNode,
+  toApiEdge,
+  toApiGraph,
+  removeConnectedSlots,
+} from "./api-graph.js";
+export type { ApiNode, ApiEdge, ApiGraph } from "./api-graph.js";

@@ -578,6 +578,9 @@ class SQLiteAdapter(DatabaseAdapter):
                 placeholders = ", ".join(["?" for _ in condition.value])
                 sql = f"{quote_identifier(validated_field)} IN ({placeholders})"
                 params = condition.value
+            elif condition.operator in (Operator.IS_NULL, Operator.IS_NOT_NULL):
+                sql = f"{quote_identifier(validated_field)} {condition.operator.value}"
+                params = []
             else:
                 sql = f"{quote_identifier(validated_field)} {condition.operator.value} ?"
                 params = [condition.value]
@@ -645,10 +648,11 @@ class SQLiteAdapter(DatabaseAdapter):
 
                 # Pop the extra record used to detect another page
                 extra_record = res.pop()
-                last_evaluated_key = str(res[-1].get(pk))
-                # Guard: if extra record does not advance, fall back to extra key
-                if not last_evaluated_key:
-                    last_evaluated_key = str(extra_record.get(pk))
+                last_pk_value = res[-1].get(pk)
+                # Guard: if last record has no PK value, fall back to extra record's key
+                if last_pk_value is None:
+                    last_pk_value = extra_record.get(pk)
+                last_evaluated_key = str(last_pk_value) if last_pk_value is not None else ""
                 return res, last_evaluated_key
 
         return await _query()

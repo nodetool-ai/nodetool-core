@@ -51,7 +51,7 @@ export class FilterNumberNode extends BaseNode {
       return {};
     }
 
-    let matched = false;
+    let matched: boolean;
     switch (this._filterType) {
       case "greater_than":
         matched = num > this._compareValue;

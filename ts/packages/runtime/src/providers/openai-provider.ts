@@ -1,6 +1,9 @@
 import OpenAI from "openai";
 import type { Chunk } from "@nodetool/protocol";
+import { createLogger } from "@nodetool/config";
 import { BaseProvider } from "./base-provider.js";
+
+const log = createLogger("nodetool.runtime.providers.openai");
 import type {
   ASRModel,
   EmbeddingModel,
@@ -79,6 +82,22 @@ function makeDataUri(mime: string, data: Uint8Array): string {
   return `data:${mime};base64,${b64}`;
 }
 
+/**
+ * Custom JSON replacer that handles objects with toJSON() methods
+ * and other non-serializable types. Mirrors Python's _default_serializer.
+ */
+function defaultSerializer(_key: string, value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "bigint") return Number(value);
+  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Map) return Object.fromEntries(value);
+  if (value instanceof Set) return [...value];
+  if (typeof value === "object" && "toJSON" in value && typeof (value as { toJSON: unknown }).toJSON === "function") {
+    return (value as { toJSON: () => unknown }).toJSON();
+  }
+  return value;
+}
+
 export class OpenAIProvider extends BaseProvider {
   static requiredSecrets(): string[] {
     return ["OPENAI_API_KEY"];
@@ -116,7 +135,7 @@ export class OpenAIProvider extends BaseProvider {
     return this._client;
   }
 
-  hasToolSupport(model: string): boolean {
+  async hasToolSupport(model: string): Promise<boolean> {
     return !(model.startsWith("o1") || model.startsWith("o3"));
   }
 
@@ -468,7 +487,7 @@ export class OpenAIProvider extends BaseProvider {
       if (typeof message.content === "string") {
         content = message.content;
       } else if (message.content != null) {
-        content = JSON.stringify(message.content);
+        content = JSON.stringify(message.content, defaultSerializer);
       }
 
       return {
@@ -491,7 +510,7 @@ export class OpenAIProvider extends BaseProvider {
         id: tc.id,
         function: {
           name: tc.name,
-          arguments: JSON.stringify(tc.args),
+          arguments: JSON.stringify(tc.args, defaultSerializer),
         },
       }));
 
@@ -630,9 +649,11 @@ export class OpenAIProvider extends BaseProvider {
       request.modalities = ["text", "audio"];
     }
 
-    if (tools.length > 0 && this.hasToolSupport(model)) {
+    if (tools.length > 0 && (await this.hasToolSupport(model))) {
       request.tools = this.formatTools(tools);
     }
+
+    log.debug("OpenAI request", { model });
 
     const stream = (await this.getClient().chat.completions.create(
       request as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming
@@ -642,6 +663,14 @@ export class OpenAIProvider extends BaseProvider {
 
     try {
       for await (const chunk of stream) {
+        if (chunk?.usage) {
+          this.trackUsage(model, {
+            inputTokens: chunk.usage.prompt_tokens ?? 0,
+            outputTokens: chunk.usage.completion_tokens ?? 0,
+            cachedTokens: chunk.usage.prompt_tokens_details?.cached_tokens ?? 0,
+          });
+        }
+
         const choice = chunk?.choices?.[0];
         if (!choice) continue;
 
@@ -754,9 +783,11 @@ export class OpenAIProvider extends BaseProvider {
     if (presencePenalty != null) request.presence_penalty = presencePenalty;
     if (frequencyPenalty != null) request.frequency_penalty = frequencyPenalty;
 
-    if (tools.length > 0 && this.hasToolSupport(model)) {
+    if (tools.length > 0 && (await this.hasToolSupport(model))) {
       request.tools = this.formatTools(tools);
     }
+
+    log.debug("OpenAI request", { model });
 
     const completion = await this.getClient().chat.completions.create(
       request as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
@@ -765,6 +796,15 @@ export class OpenAIProvider extends BaseProvider {
     const choice = completion.choices?.[0];
     if (!choice) {
       throw new Error("OpenAI returned no choices");
+    }
+
+    const usage = (completion as any).usage;
+    if (usage) {
+      this.trackUsage(model, {
+        inputTokens: usage.prompt_tokens ?? 0,
+        outputTokens: usage.completion_tokens ?? 0,
+        cachedTokens: usage.prompt_tokens_details?.cached_tokens ?? 0,
+      });
     }
 
     const responseMessage = choice.message;

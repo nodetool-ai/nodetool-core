@@ -357,7 +357,7 @@ export class SpiderCrawlLibNode extends BaseNode {
         if (depth < maxDepth) {
           $("a[href]").each((_i, el) => {
             try {
-              let href = $(el).attr("href") ?? "";
+              const href = $(el).attr("href") ?? "";
               if (!href || href.startsWith("javascript:") || href.startsWith("mailto:") || href.startsWith("tel:"))
                 return;
               const resolved = new URL(href, currentUrl).href.split("#")[0];

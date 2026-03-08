@@ -3,10 +3,14 @@
  *
  * Port of src/nodetool/agents/tools/serp_tools.py (GoogleSearchTool,
  * GoogleNewsTool, GoogleImagesTool).
+ *
+ * Internally delegates to the SerpApiProvider abstraction when available.
  */
 
 import type { ProcessingContext } from "@nodetool/runtime";
 import { Tool } from "./base-tool.js";
+import type { SerpProvider } from "./serp-providers/index.js";
+import { SerpApiProvider } from "./serp-providers/serpapi-provider.js";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -46,6 +50,19 @@ async function serpApiFetch(params: SerpApiParams): Promise<unknown> {
   return res.json();
 }
 
+/**
+ * Resolve a SerpProvider.  If an explicit provider is supplied, use it;
+ * otherwise create a SerpApiProvider from the context's API key.
+ */
+async function resolveProvider(
+  context: ProcessingContext,
+  provider?: SerpProvider,
+): Promise<SerpProvider> {
+  if (provider) return provider;
+  const apiKey = await getSerpApiKey(context);
+  return new SerpApiProvider(apiKey);
+}
+
 /* ------------------------------------------------------------------ */
 /*  GoogleSearchTool                                                  */
 /* ------------------------------------------------------------------ */
@@ -57,9 +74,9 @@ export class GoogleSearchTool extends Tool {
   readonly inputSchema: Record<string, unknown> = {
     type: "object",
     properties: {
-      query: {
+      keyword: {
         type: "string",
-        description: "The search query.",
+        description: "The keyword to search for.",
       },
       num_results: {
         type: "integer",
@@ -67,22 +84,43 @@ export class GoogleSearchTool extends Tool {
         default: 10,
       },
     },
-    required: ["query"],
+    required: ["keyword"],
   };
+
+  private _provider?: SerpProvider;
+
+  constructor(provider?: SerpProvider) {
+    super();
+    this._provider = provider;
+  }
 
   async process(
     context: ProcessingContext,
     params: Record<string, unknown>,
   ): Promise<unknown> {
-    const query = params.query as string | undefined;
-    if (!query) return { error: "query is required" };
+    const keyword = params.keyword as string | undefined;
+    if (!keyword) return { error: "keyword is required" };
 
-    const apiKey = await getSerpApiKey(context);
     const numResults = (params.num_results as number) ?? 10;
+
+    if (this._provider) {
+      const results = await this._provider.search(keyword, { numResults });
+      return {
+        success: true,
+        results: results.map((r) => ({
+          title: r.title ?? null,
+          link: r.url ?? null,
+          snippet: r.snippet ?? null,
+        })),
+      };
+    }
+
+    // Legacy direct API call path
+    const apiKey = await getSerpApiKey(context);
 
     const data = (await serpApiFetch({
       engine: "google",
-      q: query,
+      q: keyword,
       api_key: apiKey,
       num: numResults,
     })) as Record<string, unknown>;
@@ -101,8 +139,8 @@ export class GoogleSearchTool extends Tool {
   }
 
   userMessage(params: Record<string, unknown>): string {
-    const query = (params.query as string) ?? "something";
-    const msg = `Searching Google for '${query}'...`;
+    const keyword = (params.keyword as string) ?? "something";
+    const msg = `Searching Google for '${keyword}'...`;
     return msg.length > 80 ? "Searching Google..." : msg;
   }
 }
@@ -118,9 +156,9 @@ export class GoogleNewsTool extends Tool {
   readonly inputSchema: Record<string, unknown> = {
     type: "object",
     properties: {
-      query: {
+      keyword: {
         type: "string",
-        description: "The news search query.",
+        description: "The keyword to search for in Google News.",
       },
       num_results: {
         type: "integer",
@@ -128,22 +166,29 @@ export class GoogleNewsTool extends Tool {
         default: 10,
       },
     },
-    required: ["query"],
+    required: ["keyword"],
   };
+
+  private _provider?: SerpProvider;
+
+  constructor(provider?: SerpProvider) {
+    super();
+    this._provider = provider;
+  }
 
   async process(
     context: ProcessingContext,
     params: Record<string, unknown>,
   ): Promise<unknown> {
-    const query = params.query as string | undefined;
-    if (!query) return { error: "query is required" };
+    const keyword = params.keyword as string | undefined;
+    if (!keyword) return { error: "keyword is required" };
 
     const apiKey = await getSerpApiKey(context);
     const numResults = (params.num_results as number) ?? 10;
 
     const data = (await serpApiFetch({
       engine: "google_news",
-      q: query,
+      q: keyword,
       api_key: apiKey,
       num: numResults,
     })) as Record<string, unknown>;
@@ -164,8 +209,8 @@ export class GoogleNewsTool extends Tool {
   }
 
   userMessage(params: Record<string, unknown>): string {
-    const query = (params.query as string) ?? "something";
-    const msg = `Searching Google News for '${query}'...`;
+    const keyword = (params.keyword as string) ?? "something";
+    const msg = `Searching Google News for '${keyword}'...`;
     return msg.length > 80 ? "Searching Google News..." : msg;
   }
 }
@@ -181,9 +226,9 @@ export class GoogleImagesTool extends Tool {
   readonly inputSchema: Record<string, unknown> = {
     type: "object",
     properties: {
-      query: {
+      keyword: {
         type: "string",
-        description: "The image search query.",
+        description: "Keyword for image search.",
       },
       num_results: {
         type: "integer",
@@ -191,22 +236,29 @@ export class GoogleImagesTool extends Tool {
         default: 20,
       },
     },
-    required: ["query"],
+    required: ["keyword"],
   };
+
+  private _provider?: SerpProvider;
+
+  constructor(provider?: SerpProvider) {
+    super();
+    this._provider = provider;
+  }
 
   async process(
     context: ProcessingContext,
     params: Record<string, unknown>,
   ): Promise<unknown> {
-    const query = params.query as string | undefined;
-    if (!query) return { error: "query is required" };
+    const keyword = params.keyword as string | undefined;
+    if (!keyword) return { error: "keyword is required" };
 
     const apiKey = await getSerpApiKey(context);
     const numResults = (params.num_results as number) ?? 20;
 
     const data = (await serpApiFetch({
       engine: "google_images",
-      q: query,
+      q: keyword,
       api_key: apiKey,
       num: numResults,
     })) as Record<string, unknown>;
@@ -226,8 +278,8 @@ export class GoogleImagesTool extends Tool {
   }
 
   userMessage(params: Record<string, unknown>): string {
-    const query = (params.query as string) ?? "something";
-    const msg = `Searching Google Images for '${query}'...`;
+    const keyword = (params.keyword as string) ?? "something";
+    const msg = `Searching Google Images for '${keyword}'...`;
     return msg.length > 80 ? "Searching Google Images..." : msg;
   }
 }

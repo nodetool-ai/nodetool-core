@@ -145,7 +145,7 @@ function formatDate(date: Date, format: DateFormat): string {
 
 function parseDateByFormat(value: string, format: DateFormat): Date {
   const s = value.trim();
-  let m: RegExpMatchArray | null = null;
+  let m: RegExpMatchArray | null;
 
   if (format === "%Y-%m-%d" && (m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/))) {
     return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));

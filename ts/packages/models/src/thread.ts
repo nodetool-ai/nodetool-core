@@ -17,7 +17,7 @@ import { field } from "./condition-builder.js";
 // ── Schema ───────────────────────────────────────────────────────────
 
 const THREAD_SCHEMA: TableSchema = {
-  table_name: "threads",
+  table_name: "nodetool_threads",
   primary_key: "id",
   columns: {
     id: { type: "string" },
@@ -79,15 +79,15 @@ export class Thread extends DBModel {
   /** Paginate threads for a user. */
   static async paginate(
     userId: string,
-    opts: { limit?: number } = {},
+    opts: { limit?: number; startKey?: string; reverse?: boolean } = {},
   ): Promise<[Thread[], string]> {
-    const { limit = 50 } = opts;
+    const { limit = 50, startKey: _startKey, reverse = true } = opts;
     const cond = field("user_id").equals(userId);
 
     return (Thread as unknown as ModelClass<Thread>).query({
       condition: cond,
       orderBy: "updated_at",
-      reverse: true,
+      reverse,
       limit,
     });
   }

@@ -17,7 +17,7 @@ import { field } from "./condition-builder.js";
 // ── Schema ───────────────────────────────────────────────────────────
 
 const ASSET_SCHEMA: TableSchema = {
-  table_name: "assets",
+  table_name: "nodetool_assets",
   primary_key: "id",
   columns: {
     id: { type: "string" },
@@ -162,5 +162,155 @@ export class Asset extends DBModel {
   ): Promise<Asset[]> {
     const [assets] = await Asset.paginate(userId, { parentId, limit });
     return assets;
+  }
+
+  /**
+   * Search assets globally across all folders for a user.
+   * Uses LIKE on name field for substring matching.
+   */
+  static async searchAssetsGlobal(
+    userId: string,
+    query: string,
+    opts: {
+      contentType?: string;
+      limit?: number;
+    } = {},
+  ): Promise<[Asset[], string, Array<Record<string, string>>]> {
+    const { contentType, limit = 100 } = opts;
+    const sanitized = query.trim();
+
+    let cond = field("user_id")
+      .equals(userId)
+      .and(field("name").like(`%${sanitized}%`));
+
+    if (contentType) {
+      cond = cond.and(field("content_type").like(`${contentType}%`));
+    }
+
+    const [assets, cursor] = await (Asset as unknown as ModelClass<Asset>).query({
+      condition: cond,
+      limit,
+    });
+
+    const pathInfo = await Asset.getAssetPathInfo(userId, assets.map((a) => a.id));
+
+    const folderPaths: Array<Record<string, string>> = [];
+    for (const asset of assets) {
+      if (pathInfo[asset.id]) {
+        folderPaths.push(pathInfo[asset.id]);
+      } else {
+        folderPaths.push({
+          folder_name: "Unknown",
+          folder_path: "Unknown",
+          folder_id: asset.parent_id ?? "",
+        });
+      }
+    }
+
+    return [assets, cursor, folderPaths];
+  }
+
+  /**
+   * Get folder path information for given asset IDs.
+   * Returns a map from asset_id to { folder_name, folder_path, folder_id }.
+   */
+  static async getAssetPathInfo(
+    userId: string,
+    assetIds: string[],
+  ): Promise<Record<string, Record<string, string>>> {
+    if (assetIds.length === 0) return {};
+
+    const result: Record<string, Record<string, string>> = {};
+
+    // Fetch all requested assets
+    const assetMap = new Map<string, Asset>();
+    for (const id of assetIds) {
+      const asset = await Asset.find(userId, id);
+      if (asset) assetMap.set(id, asset);
+    }
+
+    // Cache for parent folders
+    const parentCache = new Map<string, Asset>();
+
+    for (const assetId of assetIds) {
+      const asset = assetMap.get(assetId);
+      if (!asset) continue;
+
+      // Root folder
+      if (!asset.parent_id || asset.parent_id === userId) {
+        result[assetId] = {
+          folder_name: "Home",
+          folder_path: "Home",
+          folder_id: userId,
+        };
+        continue;
+      }
+
+      // Walk up the folder hierarchy
+      const pathParts: string[] = [];
+      const pathIds: string[] = [];
+      let currentId: string | null = asset.parent_id;
+
+      while (currentId && currentId !== userId) {
+        let parent = parentCache.get(currentId);
+        if (!parent) {
+          parent = (await Asset.find(userId, currentId)) ?? undefined;
+          if (parent) parentCache.set(currentId, parent);
+        }
+        if (!parent) break;
+        pathParts.push(parent.name);
+        pathIds.push(parent.id);
+        currentId = parent.parent_id;
+      }
+
+      pathParts.push("Home");
+      pathIds.push(userId);
+      pathParts.reverse();
+      pathIds.reverse();
+
+      const immediateName = pathParts[pathParts.length - 1] ?? "Home";
+      const immediateId = pathIds[pathIds.length - 1] ?? userId;
+
+      result[assetId] = {
+        folder_name: immediateName,
+        folder_path: pathParts.join(" / "),
+        folder_id: immediateId,
+      };
+    }
+
+    return result;
+  }
+
+  /**
+   * Recursively fetch all assets within a folder.
+   */
+  static async getAssetsRecursive(
+    userId: string,
+    folderId: string,
+  ): Promise<{ assets: Record<string, unknown>[] }> {
+    const folder = await Asset.find(userId, folderId);
+    if (!folder) return { assets: [] };
+
+    async function recursiveFetch(currentFolderId: string): Promise<Record<string, unknown>[]> {
+      const [assets] = await Asset.paginate(userId, {
+        parentId: currentFolderId,
+        limit: 10000,
+      });
+      const result: Record<string, unknown>[] = [];
+      for (const asset of assets) {
+        if (asset.user_id !== userId) continue;
+        const dict = asset.toRow();
+        if (asset.content_type === "folder") {
+          dict.children = await recursiveFetch(asset.id);
+        }
+        result.push(dict);
+      }
+      return result;
+    }
+
+    const folderDict = folder.toRow();
+    folderDict.children = await recursiveFetch(folderId);
+
+    return { assets: [folderDict] };
   }
 }

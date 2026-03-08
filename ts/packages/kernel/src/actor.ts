@@ -14,7 +14,10 @@
  *   - zip_all: wait until ALL handles have data (with sticky semantics).
  */
 
-import type { NodeDescriptor, SyncMode, ControlEvent } from "@nodetool/protocol";
+import { createLogger } from "@nodetool/config";
+import type { NodeDescriptor, ControlEvent } from "@nodetool/protocol";
+
+const log = createLogger("nodetool.kernel.actor");
 import type { ProcessingContext } from "@nodetool/runtime";
 import { NodeInbox } from "./inbox.js";
 
@@ -75,6 +78,9 @@ export class NodeActor {
   /** Latest execution result. */
   private _latestResult: Record<string, unknown> | null = null;
 
+  /** Handles that are sticky from the start (non-streaming edges). */
+  private _initialStickyHandles: Set<string>;
+
   /** Callback to route outputs downstream. */
   private _sendOutputs: (
     nodeId: string,
@@ -96,6 +102,7 @@ export class NodeActor {
     ) => Promise<void>;
     emitMessage: (msg: unknown) => void;
     executionContext?: ProcessingContext;
+    stickyHandles?: Set<string>;
   }) {
     this.node = opts.node;
     this.inbox = opts.inbox;
@@ -103,6 +110,7 @@ export class NodeActor {
     this._sendOutputs = opts.sendOutputs;
     this._emitMessage = opts.emitMessage;
     this._executionContext = opts.executionContext;
+    this._initialStickyHandles = opts.stickyHandles ?? new Set();
   }
 
   // -----------------------------------------------------------------------
@@ -114,7 +122,9 @@ export class NodeActor {
    * Returns the last outputs produced.
    */
   async run(): Promise<ActorResult> {
+    let errorMessage: string | undefined;
     try {
+      log.debug("Actor started", { nodeId: this.node.id, type: this.node.type });
       this._emitNodeStatus("running");
 
       if (this._executor.preProcess) {
@@ -136,18 +146,28 @@ export class NodeActor {
         // Standard buffered or streaming-output mode
         await this._runBuffered();
       }
-
-      if (this._executor.finalize) {
-        await this._executor.finalize();
-      }
-
-      this._emitNodeStatus("completed", this._latestResult ?? {});
-      return { outputs: this._latestResult ?? {} };
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this._emitNodeStatus("error", undefined, message);
-      return { outputs: {}, error: message };
+      errorMessage = err instanceof Error ? err.message : String(err);
+      log.error("Actor failed", { nodeId: this.node.id, type: this.node.type, error: errorMessage });
+    } finally {
+      // Always finalize, even on error (Python parity: gap #13)
+      if (this._executor.finalize) {
+        try {
+          await this._executor.finalize();
+        } catch {
+          // Swallow finalize errors — don't mask original error
+        }
+      }
     }
+
+    if (errorMessage !== undefined) {
+      this._emitNodeStatus("error", undefined, errorMessage);
+      return { outputs: {}, error: errorMessage };
+    }
+
+    log.debug("Actor completed", { nodeId: this.node.id, type: this.node.type });
+    this._emitNodeStatus("completed", this._latestResult ?? {});
+    return { outputs: this._latestResult ?? {} };
   }
 
   // -----------------------------------------------------------------------
@@ -166,49 +186,71 @@ export class NodeActor {
 
     // Source nodes with no data inputs should execute once with empty inputs.
     if (inputHandles.length === 0) {
-      if (this.node.is_streaming_output && this._executor.genProcess) {
-        for await (const partial of this._executor.genProcess(
-          {},
-          this._executionContext
-        )) {
-          this._latestResult = partial;
-          await this._sendOutputs(this.node.id, partial);
-        }
-      } else {
-        const outputs = await this._executor.process({}, this._executionContext);
-        this._latestResult = outputs;
-        await this._sendOutputs(this.node.id, outputs);
-      }
+      await this._executeWithInputs({});
       return;
     }
 
-    // Keep gathering input batches until inbox is drained
+    if (syncMode === "on_any") {
+      return this._runOnAny(inputHandles);
+    }
+
+    // zip_all: keep gathering input batches until inbox is drained
     while (true) {
-      const inputs = await this._gatherInputs(syncMode);
-      if (inputs === null) break; // inbox exhausted
+      const inputs = await this._gatherZipAll();
+      if (inputs === null) break;
 
-      if (this.node.is_streaming_output && this._executor.genProcess) {
-        // Streaming output: yield items
-        for await (const partial of this._executor.genProcess(
-          inputs,
-          this._executionContext
-        )) {
-          this._latestResult = partial;
-          await this._sendOutputs(this.node.id, partial);
-        }
-      } else {
-        // Buffered: single process call
-        const outputs = await this._executor.process(
-          inputs,
-          this._executionContext
-        );
-        this._latestResult = outputs;
-        await this._sendOutputs(this.node.id, outputs);
-      }
+      await this._executeWithInputs(inputs);
 
-      // If on_any, keep looping until exhausted
-      // If zip_all, keep looping until all handles exhausted
       if (this.inbox.isFullyDrained()) break;
+    }
+  }
+
+  /**
+   * on_any execution: wait for all handles to have at least one value,
+   * then fire. After initial fire, each subsequent item fires immediately.
+   */
+  private async _runOnAny(inputHandles: string[]): Promise<void> {
+    const current: Record<string, unknown> = {};
+    const pendingHandles = new Set(inputHandles);
+    let initialFired = false;
+
+    for await (const [handle, item] of this.inbox.iterAny()) {
+      if (handle === "__control__") continue;
+
+      current[handle] = item;
+
+      if (!initialFired) {
+        pendingHandles.delete(handle);
+        if (pendingHandles.size > 0) continue;
+        await this._executeWithInputs({ ...current });
+        initialFired = true;
+      } else {
+        await this._executeWithInputs({ ...current });
+      }
+    }
+  }
+
+  /**
+   * Execute process or genProcess with the given inputs.
+   */
+  private async _executeWithInputs(
+    inputs: Record<string, unknown>
+  ): Promise<void> {
+    if (this.node.is_streaming_output && this._executor.genProcess) {
+      for await (const partial of this._executor.genProcess(
+        inputs,
+        this._executionContext
+      )) {
+        this._latestResult = partial;
+        await this._sendOutputs(this.node.id, partial);
+      }
+    } else {
+      const outputs = await this._executor.process(
+        inputs,
+        this._executionContext
+      );
+      this._latestResult = outputs;
+      await this._sendOutputs(this.node.id, outputs);
     }
   }
 
@@ -247,41 +289,6 @@ export class NodeActor {
   // -----------------------------------------------------------------------
 
   /**
-   * Gather inputs based on sync mode.
-   *
-   * - on_any: return as soon as any handle has data.
-   * - zip_all: wait until all handles have data, using sticky semantics.
-   *
-   * Returns null when no more inputs are available.
-   */
-  private async _gatherInputs(
-    syncMode: SyncMode
-  ): Promise<Record<string, unknown> | null> {
-    if (syncMode === "on_any") {
-      return this._gatherOnAny();
-    }
-    return this._gatherZipAll();
-  }
-
-  /**
-   * on_any: pop the first available item from any handle.
-   */
-  private async _gatherOnAny(): Promise<Record<string, unknown> | null> {
-    const popped = this.inbox.tryPopAny();
-    if (popped) {
-      return { [popped[0]]: popped[1] };
-    }
-    // Nothing buffered – try async iteration
-    const gen = this.inbox.iterAny();
-    const next = await gen.next();
-    if (next.done) return null;
-    const [handle, item] = next.value;
-    // We must return the generator, but we only need one item for on_any
-    await gen.return(undefined);
-    return { [handle]: item };
-  }
-
-  /**
    * zip_all: wait until every registered handle has at least one item,
    * using "sticky" semantics for handles that have no more upstream.
    */
@@ -308,8 +315,9 @@ export class NodeActor {
         }
       }
 
-      // Use sticky value if handle is closed
-      if (!this.inbox.isOpen(handle) && handle in this._stickyValues) {
+      // Use sticky value if handle is closed or marked sticky from streaming analysis
+      const isSticky = !this.inbox.isOpen(handle) || this._initialStickyHandles.has(handle);
+      if (isSticky && handle in this._stickyValues) {
         result[handle] = this._stickyValues[handle];
         continue;
       }

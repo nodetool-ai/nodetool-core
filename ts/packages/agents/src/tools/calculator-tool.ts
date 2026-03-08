@@ -53,7 +53,7 @@ export class CalculatorTool extends Tool {
 
     try {
       // Use Function constructor with a restricted scope
-      // eslint-disable-next-line @typescript-eslint/no-implied-eval
+       
       const fn = new Function(
         "scope",
         `with(scope) { return (${expression}) }`,

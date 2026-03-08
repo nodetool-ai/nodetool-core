@@ -1,5 +1,6 @@
 {
   "name": "@nodetool/node-sdk",
+  "type": "module",
   "version": "0.1.0",
   "description": "Node SDK: BaseNode, NodeRegistry, and example nodes",
   "main": "dist/index.js",

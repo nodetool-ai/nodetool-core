@@ -267,10 +267,15 @@ export const MODEL_TO_TIER: Record<string, string> = {
   "openai:text-embedding-3-small": "embeddingSmall",
   "openai:text-embedding-3-large": "embeddingLarge",
   // Anthropic Models - Anthropic specific
+  "anthropic:claude-opus-4-6": "claudeOpus4",
+  "anthropic:claude-opus-4-5": "claudeOpus4",
   "anthropic:claude-opus-4-20250514": "claudeOpus4",
   "anthropic:claude-opus-4-20250501": "claudeOpus4",
+  "anthropic:claude-sonnet-4-6": "claudeSonnet4",
+  "anthropic:claude-sonnet-4-5": "claudeSonnet4",
   "anthropic:claude-sonnet-4-20250514": "claudeSonnet4",
   "anthropic:claude-sonnet-4-20250501": "claudeSonnet4",
+  "anthropic:claude-haiku-4-5": "claudeHaiku4",
   "anthropic:claude-haiku-4-20250514": "claudeHaiku4",
   "anthropic:claude-haiku-4-20250501": "claudeHaiku4",
   "anthropic:claude-3-7-sonnet-20250511": "claude37Sonnet",
@@ -298,6 +303,10 @@ export interface UsageInfo {
   imageCount?: number;
   videoSeconds?: number;
 }
+
+import { createLogger } from "@nodetool/config";
+
+const log = createLogger("nodetool.runtime.cost");
 
 export class CostCalculator {
   /**
@@ -354,15 +363,13 @@ export class CostCalculator {
   ): number {
     const tierName = CostCalculator.getTier(modelId, provider);
     if (tierName === null) {
-      console.warn(
-        `No pricing tier found for model: ${modelId} (provider: ${provider})`
-      );
+      log.warn(`No pricing tier found for model: ${modelId} (provider: ${provider})`);
       return 0.0;
     }
 
     const tier = PRICING_TIERS[tierName];
     if (tier === undefined) {
-      console.warn(`Pricing tier '${tierName}' not defined`);
+      log.warn(`Pricing tier '${tierName}' not defined`);
       return 0.0;
     }
 

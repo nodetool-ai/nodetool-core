@@ -397,6 +397,7 @@ describe("input/output/workspace nodes", () => {
         generateMessage: async () => ({
           content: "provider-response",
         }),
+        async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
       }),
     } as unknown as ProcessingContext;
     const result = await agent.process(

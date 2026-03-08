@@ -10,6 +10,9 @@
 
 import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
+import { createLogger } from "@nodetool/config";
+
+const log = createLogger("nodetool.models");
 import type { ConditionBuilder } from "./condition-builder.js";
 import type { DatabaseAdapter, Row, TableSchema, IndexDef } from "./database-adapter.js";
 
@@ -60,8 +63,8 @@ export class ModelObserver {
     for (const cb of ModelObserver.observers.get(className) ?? []) {
       try {
         cb(instance, event);
-      } catch {
-        // swallow observer errors (matches Python behaviour)
+      } catch (err) {
+        log.error(`Observer notification failed for ${className}`, { error: String(err) });
       }
     }
 
@@ -69,8 +72,8 @@ export class ModelObserver {
     for (const cb of ModelObserver.observers.get(null) ?? []) {
       try {
         cb(instance, event);
-      } catch {
-        // swallow
+      } catch (err) {
+        log.error("Global observer notification failed", { error: String(err) });
       }
     }
   }
@@ -125,7 +128,7 @@ export function getGlobalAdapterResolver(): AdapterResolver | null {
 
 // ── DBModel Base ─────────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export type ModelClass<T extends DBModel = DBModel> = {
   new (data: Row): T;
   name: string;
