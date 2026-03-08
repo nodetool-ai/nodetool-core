@@ -113,6 +113,8 @@ export {
 } from "./tools/workspace-tools.js";
 export { ListProviderModelsTool } from "./tools/model-tools.js";
 export { SaveAssetTool, ReadAssetTool } from "./tools/asset-tools.js";
+export { ControlNodeTool, sanitizeToolName } from "./tools/control-tool.js";
+export type { ControlNodeInfo } from "./tools/control-tool.js";
 
 // Utilities
 export { extractJSON } from "./utils/json-parser.js";

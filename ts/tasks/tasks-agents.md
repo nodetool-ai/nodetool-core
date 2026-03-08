@@ -46,12 +46,11 @@ The Python `workspace_tools` gives agents read/write access to a sandboxed works
 ---
 
 ### T-AG-5 · control_tool
-**Status:** 🔴 open
+**Status:** 🟢 done
 **Python source:** `agents/tools/control_tool.py`
-**Dependency:** Kernel controlled-node system
 
-- [ ] **TEST** — Write todo test: `ControlTool` dispatches a `RunEvent` to a controlled node in a running workflow and receives response.
-- [ ] **IMPL** — Depends on kernel `response_future` (T-K-11f). Deferred.
+- [x] **IMPL** — `ControlNodeTool` in `packages/agents/src/tools/control-tool.ts`. Builds JSON schema from node info, creates `RunEvent` from tool args. `StepExecutor` intercepts control tool calls and records events via `getControlEvents()`.
+- [x] **TEST** — 21 tests in `packages/agents/tests/tools/control-tool.test.ts` covering sanitizeToolName, schema building, event creation, userMessage, process stub.
 
 ---
 

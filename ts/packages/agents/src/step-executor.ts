@@ -24,6 +24,7 @@ import {
 } from "@nodetool/protocol";
 import type { Step, Task } from "./types.js";
 import type { Tool } from "./tools/base-tool.js";
+import { ControlNodeTool } from "./tools/control-tool.js";
 import { FinishStepTool } from "./tools/finish-step-tool.js";
 import { extractJSON } from "./utils/json-parser.js";
 
@@ -276,6 +277,7 @@ export class StepExecutor {
   private sourcesSet = new Set<string>();
   private inputTokensTotal = 0;
   private outputTokensTotal = 0;
+  private _controlEvents: Array<{ targetNodeId: string; event: import("@nodetool/protocol").ControlEvent }> = [];
 
   constructor(opts: StepExecutorOptions) {
     this.task = opts.task;
@@ -933,6 +935,12 @@ export class StepExecutor {
             regularToolCalls.map(async (tc) => {
               const tool = this.tools.find((t) => t.name === tc.name);
               if (!tool) return { error: `Unknown tool: ${tc.name}` };
+              // Intercept ControlNodeTool: create event instead of calling process()
+              if (tool instanceof ControlNodeTool) {
+                const event = tool.createControlEvent(tc.args ?? {});
+                this._controlEvents.push({ targetNodeId: tool.targetNodeId, event });
+                return tool.userMessage(tc.args ?? {});
+              }
               try {
                 const result = await tool.process(this.context, tc.args ?? {});
                 return result;
@@ -1046,6 +1054,14 @@ export class StepExecutor {
       inputTokensTotal: this.inputTokensTotal,
       outputTokensTotal: this.outputTokensTotal,
     };
+  }
+
+  /**
+   * Get control events emitted during execution (from ControlNodeTool calls).
+   * The caller (workflow actor/runner) is responsible for dispatching these.
+   */
+  getControlEvents(): Array<{ targetNodeId: string; event: import("@nodetool/protocol").ControlEvent }> {
+    return [...this._controlEvents];
   }
 }
 
