@@ -3,30 +3,50 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from nodetool.metadata.types import (
+    AmazonResult,
+    AmazonProductResult,
+    DuckDuckGoResult,
     ImageResult,
     JobResult,
     LocalResult,
     NewsResult,
     OrganicResult,
+    ScholarResult,
     ShoppingResult,
+    TrendResult,
     VisualMatchResult,
+    YelpResult,
+    YouTubeResult,
 )
 
 __all__ = [
+    "AmazonProductResponse",
+    "AmazonResult",
+    "AmazonSearchResponse",
+    "DuckDuckGoResult",
+    "DuckDuckGoSearchResponse",
     "GoogleImagesResponse",
     "GoogleJobsResponse",
     "GoogleLensResponse",
     "GoogleMapsResponse",
     "GoogleNewsResponse",
+    "GoogleScholarResponse",
     "GoogleSearchResponse",
     "GoogleShoppingResponse",
+    "GoogleTrendsResponse",
     "ImageResult",
     "JobResult",
     "LocalResult",
     "NewsResult",
     "OrganicResult",
+    "ScholarResult",
     "ShoppingResult",
+    "TrendResult",
     "VisualMatchResult",
+    "YelpResult",
+    "YelpSearchResponse",
+    "YouTubeResult",
+    "YouTubeSearchResponse",
 ]
 
 
@@ -118,6 +138,34 @@ class GoogleLensResponse(BaseModel):
 
 class GoogleMapsResponse(BaseModel):
     local_results: list[LocalResult] = Field(default_factory=list)
+
+
+class AmazonSearchResponse(BaseModel):
+    organic_results: list[AmazonResult] = Field(default_factory=list)
+
+
+class AmazonProductResponse(BaseModel):
+    product_result: dict = Field(default_factory=dict)
+
+
+class YouTubeSearchResponse(BaseModel):
+    video_results: list[YouTubeResult] = Field(default_factory=list)
+
+
+class GoogleScholarResponse(BaseModel):
+    organic_results: list[ScholarResult] = Field(default_factory=list)
+
+
+class GoogleTrendsResponse(BaseModel):
+    interest_over_time: dict = Field(default_factory=dict)
+
+
+class YelpSearchResponse(BaseModel):
+    organic_results: list[YelpResult] = Field(default_factory=list)
+
+
+class DuckDuckGoSearchResponse(BaseModel):
+    organic_results: list[DuckDuckGoResult] = Field(default_factory=list)
 
 
 if __name__ == "__main__":

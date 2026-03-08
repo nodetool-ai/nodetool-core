@@ -319,6 +319,62 @@ class DataForSEOProvider(SerpProvider):
         """
         return {"error": "Google Shopping search is not supported by DataForSEOProvider."}
 
+    async def search_amazon(
+        self, query: str, amazon_domain: str = "amazon.com", num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Searches Amazon. Not currently supported by DataForSEOProvider.
+        """
+        return {"error": "Amazon search not supported by DataForSEO provider"}
+
+    async def search_amazon_product(
+        self, product_id: str, amazon_domain: str = "amazon.com"
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Retrieves Amazon product details. Not currently supported by DataForSEOProvider.
+        """
+        return {"error": "Amazon product search not supported by DataForSEO provider"}
+
+    async def search_youtube(
+        self, query: str, num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Searches YouTube. Not currently supported by DataForSEOProvider.
+        """
+        return {"error": "YouTube search not supported by DataForSEO provider"}
+
+    async def search_scholar(
+        self, query: str, num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Searches Google Scholar. Not currently supported by DataForSEOProvider.
+        """
+        return {"error": "Scholar search not supported by DataForSEO provider"}
+
+    async def search_trends(
+        self, query: str, date: str | None = None, geo: str | None = None
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Retrieves Google Trends data. Not currently supported by DataForSEOProvider.
+        """
+        return {"error": "Trends search not supported by DataForSEO provider"}
+
+    async def search_yelp(
+        self, query: str, location: str, num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Searches Yelp. Not currently supported by DataForSEOProvider.
+        """
+        return {"error": "Yelp search not supported by DataForSEO provider"}
+
+    async def search_duckduckgo(
+        self, query: str, num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Searches DuckDuckGo. Not currently supported by DataForSEOProvider.
+        """
+        return {"error": "DuckDuckGo search not supported by DataForSEO provider"}
+
     async def close(self) -> None:
         """Closes the HTTP client."""
         # Only close if we created the client ourselves (not from ResourceScope)

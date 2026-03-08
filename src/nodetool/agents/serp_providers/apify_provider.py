@@ -331,6 +331,62 @@ class ApifyProvider(SerpProvider):
 
         return _remove_base64_images(result_data)
 
+    async def search_amazon(
+        self, query: str, amazon_domain: str = "amazon.com", num_results: int = 10
+    ) -> Any:
+        """
+        Searches Amazon. Not currently supported by ApifyProvider.
+        """
+        return {"error": "Amazon search not supported by Apify provider"}
+
+    async def search_amazon_product(
+        self, product_id: str, amazon_domain: str = "amazon.com"
+    ) -> Any:
+        """
+        Retrieves Amazon product details. Not currently supported by ApifyProvider.
+        """
+        return {"error": "Amazon product search not supported by Apify provider"}
+
+    async def search_youtube(
+        self, query: str, num_results: int = 10
+    ) -> Any:
+        """
+        Searches YouTube. Not currently supported by ApifyProvider.
+        """
+        return {"error": "YouTube search not supported by Apify provider"}
+
+    async def search_scholar(
+        self, query: str, num_results: int = 10
+    ) -> Any:
+        """
+        Searches Google Scholar. Not currently supported by ApifyProvider.
+        """
+        return {"error": "Scholar search not supported by Apify provider"}
+
+    async def search_trends(
+        self, query: str, date: str | None = None, geo: str | None = None
+    ) -> Any:
+        """
+        Retrieves Google Trends data. Not currently supported by ApifyProvider.
+        """
+        return {"error": "Trends search not supported by Apify provider"}
+
+    async def search_yelp(
+        self, query: str, location: str, num_results: int = 10
+    ) -> Any:
+        """
+        Searches Yelp. Not currently supported by ApifyProvider.
+        """
+        return {"error": "Yelp search not supported by Apify provider"}
+
+    async def search_duckduckgo(
+        self, query: str, num_results: int = 10
+    ) -> Any:
+        """
+        Searches DuckDuckGo. Not currently supported by ApifyProvider.
+        """
+        return {"error": "DuckDuckGo search not supported by Apify provider"}
+
     async def close(self) -> None:
         """Clean up any resources (e.g., close HTTP clients)."""
         # Only close if we created the client ourselves (not from ResourceScope)

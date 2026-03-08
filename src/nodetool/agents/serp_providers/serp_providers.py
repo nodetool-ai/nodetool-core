@@ -102,6 +102,41 @@ class SerpProvider(abc.ABC):
         """
 
     @abc.abstractmethod
+    async def search_amazon(
+        self, query: str, amazon_domain: str = "amazon.com", num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse: ...
+
+    @abc.abstractmethod
+    async def search_amazon_product(
+        self, product_id: str, amazon_domain: str = "amazon.com"
+    ) -> dict[str, Any] | ErrorResponse: ...
+
+    @abc.abstractmethod
+    async def search_youtube(
+        self, query: str, num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse: ...
+
+    @abc.abstractmethod
+    async def search_scholar(
+        self, query: str, num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse: ...
+
+    @abc.abstractmethod
+    async def search_trends(
+        self, query: str, date: str | None = None, geo: str | None = None
+    ) -> dict[str, Any] | ErrorResponse: ...
+
+    @abc.abstractmethod
+    async def search_yelp(
+        self, query: str, location: str, num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse: ...
+
+    @abc.abstractmethod
+    async def search_duckduckgo(
+        self, query: str, num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse: ...
+
+    @abc.abstractmethod
     async def close(self) -> None:
         """
         Clean up any resources (e.g., close HTTP clients).

@@ -381,6 +381,179 @@ class SerpApiProvider(SerpProvider):
 
         return _remove_base64_images(result_data)
 
+    async def search_amazon(
+        self, query: str, amazon_domain: str = "amazon.com", num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Searches Amazon using SerpApi's Amazon engine.
+        """
+        params = {
+            "engine": "amazon",
+            "amazon_url": f"https://www.{amazon_domain}",
+            "amazon_domain": amazon_domain,
+            "q": query,
+        }
+
+        result_data = await self._make_request(params)
+
+        if "error" in result_data and not isinstance(result_data.get("search_metadata"), dict):
+            return result_data
+
+        serpapi_error_status = result_data.get("search_metadata", {}).get("status") == "Error"
+        serpapi_error_message = isinstance(result_data.get("error"), str)
+        if serpapi_error_status or serpapi_error_message:
+            raise ValueError(result_data.get("error", f"SerpApi returned an error: {result_data}"))
+
+        return _remove_base64_images(result_data)
+
+    async def search_amazon_product(
+        self, product_id: str, amazon_domain: str = "amazon.com"
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Retrieves Amazon product details using SerpApi's Amazon Product engine.
+        """
+        params = {
+            "engine": "amazon_product",
+            "product_id": product_id,
+            "amazon_domain": amazon_domain,
+        }
+
+        result_data = await self._make_request(params)
+
+        if "error" in result_data and not isinstance(result_data.get("search_metadata"), dict):
+            return result_data
+
+        serpapi_error_status = result_data.get("search_metadata", {}).get("status") == "Error"
+        serpapi_error_message = isinstance(result_data.get("error"), str)
+        if serpapi_error_status or serpapi_error_message:
+            raise ValueError(result_data.get("error", f"SerpApi returned an error: {result_data}"))
+
+        return _remove_base64_images(result_data)
+
+    async def search_youtube(
+        self, query: str, num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Searches YouTube using SerpApi's YouTube engine.
+        """
+        params = {
+            "engine": "youtube",
+            "search_query": query,
+            "gl": self.gl,
+            "hl": self.hl,
+        }
+
+        result_data = await self._make_request(params)
+
+        if "error" in result_data and not isinstance(result_data.get("search_metadata"), dict):
+            return result_data
+
+        serpapi_error_status = result_data.get("search_metadata", {}).get("status") == "Error"
+        serpapi_error_message = isinstance(result_data.get("error"), str)
+        if serpapi_error_status or serpapi_error_message:
+            raise ValueError(result_data.get("error", f"SerpApi returned an error: {result_data}"))
+
+        return _remove_base64_images(result_data)
+
+    async def search_scholar(
+        self, query: str, num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Searches Google Scholar using SerpApi's Google Scholar engine.
+        """
+        params = {
+            "engine": "google_scholar",
+            "q": query,
+            "num": num_results,
+            "hl": self.hl,
+        }
+
+        result_data = await self._make_request(params)
+
+        if "error" in result_data and not isinstance(result_data.get("search_metadata"), dict):
+            return result_data
+
+        serpapi_error_status = result_data.get("search_metadata", {}).get("status") == "Error"
+        serpapi_error_message = isinstance(result_data.get("error"), str)
+        if serpapi_error_status or serpapi_error_message:
+            raise ValueError(result_data.get("error", f"SerpApi returned an error: {result_data}"))
+
+        return _remove_base64_images(result_data)
+
+    async def search_trends(
+        self, query: str, date: str | None = None, geo: str | None = None
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Retrieves Google Trends data using SerpApi's Google Trends engine.
+        """
+        params: dict[str, Any] = {
+            "engine": "google_trends",
+            "q": query,
+        }
+        if date:
+            params["date"] = date
+        if geo:
+            params["geo"] = geo
+
+        result_data = await self._make_request(params)
+
+        if "error" in result_data and not isinstance(result_data.get("search_metadata"), dict):
+            return result_data
+
+        serpapi_error_status = result_data.get("search_metadata", {}).get("status") == "Error"
+        serpapi_error_message = isinstance(result_data.get("error"), str)
+        if serpapi_error_status or serpapi_error_message:
+            raise ValueError(result_data.get("error", f"SerpApi returned an error: {result_data}"))
+
+        return _remove_base64_images(result_data)
+
+    async def search_yelp(
+        self, query: str, location: str, num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Searches Yelp using SerpApi's Yelp engine.
+        """
+        params = {
+            "engine": "yelp",
+            "find_desc": query,
+            "find_loc": location,
+        }
+
+        result_data = await self._make_request(params)
+
+        if "error" in result_data and not isinstance(result_data.get("search_metadata"), dict):
+            return result_data
+
+        serpapi_error_status = result_data.get("search_metadata", {}).get("status") == "Error"
+        serpapi_error_message = isinstance(result_data.get("error"), str)
+        if serpapi_error_status or serpapi_error_message:
+            raise ValueError(result_data.get("error", f"SerpApi returned an error: {result_data}"))
+
+        return _remove_base64_images(result_data)
+
+    async def search_duckduckgo(
+        self, query: str, num_results: int = 10
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Searches DuckDuckGo using SerpApi's DuckDuckGo engine.
+        """
+        params = {
+            "engine": "duckduckgo",
+            "q": query,
+        }
+
+        result_data = await self._make_request(params)
+
+        if "error" in result_data and not isinstance(result_data.get("search_metadata"), dict):
+            return result_data
+
+        serpapi_error_status = result_data.get("search_metadata", {}).get("status") == "Error"
+        serpapi_error_message = isinstance(result_data.get("error"), str)
+        if serpapi_error_status or serpapi_error_message:
+            raise ValueError(result_data.get("error", f"SerpApi returned an error: {result_data}"))
+
+        return _remove_base64_images(result_data)
+
     async def close(self) -> None:
         # Only close if we created the client ourselves (not from ResourceScope)
         if self._client is not None:
