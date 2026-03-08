@@ -1,17 +1,23 @@
 /**
  * TaskExecutor -- orchestrates execution of a complete Task plan.
  *
- * Port of src/nodetool/agents/task_executor.py (simplified)
+ * Port of src/nodetool/agents/task_executor.py
  *
  * Iteratively finds steps whose dependencies are satisfied, runs
  * StepExecutor for each, and collects results until all steps complete
  * or the safety limit is reached.
+ *
+ * Process-mode steps automatically fan out over list inputs produced by
+ * a preceding discover step. Each item is rendered into the step's
+ * `perItemInstructions` template and executed as an ephemeral step.
+ * Results are aggregated into a list that downstream aggregate steps consume.
  */
 
+import { createHash } from "node:crypto";
 import type { BaseProvider } from "@nodetool/runtime";
 import type { ProcessingContext } from "@nodetool/runtime";
 import { createLogger } from "@nodetool/config";
-import type { ProcessingMessage, Chunk } from "@nodetool/protocol";
+import type { ProcessingMessage, Chunk, StepResult } from "@nodetool/protocol";
 
 const log = createLogger("nodetool.agents.task-executor");
 import { StepExecutor } from "./step-executor.js";
@@ -106,8 +112,17 @@ export class TaskExecutor {
 
       log.debug("Dispatching steps", { stepIds: executableSteps.map((s) => s.id) });
 
-      // Create step executors
-      const stepGenerators = executableSteps.map((step) => {
+      // Separate process-mode steps from normal steps
+      const processSteps = executableSteps.filter((s) => s.mode === "process");
+      const normalSteps = executableSteps.filter((s) => s.mode !== "process");
+
+      // Handle process-mode steps with fan-out
+      for (const pStep of processSteps) {
+        yield* this.handleProcessStep(pStep);
+      }
+
+      // Create step executors for normal steps
+      const stepGenerators = normalSteps.map((step) => {
         const executor = new StepExecutor({
           task: this.task,
           step,
@@ -138,6 +153,119 @@ export class TaskExecutor {
   }
 
   /**
+   * Produce a short deterministic hash for a value (used in ephemeral step IDs).
+   */
+  private shortHash(value: unknown): string {
+    const data = JSON.stringify(
+      value,
+      value != null && typeof value === "object"
+        ? Object.keys(value as Record<string, unknown>).sort()
+        : undefined,
+    );
+    return createHash("sha1").update(data).digest("hex").slice(0, 12);
+  }
+
+  /**
+   * Handle a process-mode step by fanning out over list inputs.
+   * Creates ephemeral steps for each item in the discover step's result
+   * and aggregates the outputs into a list stored in context.
+   */
+  private async *handleProcessStep(step: Step): AsyncGenerator<ProcessingMessage> {
+    const discoverStepId = step.dependsOn[0];
+    if (!discoverStepId) {
+      log.warn("Process step has no dependencies, skipping fan-out", { stepId: step.id });
+      step.completed = true;
+      return;
+    }
+
+    const discoverResult = this.context.get(discoverStepId);
+    if (!Array.isArray(discoverResult)) {
+      log.warn("Discover step result is not an array, treating as single item", {
+        stepId: step.id,
+        resultType: typeof discoverResult,
+      });
+      step.completed = true;
+      return;
+    }
+
+    const items = discoverResult as unknown[];
+    const template = step.perItemInstructions ?? step.instructions;
+    const perItemSchema = step.perItemSchema;
+
+    log.info("Fan-out processing", { stepId: step.id, itemCount: items.length });
+
+    // Create ephemeral steps for each item
+    const ephemeralSteps: Step[] = items.map((item) => {
+      let instructions = template;
+      if (typeof item === "object" && item !== null) {
+        for (const [key, value] of Object.entries(item as Record<string, unknown>)) {
+          instructions = instructions.replace(
+            new RegExp(`\\{${key}\\}`, "g"),
+            String(value),
+          );
+        }
+      } else {
+        instructions = instructions.replace(/\{item\}/g, String(item));
+      }
+
+      const hash = this.shortHash(item);
+      return {
+        id: `${step.id}_item_${hash}`,
+        instructions,
+        completed: false,
+        dependsOn: [],
+        logs: [],
+        outputSchema: perItemSchema ?? step.outputSchema,
+      } as Step;
+    });
+
+    // Create step executors for each ephemeral step
+    const generators = ephemeralSteps.map((ephStep) => {
+      const executor = new StepExecutor({
+        task: this.task,
+        step: ephStep,
+        context: this.context,
+        provider: this.provider,
+        model: this.model,
+        tools: [...this.tools],
+        systemPrompt: this.systemPrompt,
+        maxTokenLimit: this.maxTokenLimit,
+        maxIterations: this.maxStepIterations,
+        useFinishTask: false,
+      });
+      return executor.execute();
+    });
+
+    // Execute and collect results
+    const results: unknown[] = [];
+
+    if (this.parallelExecution && generators.length > 1) {
+      for await (const msg of mergeAsyncGenerators(generators)) {
+        if ((msg as StepResult).type === "step_result") {
+          results.push((msg as StepResult).result);
+        }
+        yield msg;
+      }
+    } else {
+      for (const gen of generators) {
+        for await (const msg of gen) {
+          if ((msg as StepResult).type === "step_result") {
+            results.push((msg as StepResult).result);
+          }
+          yield msg;
+        }
+      }
+    }
+
+    // Store aggregated results and mark complete
+    this.context.set(step.id, results);
+    step.completed = true;
+    step.endTime = Date.now();
+
+    log.info("Fan-out complete", { stepId: step.id, resultCount: results.length });
+  }
+
+  /**
    * Check if all steps in the task are completed.
    */
   private allTasksComplete(): boolean {
@@ -159,8 +287,17 @@ export class TaskExecutor {
     return this.task.steps.filter(
       (step) =>
         !step.completed &&
+        !this.isStepRunning(step) &&
         step.dependsOn.every((dep) => completedIds.has(dep)),
     );
+  }
+
+  /**
+   * Check if a step is currently running (started but not finished).
+   * Mirrors Python's Step.is_running().
+   */
+  private isStepRunning(step: Step): boolean {
+    return step.startTime != null && step.endTime == null;
   }
 
   /**
