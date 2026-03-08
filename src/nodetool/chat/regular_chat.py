@@ -6,7 +6,10 @@ It processes user input, generates responses, and handles tool calls and their r
 """
 
 import json
+import logging
 from typing import Sequence
+
+log = logging.getLogger(__name__)
 
 from rich.console import Console
 from rich.status import Status
@@ -162,6 +165,9 @@ async def process_regular_chat(
 
     tools = create_tools()
 
+    MAX_TOOL_ROUNDS = 10
+    tool_round = 0
+
     while True:
         async for chunk in provider.generate_messages(
             messages=messages_to_send,
@@ -209,6 +215,11 @@ async def process_regular_chat(
 
         # If there are unprocessed messages, continue the conversation
         if unprocessed_messages:
+            tool_round += 1
+            if tool_round >= MAX_TOOL_ROUNDS:
+                log.warning("Max tool rounds reached (%d), stopping tool loop", tool_round)
+                messages.extend(unprocessed_messages)
+                break
             messages.extend(unprocessed_messages)
             messages_to_send = unprocessed_messages
             unprocessed_messages = []

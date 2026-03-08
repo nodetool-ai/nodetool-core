@@ -276,6 +276,8 @@ class RegularChatProcessor(MessageProcessor):
         **kwargs,
     ):
         """Process regular chat messages with optional collection context."""
+        MAX_TOOL_ROUNDS = 10
+        tool_round = 0
         last_message = chat_history[-1]
         content = ""
         unprocessed_messages = []
@@ -419,7 +421,11 @@ class RegularChatProcessor(MessageProcessor):
 
                     break
                 else:
-                    log.debug(f"Have {len(unprocessed_messages)} unprocessed messages, continuing loop")
+                    tool_round += 1
+                    if tool_round >= MAX_TOOL_ROUNDS:
+                        log.warning("Max tool rounds reached (%d), stopping tool loop", tool_round)
+                        break
+                    log.debug(f"Have {len(unprocessed_messages)} unprocessed messages, continuing loop (round {tool_round})")
 
             # Signal completion
             await self.send_message({"type": "chunk", "content": "", "done": True, "thread_id": last_message.thread_id})
