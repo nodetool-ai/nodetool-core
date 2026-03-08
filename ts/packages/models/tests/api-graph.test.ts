@@ -29,6 +29,9 @@ describe("toApiNode", () => {
       is_controlled: false,
       is_dynamic: false,
       parent_id: "parent-1",
+      ui_properties: { x: 10, y: 20 },
+      dynamic_properties: { extra: "value" },
+      dynamic_outputs: { alt: { type: "string" } as any },
     };
     const api = toApiNode(node);
     expect(api).toEqual({
@@ -36,11 +39,14 @@ describe("toApiNode", () => {
       parent_id: "parent-1",
       type: "test.Add",
       data: { a: 1, b: 2 },
+      ui_properties: { x: 10, y: 20 },
+      dynamic_properties: { extra: "value" },
+      dynamic_outputs: { alt: { type: "string" } },
+      sync_mode: "zip_all",
     });
     // Runtime fields should NOT be present
     expect((api as Record<string, unknown>).outputs).toBeUndefined();
     expect((api as Record<string, unknown>).is_streaming_output).toBeUndefined();
-    expect((api as Record<string, unknown>).sync_mode).toBeUndefined();
   });
 
   it("defaults data to empty object when properties is undefined", () => {
@@ -52,6 +58,20 @@ describe("toApiNode", () => {
   it("defaults parent_id to null when not set", () => {
     const node: NodeDescriptor = { id: "n3", type: "test.X" };
     expect(toApiNode(node).parent_id).toBeNull();
+  });
+
+  it("defaults optional API graph node fields to Python-compatible empty values", () => {
+    const node: NodeDescriptor = { id: "n4", type: "test.Empty" };
+    expect(toApiNode(node)).toEqual({
+      id: "n4",
+      parent_id: null,
+      type: "test.Empty",
+      data: {},
+      ui_properties: {},
+      dynamic_properties: {},
+      dynamic_outputs: {},
+      sync_mode: "on_any",
+    });
   });
 });
 
@@ -251,23 +271,19 @@ describe("removeConnectedSlots", () => {
 // ---------------------------------------------------------------------------
 
 describe("toApiNode — additional coverage", () => {
-  it("ui_properties on NodeDescriptor do not leak into ApiNode", () => {
-    // NodeDescriptor doesn't have ui_properties in the interface,
-    // but if someone passes extra fields, toApiNode should not copy them
-    const node: NodeDescriptor & { ui_properties?: Record<string, unknown> } = {
+  it("preserves ui_properties on ApiNode", () => {
+    const node: NodeDescriptor = {
       id: "n-ui",
       type: "test.UI",
       name: "UINode",
       properties: { color: "red" },
       ui_properties: { x: 100, y: 200 },
     };
-    const api = toApiNode(node as NodeDescriptor);
-    // toApiNode only picks id, parent_id, type, data — no ui_properties
+    const api = toApiNode(node);
     expect(api.id).toBe("n-ui");
     expect(api.type).toBe("test.UI");
     expect(api.data).toEqual({ color: "red" });
-    // ui_properties should NOT be in the result (toApiNode doesn't copy it)
-    expect((api as Record<string, unknown>).ui_properties).toBeUndefined();
+    expect(api.ui_properties).toEqual({ x: 100, y: 200 });
   });
 
   it("preserves complex nested data in properties", () => {

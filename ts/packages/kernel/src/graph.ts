@@ -30,6 +30,10 @@ export class GraphValidationError extends Error {
   }
 }
 
+export interface GraphFromDictOptions {
+  skipErrors?: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -89,7 +93,8 @@ export class Graph {
    * Create a Graph from a plain object, validating the input shape.
    * Throws GraphValidationError if nodes or edges are missing or not arrays.
    */
-  static fromDict(data: unknown): Graph {
+  static fromDict(data: unknown, options: GraphFromDictOptions = {}): Graph {
+    const { skipErrors = true } = options;
     if (!data || typeof data !== "object") {
       throw new GraphValidationError("Graph data must be an object");
     }
@@ -103,7 +108,90 @@ export class Graph {
     if (!Array.isArray(obj.edges)) {
       throw new GraphValidationError("'edges' must be an array");
     }
-    return new Graph(obj as unknown as GraphData);
+
+    const propertiesWithEdges = new Map<string, Set<string>>();
+    for (const edge of obj.edges) {
+      if (!edge || typeof edge !== "object") {
+        if (skipErrors) continue;
+        throw new GraphValidationError("Edge entries must be objects");
+      }
+      const edgeObj = edge as Record<string, unknown>;
+      const targetId = typeof edgeObj.target === "string" ? edgeObj.target : undefined;
+      const targetHandle = typeof edgeObj.targetHandle === "string" ? edgeObj.targetHandle : undefined;
+      if (!targetId || !targetHandle) continue;
+      let handles = propertiesWithEdges.get(targetId);
+      if (!handles) {
+        handles = new Set<string>();
+        propertiesWithEdges.set(targetId, handles);
+      }
+      handles.add(targetHandle);
+    }
+
+    const validNodes: NodeDescriptor[] = [];
+    const validNodeIds = new Set<string>();
+    for (const node of obj.nodes) {
+      if (!node || typeof node !== "object") {
+        if (skipErrors) continue;
+        throw new GraphValidationError("Node entries must be objects");
+      }
+
+      const nodeObj = { ...(node as Record<string, unknown>) };
+      const id = typeof nodeObj.id === "string" ? nodeObj.id : undefined;
+      const type = typeof nodeObj.type === "string" ? nodeObj.type : undefined;
+      if (!id || !type) {
+        if (skipErrors) continue;
+        throw new GraphValidationError("Each node must have string 'id' and 'type' fields");
+      }
+
+      const rawProperties =
+        nodeObj.properties && typeof nodeObj.properties === "object"
+          ? { ...(nodeObj.properties as Record<string, unknown>) }
+          : nodeObj.data && typeof nodeObj.data === "object"
+            ? { ...(nodeObj.data as Record<string, unknown>) }
+            : {};
+
+      for (const handle of propertiesWithEdges.get(id) ?? []) {
+        delete rawProperties[handle];
+      }
+
+      nodeObj.properties = rawProperties;
+      delete nodeObj.data;
+
+      validNodes.push(nodeObj as unknown as NodeDescriptor);
+      validNodeIds.add(id);
+    }
+
+    const validEdges: Edge[] = [];
+    for (const edge of obj.edges) {
+      if (!edge || typeof edge !== "object") {
+        if (skipErrors) continue;
+        throw new GraphValidationError("Edge entries must be objects");
+      }
+
+      const edgeObj = edge as Record<string, unknown>;
+      const hasRequiredFields =
+        typeof edgeObj.source === "string" &&
+        typeof edgeObj.sourceHandle === "string" &&
+        typeof edgeObj.target === "string" &&
+        typeof edgeObj.targetHandle === "string";
+
+      if (!hasRequiredFields) {
+        if (skipErrors) continue;
+        throw new GraphValidationError(
+          "Each edge must have string 'source', 'sourceHandle', 'target', and 'targetHandle' fields"
+        );
+      }
+
+      const source = edgeObj.source as string;
+      const target = edgeObj.target as string;
+      if (skipErrors && (!validNodeIds.has(source) || !validNodeIds.has(target))) {
+        continue;
+      }
+
+      validEdges.push(edgeObj as unknown as Edge);
+    }
+
+    return new Graph({ nodes: validNodes, edges: validEdges });
   }
 
   // -----------------------------------------------------------------------

@@ -71,8 +71,14 @@ describe("NodeDescriptor", () => {
       sync_mode: "zip_all",
       is_controlled: false,
       is_dynamic: false,
+      ui_properties: { x: 1 },
+      dynamic_properties: { mode: "fast" },
+      dynamic_outputs: { extra: { type: "string" } as any },
     };
     expect(node.sync_mode).toBe("zip_all");
+    expect(node.ui_properties).toEqual({ x: 1 });
+    expect(node.dynamic_properties).toEqual({ mode: "fast" });
+    expect(node.dynamic_outputs).toBeDefined();
   });
 });
 

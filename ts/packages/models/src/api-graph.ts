@@ -19,6 +19,9 @@ export interface ApiNode {
   type: string;
   data: Record<string, unknown>;
   ui_properties?: Record<string, unknown>;
+  dynamic_properties?: Record<string, unknown>;
+  dynamic_outputs?: Record<string, unknown>;
+  sync_mode?: "on_any" | "zip_all";
 }
 
 /** Edge representation for API transport. */
@@ -55,6 +58,10 @@ export function toApiNode(node: NodeDescriptor): ApiNode {
     parent_id: node.parent_id ?? null,
     type: node.type,
     data: (node.properties as Record<string, unknown>) ?? {},
+    ui_properties: node.ui_properties ?? {},
+    dynamic_properties: node.dynamic_properties ?? {},
+    dynamic_outputs: (node.dynamic_outputs as Record<string, unknown>) ?? {},
+    sync_mode: node.sync_mode ?? "on_any",
   };
 }
 

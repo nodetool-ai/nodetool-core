@@ -179,7 +179,7 @@ export class NodeActor {
    * Gathers inputs per sync_mode, then runs process or genProcess.
    */
   private async _runBuffered(): Promise<void> {
-    const syncMode = this.node.sync_mode ?? "zip_all";
+    const syncMode = this.node.sync_mode ?? "on_any";
     const inputHandles = [...this.inbox["_buffers"].keys()].filter(
       (h) => h !== "__control__"
     );

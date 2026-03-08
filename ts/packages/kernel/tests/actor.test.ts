@@ -71,6 +71,29 @@ function createActor(
 // ---------------------------------------------------------------------------
 
 describe("NodeActor – buffered mode", () => {
+  it("defaults to on_any when sync_mode is omitted", async () => {
+    const node = makeNode();
+    const inbox = new NodeInbox();
+    inbox.addUpstream("a", 1);
+    inbox.addUpstream("b", 1);
+
+    const { executor, calls } = trackingExecutor((inputs) => ({
+      result: inputs,
+    }));
+
+    const { actor } = createActor(node, inbox, executor);
+
+    await inbox.put("a", 1);
+    await inbox.put("b", 2);
+    await inbox.put("a", 3);
+    inbox.markSourceDone("a");
+    inbox.markSourceDone("b");
+
+    await actor.run();
+
+    expect(calls).toEqual([{ a: 1, b: 2 }, { a: 3, b: 2 }]);
+  });
+
   it("calls process once and sends outputs", async () => {
     const node = makeNode({ sync_mode: "zip_all", properties: { label: "demo" } });
     const inbox = new NodeInbox();

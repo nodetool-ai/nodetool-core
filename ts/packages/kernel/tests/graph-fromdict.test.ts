@@ -62,6 +62,72 @@ describe("T-K-14: Graph.fromDict", () => {
     expect(node?.outputs?.result).toBe("int");
   });
 
+  it("maps API graph data to kernel properties", () => {
+    const graph = Graph.fromDict({
+      nodes: [
+        {
+          id: "n1",
+          type: "test.Node",
+          data: { value: 42, label: "x" },
+        },
+      ],
+      edges: [],
+    });
+    expect(graph.findNode("n1")?.properties).toEqual({ value: 42, label: "x" });
+  });
+
+  it("filters connected properties from incoming API graph data by default", () => {
+    const graph = Graph.fromDict({
+      nodes: [
+        { id: "src", type: "test.Source", data: { out: 1 } },
+        { id: "dst", type: "test.Target", data: { value: 42, keep: true } },
+      ],
+      edges: [
+        { source: "src", sourceHandle: "out", target: "dst", targetHandle: "value" },
+      ],
+    });
+    expect(graph.findNode("dst")?.properties).toEqual({ keep: true });
+  });
+
+  it("skips malformed edges by default", () => {
+    const graph = Graph.fromDict({
+      nodes: [
+        { id: "n1", type: "test.A" },
+        { id: "n2", type: "test.B" },
+      ],
+      edges: [
+        { source: "n1", sourceHandle: "out", target: "n2", targetHandle: "in" },
+        { source: "n1", target: "n2" },
+      ],
+    });
+    expect(graph.edges).toHaveLength(1);
+  });
+
+  it("skips dangling edges by default", () => {
+    const graph = Graph.fromDict({
+      nodes: [{ id: "n1", type: "test.A" }],
+      edges: [
+        { source: "n1", sourceHandle: "out", target: "ghost", targetHandle: "in" },
+      ],
+    });
+    expect(graph.edges).toHaveLength(0);
+  });
+
+  it("throws on malformed edges when skipErrors is false", () => {
+    expect(() =>
+      Graph.fromDict(
+        {
+          nodes: [
+            { id: "n1", type: "test.A" },
+            { id: "n2", type: "test.B" },
+          ],
+          edges: [{ source: "n1", target: "n2" }],
+        },
+        { skipErrors: false },
+      ),
+    ).toThrow(GraphValidationError);
+  });
+
   it("preserves edge properties", () => {
     const graph = Graph.fromDict({
       nodes: [

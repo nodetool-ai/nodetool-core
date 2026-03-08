@@ -8,6 +8,7 @@
  */
 
 import type { EdgeType } from "./messages.js";
+import type { TypeMetadata } from "./type-metadata.js";
 
 // ---------------------------------------------------------------------------
 // Edge
@@ -69,6 +70,15 @@ export interface NodeDescriptor {
 
   /** Parent node ID for sub-graph nodes. */
   parent_id?: string | null;
+
+  /** UI-only metadata carried through graph transport. */
+  ui_properties?: Record<string, unknown>;
+
+  /** Dynamic runtime properties accepted by dynamic nodes. */
+  dynamic_properties?: Record<string, unknown>;
+
+  /** Dynamic runtime outputs declared by dynamic nodes. */
+  dynamic_outputs?: Record<string, TypeMetadata | Record<string, unknown>>;
 
   /** Whether this node consumes streaming input. */
   is_streaming_input?: boolean;
