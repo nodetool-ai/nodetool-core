@@ -17,7 +17,7 @@ import type {
 } from "@nodetool/protocol";
 
 const log = createLogger("nodetool.kernel.graph");
-import { isControlEdge, isDataEdge } from "@nodetool/protocol";
+import { isControlEdge, isDataEdge, TypeMetadata } from "@nodetool/protocol";
 
 // ---------------------------------------------------------------------------
 // Graph errors
@@ -69,6 +69,9 @@ export class Graph {
   /** Edges keyed by source node id */
   private _outgoingEdges: Map<string, Edge[]>;
 
+  /** Edges keyed by `${source}:${sourceHandle}` for O(1) lookup */
+  private _outgoingByHandle: Map<string, Edge[]>;
+
   /** Cache: nodes that have streaming upstream */
   private _streamingUpstream: Set<string> | null = null;
 
@@ -78,6 +81,7 @@ export class Graph {
     this._nodeIndex = new Map();
     this._incomingEdges = new Map();
     this._outgoingEdges = new Map();
+    this._outgoingByHandle = new Map();
     this._buildIndices();
   }
 
@@ -125,6 +129,14 @@ export class Graph {
       } else {
         this._outgoingEdges.set(edge.source, [edge]);
       }
+      // outgoing by handle
+      const handleKey = `${edge.source}:${edge.sourceHandle}`;
+      const byHandle = this._outgoingByHandle.get(handleKey);
+      if (byHandle) {
+        byHandle.push(edge);
+      } else {
+        this._outgoingByHandle.set(handleKey, [edge]);
+      }
     }
   }
 
@@ -148,6 +160,14 @@ export class Graph {
    */
   findOutgoingEdges(nodeId: string): Edge[] {
     return this._outgoingEdges.get(nodeId) ?? [];
+  }
+
+  /**
+   * Return edges matching a specific (source, sourceHandle) pair. O(1) lookup.
+   * Mirrors Python's find_edges(source, source_handle).
+   */
+  findEdges(source: string, sourceHandle: string): Edge[] {
+    return this._outgoingByHandle.get(`${source}:${sourceHandle}`) ?? [];
   }
 
   /**
@@ -415,16 +435,6 @@ export class Graph {
    * or numeric widening (int -> float).
    */
   validateEdgeTypes(): void {
-    const NUMERIC_TYPES = new Set(["int", "float", "number"]);
-
-    const isCompatible = (sourceType: string, targetType: string): boolean => {
-      if (sourceType === targetType) return true;
-      if (sourceType === "any" || targetType === "any") return true;
-      // Numeric widening: int is compatible with float/number
-      if (NUMERIC_TYPES.has(sourceType) && NUMERIC_TYPES.has(targetType)) return true;
-      return false;
-    };
-
     for (const edge of this.edges) {
       if (isControlEdge(edge)) continue;
 
@@ -446,7 +456,11 @@ export class Graph {
       }
       if (!targetType) continue; // no type info, skip
 
-      if (!isCompatible(sourceType, targetType)) {
+      // Use TypeMetadata for full compatibility check (handles list[X], union, numeric widening)
+      const sourceMeta = TypeMetadata.fromString(sourceType);
+      const targetMeta = TypeMetadata.fromString(targetType);
+
+      if (!sourceMeta.isCompatibleWith(targetMeta)) {
         log.warn("Type mismatch on edge", { source: edge.source, target: edge.target, sourceType, targetType });
         throw new GraphValidationError(
           `Type mismatch on edge ${edge.id ?? `${edge.source}:${edge.sourceHandle}->${edge.target}:${edge.targetHandle}`}: ` +
