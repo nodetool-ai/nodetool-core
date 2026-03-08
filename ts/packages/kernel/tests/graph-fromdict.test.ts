@@ -128,6 +128,79 @@ describe("T-K-14: Graph.fromDict", () => {
     ).toThrow(GraphValidationError);
   });
 
+  it("drops unrecognized node types when skipErrors is true and a validator is provided", () => {
+    const graph = Graph.fromDict(
+      {
+        nodes: [
+          { id: "ok", type: "test.Allowed" },
+          { id: "bad", type: "test.Unknown" },
+        ],
+        edges: [
+          { source: "ok", sourceHandle: "out", target: "bad", targetHandle: "in" },
+          { source: "bad", sourceHandle: "out", target: "ok", targetHandle: "in" },
+        ],
+      },
+      {
+        validateNodeType: (nodeType) => nodeType === "test.Allowed",
+        skipErrors: true,
+      },
+    );
+    expect(graph.nodes.map((node) => node.id)).toEqual(["ok"]);
+    expect(graph.edges).toEqual([]);
+  });
+
+  it("throws on unrecognized node types when skipErrors is false and a validator is provided", () => {
+    expect(() =>
+      Graph.fromDict(
+        {
+          nodes: [{ id: "bad", type: "test.Unknown" }],
+          edges: [],
+        },
+        {
+          validateNodeType: (nodeType) => nodeType !== "test.Unknown",
+          skipErrors: false,
+        },
+      ),
+    ).toThrow("Invalid node type");
+  });
+
+  it("strips undefined properties when skipErrors is true and allowUndefinedProperties is false", () => {
+    const graph = Graph.fromDict(
+      {
+        nodes: [
+          {
+            id: "n1",
+            type: "test.Node",
+            propertyTypes: { allowed: "string" },
+            data: { allowed: "ok", deprecated: "remove-me" },
+          },
+        ],
+        edges: [],
+      },
+      { allowUndefinedProperties: false, skipErrors: true },
+    );
+    expect(graph.findNode("n1")?.properties).toEqual({ allowed: "ok" });
+  });
+
+  it("throws on undefined properties when allowUndefinedProperties is false", () => {
+    expect(() =>
+      Graph.fromDict(
+        {
+          nodes: [
+            {
+              id: "n1",
+              type: "test.Node",
+              propertyTypes: { allowed: "string" },
+              data: { allowed: "ok", deprecated: "boom" },
+            },
+          ],
+          edges: [],
+        },
+        { allowUndefinedProperties: false, skipErrors: false },
+      ),
+    ).toThrow("Property deprecated does not exist");
+  });
+
   it("preserves edge properties", () => {
     const graph = Graph.fromDict({
       nodes: [

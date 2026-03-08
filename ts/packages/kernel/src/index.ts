@@ -2,7 +2,14 @@
  * @nodetool/kernel – Public API
  */
 
-export { Graph, GraphValidationError } from "./graph.js";
+export {
+  Graph,
+  GraphValidationError,
+  type GraphFromDictOptions,
+  type GraphLoadOptions,
+  type NodeTypeResolver,
+  type ResolvedNodeType,
+} from "./graph.js";
 export { NodeInbox, type MessageEnvelope } from "./inbox.js";
 export {
   NodeActor,

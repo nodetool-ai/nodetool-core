@@ -32,6 +32,28 @@ export class GraphValidationError extends Error {
 
 export interface GraphFromDictOptions {
   skipErrors?: boolean;
+  allowUndefinedProperties?: boolean;
+  validateNodeType?: (nodeType: string) => boolean;
+}
+
+export interface ResolvedNodeType {
+  nodeType: string;
+  propertyTypes?: Record<string, string>;
+  outputs?: Record<string, string>;
+  isDynamic?: boolean;
+  descriptorDefaults?: Partial<NodeDescriptor>;
+}
+
+export type NodeTypeResolver =
+  | ((nodeType: string) => Promise<ResolvedNodeType | null> | ResolvedNodeType | null)
+  | {
+      resolveNodeType: (
+        nodeType: string,
+      ) => Promise<ResolvedNodeType | null> | ResolvedNodeType | null;
+    };
+
+export interface GraphLoadOptions extends Omit<GraphFromDictOptions, "validateNodeType"> {
+  resolver: NodeTypeResolver;
 }
 
 // ---------------------------------------------------------------------------
@@ -54,6 +76,26 @@ function nodeTypeToJsonSchema(typeStr: string | undefined): string {
     default:
       return "string";
   }
+}
+
+function toTypeString(typeMeta: unknown): string | undefined {
+  if (!typeMeta || typeof typeMeta !== "object") return undefined;
+  const meta = typeMeta as { type?: unknown; type_args?: unknown };
+  if (typeof meta.type !== "string") return undefined;
+  const args = Array.isArray(meta.type_args)
+    ? meta.type_args.map((arg) => toTypeString(arg)).filter((arg): arg is string => !!arg)
+    : [];
+  return args.length > 0 ? `${meta.type}[${args.join(", ")}]` : meta.type;
+}
+
+function resolveNodeTypeWith(
+  resolver: NodeTypeResolver,
+  nodeType: string,
+): Promise<ResolvedNodeType | null> | ResolvedNodeType | null {
+  if (typeof resolver === "function") {
+    return resolver(nodeType);
+  }
+  return resolver.resolveNodeType(nodeType);
 }
 
 // ---------------------------------------------------------------------------
@@ -94,7 +136,11 @@ export class Graph {
    * Throws GraphValidationError if nodes or edges are missing or not arrays.
    */
   static fromDict(data: unknown, options: GraphFromDictOptions = {}): Graph {
-    const { skipErrors = true } = options;
+    const {
+      skipErrors = true,
+      allowUndefinedProperties = true,
+      validateNodeType,
+    } = options;
     if (!data || typeof data !== "object") {
       throw new GraphValidationError("Graph data must be an object");
     }
@@ -142,6 +188,10 @@ export class Graph {
         if (skipErrors) continue;
         throw new GraphValidationError("Each node must have string 'id' and 'type' fields");
       }
+      if (validateNodeType && !validateNodeType(type)) {
+        if (skipErrors) continue;
+        throw new GraphValidationError(`Invalid node type: ${type}`);
+      }
 
       const rawProperties =
         nodeObj.properties && typeof nodeObj.properties === "object"
@@ -149,6 +199,31 @@ export class Graph {
           : nodeObj.data && typeof nodeObj.data === "object"
             ? { ...(nodeObj.data as Record<string, unknown>) }
             : {};
+
+      if (!allowUndefinedProperties) {
+        const definedProperties = new Set<string>([
+          ...Object.keys(
+            nodeObj.propertyTypes && typeof nodeObj.propertyTypes === "object"
+              ? (nodeObj.propertyTypes as Record<string, unknown>)
+              : {},
+          ),
+          ...Object.keys(
+            nodeObj.properties && typeof nodeObj.properties === "object"
+              ? (nodeObj.properties as Record<string, unknown>)
+              : {},
+          ),
+        ]);
+
+        for (const key of Object.keys(rawProperties)) {
+          if (!definedProperties.has(key)) {
+            if (skipErrors) {
+              delete rawProperties[key];
+            } else {
+              throw new GraphValidationError(`Property ${key} does not exist on node ${id}`);
+            }
+          }
+        }
+      }
 
       for (const handle of propertiesWithEdges.get(id) ?? []) {
         delete rawProperties[handle];
@@ -192,6 +267,69 @@ export class Graph {
     }
 
     return new Graph({ nodes: validNodes, edges: validEdges });
+  }
+
+  static async loadFromDict(data: unknown, options: GraphLoadOptions): Promise<Graph> {
+    const { resolver, skipErrors = true, allowUndefinedProperties = true } = options;
+    const normalized = Graph.fromDict(data, {
+      skipErrors,
+      allowUndefinedProperties: true,
+    });
+
+    const resolvedNodes: NodeDescriptor[] = [];
+    const validNodeIds = new Set<string>();
+
+    for (const node of normalized.nodes) {
+      const resolved = await resolveNodeTypeWith(resolver, node.type);
+      if (!resolved) {
+        if (skipErrors) continue;
+        throw new GraphValidationError(`Invalid node type: ${node.type}`);
+      }
+
+      const resolvedPropertyTypes = resolved.propertyTypes ?? {};
+      const allowedProperties = new Set(Object.keys(resolvedPropertyTypes));
+      const mergedProperties = {
+        ...((node.properties as Record<string, unknown> | undefined) ?? {}),
+      };
+
+      const effectiveAllowUndefined = resolved.isDynamic || allowUndefinedProperties;
+      if (!effectiveAllowUndefined) {
+        for (const key of Object.keys(mergedProperties)) {
+          if (!allowedProperties.has(key)) {
+            if (skipErrors) {
+              delete mergedProperties[key];
+            } else {
+              throw new GraphValidationError(`Property ${key} does not exist on node ${node.id}`);
+            }
+          }
+        }
+      }
+
+      const descriptorDefaults = resolved.descriptorDefaults ?? {};
+      const hydratedNode: NodeDescriptor = {
+        ...descriptorDefaults,
+        ...node,
+        type: resolved.nodeType,
+        properties: mergedProperties,
+        propertyTypes: {
+          ...resolvedPropertyTypes,
+          ...(node.propertyTypes ?? {}),
+        },
+        outputs: {
+          ...(resolved.outputs ?? {}),
+          ...(node.outputs ?? {}),
+        },
+        sync_mode: node.sync_mode ?? descriptorDefaults.sync_mode ?? "on_any",
+      };
+
+      resolvedNodes.push(hydratedNode);
+      validNodeIds.add(hydratedNode.id);
+    }
+
+    const validEdges = normalized.edges.filter(
+      (edge) => validNodeIds.has(edge.source) && validNodeIds.has(edge.target),
+    );
+    return new Graph({ nodes: resolvedNodes, edges: validEdges });
   }
 
   // -----------------------------------------------------------------------
@@ -265,30 +403,33 @@ export class Graph {
     return this.findIncomingEdges(nodeId).filter(isDataEdge);
   }
 
-  /**
-   * Return control edges in the graph.
-   */
-  getControlEdges(): Edge[] {
-    return this.edges.filter(isControlEdge);
+  getControlEdges(): Edge[];
+  getControlEdges(targetId: string): Edge[];
+  getControlEdges(targetId?: string): Edge[] {
+    return this.edges.filter(
+      (edge) => isControlEdge(edge) && (targetId === undefined || edge.target === targetId),
+    );
   }
 
-  /**
-   * Return nodes that are controllers (have outgoing control edges).
-   */
-  getControllerNodes(): NodeDescriptor[] {
+  getControllerNodes(): NodeDescriptor[];
+  getControllerNodes(targetId: string): NodeDescriptor[];
+  getControllerNodes(targetId?: string): NodeDescriptor[] {
     const ids = new Set(
-      this.getControlEdges().map((e) => e.source)
+      (targetId === undefined ? this.getControlEdges() : this.getControlEdges(targetId)).map((e) => e.source),
     );
     return this.nodes.filter((n) => ids.has(n.id));
   }
 
-  /**
-   * Return nodes that are controlled (have incoming control edges).
-   */
-  getControlledNodes(): NodeDescriptor[] {
-    const ids = new Set(
-      this.getControlEdges().map((e) => e.target)
-    );
+  getControlledNodes(): NodeDescriptor[];
+  getControlledNodes(sourceId: string): string[];
+  getControlledNodes(sourceId?: string): NodeDescriptor[] | string[] {
+    if (sourceId !== undefined) {
+      return this.edges
+        .filter((edge) => isControlEdge(edge) && edge.source === sourceId)
+        .map((edge) => edge.target);
+    }
+
+    const ids = new Set(this.getControlEdges().map((e) => e.target));
     return this.nodes.filter((n) => ids.has(n.id));
   }
 
@@ -369,15 +510,32 @@ export class Graph {
    * Nodes in the same level have no inter-dependencies and can run
    * concurrently. Only data edges define the ordering.
    */
-  topologicalSort(): NodeDescriptor[][] {
-    const dataEdges = this.edges.filter(isDataEdge);
+  topologicalSort(parentId: string | null = null): NodeDescriptor[][] {
+    const groupNodeIds =
+      parentId === null
+        ? new Set(
+            this.nodes
+              .filter((node) => node.type === "GroupNode" || node.type.endsWith(".GroupNode"))
+              .map((node) => node.id),
+          )
+        : new Set<string>();
 
-    // In-degree count (data edges only)
+    const filteredNodes = this.nodes.filter(
+      (node) =>
+        (node.parent_id ?? null) === parentId ||
+        (node.parent_id != null && groupNodeIds.has(node.parent_id)),
+    );
+    const filteredNodeIds = new Set(filteredNodes.map((node) => node.id));
+    const filteredEdges = this.edges.filter(
+      (edge) => filteredNodeIds.has(edge.source) && filteredNodeIds.has(edge.target),
+    );
+
+    // In-degree count across filtered edges.
     const inDeg = new Map<string, number>();
-    for (const node of this.nodes) {
+    for (const node of filteredNodes) {
       inDeg.set(node.id, 0);
     }
-    for (const edge of dataEdges) {
+    for (const edge of filteredEdges) {
       inDeg.set(edge.target, (inDeg.get(edge.target) ?? 0) + 1);
     }
 
@@ -399,8 +557,8 @@ export class Graph {
         const node = this.findNode(id);
         if (node) levelNodes.push(node);
 
-        for (const edge of this.findOutgoingEdges(id)) {
-          if (!isDataEdge(edge)) continue;
+        for (const edge of filteredEdges) {
+          if (edge.source !== id) continue;
           const newDeg = (inDeg.get(edge.target) ?? 1) - 1;
           inDeg.set(edge.target, newDeg);
           if (newDeg === 0 && !visited.has(edge.target)) {
@@ -413,12 +571,11 @@ export class Graph {
       currentLevel = nextLevel;
     }
 
-    // If not all nodes visited → cycle exists
-    if (visited.size !== this.nodes.length) {
-      log.error("Graph contains a cycle in data edges", { visited: visited.size, total: this.nodes.length });
-      throw new GraphValidationError(
-        "Graph contains a cycle in data edges"
-      );
+    if (visited.size !== filteredNodes.length) {
+      log.warn("Graph contains at least one cycle", {
+        visited: visited.size,
+        total: filteredNodes.length,
+      });
     }
 
     return levels;

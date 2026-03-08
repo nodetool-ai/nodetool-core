@@ -115,14 +115,29 @@ describe("Graph – topological sort", () => {
     expect(levels[1]).toHaveLength(2); // b1, b2 in parallel
   });
 
-  it("throws on data-edge cycle", () => {
+  it("returns partial ordering for cycles instead of throwing", () => {
     const nodes = [makeNode("a"), makeNode("b")];
     const edges = [
       makeEdge("a", "out", "b", "in"),
       makeEdge("b", "out", "a", "in"),
     ];
     const graph = new Graph({ nodes, edges });
-    expect(() => graph.topologicalSort()).toThrow(GraphValidationError);
+    expect(graph.topologicalSort()).toEqual([]);
+  });
+
+  it("filters to nodes matching parent_id", () => {
+    const nodes = [
+      makeNode("top", { parent_id: null }),
+      makeNode("child1", { parent_id: "group1" }),
+      makeNode("child2", { parent_id: "group1" }),
+      makeNode("other", { parent_id: "group2" }),
+    ];
+    const edges = [makeEdge("child1", "out", "child2", "in")];
+    const graph = new Graph({ nodes, edges });
+    const levels = graph.topologicalSort("group1");
+    expect(levels).toHaveLength(2);
+    expect(levels[0][0].id).toBe("child1");
+    expect(levels[1][0].id).toBe("child2");
   });
 });
 
@@ -216,25 +231,49 @@ describe("Graph – control edge adjacency with multiple targets", () => {
 });
 
 describe("Graph – control node queries", () => {
-  it("getControllerNodes returns nodes with outgoing control edges", () => {
+  it("getControlEdges returns only control edges targeting the requested node", () => {
     const nodes = [makeNode("a"), makeNode("b"), makeNode("c")];
     const edges = [
       makeEdge("a", "__control__", "b", "__control__", { edge_type: "control" }),
+      makeEdge("c", "__control__", "b", "__control__", { edge_type: "control" }),
       makeEdge("a", "out", "c", "in"),
+    ];
+    const graph = new Graph({ nodes, edges });
+    expect(graph.getControlEdges("b")).toHaveLength(2);
+    expect(graph.getControlEdges("c")).toEqual([]);
+  });
+
+  it("getControllerNodes(targetId) returns controllers for a specific target", () => {
+    const nodes = [makeNode("a"), makeNode("b"), makeNode("c")];
+    const edges = [
+      makeEdge("a", "__control__", "b", "__control__", { edge_type: "control" }),
+      makeEdge("c", "__control__", "b", "__control__", { edge_type: "control" }),
+    ];
+    const graph = new Graph({ nodes, edges });
+    expect(graph.getControllerNodes("b").map((node) => node.id).sort()).toEqual(["a", "c"]);
+  });
+
+  it("getControlledNodes(sourceId) returns controlled node ids for a specific controller", () => {
+    const nodes = [makeNode("a"), makeNode("b"), makeNode("c")];
+    const edges = [
+      makeEdge("a", "__control__", "b", "__control__", { edge_type: "control" }),
+      makeEdge("a", "__control__", "c", "__control__", { edge_type: "control" }),
+    ];
+    const graph = new Graph({ nodes, edges });
+    expect(graph.getControlledNodes("a")).toEqual(["b", "c"]);
+  });
+
+  it("global helpers still return aggregated controller/controlled nodes", () => {
+    const nodes = [makeNode("a"), makeNode("b"), makeNode("c")];
+    const edges = [
+      makeEdge("a", "__control__", "b", "__control__", { edge_type: "control" }),
+      makeEdge("a", "__control__", "c", "__control__", { edge_type: "control" }),
     ];
     const graph = new Graph({ nodes, edges });
     expect(graph.getControllerNodes()).toHaveLength(1);
     expect(graph.getControllerNodes()[0].id).toBe("a");
-  });
-
-  it("getControlledNodes returns nodes with incoming control edges", () => {
-    const nodes = [makeNode("a"), makeNode("b")];
-    const edges = [
-      makeEdge("a", "__control__", "b", "__control__", { edge_type: "control" }),
-    ];
-    const graph = new Graph({ nodes, edges });
-    expect(graph.getControlledNodes()).toHaveLength(1);
-    expect(graph.getControlledNodes()[0].id).toBe("b");
+    expect(graph.getControlledNodes()).toHaveLength(2);
+    expect(graph.getControlledNodes().map((node) => node.id).sort()).toEqual(["b", "c"]);
   });
 });
 

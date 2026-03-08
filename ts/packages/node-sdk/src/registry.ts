@@ -1,5 +1,5 @@
 import type { NodeDescriptor } from "@nodetool/protocol";
-import type { NodeExecutor } from "@nodetool/kernel";
+import type { NodeExecutor, ResolvedNodeType } from "@nodetool/kernel";
 import type { NodeClass } from "./base-node.js";
 import type {
   NodeMetadata,
@@ -15,6 +15,10 @@ export interface NodeRegistryOptions {
 
 export interface RegisterNodeOptions {
   metadata?: NodeMetadata;
+}
+
+export interface RegistryGraphResolverOptions {
+  loadNamespace?: (namespace: string, registry: NodeRegistry) => Promise<void> | void;
 }
 
 export class NodeRegistry {
@@ -74,6 +78,15 @@ export class NodeRegistry {
     return this._registeredMetadataByType.get(nodeType) ?? this._loadedMetadataByType.get(nodeType);
   }
 
+  resolveMetadata(nodeType: string): NodeMetadata | undefined {
+    const exact = this.getMetadata(nodeType);
+    if (exact) return exact;
+    if (nodeType.endsWith("Node")) {
+      return this.getMetadata(nodeType.slice(0, -4));
+    }
+    return undefined;
+  }
+
   listMetadata(): NodeMetadata[] {
     return this.list()
       .map((nodeType) => this.getMetadata(nodeType))
@@ -106,4 +119,68 @@ export class NodeRegistry {
 
 export function register(nodeClass: NodeClass): void {
   NodeRegistry.global.register(nodeClass);
+}
+
+function typeMetadataToString(typeMeta: NodeMetadata["properties"][number]["type"] | NodeMetadata["outputs"][number]["type"]): string {
+  const args = (typeMeta.type_args ?? []).map(typeMetadataToString).filter(Boolean);
+  return args.length > 0 ? `${typeMeta.type}[${args.join(", ")}]` : typeMeta.type;
+}
+
+function deriveNamespace(nodeType: string): string {
+  const lastDot = nodeType.lastIndexOf(".");
+  return lastDot > 0 ? nodeType.slice(0, lastDot) : "";
+}
+
+export function createGraphNodeTypeResolver(
+  registry: NodeRegistry,
+  options: RegistryGraphResolverOptions = {},
+): { resolveNodeType: (nodeType: string) => Promise<ResolvedNodeType | null> } {
+  return {
+    resolveNodeType: async (nodeType: string): Promise<ResolvedNodeType | null> => {
+      let metadata = registry.resolveMetadata(nodeType);
+
+      if (!metadata) {
+        const namespace = deriveNamespace(nodeType);
+        if (namespace && options.loadNamespace) {
+          await options.loadNamespace(namespace, registry);
+          metadata = registry.resolveMetadata(nodeType);
+        }
+      }
+
+      if (!metadata) {
+        const namespace = deriveNamespace(nodeType);
+        if (namespace.startsWith("nodetool.")) {
+          try {
+            const mod = await import("@nodetool/base-nodes");
+            if ("registerBaseNodes" in mod && typeof mod.registerBaseNodes === "function") {
+              mod.registerBaseNodes(registry);
+              metadata = registry.resolveMetadata(nodeType);
+            }
+          } catch {
+            // Ignore optional base-node loading failures and report unresolved type below.
+          }
+        }
+      }
+
+      if (!metadata) return null;
+
+      const propertyTypes = Object.fromEntries(
+        (metadata.properties ?? []).map((prop) => [prop.name, typeMetadataToString(prop.type)]),
+      );
+      const outputs = Object.fromEntries(
+        (metadata.outputs ?? []).map((output) => [output.name, typeMetadataToString(output.type)]),
+      );
+
+      return {
+        nodeType: metadata.node_type,
+        propertyTypes,
+        outputs,
+        isDynamic: metadata.is_dynamic ?? false,
+        descriptorDefaults: {
+          name: metadata.title,
+          is_streaming_output: metadata.is_streaming_output ?? false,
+        },
+      };
+    },
+  };
 }
