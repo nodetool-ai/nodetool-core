@@ -9,10 +9,11 @@
  *  - Controlled mode (control events)
  */
 
-import { describe, it, expect } from "vitest";
+import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import { NodeActor, type NodeExecutor } from "../src/actor.js";
 import { NodeInbox } from "../src/inbox.js";
 import type { NodeDescriptor, NodeUpdate } from "@nodetool/protocol";
+import { configureLogging } from "@nodetool/config";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -66,11 +67,58 @@ function createActor(
   return { actor, sentOutputs, messages };
 }
 
+let originalLogLevel: string | undefined;
+
+beforeEach(() => {
+  originalLogLevel = process.env["NODETOOL_LOG_LEVEL"];
+  process.env["NODETOOL_LOG_LEVEL"] = "info";
+  configureLogging();
+});
+
+afterEach(() => {
+  if (originalLogLevel === undefined) {
+    delete process.env["NODETOOL_LOG_LEVEL"];
+  } else {
+    process.env["NODETOOL_LOG_LEVEL"] = originalLogLevel;
+  }
+  configureLogging();
+  vi.restoreAllMocks();
+});
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe("NodeActor – buffered mode", () => {
+  it("logs the node being executed", async () => {
+    const node = makeNode({ sync_mode: "zip_all" });
+    const inbox = new NodeInbox();
+    inbox.addUpstream("a", 1);
+
+    const stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    const { executor } = trackingExecutor((inputs) => ({
+      result: inputs,
+    }));
+
+    const { actor } = createActor(node, inbox, executor);
+
+    await inbox.put("a", 5);
+    inbox.markSourceDone("a");
+
+    await actor.run();
+
+    const logged = stderrSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .find((line) => line.includes("Executing node"));
+
+    expect(logged).toContain("Executing node");
+    expect(logged).toContain("\"nodeId\":\"test_node\"");
+    expect(logged).toContain("\"type\":\"test.Node\"");
+  });
+
   it("defaults to on_any when sync_mode is omitted", async () => {
     const node = makeNode();
     const inbox = new NodeInbox();
@@ -157,6 +205,47 @@ describe("NodeActor – streaming output", () => {
       { chunk: 20 },
       { chunk: 30 },
     ]);
+  });
+
+  it("ignores null streaming outputs and keeps the collected non-null result", async () => {
+    const node = makeNode({ is_streaming_output: true, sync_mode: "zip_all" });
+    const inbox = new NodeInbox();
+    inbox.addUpstream("a", 1);
+
+    const executor: NodeExecutor = {
+      async process() {
+        return {};
+      },
+      async *genProcess(inputs) {
+        const val = inputs.a as string;
+        yield { chunk: { type: "chunk", content: val } };
+        yield { chunk: null, text: `${val}!` };
+      },
+    };
+
+    const { actor, sentOutputs, messages } = createActor(node, inbox, executor);
+
+    await inbox.put("a", "hi");
+    inbox.markSourceDone("a");
+
+    const result = await actor.run();
+
+    expect(sentOutputs.map((s) => s.outputs)).toEqual([
+      { chunk: { type: "chunk", content: "hi" } },
+      { text: "hi!" },
+    ]);
+    expect(result.outputs).toEqual({
+      chunk: { type: "chunk", content: "hi" },
+      text: "hi!",
+    });
+
+    const completed = messages.find(
+      (m) => (m as NodeUpdate).type === "node_update" && (m as NodeUpdate).status === "completed"
+    ) as NodeUpdate | undefined;
+    expect(completed?.result).toEqual({
+      chunk: { type: "chunk", content: "hi" },
+      text: "hi!",
+    });
   });
 });
 

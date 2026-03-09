@@ -96,6 +96,28 @@ function mockProvider() {
   } as any);
 }
 
+function streamingResolver(nodeType: string) {
+  if (nodeType === "test.Streamer") {
+    return {
+      nodeType,
+      outputs: { chunk: "chunk" },
+      descriptorDefaults: {
+        is_streaming_output: true,
+        name: "Streamer",
+      },
+    };
+  }
+  if (nodeType === "nodetool.workflows.base_node.Preview") {
+    return {
+      nodeType,
+      propertyTypes: { value: "any" },
+      outputs: { output: "any" },
+      descriptorDefaults: { name: "Preview" },
+    };
+  }
+  return null;
+}
+
 // ── 1. Routing priority ─────────────────────────────────────────────
 
 describe("Routing priority: workflow_id/workflow_target before agent_mode", () => {
@@ -215,6 +237,156 @@ describe("Routing priority: workflow_id/workflow_target before agent_mode", () =
     const msgs = sentMsgs(ws);
     // Should see regular chat response
     expect(msgs.some((m) => m.type === "chunk" && m.content === "regular chat response")).toBe(true);
+
+    await runner.disconnect();
+  });
+
+  it("hydrates workflow graphs before chat workflow execution so streaming nodes yield downstream", async () => {
+    const sinkValues: unknown[] = [];
+    let processCalls = 0;
+    let genProcessCalls = 0;
+
+    const workflow = await Workflow.create({
+      user_id: "1",
+      name: "Streaming WF",
+      access: "private",
+      graph: {
+        nodes: [
+          { id: "stream", type: "test.Streamer" },
+          { id: "preview", type: "nodetool.workflows.base_node.Preview" },
+        ],
+        edges: [
+          {
+            id: "e1",
+            source: "stream",
+            sourceHandle: "chunk",
+            target: "preview",
+            targetHandle: "value",
+          },
+        ],
+      },
+    });
+
+    const runner = new UnifiedWebSocketRunner({
+      resolveExecutor: (node) => {
+        if (node.type === "test.Streamer") {
+          return {
+            async process() {
+              processCalls += 1;
+              return { chunk: "buffered" };
+            },
+            async *genProcess() {
+              genProcessCalls += 1;
+              yield { chunk: "first" };
+              yield { chunk: "second" };
+            },
+          };
+        }
+        if (node.type === "nodetool.workflows.base_node.Preview") {
+          return {
+            async process(inputs: Record<string, unknown>) {
+              sinkValues.push(inputs.value ?? null);
+              return { output: inputs.value ?? null };
+            },
+          };
+        }
+        return noop();
+      },
+      resolveNodeType: {
+        resolveNodeType: async (nodeType: string) => streamingResolver(nodeType),
+      },
+      resolveProvider: mockProvider(),
+    });
+
+    await runner.connect(ws);
+    await runner.handleCommand({
+      command: "chat_message",
+      data: {
+        thread_id: "t-streaming",
+        workflow_id: workflow.id,
+        workflow_target: "workflow",
+        content: "run it",
+        provider: "mock",
+        model: "m",
+      },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(processCalls).toBe(0);
+    expect(genProcessCalls).toBe(1);
+    expect(sinkValues).toEqual(["first", "second"]);
+
+    await runner.disconnect();
+  });
+
+  it("matches Python streaming semantics by not routing null yields downstream", async () => {
+    const sinkValues: unknown[] = [];
+
+    const workflow = await Workflow.create({
+      user_id: "1",
+      name: "Streaming Null Filter WF",
+      access: "private",
+      graph: {
+        nodes: [
+          { id: "stream", type: "test.Streamer" },
+          { id: "preview", type: "nodetool.workflows.base_node.Preview" },
+        ],
+        edges: [
+          {
+            id: "e1",
+            source: "stream",
+            sourceHandle: "chunk",
+            target: "preview",
+            targetHandle: "value",
+          },
+        ],
+      },
+    });
+
+    const runner = new UnifiedWebSocketRunner({
+      resolveExecutor: (node) => {
+        if (node.type === "test.Streamer") {
+          return {
+            async process() {
+              return { chunk: "buffered" };
+            },
+            async *genProcess() {
+              yield { chunk: "first" };
+              yield { chunk: null, text: "final" };
+            },
+          };
+        }
+        if (node.type === "nodetool.workflows.base_node.Preview") {
+          return {
+            async process(inputs: Record<string, unknown>) {
+              sinkValues.push(inputs.value ?? null);
+              return { output: inputs.value ?? null };
+            },
+          };
+        }
+        return noop();
+      },
+      resolveNodeType: {
+        resolveNodeType: async (nodeType: string) => streamingResolver(nodeType),
+      },
+      resolveProvider: mockProvider(),
+    });
+
+    await runner.connect(ws);
+    await runner.handleCommand({
+      command: "chat_message",
+      data: {
+        thread_id: "t-streaming-null",
+        workflow_id: workflow.id,
+        workflow_target: "workflow",
+        content: "run it",
+        provider: "mock",
+        model: "m",
+      },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(sinkValues).toEqual(["first"]);
 
     await runner.disconnect();
   });

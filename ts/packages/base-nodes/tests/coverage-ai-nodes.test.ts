@@ -55,6 +55,28 @@ describe("SummarizerNode", () => {
     expect(result.output).toBe(result.text);
   });
 
+  it("uses provider when model is connected", async () => {
+    const n = new (SummarizerNode as any)();
+    const mockProvider = {
+      generateMessage: async ({ messages }: any) => ({
+        content: `summary:${messages[1].content}`,
+      }),
+      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
+    };
+    const mockContext = {
+      getProvider: async () => mockProvider,
+    };
+    const result = await n.process(
+      {
+        text: "Long text",
+        max_sentences: 2,
+        model: { provider: "test", id: "m1" },
+      },
+      mockContext as any
+    );
+    expect(result.text).toContain("Long text");
+  });
+
   it("returns empty string for empty text", async () => {
     const n = new (SummarizerNode as any)();
     const result = await n.process({ text: "", max_sentences: 3 });
@@ -272,11 +294,11 @@ describe("ClassifierNode", () => {
     expect(n.defaults()).toEqual({ text: "", categories: [] });
   });
 
-  it("returns Unknown when no categories", async () => {
+  it("throws when fewer than two categories are provided", async () => {
     const n = new (ClassifierNode as any)();
-    const result = await n.process({ text: "hello", categories: [] });
-    expect(result.output).toBe("Unknown");
-    expect(result.category).toBe("Unknown");
+    await expect(n.process({ text: "hello", categories: [] })).rejects.toThrow(
+      "At least 2 categories are required"
+    );
   });
 
   it("classifies text to matching category by token overlap", async () => {
@@ -300,22 +322,22 @@ describe("ClassifierNode", () => {
 
   it("handles non-array categories via getCategories", async () => {
     const n = new (ClassifierNode as any)();
-    const result = await n.process({
-      text: "test",
-      categories: "not-an-array",
-    });
-    // getCategories returns [] for non-array
-    expect(result.output).toBe("Unknown");
+    await expect(
+      n.process({
+        text: "test",
+        categories: "not-an-array",
+      })
+    ).rejects.toThrow("At least 2 categories are required");
   });
 
   it("filters empty strings from categories", async () => {
     const n = new (ClassifierNode as any)();
-    const result = await n.process({
-      text: "hello world",
-      categories: ["", "  ", "hello"],
-    });
-    // empty/whitespace categories are filtered by getCategories (trim check)
-    expect(result.category).toBe("hello");
+    await expect(
+      n.process({
+        text: "hello world",
+        categories: ["", "  ", "hello"],
+      })
+    ).rejects.toThrow("At least 2 categories are required");
   });
 
   it("handles multi-word categories", async () => {
@@ -326,290 +348,336 @@ describe("ClassifierNode", () => {
     });
     expect(result.output).toBe("machine learning");
   });
+
+  it("uses provider-backed classification when model is connected", async () => {
+    const n = new (ClassifierNode as any)();
+    const mockProvider = {
+      generateMessage: async () => ({ content: '{"category":"support"}' }),
+      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
+    };
+    const mockContext = {
+      getProvider: async () => mockProvider,
+    };
+    const result = await n.process(
+      {
+        text: "help me",
+        categories: ["billing", "support"],
+        model: { provider: "test", id: "m1" },
+      },
+      mockContext as any
+    );
+    expect(result.category).toBe("support");
+  });
 });
 
 // ---- AgentNode ----
 describe("AgentNode", () => {
   it("has correct static metadata", () => {
     expect(AgentNode.nodeType).toBe("nodetool.agents.Agent");
+    expect(AgentNode.isStreamingOutput).toBe(true);
   });
 
   it("defaults", () => {
     const n = new (AgentNode as any)();
     expect(n.defaults()).toEqual({
-      system: "",
+      model: {},
+      system: "You are a friendly assistant",
       prompt: "",
+      tools: [],
+      image: {},
+      audio: {},
       history: [],
       thread_id: "",
+      max_tokens: 8192,
     });
   });
 
-  it("returns concatenated text when no context/provider", async () => {
+  it("requires a model selection", async () => {
     const n = new (AgentNode as any)();
-    const result = await n.process({
-      system: "You are helpful.",
-      prompt: "Hello!",
-    });
-    expect(result.text).toContain("You are helpful.");
-    expect(result.text).toContain("Hello!");
-    expect(result.output).toBe(result.text);
-    expect(result.chunk).toBeNull();
-    expect(result.thinking).toBeNull();
-    expect(result.audio).toBeNull();
+    await expect(n.process({ prompt: "Hello" })).rejects.toThrow("Select a model");
   });
 
-  it("returns 'No prompt provided.' when everything is empty", async () => {
-    const n = new (AgentNode as any)();
-    const result = await n.process({});
-    expect(result.text).toBe("No prompt provided.");
-  });
-
-  it("includes history in deterministic response", async () => {
-    const n = new (AgentNode as any)();
-    const result = await n.process({
-      prompt: "Continue",
-      history: [
-        { role: "user", content: "Previous message" },
-        { role: "assistant", content: "Previous response" },
-      ],
-    });
-    expect(result.text).toContain("Previous message");
-    expect(result.text).toContain("Previous response");
-    expect(result.text).toContain("Continue");
-  });
-
-  it("stores messages in thread when thread_id provided", async () => {
-    const n = new (AgentNode as any)();
-    // First create the thread
-    const ct = new (CreateThreadNode as any)();
-    const { thread_id } = await ct.process({ thread_id: "agent_test_thread" });
-
-    const result = await n.process({
-      prompt: "Test prompt",
-      thread_id,
-    });
-    expect(result.text).toContain("Test prompt");
-  });
-
-  it("creates thread on-the-fly if thread_id not in store", async () => {
-    const n = new (AgentNode as any)();
-    const result = await n.process({
-      prompt: "Hello",
-      thread_id: "nonexistent_thread_42",
-    });
-    expect(result.text).toContain("Hello");
-  });
-
-  it("handles non-array history gracefully", async () => {
-    const n = new (AgentNode as any)();
-    const result = await n.process({
-      prompt: "Hello",
-      history: "not an array",
-    });
-    expect(result.text).toContain("Hello");
-  });
-
-  it("uses provider when context is available", async () => {
+  it("streams text chunks and final text from the provider", async () => {
     const n = new (AgentNode as any)();
     const mockProvider = {
-      generateMessage: async ({ messages, model, maxTokens }: any) => {
-        return { content: `Generated response for model ${model}` };
+      async *generateMessages(): AsyncGenerator<Record<string, unknown>> {
+        yield { type: "chunk", content: "Hello ", content_type: "text", done: false };
+        yield { type: "chunk", content: "world", content_type: "text", done: true };
       },
-      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
     };
-    const mockContext = {
-      getProvider: async (id: string) => mockProvider,
-    };
-    const result = await n.process(
+    const streamed: any[] = [];
+    for await (const item of n.genProcess(
       {
         prompt: "Test prompt",
         model: { provider: "openai", id: "gpt-4", name: "GPT-4" },
         max_tokens: 512,
       },
-      mockContext as any
+      { getProvider: async () => mockProvider } as any
+    )) {
+      streamed.push(item);
+    }
+    expect(streamed[0].chunk.content).toBe("Hello ");
+    expect(streamed[1].chunk.content).toBe("world");
+    expect(streamed[2]).toEqual({
+      chunk: null,
+      thinking: null,
+      text: "Hello world",
+      audio: null,
+    });
+    const result = await n.process(
+      {
+        prompt: "Test prompt",
+        model: { provider: "openai", id: "gpt-4", name: "GPT-4" },
+      },
+      { getProvider: async () => mockProvider } as any
     );
-    expect(result.text).toBe("Generated response for model gpt-4");
+    expect(result.text).toBe("Hello world");
   });
 
-  it("includes system message when provider is used", async () => {
+  it("prepares python-style messages including thread history, history, image, and audio", async () => {
     const n = new (AgentNode as any)();
     let capturedMessages: any[] = [];
     const mockProvider = {
-      generateMessage: async ({ messages }: any) => {
+      async *generateMessages({ messages }: any): AsyncGenerator<Record<string, unknown>> {
         capturedMessages = messages;
-        return { content: "ok" };
+        yield { type: "chunk", content: "ok", content_type: "text", done: true };
       },
-      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
     };
     const mockContext = {
       getProvider: async () => mockProvider,
+      getThreadMessages: async () => ({
+        messages: [
+          { role: "user", content: "persisted-user" },
+          { role: "assistant", content: [{ type: "text", text: "persisted-assistant" }] },
+        ],
+        next: null,
+      }),
     };
     await n.process(
       {
         system: "Be concise.",
         prompt: "Hi",
+        image: { uri: "file://image.png" },
+        audio: { data: "YXVkaW8=" },
+        history: [
+          { role: "user", content: "history-user" },
+          { role: "assistant", content: "history-assistant" },
+          { role: "invalid_role", content: "skip-me" },
+        ],
+        thread_id: "thread-1",
         model: { provider: "test", id: "m1" },
       },
       mockContext as any
     );
     expect(capturedMessages[0]).toEqual({ role: "system", content: "Be concise." });
-    expect(capturedMessages[capturedMessages.length - 1]).toEqual({
-      role: "user",
-      content: "Hi",
+    expect(capturedMessages[1]).toEqual({ role: "user", content: "persisted-user", toolCalls: null, toolCallId: null, threadId: null });
+    expect(capturedMessages[2].content[0].text).toBe("persisted-assistant");
+    expect(capturedMessages[3]).toEqual({ role: "user", content: "history-user", toolCalls: null, toolCallId: null, threadId: null });
+    expect(capturedMessages[4]).toEqual({ role: "assistant", content: "history-assistant", toolCalls: null, toolCallId: null, threadId: null });
+    expect(capturedMessages[capturedMessages.length - 1].role).toBe("user");
+    expect(capturedMessages[capturedMessages.length - 1].content[0].text).toBe("Hi");
+    expect(capturedMessages[capturedMessages.length - 1].content[1].type).toBe("image");
+    expect(capturedMessages[capturedMessages.length - 1].content[2].type).toBe("audio");
+  });
+
+  it("persists the user and assistant messages through context thread APIs", async () => {
+    const n = new (AgentNode as any)();
+    const created: any[] = [];
+    const mockProvider = {
+      async *generateMessages(): AsyncGenerator<Record<string, unknown>> {
+        yield { type: "chunk", content: "saved", content_type: "text", done: true };
+      },
+    };
+    const mockContext = {
+      getProvider: async () => mockProvider,
+      createMessage: async (req: any) => {
+        created.push(req);
+      },
+    };
+    await n.process(
+      {
+        prompt: "persist me",
+        thread_id: "thread-2",
+        model: { provider: "test", id: "m1" },
+      },
+      mockContext as any
+    );
+    expect(created).toHaveLength(2);
+    expect(created[0].thread_id).toBe("thread-2");
+    expect(created[0].role).toBe("user");
+    expect(created[0].content[0].text).toBe("persist me");
+    expect(created[1]).toMatchObject({
+      thread_id: "thread-2",
+      role: "assistant",
     });
   });
 
-  it("skips system message when system text is empty", async () => {
+  it("emits thinking and audio updates from provider chunks", async () => {
     const n = new (AgentNode as any)();
-    let capturedMessages: any[] = [];
     const mockProvider = {
-      generateMessage: async ({ messages }: any) => {
-        capturedMessages = messages;
-        return { content: "ok" };
+      async *generateMessages(): AsyncGenerator<Record<string, unknown>> {
+        yield {
+          type: "chunk",
+          content: "reasoning",
+          content_type: "text",
+          thinking: true,
+          done: false,
+        };
+        yield {
+          type: "chunk",
+          content: Buffer.from("audio-bytes").toString("base64"),
+          content_type: "audio",
+          done: true,
+        };
       },
-      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
     };
-    const mockContext = {
-      getProvider: async () => mockProvider,
-    };
-    await n.process(
+    const streamed: any[] = [];
+    for await (const item of n.genProcess(
       {
-        system: "",
-        prompt: "Hi",
         model: { provider: "test", id: "m1" },
+        prompt: "Listen",
       },
-      mockContext as any
-    );
-    expect(capturedMessages[0].role).not.toBe("system");
+      { getProvider: async () => mockProvider } as any
+    )) {
+      streamed.push(item);
+    }
+    expect(streamed[0].thinking.content).toBe("reasoning");
+    expect(streamed[1].chunk.content_type).toBe("audio");
+    expect(Buffer.from(streamed[2].audio.data).toString("utf8")).toBe("audio-bytes");
   });
 
-  it("filters invalid roles from history in provider path", async () => {
+  it("normalizes provider text chunks to include content_type", async () => {
     const n = new (AgentNode as any)();
-    let capturedMessages: any[] = [];
     const mockProvider = {
-      generateMessage: async ({ messages }: any) => {
-        capturedMessages = messages;
-        return { content: "ok" };
+      async *generateMessages(): AsyncGenerator<Record<string, unknown>> {
+        yield {
+          type: "chunk",
+          content: "Hello",
+          done: false,
+        };
+        yield {
+          type: "chunk",
+          content: " world",
+          done: true,
+        };
       },
-      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
     };
-    const mockContext = {
-      getProvider: async () => mockProvider,
-    };
-    await n.process(
+    const streamed: any[] = [];
+    for await (const item of n.genProcess(
       {
-        prompt: "Hi",
         model: { provider: "test", id: "m1" },
-        history: [
-          { role: "user", content: "valid" },
-          { role: "invalid_role", content: "skip me" },
-          { role: "assistant", content: "also valid" },
-        ],
+        prompt: "Hi",
       },
-      mockContext as any
-    );
-    // Should have user + assistant from history + user prompt = 3 messages
-    const roles = capturedMessages.map((m: any) => m.role);
-    expect(roles).not.toContain("invalid_role");
-    expect(roles.filter((r: string) => r === "user")).toHaveLength(2);
-    expect(roles).toContain("assistant");
-  });
+      { getProvider: async () => mockProvider } as any
+    )) {
+      streamed.push(item);
+    }
 
-  it("handles history items without role in provider path", async () => {
-    const n = new (AgentNode as any)();
-    let capturedMessages: any[] = [];
-    const mockProvider = {
-      generateMessage: async ({ messages }: any) => {
-        capturedMessages = messages;
-        return { content: "ok" };
-      },
-      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
-    };
-    const mockContext = {
-      getProvider: async () => mockProvider,
-    };
-    await n.process(
-      {
-        prompt: "Hi",
-        model: { provider: "test", id: "m1" },
-        history: [{ content: "no role field" }],
-      },
-      mockContext as any
-    );
-    // Defaults to "user" role
-    expect(capturedMessages[0]).toEqual({
-      role: "user",
-      content: "no role field",
+    expect(streamed[0].chunk).toMatchObject({
+      type: "chunk",
+      content: "Hello",
+      content_type: "text",
+    });
+    expect(streamed[1].chunk).toMatchObject({
+      type: "chunk",
+      content: " world",
+      content_type: "text",
     });
   });
 
-  it("handles null content from provider", async () => {
+  it("returns structured outputs from dynamic output schemas", async () => {
+    const n = new (AgentNode as any)();
+    n._dynamic_outputs = {
+      answer: { type: "str" },
+      score: { type: "int" },
+    };
+    const mockProvider = {
+      async *generateMessages({ responseFormat }: any): AsyncGenerator<Record<string, unknown>> {
+        expect(responseFormat.type).toBe("json_schema");
+        yield {
+          type: "chunk",
+          content: '{"answer":"ready","score":7}',
+          content_type: "text",
+          done: true,
+        };
+      },
+    };
+    const streamed: any[] = [];
+    for await (const item of n.genProcess(
+      {
+        model: { provider: "test", id: "m1" },
+        prompt: "Return JSON",
+      },
+      { getProvider: async () => mockProvider } as any
+    )) {
+      streamed.push(item);
+    }
+    expect(streamed[streamed.length - 1]).toEqual({ answer: "ready", score: 7 });
+    const result = await n.process(
+      {
+        model: { provider: "test", id: "m1" },
+        prompt: "Return JSON",
+      },
+      { getProvider: async () => mockProvider } as any
+    );
+    expect(result).toEqual({ answer: "ready", score: 7 });
+  });
+
+  it("replays locally stored thread messages when model persistence is unavailable", async () => {
+    const create = new (CreateThreadNode as any)();
+    const { thread_id } = await create.process({ thread_id: "thread_replay_case" });
+    const n = new (AgentNode as any)();
+    await n.process(
+      {
+        prompt: "first",
+        thread_id,
+        model: { provider: "test", id: "m1" },
+      },
+      {
+        getProvider: async () => ({
+          async *generateMessages(): AsyncGenerator<Record<string, unknown>> {
+            yield { type: "chunk", content: "first-reply", content_type: "text", done: true };
+          },
+        }),
+      } as any
+    );
+
+    const secondCalls: any[] = [];
+    await n.process(
+      {
+        prompt: "second",
+        thread_id,
+        model: { provider: "test", id: "m1" },
+      },
+      {
+        getProvider: async () => ({
+          async *generateMessages({ messages }: any): AsyncGenerator<Record<string, unknown>> {
+            secondCalls.push(messages);
+            yield { type: "chunk", content: "second-reply", content_type: "text", done: true };
+          },
+        }),
+      } as any
+    );
+    const replayed = secondCalls[0];
+    expect(replayed.some((message: any) => Array.isArray(message.content) && message.content[0].text === "first")).toBe(true);
+    expect(replayed.some((message: any) => Array.isArray(message.content) && message.content[0].text === "first-reply")).toBe(true);
+  });
+
+  it("returns empty text when the provider returns no text content", async () => {
     const n = new (AgentNode as any)();
     const mockProvider = {
-      generateMessage: async () => ({ content: null }),
-      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
-    };
-    const mockContext = {
-      getProvider: async () => mockProvider,
+      async *generateMessages(): AsyncGenerator<Record<string, unknown>> {
+        yield { type: "chunk", content: "", content_type: "text", done: true };
+      },
     };
     const result = await n.process(
       {
         prompt: "Hi",
         model: { provider: "test", id: "m1" },
       },
-      mockContext as any
+      { getProvider: async () => mockProvider } as any
     );
     expect(result.text).toBe("");
-  });
-
-  it("falls back to deterministic mode when model has no provider", async () => {
-    const n = new (AgentNode as any)();
-    const mockContext = {
-      getProvider: async () => ({}),
-    };
-    const result = await n.process(
-      {
-        prompt: "Hello",
-        model: { id: "m1" }, // no provider field
-      },
-      mockContext as any
-    );
-    expect(result.text).toContain("Hello");
-  });
-
-  it("falls back to deterministic mode when model has no id", async () => {
-    const n = new (AgentNode as any)();
-    const mockContext = {
-      getProvider: async () => ({}),
-    };
-    const result = await n.process(
-      {
-        prompt: "Hello",
-        model: { provider: "openai" }, // no id field
-      },
-      mockContext as any
-    );
-    expect(result.text).toContain("Hello");
-  });
-
-  it("stores in thread when using provider path", async () => {
-    const n = new (AgentNode as any)();
-    const mockProvider = {
-      generateMessage: async () => ({ content: "Provider reply" }),
-      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
-    };
-    const mockContext = {
-      getProvider: async () => mockProvider,
-    };
-    const result = await n.process(
-      {
-        prompt: "Thread test",
-        model: { provider: "test", id: "m1" },
-        thread_id: "provider_thread_test",
-      },
-      mockContext as any
-    );
-    expect(result.text).toBe("Provider reply");
   });
 });
 
@@ -636,17 +704,20 @@ describe("ControlAgentNode", () => {
     expect(result.__control_output__).toEqual({});
   });
 
-  it("extracts properties when context has properties field", async () => {
+  it("infers property values from property descriptors without a provider", async () => {
     const n = new (ControlAgentNode as any)();
     const result = await n.process({
       _control_context: {
-        properties: { speed: 5, direction: "north" },
+        properties: {
+          speed: { value: 5, default: 1 },
+          direction: { default: "north" },
+        },
       },
     });
     expect(result.__control_output__).toEqual({ speed: 5, direction: "north" });
   });
 
-  it("returns context as-is when no properties field", async () => {
+  it("returns inferred context values when no properties field", async () => {
     const n = new (ControlAgentNode as any)();
     const result = await n.process({
       _control_context: { key: "value", num: 42 },
@@ -659,7 +730,6 @@ describe("ControlAgentNode", () => {
     const result = await n.process({
       _control_context: { properties: null, extra: 1 },
     });
-    // properties exists but is falsy, so falls through to return context
     expect(result.__control_output__).toEqual({ properties: null, extra: 1 });
   });
 
@@ -670,6 +740,22 @@ describe("ControlAgentNode", () => {
     });
     // properties is string, not object -> returns full context
     expect(result.__control_output__).toEqual({ properties: "not-object" });
+  });
+
+  it("parses provider output into control params", async () => {
+    const n = new (ControlAgentNode as any)();
+    const mockProvider = {
+      generateMessage: async () => ({ content: '{"result":{"temperature":0.7}}' }),
+      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
+    };
+    const result = await n.process(
+      {
+        _control_context: { properties: { temperature: { default: 0.2 } } },
+        model: { provider: "test", id: "m1" },
+      },
+      { getProvider: async () => mockProvider } as any
+    );
+    expect(result.__control_output__).toEqual({ temperature: 0.7 });
   });
 });
 
@@ -705,6 +791,26 @@ describe("ResearchAgentNode", () => {
     const n = new (ResearchAgentNode as any)();
     const result = await n.process({});
     expect(result.output).toContain("Question:");
+  });
+
+  it("uses provider-backed research synthesis when model is connected", async () => {
+    const n = new (ResearchAgentNode as any)();
+    const mockProvider = {
+      generateMessage: async () => ({
+        content:
+          '{"summary":"TypeScript is a typed superset of JavaScript.","findings":[{"title":"Overview","summary":"Adds static typing."}]}',
+      }),
+      async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
+    };
+    const result = await n.process(
+      {
+        query: "What is TypeScript?",
+        model: { provider: "test", id: "m1" },
+      },
+      { getProvider: async () => mockProvider } as any
+    );
+    expect(result.text).toContain("typed superset");
+    expect(result.findings[0].title).toBe("Overview");
   });
 });
 
@@ -957,6 +1063,75 @@ describe("DataGeneratorNode", () => {
     // Actually the regex matches "0", n=0, max(1,min(200,0))=max(1,0)=1
     expect((result.output as any).rows).toHaveLength(1);
   });
+
+  it("parses provider markdown table into records and dataframe", async () => {
+    const n = new (DataGeneratorNode as any)();
+    const mockContext = {
+      runProviderPrediction: async () => ({
+        content: `| name | age |
+|------|-----|
+| Alice | 30 |
+| Bob | 25 |`,
+      }),
+      streamProviderPrediction: async function* () {},
+    };
+
+    const result = await n.process(
+      {
+        prompt: "Generate people",
+        columns: [
+          { name: "name", data_type: "string" },
+          { name: "age", data_type: "int" },
+        ],
+        model: { provider: "mock", id: "gpt-4" },
+      },
+      mockContext as any
+    );
+
+    expect((result.output as any).rows).toEqual([
+      { name: "Alice", age: 30 },
+      { name: "Bob", age: 25 },
+    ]);
+    expect((result.output as any).data).toEqual([
+      ["Alice", 30],
+      ["Bob", 25],
+    ]);
+  });
+
+  it("streams provider markdown table into row chunks and final dataframe", async () => {
+    const n = new (DataGeneratorNode as any)();
+    const mockContext = {
+      runProviderPrediction: async () => ({ content: "" }),
+      streamProviderPrediction: async function* () {
+        yield { type: "chunk", content: "| name | age |\n|------|-----|\n" };
+        yield { type: "chunk", content: "| Alice | 30 |\n| Bob | 25 |" };
+      },
+    };
+
+    const results: any[] = [];
+    for await (const chunk of n.genProcess(
+      {
+        prompt: "Generate people",
+        columns: [
+          { name: "name", data_type: "string" },
+          { name: "age", data_type: "int" },
+        ],
+        model: { provider: "mock", id: "gpt-4" },
+      },
+      mockContext as any
+    )) {
+      results.push(chunk);
+    }
+
+    expect(results.slice(0, 2)).toEqual([
+      { record: { name: "Alice", age: 30 }, index: 0, dataframe: null },
+      { record: { name: "Bob", age: 25 }, index: 1, dataframe: null },
+    ]);
+    expect(results[2].dataframe.data).toEqual([
+      ["Alice", 30],
+      ["Bob", 25],
+    ]);
+  });
 });
 
 // ---- ListGeneratorNode ----
@@ -1010,6 +1185,96 @@ describe("ListGeneratorNode", () => {
       results.push(chunk);
     }
     expect(results).toHaveLength(0);
+  });
+
+  it("parses provider list items from tagged response", async () => {
+    const n = new (ListGeneratorNode as any)();
+    const mockContext = {
+      runProviderPrediction: async () => ({
+        content: `<LIST_ITEM>First item</LIST_ITEM>
+<LIST_ITEM>Second item</LIST_ITEM>
+<LIST_ITEM>Third item</LIST_ITEM>`,
+      }),
+      streamProviderPrediction: async function* () {},
+    };
+
+    const result = await n.process(
+      {
+        prompt: "Generate items",
+        model: { provider: "mock", id: "gpt-4" },
+      },
+      mockContext as any
+    );
+
+    expect(result.output).toEqual(["First item", "Second item", "Third item"]);
+  });
+
+  it("normalizes multiline provider list items during streaming", async () => {
+    const n = new (ListGeneratorNode as any)();
+    const mockContext = {
+      runProviderPrediction: async () => ({ content: "" }),
+      streamProviderPrediction: async function* () {
+        yield { type: "chunk", content: "<LIST_ITEM>First item\nwith continuation</LIST_ITEM>\n" };
+        yield {
+          type: "chunk",
+          content:
+            "<LIST_ITEM>Second item</LIST_ITEM>\n<LIST_ITEM>Third item on\nmultiple lines\nhere</LIST_ITEM>",
+        };
+      },
+    };
+
+    const results: any[] = [];
+    for await (const chunk of n.genProcess(
+      {
+        prompt: "Generate items",
+        model: { provider: "mock", id: "gpt-4" },
+      },
+      mockContext as any
+    )) {
+      results.push(chunk);
+    }
+
+    expect(results).toEqual([
+      { item: "First item with continuation", index: 0 },
+      { item: "Second item", index: 1 },
+      { item: "Third item on multiple lines here", index: 2 },
+    ]);
+  });
+
+  it("throws when provider output omits list tags", async () => {
+    const n = new (ListGeneratorNode as any)();
+    const mockContext = {
+      runProviderPrediction: async () => ({ content: "plain text only" }),
+      streamProviderPrediction: async function* () {
+        yield { type: "chunk", content: "plain text only" };
+      },
+    };
+
+    await expect(
+      n.process(
+        {
+          prompt: "Generate items",
+          model: { provider: "mock", id: "gpt-4" },
+        },
+        mockContext as any
+      )
+    ).rejects.toThrow("<LIST_ITEM> tags");
+
+    await expect(
+      (async () => {
+        const chunks: any[] = [];
+        for await (const chunk of n.genProcess(
+          {
+            prompt: "Generate items",
+            model: { provider: "mock", id: "gpt-4" },
+          },
+          mockContext as any
+        )) {
+          chunks.push(chunk);
+        }
+        return chunks;
+      })()
+    ).rejects.toThrow("<LIST_ITEM> tags");
   });
 });
 

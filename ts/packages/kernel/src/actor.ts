@@ -78,6 +78,9 @@ export class NodeActor {
   /** Latest execution result. */
   private _latestResult: Record<string, unknown> | null = null;
 
+  /** Collected non-null outputs for streaming-output nodes. */
+  private _streamingCollectedOutputs: Record<string, unknown> | null = null;
+
   /** Handles that are sticky from the start (non-streaming edges). */
   private _initialStickyHandles: Set<string>;
 
@@ -236,14 +239,26 @@ export class NodeActor {
   private async _executeWithInputs(
     inputs: Record<string, unknown>
   ): Promise<void> {
+    log.info("Executing node", {
+      nodeId: this.node.id,
+      type: this.node.type,
+      syncMode: this.node.sync_mode ?? "on_any",
+      inputHandles: Object.keys(inputs),
+    });
+
     if (this.node.is_streaming_output && this._executor.genProcess) {
+      this._streamingCollectedOutputs = {};
       for await (const partial of this._executor.genProcess(
         inputs,
         this._executionContext
       )) {
-        this._latestResult = partial;
-        await this._sendOutputs(this.node.id, partial);
+        const routed = this._filterStreamingPartial(partial);
+        if (Object.keys(routed).length === 0) continue;
+        Object.assign(this._streamingCollectedOutputs, routed);
+        this._latestResult = { ...this._streamingCollectedOutputs };
+        await this._sendOutputs(this.node.id, routed);
       }
+      this._latestResult = { ...(this._streamingCollectedOutputs ?? {}) };
     } else {
       const outputs = await this._executor.process(
         inputs,
@@ -384,5 +399,16 @@ export class NodeActor {
           ? (this.node.properties as Record<string, unknown>)
           : null,
     });
+  }
+
+  private _filterStreamingPartial(
+    partial: Record<string, unknown>
+  ): Record<string, unknown> {
+    const filtered: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(partial)) {
+      if (value === null || value === undefined) continue;
+      filtered[key] = value;
+    }
+    return filtered;
   }
 }
