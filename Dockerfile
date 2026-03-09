@@ -110,7 +110,7 @@ RUN if [ "$USE_LOCAL_REPO" = "1" ]; then \
             --index-strategy unsafe-best-match \
             --index-url https://pypi.org/simple \
             --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
-            nodetool-core==0.6.3-rc.41 nodetool-base==0.6.3-rc.41 ; \
+            nodetool-core==0.6.3-rc.42 nodetool-base==0.6.3-rc.42 ; \
     fi && \
     # Clean up
     rm -rf /tmp/nodetool-core && \
