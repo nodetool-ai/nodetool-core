@@ -135,7 +135,7 @@ dependencies = [
 
     # Observability
     "opentelemetry-distro==0.60b1",
-    "opentelemetry-exporter-otlp==1.39.1",
+    "opentelemetry-exporter-otlp==1.40.0",
 ]
 
 [project.optional-dependencies]
