@@ -147,21 +147,6 @@ export function createGraphNodeTypeResolver(
         }
       }
 
-      if (!metadata) {
-        const namespace = deriveNamespace(nodeType);
-        if (namespace.startsWith("nodetool.")) {
-          try {
-            const mod = await import("@nodetool/base-nodes");
-            if ("registerBaseNodes" in mod && typeof mod.registerBaseNodes === "function") {
-              mod.registerBaseNodes(registry);
-              metadata = registry.resolveMetadata(nodeType);
-            }
-          } catch {
-            // Ignore optional base-node loading failures and report unresolved type below.
-          }
-        }
-      }
-
       if (!metadata) return null;
 
       const propertyTypes = Object.fromEntries(

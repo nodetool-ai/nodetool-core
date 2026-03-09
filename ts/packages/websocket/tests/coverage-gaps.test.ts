@@ -237,7 +237,15 @@ describe("UnifiedWebSocketRunner: chat_message with valid thread_id", () => {
     await new Promise((r) => setTimeout(r, 100));
 
     const sent = ws.sentBytes.map((b) => unpack(b) as Record<string, unknown>);
-    expect(sent.some((m) => m.type === "tool_call_update")).toBe(true);
+    expect(
+      sent.some(
+        (m) =>
+          m.type === "message" &&
+          m.role === "assistant" &&
+          Array.isArray(m.tool_calls) &&
+          (m.tool_calls as Array<unknown>).length > 0,
+      ),
+    ).toBe(true);
     expect(sent.some((m) => m.type === "chunk")).toBe(true);
 
     await runner.disconnect();
@@ -467,13 +475,17 @@ describe("UnifiedWebSocketRunner: client_tools_manifest edge cases", () => {
 // ── UnifiedWebSocketRunner: stop command with no job or thread ───────
 
 describe("UnifiedWebSocketRunner: stop command without job_id or thread_id", () => {
-  it("returns error when neither job_id nor thread_id provided", async () => {
+  it("returns a no-op success when neither job_id nor thread_id provided", async () => {
     const runner = new UnifiedWebSocketRunner({ resolveExecutor });
     const result = await runner.handleCommand({
       command: "stop",
       data: {},
     });
-    expect(result.error).toContain("job_id or thread_id is required");
+    expect(result).toEqual({
+      message: "Stop command processed",
+      job_id: null,
+      thread_id: null,
+    });
   });
 });
 

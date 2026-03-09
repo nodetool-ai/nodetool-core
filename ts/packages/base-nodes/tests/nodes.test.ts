@@ -383,10 +383,19 @@ describe("input/output/workspace nodes", () => {
   it("agent nodes create threads and classify text", async () => {
     const thread = await new CreateThreadNode().process({ title: "T" });
     expect(String(thread.thread_id)).toContain("thread_");
-    const classified = await new ClassifierNode().process({
-      text: "payment failed and card was charged twice",
-      categories: ["billing", "sales", "support"],
-    });
+    const classified = await new ClassifierNode().process(
+      {
+        text: "payment failed and card was charged twice",
+        categories: ["billing", "sales", "support"],
+        model: { provider: "openai", id: "gpt-4o-mini" },
+      },
+      {
+        getProvider: async () => ({
+          generateMessage: async () => ({ content: '{"category":"billing"}' }),
+          async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
+        }),
+      } as unknown as ProcessingContext
+    );
     expect(classified.category).toBe("billing");
   });
 

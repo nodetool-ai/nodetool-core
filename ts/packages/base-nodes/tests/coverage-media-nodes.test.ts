@@ -662,7 +662,17 @@ describe("image nodes — full coverage", () => {
     expect(new GetMetadataNode().defaults()).toEqual({ image: {} });
     expect(new BatchToListNode().defaults()).toEqual({ batch: [] });
     expect(new ImagesToListNode().defaults()).toEqual({ image_a: null, image_b: null, images: [] });
-    expect(new PasteNode().defaults()).toEqual({ image: {}, width: null, height: null });
+    expect(new PasteNode().defaults()).toEqual({
+      image: {},
+      width: null,
+      height: null,
+      paste: {},
+      left: 0,
+      top: 0,
+      scale: 1,
+      right: null,
+      bottom: null,
+    });
     expect(new TextToImageNode().defaults()).toEqual({ prompt: "", width: 512, height: 512 });
     expect(new ImageToImageNode().defaults()).toEqual({ image: {}, prompt: "" });
   });
@@ -914,7 +924,7 @@ describe("video nodes — full coverage", () => {
     expect(new FrameToVideoNode().defaults()).toEqual({ frames: [] });
     expect(new ConcatVideoNode().defaults()).toEqual({ video_a: {}, video_b: {} });
     expect(new TrimVideoNode().defaults()).toEqual({ video: {}, start: 0, end: 0 });
-    expect(new ResizeVideoNode().defaults()).toEqual({ video: {} });
+    expect(new ResizeVideoNode().defaults()).toEqual({ video: {}, width: -1, height: -1 });
     expect(new ReverseVideoNode().defaults()).toEqual({ video: {} });
     expect(new AddAudioVideoNode().defaults()).toEqual({ video: {}, audio: {} });
     expect(new ExtractAudioVideoNode().defaults()).toEqual({ video: {} });

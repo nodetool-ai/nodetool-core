@@ -429,4 +429,93 @@ describe("UnifiedWebSocketRunner", () => {
 
     await outputRunner.disconnect();
   });
+
+  it("hydrates stored graphs so streaming nodes use genProcess during run_job", async () => {
+    const sinkValues: unknown[] = [];
+    let processCalls = 0;
+    let genProcessCalls = 0;
+    const outputRunner = new UnifiedWebSocketRunner({
+      resolveExecutor: (node) => {
+        if (node.type === "test.Streamer") {
+          return {
+            async process() {
+              processCalls += 1;
+              return { chunk: "buffered" };
+            },
+            async *genProcess() {
+              genProcessCalls += 1;
+              yield { chunk: "first" };
+              yield { chunk: "second" };
+            },
+          };
+        }
+        if (node.type === "nodetool.workflows.base_node.Preview") {
+          return {
+            async process(inputs: Record<string, unknown>) {
+              sinkValues.push(inputs.value ?? null);
+              return { output: inputs.value ?? null };
+            },
+          };
+        }
+        return {
+          async process() {
+            return {};
+          },
+        };
+      },
+      resolveNodeType: {
+        resolveNodeType: async (nodeType: string) => {
+          if (nodeType === "test.Streamer") {
+            return {
+              nodeType,
+              outputs: { chunk: "chunk" },
+              descriptorDefaults: {
+                is_streaming_output: true,
+                name: "Streamer",
+              },
+            };
+          }
+          if (nodeType === "nodetool.workflows.base_node.Preview") {
+            return {
+              nodeType,
+              propertyTypes: { value: "any" },
+              outputs: { output: "any" },
+              descriptorDefaults: { name: "Preview" },
+            };
+          }
+          return null;
+        },
+      },
+    });
+
+    await outputRunner.connect(ws);
+    await outputRunner.handleCommand({
+      command: "run_job",
+      data: {
+        graph: {
+          nodes: [
+            { id: "stream", type: "test.Streamer" },
+            { id: "preview", type: "nodetool.workflows.base_node.Preview" },
+          ],
+          edges: [
+            {
+              id: "e1",
+              source: "stream",
+              sourceHandle: "chunk",
+              target: "preview",
+              targetHandle: "value",
+              edge_type: "data",
+            },
+          ],
+        },
+      },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(processCalls).toBe(0);
+    expect(genProcessCalls).toBe(1);
+    expect(sinkValues).toEqual(["first", "second"]);
+
+    await outputRunner.disconnect();
+  });
 });

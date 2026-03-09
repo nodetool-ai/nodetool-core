@@ -53,6 +53,22 @@ describe("uuid nodes", () => {
     expect(uuidVersion(v5a)).toBe(5);
   });
 
+  it("supports alternate namespaces and rejects invalid ones", async () => {
+    for (const namespace of ["dns", "url", "oid", "x500"]) {
+      const v3 = String((await new GenerateUUID3Node().process({ namespace, name: "test" })).output);
+      const v5 = String((await new GenerateUUID5Node().process({ namespace, name: "test" })).output);
+      expect(uuidVersion(v3)).toBe(3);
+      expect(uuidVersion(v5)).toBe(5);
+    }
+
+    await expect(
+      new GenerateUUID3Node().process({ namespace: "invalid", name: "test" })
+    ).rejects.toThrow("Invalid namespace");
+    await expect(
+      new GenerateUUID5Node().process({ namespace: "invalid", name: "test" })
+    ).rejects.toThrow("Invalid namespace");
+  });
+
   it("parses uuid and reports invalid values", async () => {
     const generated = String((await new GenerateUUID4Node().process({})).output);
     const parsed = await new ParseUUIDNode().process({ uuid_string: generated });
@@ -84,6 +100,12 @@ describe("uuid nodes", () => {
     await expect(
       new FormatUUIDNode().process({ uuid_string: generated, format: "int" })
     ).resolves.toMatchObject({ output: expect.any(String) });
+    await expect(
+      new FormatUUIDNode().process({ uuid_string: generated, format: "bytes_hex" })
+    ).resolves.toMatchObject({ output: generated.replaceAll("-", "") });
+    await expect(
+      new FormatUUIDNode().process({ uuid_string: generated, format: "nope" })
+    ).rejects.toThrow("Unsupported format");
 
     await expect(
       new IsValidUUIDNode().process({ uuid_string: generated })

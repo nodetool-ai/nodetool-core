@@ -827,10 +827,11 @@ describe("agents nodes", () => {
       expect(result.category).toBe("python");
     });
 
-    it("returns Unknown for empty categories", async () => {
+    it("throws for empty categories", async () => {
       const node = new ClassifierNode();
-      const result = await node.process({ text: "hello", categories: [] });
-      expect(result.category).toBe("Unknown");
+      await expect(node.process({ text: "hello", categories: [] })).rejects.toThrow(
+        "At least 2 categories are required"
+      );
     });
 
     it("returns first category when no token match", async () => {
@@ -845,61 +846,32 @@ describe("agents nodes", () => {
   });
 
   describe("AgentNode", () => {
-    it("produces deterministic response without provider", async () => {
+    it("requires a selected model", async () => {
       const node = new AgentNode();
-      const result = await node.process({
-        prompt: "What is 2+2?",
-        system: "You are a calculator.",
-        history: [],
-      });
-      expect(result.text).toBeDefined();
-      expect((result.text as string).length).toBeGreaterThan(0);
+      await expect(node.process({ prompt: "What is 2+2?" })).rejects.toThrow("Select a model");
     });
 
-    it("concatenates history", async () => {
-      const node = new AgentNode();
-      const result = await node.process({
-        prompt: "follow up",
-        system: "",
-        history: ["first message", "second message"],
-      });
-      expect(result.text).toContain("first message");
-    });
-
-    it("returns 'No prompt provided' for empty everything", async () => {
-      const node = new AgentNode();
-      const result = await node.process({ prompt: "", system: "", history: [] });
-      expect(result.text).toBe("No prompt provided.");
-    });
-
-    it("stores messages in thread", async () => {
-      // Create thread first
-      const createNode = new CreateThreadNode();
-      const { thread_id } = await createNode.process({});
-
+    it("streams provider output through process()", async () => {
       const node = new AgentNode();
       const result = await node.process({
         prompt: "hello",
-        system: "",
-        history: [],
-        thread_id,
-      });
-      expect(result.text).toBeDefined();
-    });
-
-    it("creates new thread entry if thread_id not in store", async () => {
-      const node = new AgentNode();
-      const result = await node.process({
-        prompt: "test",
-        thread_id: "brand-new-thread",
-      });
-      expect(result.text).toBeDefined();
+        model: { provider: "openai", id: "gpt-4" },
+      }, {
+        getProvider: vi.fn().mockResolvedValue({
+          async *generateMessages() {
+            yield { type: "chunk", content: "AI", content_type: "text", done: false };
+            yield { type: "chunk", content: " response", content_type: "text", done: true };
+          },
+        }),
+      } as any);
+      expect(result.text).toBe("AI response");
     });
 
     it("uses provider when available", async () => {
       const mockProvider = {
-        generateMessage: vi.fn().mockResolvedValue({ content: "AI response" }),
-        async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
+        generateMessages: vi.fn(async function* () {
+          yield { type: "chunk", content: "AI response", content_type: "text", done: true };
+        }),
       };
       const mockContext = {
         getProvider: vi.fn().mockResolvedValue(mockProvider),
@@ -916,69 +888,93 @@ describe("agents nodes", () => {
         mockContext as any
       );
       expect(result.text).toBe("AI response");
-      expect(mockProvider.generateMessage).toHaveBeenCalled();
+      expect(mockProvider.generateMessages).toHaveBeenCalled();
     });
 
-    it("skips invalid roles in history when using provider", async () => {
+    it("loads and saves thread history through context model interfaces", async () => {
+      const created: any[] = [];
       const mockProvider = {
-        generateMessage: vi.fn().mockResolvedValue({ content: "ok" }),
-        async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
+        generateMessages: vi.fn(async function* ({ messages }: any) {
+          expect(messages.some((m: any) => m.role === "user" && m.content === "persisted-user")).toBe(
+            true
+          );
+          yield { type: "chunk", content: "threaded", content_type: "text", done: true };
+        }),
       };
       const mockContext = {
         getProvider: vi.fn().mockResolvedValue(mockProvider),
+        getThreadMessages: vi.fn().mockResolvedValue({
+          messages: [{ role: "user", content: "persisted-user" }],
+          next: null,
+        }),
+        createMessage: vi.fn(async (req: any) => {
+          created.push(req);
+        }),
       };
       const node = new AgentNode();
-      await node.process(
+      const result = await node.process(
         {
-          prompt: "test",
-          history: [
-            { role: "user", content: "valid" },
-            { role: "bogus", content: "invalid" },
-            { role: "assistant", content: "also valid" },
-          ],
-          model: { provider: "openai", id: "gpt-4" },
-        },
-        mockContext as any
-      );
-      const callArgs = mockProvider.generateMessage.mock.calls[0][0];
-      // Should have user prompt + 2 valid history + 1 user prompt = 3 messages
-      const roles = callArgs.messages.map((m: any) => m.role);
-      expect(roles).not.toContain("bogus");
-    });
-
-    it("handles history items without role (defaults to user)", async () => {
-      const mockProvider = {
-        generateMessage: vi.fn().mockResolvedValue({ content: "ok" }),
-        async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
-      };
-      const mockContext = {
-        getProvider: vi.fn().mockResolvedValue(mockProvider),
-      };
-      const node = new AgentNode();
-      await node.process(
-        {
-          prompt: "test",
-          history: [{ content: "no-role" }],
+          prompt: "hello",
+          thread_id: "thread-test",
           model: { provider: "test", id: "model" },
         },
         mockContext as any
       );
-      const msgs = mockProvider.generateMessage.mock.calls[0][0].messages;
-      expect(msgs.some((m: any) => m.role === "user" && m.content === "no-role")).toBe(true);
+      expect(result.text).toBe("threaded");
+      expect(created).toHaveLength(2);
+      expect(created[0].role).toBe("user");
+      expect(created[1].role).toBe("assistant");
     });
 
-    it("handles non-array history gracefully", async () => {
+    it("replays thread history when local persistence is used", async () => {
+      const createNode = new CreateThreadNode();
+      const { thread_id } = await createNode.process({ thread_id: "coverage-thread-replay" });
+      const mockProvider = {
+        generateMessages: vi.fn(async function* () {
+          yield { type: "chunk", content: "reply-1", content_type: "text", done: true };
+        }),
+      };
       const node = new AgentNode();
-      const result = await node.process({ prompt: "test", history: "not-array" });
-      expect(result.text).toBeDefined();
+      await node.process(
+        {
+          prompt: "hello",
+          thread_id,
+          model: { provider: "test", id: "model" },
+        },
+        { getProvider: vi.fn().mockResolvedValue(mockProvider) } as any
+      );
+      const secondProvider = {
+        generateMessages: vi.fn(async function* ({ messages }: any) {
+          expect(
+            messages.some(
+              (m: any) => Array.isArray(m.content) && m.content[0]?.text === "hello"
+            )
+          ).toBe(true);
+          expect(
+            messages.some(
+              (m: any) => Array.isArray(m.content) && m.content[0]?.text === "reply-1"
+            )
+          ).toBe(true);
+          yield { type: "chunk", content: "reply-2", content_type: "text", done: true };
+        }),
+      };
+      const result = await node.process(
+        {
+          prompt: "follow up",
+          thread_id,
+          model: { provider: "test", id: "model" },
+        },
+        { getProvider: vi.fn().mockResolvedValue(secondProvider) } as any
+      );
+      expect(result.text).toBe("reply-2");
     });
   });
 
   describe("ControlAgentNode", () => {
-    it("returns properties from context", async () => {
+    it("returns inferred properties from context", async () => {
       const node = new ControlAgentNode();
       const result = await node.process({
-        _control_context: { properties: { temp: 0.5 } },
+        _control_context: { properties: { temp: { value: 0.5 } } },
       });
       expect(result.__control_output__).toEqual({ temp: 0.5 });
     });
@@ -1002,6 +998,23 @@ describe("agents nodes", () => {
       const result = await node.process({ _control_context: null });
       expect(result.__control_output__).toEqual({});
     });
+
+    it("uses provider output when configured", async () => {
+      const node = new ControlAgentNode();
+      const result = await node.process(
+        {
+          _control_context: { properties: { mode: { default: "slow" } } },
+          model: { provider: "test", id: "model" },
+        },
+        {
+          getProvider: vi.fn().mockResolvedValue({
+            generateMessage: vi.fn().mockResolvedValue({ content: '{"properties":{"mode":"fast"}}' }),
+            async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
+          }),
+        } as any
+      );
+      expect(result.__control_output__).toEqual({ mode: "fast" });
+    });
   });
 
   describe("ResearchAgentNode", () => {
@@ -1016,6 +1029,27 @@ describe("agents nodes", () => {
       const node = new ResearchAgentNode();
       const result = await node.process({ prompt: "AI research" });
       expect(result.text).toContain("AI research");
+    });
+
+    it("uses provider-backed research output", async () => {
+      const node = new ResearchAgentNode();
+      const result = await node.process(
+        {
+          query: "What is machine learning?",
+          model: { provider: "test", id: "model" },
+        },
+        {
+          getProvider: vi.fn().mockResolvedValue({
+            generateMessage: vi.fn().mockResolvedValue({
+              content:
+                '{"summary":"Machine learning is a data-driven approach.","findings":[{"title":"Definition","summary":"Models learn from data."}]}',
+            }),
+            async generateMessageTraced(...a: any[]) { return (this as any).generateMessage(...a); },
+          }),
+        } as any
+      );
+      expect(result.text).toContain("data-driven");
+      expect(result.findings[0].title).toBe("Definition");
     });
   });
 });

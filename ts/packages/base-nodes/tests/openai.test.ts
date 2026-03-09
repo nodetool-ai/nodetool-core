@@ -494,7 +494,7 @@ describe("TranscribeNode", () => {
 });
 
 // ---------------------------------------------------------------------------
-// RealtimeAgentNode & RealtimeTranscriptionNode (stubs)
+// RealtimeAgentNode & RealtimeTranscriptionNode
 // ---------------------------------------------------------------------------
 describe("RealtimeAgentNode", () => {
   it("has correct metadata", () => {
@@ -502,9 +502,28 @@ describe("RealtimeAgentNode", () => {
     expect(RealtimeAgentNode.title).toBe("Realtime Agent");
   });
 
-  it("throws not implemented error", async () => {
+  it("falls back to transcription + chat + tts", async () => {
     const node = new RealtimeAgentNode();
-    await expect(node.process({})).rejects.toThrow(/not yet implemented/i);
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ text: "hello from audio" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: "assistant reply" } }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () => new ArrayBuffer(4),
+      });
+
+    const result = await node.process({
+      _secrets: { OPENAI_API_KEY: "k" },
+      chunk: { content_type: "audio", content: Buffer.from("wav").toString("base64") },
+    });
+    expect(result.text).toBe("assistant reply");
+    expect(result.audio).toBeTruthy();
   });
 });
 
@@ -515,9 +534,17 @@ describe("RealtimeTranscriptionNode", () => {
     );
   });
 
-  it("throws not implemented error", async () => {
+  it("transcribes audio content", async () => {
     const node = new RealtimeTranscriptionNode();
-    await expect(node.process({})).rejects.toThrow(/not yet implemented/i);
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ text: "transcribed text" }),
+    });
+    const result = await node.process({
+      _secrets: { OPENAI_API_KEY: "k" },
+      chunk: { content: Buffer.from("wav").toString("base64") },
+    });
+    expect(result.text).toBe("transcribed text");
   });
 });
 

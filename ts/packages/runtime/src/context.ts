@@ -116,6 +116,48 @@ export type HttpRequestOptions = Omit<RequestInit, "method" | "headers" | "body"
   retry?: HttpRetryOptions;
 };
 
+export interface MessageCreateRequestLike {
+  thread_id: string;
+  role: string;
+  content?: unknown;
+  tool_calls?: unknown;
+  workflow_id?: string | null;
+  name?: string | null;
+  tool_call_id?: string | null;
+}
+
+export interface ThreadMessagesResultLike {
+  messages: Array<Record<string, unknown>>;
+  next: string | null;
+}
+
+export interface AssetCreateParamsLike {
+  userId: string;
+  workflowId: string | null;
+  jobId: string;
+  name: string;
+  contentType: string;
+  content: Uint8Array;
+  parentId?: string | null;
+  nodeId?: string | null;
+}
+
+export interface ProcessingContextModelInterfaces {
+  getJob?: (args: { userId: string; jobId: string }) => Promise<unknown | null>;
+  createAsset?: (args: AssetCreateParamsLike) => Promise<unknown>;
+  createMessage?: (args: {
+    userId: string;
+    req: MessageCreateRequestLike;
+  }) => Promise<unknown>;
+  getMessages?: (args: {
+    userId: string;
+    threadId: string;
+    limit?: number;
+    startKey?: string | null;
+    reverse?: boolean;
+  }) => Promise<ThreadMessagesResultLike>;
+}
+
 function isWithinRoot(root: string, target: string): boolean {
   const rel = relative(root, target);
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
@@ -370,6 +412,8 @@ export class ProcessingContext {
   private _providerResolver:
     | ((providerId: string) => Promise<BaseProvider> | BaseProvider)
     | null = null;
+  /** Optional model-layer adapters used to mirror Python ProcessingContext APIs. */
+  private _modelInterfaces: ProcessingContextModelInterfaces | null = null;
   /** Provider cache keyed by provider id. */
   private _providers = new Map<string, BaseProvider>();
   /** In-context memory URI cache (memory:// key-value objects). */
@@ -396,6 +440,7 @@ export class ProcessingContext {
     ) => Promise<string | null | undefined> | string | null | undefined;
     fetchFn?: (input: string, init?: RequestInit) => Promise<Response>;
     tempUrlResolver?: (uri: string) => Promise<string> | string;
+    modelInterfaces?: ProcessingContextModelInterfaces;
   }) {
     this.jobId = opts.jobId;
     this.workflowId = opts.workflowId ?? null;
@@ -414,6 +459,7 @@ export class ProcessingContext {
     this._secretResolver = opts.secretResolver ?? null;
     this._fetch = opts.fetchFn ?? ((input: string, init?: RequestInit) => fetch(input, init));
     this._tempUrlResolver = opts.tempUrlResolver ?? null;
+    this._modelInterfaces = opts.modelInterfaces ?? null;
   }
 
   copy(): ProcessingContext {
@@ -433,6 +479,7 @@ export class ProcessingContext {
       tempUrlResolver: this._tempUrlResolver ?? undefined,
     });
     next._providerResolver = this._providerResolver;
+    next._modelInterfaces = this._modelInterfaces;
     next._providers = new Map(this._providers);
     next._totalCost = this._totalCost;
     next._operationCosts = this._operationCosts.map((c) => ({ ...c }));
@@ -449,6 +496,10 @@ export class ProcessingContext {
     this._providerResolver = resolver;
   }
 
+  setModelInterfaces(modelInterfaces: ProcessingContextModelInterfaces): void {
+    this._modelInterfaces = modelInterfaces;
+  }
+
   registerProvider(providerId: string, provider: BaseProvider): void {
     this._providers.set(providerId, provider);
   }
@@ -462,12 +513,19 @@ export class ProcessingContext {
     if (cached) return cached;
 
     if (!this._providerResolver) {
-      throw new Error(`No provider registered for '${providerId}' and no resolver configured`);
+      const providers = await import("./providers/index.js");
+      const resolved = await providers.getProvider(providerId);
+      this._providers.set(providerId, resolved);
+      return resolved;
     }
 
     const resolved = await this._providerResolver(providerId);
     this._providers.set(providerId, resolved);
     return resolved;
+  }
+
+  async get_provider(providerId: string): Promise<BaseProvider> {
+    return this.getProvider(providerId);
   }
 
   // -----------------------------------------------------------------------
@@ -499,6 +557,14 @@ export class ProcessingContext {
       throw new Error(`Missing required secret: ${key}`);
     }
     return value;
+  }
+
+  async get_secret(key: string): Promise<string | null> {
+    return this.getSecret(key);
+  }
+
+  async get_secret_required(key: string): Promise<string> {
+    return this.getSecretRequired(key);
   }
 
   get<T = unknown>(key: string, defaultValue?: T): T {
@@ -540,6 +606,14 @@ export class ProcessingContext {
       return this._variables[key] as T;
     }
     return defaultValue as T;
+  }
+
+  async store_step_result(key: string, value: unknown): Promise<string> {
+    return this.storeStepResult(key, value);
+  }
+
+  async load_step_result<T = unknown>(key: string, defaultValue?: T): Promise<T> {
+    return this.loadStepResult(key, defaultValue);
   }
 
   private workspacePathFor(fileName: string): string {
@@ -589,6 +663,23 @@ export class ProcessingContext {
     await this.cache.set(key, result, ttlSeconds);
   }
 
+  generate_node_cache_key(nodeType: string, nodeProps: unknown): string {
+    return this.generateNodeCacheKey(nodeType, nodeProps);
+  }
+
+  async get_cached_result(nodeType: string, nodeProps: unknown): Promise<unknown> {
+    return this.getCachedResult(nodeType, nodeProps);
+  }
+
+  async cache_result(
+    nodeType: string,
+    nodeProps: unknown,
+    result: unknown,
+    ttlSeconds = 3600
+  ): Promise<void> {
+    return this.cacheResult(nodeType, nodeProps, result, ttlSeconds);
+  }
+
   // -----------------------------------------------------------------------
   // Message queue API
   // -----------------------------------------------------------------------
@@ -608,6 +699,14 @@ export class ProcessingContext {
     if (this._onMessage) {
       this._onMessage(msg);
     }
+  }
+
+  postMessage(msg: ProcessingMessage): void {
+    this.emit(msg);
+  }
+
+  post_message(msg: ProcessingMessage): void {
+    this.emit(msg);
   }
 
   /** Get all emitted messages. */
@@ -630,6 +729,10 @@ export class ProcessingContext {
     return this._messages.shift() as ProcessingMessage;
   }
 
+  async pop_message_async(): Promise<ProcessingMessage> {
+    return this.popMessageAsync();
+  }
+
   getNodeStatuses(): Readonly<Record<string, ProcessingMessage>> {
     return Object.fromEntries(this._nodeStatuses);
   }
@@ -641,6 +744,10 @@ export class ProcessingContext {
   /** Clear the message queue. */
   clearMessages(): void {
     this._messages = [];
+  }
+
+  clear_messages(): void {
+    this.clearMessages();
   }
 
   trackOperationCost(
@@ -784,6 +891,122 @@ export class ProcessingContext {
   async downloadText(url: string, opts: HttpRequestOptions = {}): Promise<string> {
     const response = await this.httpGet(url, opts);
     return response.text();
+  }
+
+  async http_get(url: string, opts: HttpRequestOptions = {}): Promise<Response> {
+    return this.httpGet(url, opts);
+  }
+
+  async http_post(url: string, opts: HttpRequestOptions = {}): Promise<Response> {
+    return this.httpPost(url, opts);
+  }
+
+  async http_patch(url: string, opts: HttpRequestOptions = {}): Promise<Response> {
+    return this.httpPatch(url, opts);
+  }
+
+  async http_put(url: string, opts: HttpRequestOptions = {}): Promise<Response> {
+    return this.httpPut(url, opts);
+  }
+
+  async http_delete(url: string, opts: HttpRequestOptions = {}): Promise<Response> {
+    return this.httpDelete(url, opts);
+  }
+
+  async http_head(url: string, opts: HttpRequestOptions = {}): Promise<Response> {
+    return this.httpHead(url, opts);
+  }
+
+  private requireModelInterface<K extends keyof ProcessingContextModelInterfaces>(
+    name: K
+  ): NonNullable<ProcessingContextModelInterfaces[K]> {
+    const fn = this._modelInterfaces?.[name];
+    if (!fn) {
+      throw new Error(`ProcessingContext model interface '${String(name)}' is not configured`);
+    }
+    return fn as NonNullable<ProcessingContextModelInterfaces[K]>;
+  }
+
+  async getJob(jobId: string): Promise<unknown | null> {
+    const fn = this.requireModelInterface("getJob");
+    return fn({ userId: this.userId, jobId });
+  }
+
+  async get_job(jobId: string): Promise<unknown | null> {
+    return this.getJob(jobId);
+  }
+
+  async createAsset(args: {
+    name: string;
+    contentType: string;
+    content?: Uint8Array | null;
+    parentId?: string | null;
+    instructions?: Uint8Array | null;
+    nodeId?: string | null;
+  }): Promise<unknown> {
+    const fn = this.requireModelInterface("createAsset");
+    const content = args.content ?? args.instructions;
+    if (!content) {
+      throw new Error("Asset content is required");
+    }
+    return fn({
+      userId: this.userId,
+      workflowId: this.workflowId,
+      jobId: this.jobId,
+      name: args.name,
+      contentType: args.contentType,
+      content,
+      parentId: args.parentId ?? null,
+      nodeId: args.nodeId ?? null,
+    });
+  }
+
+  async create_asset(args: {
+    name: string;
+    contentType: string;
+    content?: Uint8Array | null;
+    parentId?: string | null;
+    instructions?: Uint8Array | null;
+    nodeId?: string | null;
+  }): Promise<unknown> {
+    return this.createAsset(args);
+  }
+
+  async createMessage(req: MessageCreateRequestLike): Promise<unknown> {
+    if (!req.thread_id) {
+      throw new Error("Thread ID is required");
+    }
+    const fn = this.requireModelInterface("createMessage");
+    return fn({ userId: this.userId, req });
+  }
+
+  async create_message(req: MessageCreateRequestLike): Promise<unknown> {
+    return this.createMessage(req);
+  }
+
+  async getThreadMessages(
+    threadId: string,
+    limit = 10,
+    startKey: string | null = null,
+    reverse = false
+  ): Promise<ThreadMessagesResultLike> {
+    const fn = this.requireModelInterface("getMessages");
+    return fn({
+      userId: this.userId,
+      threadId,
+      limit,
+      startKey,
+      reverse,
+    });
+  }
+
+  async get_messages(
+    thread_id: string,
+    limit = 10,
+    start_key: string | null = null,
+    reverse = false
+  ): Promise<ThreadMessagesResultLike> {
+    return this.getThreadMessages(thread_id, limit, start_key, reverse);
   }
 
   async assetsToDataUri(value: unknown): Promise<unknown> {

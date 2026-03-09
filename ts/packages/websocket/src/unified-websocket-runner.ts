@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { getSecret } from "@nodetool/security";
 import { pack, unpack } from "msgpackr";
 import { createLogger } from "@nodetool/config";
-import { WorkflowRunner, type NodeExecutor } from "@nodetool/kernel";
+import {
+  Graph,
+  WorkflowRunner,
+  type NodeExecutor,
+  type NodeTypeResolver,
+} from "@nodetool/kernel";
 import {
   Job,
   Message,
@@ -170,6 +175,7 @@ export interface UnifiedWebSocketRunnerOptions {
   defaultModel?: string;
   defaultProvider?: string;
   resolveExecutor: (node: { id: string; type: string; [key: string]: unknown }) => NodeExecutor;
+  resolveNodeType?: NodeTypeResolver;
   resolveProvider?: (providerId: string) => Promise<BaseProvider>;
   /** Resolve server-side Tool instances by name (for tool execution in chat). */
   resolveTools?: (toolNames: string[], userId: string) => Promise<Tool[]>;
@@ -186,6 +192,7 @@ export class UnifiedWebSocketRunner {
   private defaultModel: string;
   private defaultProvider: string;
   private resolveExecutor: UnifiedWebSocketRunnerOptions["resolveExecutor"];
+  private resolveNodeType?: UnifiedWebSocketRunnerOptions["resolveNodeType"];
   private resolveProvider?: UnifiedWebSocketRunnerOptions["resolveProvider"];
   private resolveTools?: UnifiedWebSocketRunnerOptions["resolveTools"];
   private getSystemStats: () => Record<string, unknown>;
@@ -271,6 +278,7 @@ export class UnifiedWebSocketRunner {
     this.defaultModel = options.defaultModel ?? "gpt-oss:20b";
     this.defaultProvider = options.defaultProvider ?? "ollama";
     this.resolveExecutor = options.resolveExecutor;
+    this.resolveNodeType = options.resolveNodeType;
     this.resolveProvider = options.resolveProvider;
     this.resolveTools = options.resolveTools;
     this.workspaceResolver = options.workspaceResolver;
@@ -395,6 +403,23 @@ export class UnifiedWebSocketRunner {
     return { nodes, edges: graph.edges };
   }
 
+  private async hydrateGraph(
+    graph: { nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> }
+  ): Promise<{ nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> }> {
+    const normalized = this.normalizeGraph(graph);
+    if (!this.resolveNodeType) {
+      return normalized;
+    }
+
+    const hydrated = await Graph.loadFromDict(normalized, {
+      resolver: this.resolveNodeType,
+    });
+    return {
+      nodes: [...hydrated.nodes] as unknown as Array<Record<string, unknown>>,
+      edges: [...hydrated.edges] as unknown as Array<Record<string, unknown>>,
+    };
+  }
+
   private async getWorkflowGraph(req: RunJobRequest): Promise<{ nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> }> {
     let graph: { nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> };
     if (req.graph) {
@@ -406,7 +431,7 @@ export class UnifiedWebSocketRunner {
     } else {
       throw new Error("workflow_id or graph is required");
     }
-    return this.normalizeGraph(graph);
+    return this.hydrateGraph(graph);
   }
 
   async runJob(req: RunJobRequest): Promise<void> {
@@ -1356,7 +1381,7 @@ export class UnifiedWebSocketRunner {
 
       // Detect message input names from raw graph (reads node.data) — matches Python
       const { messageName, messagesName } = this.detectMessageInputNames(rawGraph);
-      const graph = this.normalizeGraph(rawGraph);
+      const graph = await this.hydrateGraph(rawGraph);
       const messageInputName = (typeof data.workflow_message_input_name === "string" ? data.workflow_message_input_name : null)
         ?? messageName ?? "message";
       const messagesInputName = (typeof data.workflow_messages_input_name === "string" ? data.workflow_messages_input_name : null)

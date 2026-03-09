@@ -11,10 +11,13 @@ import {
   S3StorageAdapter,
   resolveWorkspacePath,
   type S3Client,
+  type MessageCreateRequestLike,
 } from "../src/context.js";
 import type { ProcessingMessage, NodeUpdate } from "@nodetool/protocol";
 import { BaseProvider } from "../src/providers/base-provider.js";
 import type { Message, ProviderStreamItem, StreamingAudioChunk } from "../src/providers/types.js";
+import { registerProvider } from "../src/providers/provider-registry.js";
+import { FakeProvider } from "../src/providers/fake-provider.js";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -91,6 +94,133 @@ describe("ProcessingContext – message queue", () => {
     });
     expect(ctx.getNodeStatuses().n1).toMatchObject({ type: "node_update", status: "running" });
     expect(ctx.getEdgeStatuses().e1).toMatchObject({ type: "edge_update", status: "active" });
+  });
+
+  it("supports Python-style message queue aliases", async () => {
+    const ctx = new ProcessingContext({ jobId: "j1" });
+    ctx.post_message({ type: "job_update", status: "running" });
+    expect(ctx.getMessages()).toHaveLength(1);
+    await expect(ctx.pop_message_async()).resolves.toMatchObject({
+      type: "job_update",
+      status: "running",
+    });
+    ctx.postMessage({ type: "job_update", status: "completed" });
+    ctx.clear_messages();
+    expect(ctx.getMessages()).toHaveLength(0);
+  });
+});
+
+describe("ProcessingContext – Python model interfaces", () => {
+  it("supports get_job via configured model interfaces", async () => {
+    const ctx = new ProcessingContext({ jobId: "j1", userId: "u1" });
+    ctx.setModelInterfaces({
+      getJob: async ({ userId, jobId }) => ({ id: jobId, user_id: userId }),
+    });
+
+    await expect(ctx.get_job("job-123")).resolves.toEqual({
+      id: "job-123",
+      user_id: "u1",
+    });
+  });
+
+  it("supports create_message and get_messages via configured model interfaces", async () => {
+    const created: MessageCreateRequestLike[] = [];
+    const ctx = new ProcessingContext({ jobId: "j1", userId: "u1" });
+    ctx.setModelInterfaces({
+      createMessage: async ({ req }) => {
+        created.push(req);
+        return { id: "m1", ...req };
+      },
+      getMessages: async ({ threadId, limit, startKey, reverse, userId }) => ({
+        messages: [
+          {
+            id: "m1",
+            thread_id: threadId,
+            user_id: userId,
+            role: "user",
+            content: "hello",
+          },
+        ],
+        next: startKey ?? (reverse ? "rev" : limit ? `limit:${limit}` : null),
+      }),
+    });
+
+    await expect(
+      ctx.create_message({
+        thread_id: "t1",
+        role: "user",
+        content: "hello",
+      })
+    ).resolves.toMatchObject({ id: "m1", thread_id: "t1" });
+    expect(created).toHaveLength(1);
+
+    await expect(ctx.get_messages("t1", 25, "cursor-1", true)).resolves.toEqual({
+      messages: [
+        {
+          id: "m1",
+          thread_id: "t1",
+          user_id: "u1",
+          role: "user",
+          content: "hello",
+        },
+      ],
+      next: "cursor-1",
+    });
+  });
+
+  it("supports create_asset and Python-style aliases", async () => {
+    const ctx = new ProcessingContext({
+      jobId: "j1",
+      userId: "u1",
+      workflowId: "w1",
+      modelInterfaces: {
+        createAsset: async (args) => ({
+          id: "a1",
+          name: args.name,
+          size: args.content.byteLength,
+          user_id: args.userId,
+          workflow_id: args.workflowId,
+          job_id: args.jobId,
+        }),
+      },
+    });
+
+    await expect(
+      ctx.create_asset({
+        name: "out.txt",
+        contentType: "text/plain",
+        content: new Uint8Array([1, 2, 3]),
+      })
+    ).resolves.toEqual({
+      id: "a1",
+      name: "out.txt",
+      size: 3,
+      user_id: "u1",
+      workflow_id: "w1",
+      job_id: "j1",
+    });
+  });
+
+  it("throws when required model interfaces are not configured", async () => {
+    const ctx = new ProcessingContext({ jobId: "j1", userId: "u1" });
+    await expect(ctx.get_job("j2")).rejects.toThrow("model interface 'getJob'");
+    await expect(
+      ctx.create_message({ thread_id: "t1", role: "user", content: "hello" })
+    ).rejects.toThrow("model interface 'createMessage'");
+    await expect(ctx.get_messages("t1")).rejects.toThrow("model interface 'getMessages'");
+  });
+
+  it("copies model interfaces and Python aliases", async () => {
+    const ctx = new ProcessingContext({
+      jobId: "j1",
+      userId: "u1",
+      modelInterfaces: {
+        getJob: async ({ jobId }) => ({ id: jobId }),
+      },
+    });
+
+    const cloned = ctx.copy();
+    await expect(cloned.get_job("j9")).resolves.toEqual({ id: "j9" });
   });
 });
 
@@ -1427,9 +1557,18 @@ describe("ProcessingContext – storage retrieve returns null on error", () => {
 });
 
 describe("ProcessingContext – getProvider with no resolver", () => {
-  it("throws when no resolver is configured", async () => {
+  it("falls back to the global provider registry", async () => {
+    const providerId = `fake-${Date.now()}`;
+    registerProvider(providerId, FakeProvider, { textResponse: "hello" });
     const ctx = new ProcessingContext({ jobId: "j1" });
-    await expect(ctx.getProvider("openai")).rejects.toThrow("No provider registered");
+    const provider = await ctx.getProvider(providerId);
+    expect(provider).toBeInstanceOf(FakeProvider);
+  });
+
+  it("resolves built-in providers from the default registry path", async () => {
+    const ctx = new ProcessingContext({ jobId: "j1" });
+    const provider = await ctx.getProvider("openai");
+    expect(provider.provider).toBe("openai");
   });
 });
 

@@ -577,11 +577,15 @@ describe("Node defaults coverage", () => {
 // ── RealtimeAgentNode ──────────────────────────────────────────────────────
 
 describe("RealtimeAgentNode", () => {
-  it("throws not implemented", async () => {
+  it("returns realtime fallback output", async () => {
     const node = new RealtimeAgentNode();
-    await expect(node.process({})).rejects.toThrow(
-      "RealtimeAgent is not yet implemented"
-    );
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse({
+        choices: [{ message: { content: "ok" } }],
+      }))
+      .mockResolvedValueOnce(jsonResponse({}));
+    const result = await node.process({ prompt: "hi", ...secrets });
+    expect(result.text).toBe("ok");
   });
 
   it("has correct nodeType", () => {
@@ -602,11 +606,14 @@ describe("RealtimeAgentNode", () => {
 // ── RealtimeTranscriptionNode ──────────────────────────────────────────────
 
 describe("RealtimeTranscriptionNode", () => {
-  it("throws not implemented", async () => {
+  it("returns transcription fallback output", async () => {
     const node = new RealtimeTranscriptionNode();
-    await expect(node.process({})).rejects.toThrow(
-      "RealtimeTranscription is not yet implemented"
-    );
+    mockFetch.mockResolvedValueOnce(jsonResponse({ text: "heard" }));
+    const result = await node.process({
+      chunk: { content: Buffer.from("wav").toString("base64") },
+      ...secrets,
+    });
+    expect(result.text).toBe("heard");
   });
 
   it("has correct nodeType", () => {

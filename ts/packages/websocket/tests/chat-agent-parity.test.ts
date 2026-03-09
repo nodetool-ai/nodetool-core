@@ -454,6 +454,7 @@ describe("dbMessageToProviderMessage filtering", () => {
 // Mock the @nodetool/agents module
 vi.mock("@nodetool/agents", () => {
   return {
+    Tool: class {},
     Agent: class MockAgent {
       options: any;
       _results: unknown = null;

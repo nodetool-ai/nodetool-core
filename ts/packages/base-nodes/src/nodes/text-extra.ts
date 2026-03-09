@@ -1,4 +1,5 @@
 import { BaseNode } from "@nodetool/node-sdk";
+import type { ProcessingContext } from "@nodetool/runtime";
 import { promises as fs } from "node:fs";
 import { extname, join } from "node:path";
 
@@ -18,6 +19,28 @@ function toTitleCase(value: string): string {
   return value.replace(/\w\S*/g, (txt) =>
     txt.charAt(0).toUpperCase() + txt.slice(1).toLowerCase()
   );
+}
+
+function folderPath(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  if (typeof record.path === "string") return record.path;
+  if (typeof record.uri === "string") {
+    return record.uri.startsWith("file://") ? record.uri.slice("file://".length) : record.uri;
+  }
+  return "";
+}
+
+function modelConfig(
+  inputs: Record<string, unknown>,
+  props: Record<string, unknown>
+): { providerId: string; modelId: string } {
+  const model = (inputs.model ?? props.model ?? {}) as Record<string, unknown>;
+  return {
+    providerId: typeof model.provider === "string" ? model.provider : "",
+    modelId: typeof model.id === "string" ? model.id : "",
+  };
 }
 
 export class SplitTextNode extends BaseNode {
@@ -981,9 +1004,44 @@ export class AutomaticSpeechRecognitionNode extends BaseNode {
     return { model: {}, audio: {} };
   }
 
-  async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async process(
+    inputs: Record<string, unknown>,
+    context?: ProcessingContext
+  ): Promise<Record<string, unknown>> {
+    const { providerId, modelId } = modelConfig(inputs, this._props);
+    const audio = (inputs.audio ?? this._props.audio ?? {}) as Record<string, unknown>;
+    let bytes = new Uint8Array();
+    if (typeof audio.data === "string") {
+      bytes = Uint8Array.from(Buffer.from(audio.data, "base64"));
+    } else if (audio.data instanceof Uint8Array) {
+      bytes = new Uint8Array(audio.data);
+    } else if (typeof audio.uri === "string" && audio.uri.startsWith("file://")) {
+      bytes = new Uint8Array(await fs.readFile(audio.uri.slice("file://".length)));
+    }
+
+    if (
+      context &&
+      typeof context.runProviderPrediction === "function" &&
+      providerId &&
+      modelId &&
+      bytes.length > 0
+    ) {
+      const text = (await context.runProviderPrediction({
+        provider: providerId,
+        capability: "automatic_speech_recognition",
+        model: modelId,
+        params: {
+          audio: bytes,
+          language: inputs.language ?? this._props.language,
+          prompt: inputs.prompt ?? this._props.prompt,
+          temperature: inputs.temperature ?? this._props.temperature,
+        },
+      })) as string;
+      return { text, output: text };
+    }
+
     throw new Error(
-      "AutomaticSpeechRecognition is not implemented in base TS nodes without provider runtime."
+      "AutomaticSpeechRecognition requires a provider-backed model and audio input."
     );
   }
 }
@@ -1117,11 +1175,17 @@ export class LoadTextAssetsNode extends BaseNode {
     return {};
   }
 
-  async *genProcess(): AsyncGenerator<Record<string, unknown>> {
-    yield* [];
-    throw new Error(
-      "LoadTextAssets is not implemented in base TS nodes without asset runtime."
-    );
+  async *genProcess(inputs: Record<string, unknown> = {}): AsyncGenerator<Record<string, unknown>> {
+    const folder = folderPath(inputs.folder ?? this._props.folder ?? "");
+    if (!folder) {
+      throw new Error("folder cannot be empty");
+    }
+
+    const walker = new LoadTextFolderNode();
+    walker.assign({ folder });
+    for await (const item of walker.genProcess({ folder })) {
+      yield item;
+    }
   }
 }
 

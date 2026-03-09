@@ -1,4 +1,5 @@
 import { BaseNode } from "@nodetool/node-sdk";
+import type { ProcessingContext } from "@nodetool/runtime";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
@@ -22,6 +23,24 @@ function audioBytes(audio: unknown): Uint8Array {
   if (!audio || typeof audio !== "object") return new Uint8Array();
   const ref = audio as AudioRefLike;
   if (ref.data) return toBytes(ref.data);
+  return new Uint8Array();
+}
+
+async function audioBytesAsync(audio: unknown): Promise<Uint8Array> {
+  if (!audio || typeof audio !== "object") return new Uint8Array();
+  const ref = audio as AudioRefLike;
+  if (ref.data) return toBytes(ref.data);
+  if (typeof ref.uri === "string" && ref.uri) {
+    try {
+      if (ref.uri.startsWith("file://")) {
+        return new Uint8Array(await fs.readFile(uriToPath(ref.uri)));
+      }
+      const response = await fetch(ref.uri);
+      return new Uint8Array(await response.arrayBuffer());
+    } catch {
+      return new Uint8Array();
+    }
+  }
   return new Uint8Array();
 }
 
@@ -58,6 +77,65 @@ function concatBytes(chunks: Uint8Array[]): Uint8Array {
     offset += c.length;
   }
   return out;
+}
+
+function getModelConfig(
+  inputs: Record<string, unknown>,
+  props: Record<string, unknown>
+): { providerId: string; modelId: string } {
+  const model = (inputs.model ?? props.model ?? {}) as Record<string, unknown>;
+  if (typeof model === "string") {
+    return { providerId: "", modelId: model };
+  }
+  return {
+    providerId: typeof model.provider === "string" ? model.provider : "",
+    modelId: typeof model.id === "string" ? model.id : "",
+  };
+}
+
+function hasProviderSupport(
+  context: ProcessingContext | undefined,
+  providerId: string,
+  modelId: string
+): context is ProcessingContext & {
+  runProviderPrediction: (req: Record<string, unknown>) => Promise<unknown>;
+  streamProviderPrediction: (req: Record<string, unknown>) => AsyncGenerator<unknown>;
+} {
+  return (
+    !!context &&
+    typeof context.runProviderPrediction === "function" &&
+    typeof context.streamProviderPrediction === "function" &&
+    !!providerId &&
+    !!modelId
+  );
+}
+
+function parseWavPcm16(bytes: Uint8Array): { samples: Int16Array; headerSize: number } | null {
+  if (bytes.length < 44) return null;
+  const header = Buffer.from(bytes);
+  if (header.toString("ascii", 0, 4) !== "RIFF" || header.toString("ascii", 8, 12) !== "WAVE") {
+    return null;
+  }
+  const dataOffset = 44;
+  const pcm = bytes.slice(dataOffset);
+  if (pcm.length % 2 !== 0) return null;
+  return {
+    samples: new Int16Array(pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength)),
+    headerSize: dataOffset,
+  };
+}
+
+function buildWavFromSamples(original: Uint8Array, samples: Int16Array, headerSize = 44): Uint8Array {
+  if (original.length >= headerSize) {
+    const out = new Uint8Array(headerSize + samples.byteLength);
+    out.set(original.slice(0, headerSize), 0);
+    out.set(new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength), headerSize);
+    const view = new DataView(out.buffer);
+    view.setUint32(4, out.length - 8, true);
+    view.setUint32(40, samples.byteLength, true);
+    return out;
+  }
+  return new Uint8Array(samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength));
 }
 
 export class LoadAudioAssetsNode extends BaseNode {
@@ -179,7 +257,22 @@ export class NormalizeAudioNode extends BaseNode {
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const audio = inputs.audio ?? this._props.audio;
-    return { output: audioRefFromBytes(audioBytes(audio)) };
+    const bytes = await audioBytesAsync(audio);
+    const wav = parseWavPcm16(bytes);
+    if (!wav || wav.samples.length === 0) {
+      return { output: audioRefFromBytes(bytes) };
+    }
+
+    let peak = 0;
+    for (const sample of wav.samples) peak = Math.max(peak, Math.abs(sample));
+    if (peak === 0) return { output: audioRefFromBytes(bytes) };
+
+    const gain = 32767 / peak;
+    const normalized = new Int16Array(wav.samples.length);
+    for (let i = 0; i < wav.samples.length; i += 1) {
+      normalized[i] = Math.max(-32768, Math.min(32767, Math.round(wav.samples[i] * gain)));
+    }
+    return { output: audioRefFromBytes(buildWavFromSamples(bytes, normalized, wav.headerSize)) };
   }
 }
 
@@ -496,8 +589,34 @@ export class TextToSpeechNode extends BaseNode {
     return { text: "", model: null, voice: "", speed: 1 };
   }
 
-  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async process(
+    inputs: Record<string, unknown>,
+    context?: ProcessingContext
+  ): Promise<Record<string, unknown>> {
     const text = String(inputs.text ?? this._props.text ?? "");
+    const { providerId, modelId } = getModelConfig(inputs, this._props);
+    if (hasProviderSupport(context, providerId, modelId)) {
+      const chunks: Uint8Array[] = [];
+      for await (const item of context.streamProviderPrediction({
+        provider: providerId,
+        capability: "text_to_speech",
+        model: modelId,
+        params: {
+          text,
+          voice: inputs.voice ?? this._props.voice,
+          speed: inputs.speed ?? this._props.speed,
+        },
+      })) {
+        const piece = item as { samples?: Int16Array };
+        if (piece.samples instanceof Int16Array) {
+          chunks.push(new Uint8Array(piece.samples.buffer.slice(
+            piece.samples.byteOffset,
+            piece.samples.byteOffset + piece.samples.byteLength
+          )));
+        }
+      }
+      return { output: audioRefFromBytes(concatBytes(chunks)) };
+    }
     const bytes = Uint8Array.from(Buffer.from(text, "utf8"));
     return { output: audioRefFromBytes(bytes) };
   }

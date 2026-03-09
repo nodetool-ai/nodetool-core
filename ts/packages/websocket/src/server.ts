@@ -12,7 +12,7 @@ import { homedir } from "node:os";
 import { existsSync, readdirSync } from "node:fs";
 import { createLogger } from "@nodetool/config";
 import { WebSocketServer } from "ws";
-import { NodeRegistry } from "@nodetool/node-sdk";
+import { NodeRegistry, createGraphNodeTypeResolver } from "@nodetool/node-sdk";
 import { registerBaseNodes } from "@nodetool/base-nodes";
 import {
   AnthropicProvider,
@@ -171,6 +171,7 @@ log.info("Metadata roots", { roots: metadataRoots });
 const registry = new NodeRegistry();
 registry.loadPythonMetadata({ roots: metadataRoots, maxDepth: 8 });
 registerBaseNodes(registry);
+const graphNodeTypeResolver = createGraphNodeTypeResolver(registry);
 
 // ---------------------------------------------------------------------------
 // Built-in tool registry for chat tool execution
@@ -309,6 +310,7 @@ server.on("upgrade", (request, socket, head) => {
     });
     const runner = new UnifiedWebSocketRunner({
       resolveExecutor: (node) => registry.resolve(node),
+      resolveNodeType: graphNodeTypeResolver,
       resolveProvider,
       resolveTools,
     });

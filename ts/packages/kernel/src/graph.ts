@@ -78,16 +78,6 @@ function nodeTypeToJsonSchema(typeStr: string | undefined): string {
   }
 }
 
-function toTypeString(typeMeta: unknown): string | undefined {
-  if (!typeMeta || typeof typeMeta !== "object") return undefined;
-  const meta = typeMeta as { type?: unknown; type_args?: unknown };
-  if (typeof meta.type !== "string") return undefined;
-  const args = Array.isArray(meta.type_args)
-    ? meta.type_args.map((arg) => toTypeString(arg)).filter((arg): arg is string => !!arg)
-    : [];
-  return args.length > 0 ? `${meta.type}[${args.join(", ")}]` : meta.type;
-}
-
 function resolveNodeTypeWith(
   resolver: NodeTypeResolver,
   nodeType: string,

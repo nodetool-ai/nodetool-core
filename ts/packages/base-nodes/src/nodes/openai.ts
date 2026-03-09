@@ -518,7 +518,7 @@ export class RealtimeAgentNode extends BaseNode {
   static readonly nodeType = "openai.agents.RealtimeAgent";
   static readonly title = "Realtime Agent";
   static readonly description =
-    "Stream responses using OpenAI Realtime API with optional audio input and text output. (WebSocket-based — not yet implemented in TS runtime.)";
+    "Generate a low-latency text response with optional audio transcription and synthesized speech using OpenAI APIs.";
 
   defaults() {
     return {
@@ -531,11 +531,83 @@ export class RealtimeAgentNode extends BaseNode {
     };
   }
 
-  async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    throw new Error(
-      "RealtimeAgent is not yet implemented in the TS runtime. " +
-        "It requires WebSocket-based streaming which is only available in the Python runtime."
-    );
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const apiKey = getApiKey(inputs);
+    const system = String(inputs.system ?? this._props.system ?? "");
+    const voice = String(inputs.voice ?? this._props.voice ?? "alloy");
+    const speed = Number(inputs.speed ?? this._props.speed ?? 1);
+    const model = String(inputs.model ?? this._props.model ?? "gpt-4o-mini-realtime-preview");
+    const chunk = (inputs.chunk ?? this._props.chunk ?? {}) as Record<string, unknown>;
+
+    let userText = "";
+    if (typeof chunk.content === "string" && chunk.content) {
+      if (chunk.content_type === "audio") {
+        const formData = new FormData();
+        const audioBytes = Buffer.from(chunk.content, "base64");
+        formData.append("file", new Blob([audioBytes]), "audio.wav");
+        formData.append("model", "gpt-4o-mini-transcribe");
+        const transcription = await fetch(`${OPENAI_API_BASE}/audio/transcriptions`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}` },
+          body: formData,
+        });
+        if (!transcription.ok) {
+          const err = await transcription.text();
+          throw new Error(`OpenAI realtime transcription error ${transcription.status}: ${err}`);
+        }
+        const transcriptionJson = (await transcription.json()) as { text?: string };
+        userText = transcriptionJson.text ?? "";
+      } else {
+        userText = chunk.content;
+      }
+    }
+
+    const res = await fetch(`${OPENAI_API_BASE}/chat/completions`, {
+      method: "POST",
+      headers: authHeaders(apiKey),
+      body: JSON.stringify({
+        model: model.replace("-realtime-preview", ""),
+        temperature: Number(inputs.temperature ?? this._props.temperature ?? 0.8),
+        messages: [
+          ...(system ? [{ role: "system", content: system }] : []),
+          { role: "user", content: userText || String(inputs.prompt ?? "") || "" },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`OpenAI RealtimeAgent fallback error ${res.status}: ${err}`);
+    }
+    const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    const text = String(data.choices?.[0]?.message?.content ?? "");
+
+    let audio: Record<string, unknown> | null = null;
+    if (voice && voice !== "none" && text) {
+      const tts = await fetch(`${OPENAI_API_BASE}/audio/speech`, {
+        method: "POST",
+        headers: authHeaders(apiKey),
+        body: JSON.stringify({
+          model: "gpt-4o-mini-tts",
+          input: text,
+          voice,
+          speed,
+          response_format: "mp3",
+        }),
+      });
+      if (tts.ok) {
+        const audioBytes = await tts.arrayBuffer();
+        audio = { data: `data:audio/mp3;base64,${Buffer.from(audioBytes).toString("base64")}` };
+      }
+    }
+
+    return {
+      text,
+      output: text,
+      chunk: text
+        ? { type: "chunk", content_type: "text", content: text, done: true }
+        : null,
+      audio,
+    };
   }
 }
 
@@ -546,7 +618,7 @@ export class RealtimeTranscriptionNode extends BaseNode {
   static readonly nodeType = "openai.agents.RealtimeTranscription";
   static readonly title = "Realtime Transcription";
   static readonly description =
-    "Stream microphone or audio input to OpenAI Realtime and emit transcription. (WebSocket-based — not yet implemented in TS runtime.)";
+    "Transcribe microphone or audio input using OpenAI speech-to-text APIs.";
 
   defaults() {
     return {
@@ -556,11 +628,45 @@ export class RealtimeTranscriptionNode extends BaseNode {
     };
   }
 
-  async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    throw new Error(
-      "RealtimeTranscription is not yet implemented in the TS runtime. " +
-        "It requires WebSocket-based streaming which is only available in the Python runtime."
+  async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const apiKey = getApiKey(inputs);
+    const chunk = (inputs.chunk ?? this._props.chunk ?? inputs.audio ?? {}) as Record<string, unknown>;
+    const content =
+      typeof chunk.content === "string"
+        ? chunk.content
+        : typeof chunk.data === "string"
+          ? chunk.data
+          : "";
+    if (!content) {
+      return { text: "", chunk: null, output: "" };
+    }
+
+    const formData = new FormData();
+    formData.append("file", new Blob([Buffer.from(content, "base64")]), "audio.wav");
+    formData.append(
+      "model",
+      String((inputs.model as Record<string, unknown> | undefined)?.id ?? inputs.model ?? "gpt-4o-mini-transcribe")
     );
+    if (inputs.system ?? this._props.system) {
+      formData.append("prompt", String(inputs.system ?? this._props.system ?? ""));
+    }
+
+    const res = await fetch(`${OPENAI_API_BASE}/audio/transcriptions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`OpenAI RealtimeTranscription fallback error ${res.status}: ${err}`);
+    }
+    const data = (await res.json()) as { text?: string };
+    const text = data.text ?? "";
+    return {
+      text,
+      output: text,
+      chunk: text ? { type: "chunk", content_type: "text", content: text, done: true } : null,
+    };
   }
 }
 

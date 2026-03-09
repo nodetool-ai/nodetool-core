@@ -302,15 +302,27 @@ describe("TranscribeNode", () => {
 // ── Stubs ─────────────────────────────────────────────────────────────────
 
 describe("RealtimeAgentNode", () => {
-  it("throws not implemented", async () => {
+  it("returns realtime fallback output", async () => {
     const node = new RealtimeAgentNode();
-    await expect(node.process({})).rejects.toThrow("not yet implemented");
+    globalThis.fetch = (
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse({ choices: [{ message: { content: "ok" } }] }))
+        .mockResolvedValueOnce(jsonResponse({}))
+    ) as any;
+    const result = await node.process({ prompt: "hello", ...secrets });
+    expect(result.text).toBe("ok");
   });
 });
 
 describe("RealtimeTranscriptionNode", () => {
-  it("throws not implemented", async () => {
+  it("returns transcription fallback output", async () => {
     const node = new RealtimeTranscriptionNode();
-    await expect(node.process({})).rejects.toThrow("not yet implemented");
+    globalThis.fetch = vi.fn().mockResolvedValueOnce(jsonResponse({ text: "heard" })) as any;
+    const result = await node.process({
+      chunk: { content: Buffer.from("wav").toString("base64") },
+      ...secrets,
+    });
+    expect(result.text).toBe("heard");
   });
 });

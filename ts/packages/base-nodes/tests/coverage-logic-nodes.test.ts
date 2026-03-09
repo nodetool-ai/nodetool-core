@@ -1387,10 +1387,12 @@ describe("text-extra coverage", () => {
     });
   });
 
-  it("AutomaticSpeechRecognitionNode defaults and throws", async () => {
+  it("AutomaticSpeechRecognitionNode defaults and requires provider-backed execution", async () => {
     const node = new AutomaticSpeechRecognitionNode();
     expect(node.defaults()).toEqual({ model: {}, audio: {} });
-    await expect(run(AutomaticSpeechRecognitionNode, {})).rejects.toThrow("not implemented");
+    await expect(run(AutomaticSpeechRecognitionNode, {})).rejects.toThrow(
+      "provider-backed model"
+    );
   });
 
   it("EmbeddingTextNode defaults", async () => {
@@ -1474,12 +1476,16 @@ describe("text-extra coverage", () => {
       .rejects.toThrow("folder cannot be empty");
   });
 
-  it("LoadTextAssetsNode defaults, process, and genProcess throw", async () => {
+  it("LoadTextAssetsNode defaults, process, and delegates to folder loading", async () => {
     const node = new LoadTextAssetsNode();
     expect(node.defaults()).toEqual({ folder: {} });
     expect(await node.process({})).toEqual({});
-    await expect(collectGen(LoadTextAssetsNode, {}))
-      .rejects.toThrow("not implemented");
+    const tmp = join(tmpdir(), `loadassets-${Date.now()}`);
+    await fs.mkdir(tmp, { recursive: true });
+    await fs.writeFile(join(tmp, "a.txt"), "asset-a", "utf-8");
+    const items = await collectGen(LoadTextAssetsNode, { folder: { path: tmp } });
+    expect(items).toHaveLength(1);
+    await fs.rm(tmp, { recursive: true });
   });
 
   it("FilterStringNode defaults, initialize, all filter types", async () => {

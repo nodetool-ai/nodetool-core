@@ -6,7 +6,7 @@ import path from "node:path";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { WebSocketServer } from "ws";
-import { NodeRegistry } from "@nodetool/node-sdk";
+import { NodeRegistry, createGraphNodeTypeResolver } from "@nodetool/node-sdk";
 import { registerBaseNodes } from "@nodetool/base-nodes";
 import { UnifiedWebSocketRunner, type WebSocketConnection } from "./unified-websocket-runner.js";
 import { ScriptedProvider, autoScript } from "@nodetool/runtime";
@@ -1098,6 +1098,7 @@ export function createTestUiServer(options: TestUiServerOptions = {}) {
   const registry = new NodeRegistry();
   registry.loadPythonMetadata({ roots: metadataRoots, maxDepth: options.metadataMaxDepth ?? 8 });
   registerBaseNodes(registry);
+  const graphNodeTypeResolver = createGraphNodeTypeResolver(registry);
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", `http://${host}:${port}`);
@@ -1168,6 +1169,7 @@ export function createTestUiServer(options: TestUiServerOptions = {}) {
       });
       const runner = new UnifiedWebSocketRunner({
         resolveExecutor: (node) => registry.resolve(node),
+        resolveNodeType: graphNodeTypeResolver,
         resolveProvider: async (_providerId) => new ScriptedProvider([
           autoScript({
             plan: {
