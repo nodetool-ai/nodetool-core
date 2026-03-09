@@ -10,6 +10,7 @@ from nodetool.metadata.types import (
     AssetRef,
     AudioRef,
     DataframeRef,
+    HtmlRef,
     ImageRef,
     JSONRef,
     SVGRef,
@@ -98,6 +99,7 @@ class TestGetContentTypeForAssetRef:
             (ImageRef(uri="test://"), "image/png"),
             (AudioRef(uri="test://"), "audio/wav"),
             (VideoRef(uri="test://"), "video/mp4"),
+            (HtmlRef(uri="test://"), "text/html"),
             (TextRef(uri="test://"), "text/plain"),
             (DataframeRef(uri="test://"), "application/json"),
             (JSONRef(uri="test://"), "application/json"),
@@ -387,6 +389,14 @@ class TestObjectToBytes:
         result = object_to_bytes("hello world", asset)
 
         assert result == b"hello world"
+
+    def test_convert_html_string_to_bytes(self):
+        """Test converting string to bytes for HtmlRef."""
+        asset = HtmlRef(uri="test://")
+
+        result = object_to_bytes("<p>hello world</p>", asset)
+
+        assert result == b"<p>hello world</p>"
 
     def test_convert_bytes_passthrough(self):
         """Test that bytes are passed through unchanged."""

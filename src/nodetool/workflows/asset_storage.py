@@ -13,30 +13,22 @@ import logging
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote, urlparse
+from urllib.request import url2pathname
 
 import httpx
 
-from nodetool.metadata.types import (
-    AssetRef,
-    AudioRef,
-    DataframeRef,
-    DocumentRef,
-    ExcelRef,
-    FolderRef,
-    HtmlRef,
-    ImageRef,
-    JSONRef,
-    Model3DRef,
-    SVGRef,
-    TextRef,
-    VideoRef,
-)
+from nodetool.metadata.types import AssetRef
 
 if TYPE_CHECKING:
     from nodetool.workflows.base_node import BaseNode
     from nodetool.workflows.processing_context import ProcessingContext
 
 logger = logging.getLogger(__name__)
+
+
+def _asset_type_name(asset_ref: AssetRef) -> str:
+    """Return the nodetool asset type name without importing all subclasses."""
+    return str(getattr(asset_ref, "type", "") or "")
 
 
 def find_asset_refs(obj: Any, path: str = "") -> list[tuple[str, AssetRef]]:
@@ -74,24 +66,27 @@ def get_content_type_for_asset_ref(asset_ref: AssetRef) -> str:
     Returns:
         MIME content type string
     """
-    if isinstance(asset_ref, ImageRef):
+    asset_type = _asset_type_name(asset_ref)
+
+    if asset_type == "image":
         return "image/png"
-    elif isinstance(asset_ref, AudioRef):
+    elif asset_type == "audio":
         return "audio/wav"
-    elif isinstance(asset_ref, VideoRef):
+    elif asset_type == "video":
         return "video/mp4"
-    elif isinstance(asset_ref, HtmlRef):
+    elif asset_type == "html":
         return "text/html"
-    elif isinstance(asset_ref, TextRef):
+    elif asset_type == "text":
         return "text/plain"
-    elif isinstance(asset_ref, DocumentRef):
+    elif asset_type == "document":
         return "application/pdf"
-    elif isinstance(asset_ref, DataframeRef):
+    elif asset_type == "dataframe":
         return "application/json"
-    elif isinstance(asset_ref, ExcelRef):
+    elif asset_type == "excel":
         return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    elif isinstance(asset_ref, Model3DRef):
-        if asset_ref.format:
+    elif asset_type == "model_3d":
+        model_format = getattr(asset_ref, "format", None)
+        if model_format:
             _3d_format_to_content_type = {
                 "glb": "model/gltf-binary",
                 "gltf": "model/gltf+json",
@@ -101,13 +96,13 @@ def get_content_type_for_asset_ref(asset_ref: AssetRef) -> str:
                 "fbx": "application/octet-stream+fbx",
                 "usdz": "model/vnd.usdz+zip",
             }
-            return _3d_format_to_content_type.get(asset_ref.format, "model/gltf-binary")
+            return _3d_format_to_content_type.get(model_format, "model/gltf-binary")
         return "model/gltf-binary"
-    elif isinstance(asset_ref, FolderRef):
+    elif asset_type == "folder":
         return "folder"
-    elif isinstance(asset_ref, JSONRef):
+    elif asset_type == "json":
         return "application/json"
-    elif isinstance(asset_ref, SVGRef):
+    elif asset_type == "svg":
         return "image/svg+xml"
     else:
         return "application/octet-stream"
@@ -167,7 +162,9 @@ def object_to_bytes(obj: Any, asset_ref: AssetRef) -> bytes | None:
     Returns:
         Bytes representation of the object, or None if conversion failed
     """
-    if isinstance(asset_ref, ImageRef):
+    asset_type = _asset_type_name(asset_ref)
+
+    if asset_type == "image":
         # Handle PIL Image
         try:
             from PIL import Image
@@ -179,7 +176,7 @@ def object_to_bytes(obj: Any, asset_ref: AssetRef) -> bytes | None:
         except Exception as e:
             logger.debug(f"Failed to convert image object: {e}")
 
-    elif isinstance(asset_ref, AudioRef):
+    elif asset_type == "audio":
         # Handle AudioSegment
         try:
             from pydub import AudioSegment
@@ -191,12 +188,12 @@ def object_to_bytes(obj: Any, asset_ref: AssetRef) -> bytes | None:
         except Exception as e:
             logger.debug(f"Failed to convert audio object: {e}")
 
-    elif isinstance(asset_ref, TextRef):
+    elif asset_type in {"text", "html"}:
         # Handle string
         if isinstance(obj, str):
             return obj.encode("utf-8")
 
-    elif isinstance(asset_ref, DataframeRef):
+    elif asset_type == "dataframe":
         # Handle pandas DataFrame
         try:
             import pandas as pd
@@ -223,11 +220,13 @@ def convert_asset_data_to_bytes(asset_ref: AssetRef, path: str) -> BytesIO | Non
     Returns:
         BytesIO containing the data, or None if conversion failed
     """
-    if isinstance(asset_ref, DataframeRef):
+    asset_type = _asset_type_name(asset_ref)
+
+    if asset_type == "dataframe":
         # Convert DataFrame data to JSON bytes
         json_str = json.dumps(asset_ref.data)
         return BytesIO(json_str.encode("utf-8"))
-    elif isinstance(asset_ref, (JSONRef, SVGRef)):
+    elif asset_type in {"json", "svg", "text", "html"}:
         # JSONRef and SVGRef have string data
         if isinstance(asset_ref.data, str):
             return BytesIO(asset_ref.data.encode("utf-8"))
@@ -309,8 +308,24 @@ def read_file_uri(uri: str, path: str) -> BytesIO | None:
     """
     try:
         parsed = urlparse(uri)
-        # Handle both file:///path and file://localhost/path
-        file_path = unquote(parsed.path)
+        raw_netloc = unquote(parsed.netloc or "")
+        raw_path = unquote(parsed.path or "")
+
+        # Handle Windows drive-letter URIs like file://C:\path or file://C:/path,
+        # standard file:///C:/path URIs, localhost, and UNC paths.
+        if raw_netloc and raw_netloc.lower() != "localhost":
+            if raw_path:
+                file_path = f"{raw_netloc}{raw_path}" if raw_netloc.endswith(":") else f"//{raw_netloc}{raw_path}"
+            else:
+                file_path = raw_netloc
+        else:
+            file_path = raw_path
+
+        file_path = url2pathname(file_path)
+
+        if len(file_path) >= 3 and file_path[0] == "/" and file_path[2] == ":":
+            file_path = file_path[1:]
+
         with open(file_path, "rb") as f:
             return BytesIO(f.read())
     except OSError as file_err:
