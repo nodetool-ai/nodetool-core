@@ -351,6 +351,32 @@ class TestAutoSaveAssets:
         assert asset.uri == "asset://saved-asset-id.png"
 
     @pytest.mark.asyncio
+    async def test_auto_save_uses_source_filename_from_uri(self):
+        """Test auto-save preserves basename from source URI when available."""
+        node = MagicMock()
+        node.get_title.return_value = "TestNode"
+        node._id = "abc12345"
+
+        asset = VideoRef(uri="https://fal.media/files/kangaroo/abc123xyz.mp4")
+        result = {"output": asset}
+
+        context = MagicMock()
+        mock_asset = MagicMock()
+        mock_asset.id = "saved-asset-id"
+        context.create_asset = AsyncMock(return_value=mock_asset)
+
+        with patch(
+            "nodetool.workflows.asset_storage.resolve_asset_content",
+            new=AsyncMock(return_value=BytesIO(b"video bytes")),
+        ):
+            await auto_save_assets(node, result, context)
+
+        context.create_asset.assert_called_once()
+        assert context.create_asset.await_args.kwargs["name"] == "abc123xyz.mp4"
+        assert asset.asset_id == "saved-asset-id"
+        assert asset.uri == "asset://saved-asset-id.mp4"
+
+    @pytest.mark.asyncio
     async def test_skip_already_saved_asset(self):
         """Test that assets with asset_id are skipped."""
         node = MagicMock()

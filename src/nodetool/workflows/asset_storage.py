@@ -10,6 +10,7 @@ import base64
 import binascii
 import json
 import logging
+import os
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote, urlparse
@@ -29,6 +30,18 @@ logger = logging.getLogger(__name__)
 def _asset_type_name(asset_ref: AssetRef) -> str:
     """Return the nodetool asset type name without importing all subclasses."""
     return str(getattr(asset_ref, "type", "") or "")
+
+
+def _derive_asset_name(node: "BaseNode", path: str, asset_ref: AssetRef) -> str:
+    """Prefer a readable filename from the source URI when available."""
+    uri = getattr(asset_ref, "uri", "") or ""
+    if uri.startswith(("http://", "https://", "file://")):
+        parsed = urlparse(uri)
+        basename = os.path.basename(unquote(parsed.path or ""))
+        if basename:
+            return basename
+
+    return f"{node.get_title()}_{path}_{node._id[:8]}"
 
 
 def find_asset_refs(obj: Any, path: str = "") -> list[tuple[str, AssetRef]]:
@@ -460,7 +473,7 @@ async def auto_save_assets(
                 continue
 
             # Generate asset name
-            asset_name = f"{node.get_title()}_{path}_{node._id[:8]}"
+            asset_name = _derive_asset_name(node, path, asset_ref)
 
             # Create and save the asset
             asset = await context.create_asset(
