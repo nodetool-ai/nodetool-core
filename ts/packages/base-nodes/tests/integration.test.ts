@@ -6,6 +6,8 @@ import {
   registerBaseNodes,
   IfNode,
   ForEachNode,
+  CollectNode,
+  OutputNode,
   RerouteNode,
   ListRangeNode,
   GenerateSequenceNode,
@@ -60,7 +62,7 @@ describe("integration: If node with input source", () => {
 });
 
 describe("integration: ForEach node streaming output", () => {
-  it("streams all items from generated range", async () => {
+  it("collects all items from generated range", async () => {
     const nodes: NodeDescriptor[] = [
       { id: "trigger", type: "test.Input", name: "start" },
       {
@@ -69,7 +71,8 @@ describe("integration: ForEach node streaming output", () => {
         properties: { stop: 4, step: 1 },
       },
       { id: "each", type: ForEachNode.nodeType, is_streaming_output: true },
-      { id: "sink", type: RerouteNode.nodeType, name: "values" },
+      { id: "collect", type: CollectNode.nodeType },
+      { id: "sink", type: OutputNode.nodeType, name: "values" },
     ];
 
     const edges: Edge[] = [
@@ -88,8 +91,14 @@ describe("integration: ForEach node streaming output", () => {
       {
         source: "each",
         sourceHandle: "output",
+        target: "collect",
+        targetHandle: "input_item",
+      },
+      {
+        source: "collect",
+        sourceHandle: "output",
         target: "sink",
-        targetHandle: "input_value",
+        targetHandle: "value",
       },
     ];
 
@@ -99,12 +108,12 @@ describe("integration: ForEach node streaming output", () => {
     );
 
     expect(result.status).toBe("completed");
-    expect(result.outputs.values).toEqual([3]);
+    expect(result.outputs.values).toEqual([[1, 2, 3]]);
   });
 });
 
 describe("integration: GenerateSequence streaming output", () => {
-  it("streams sequence values to sink", async () => {
+  it("collects sequence values at the sink", async () => {
     const nodes: NodeDescriptor[] = [
       { id: "trigger", type: "test.Input", name: "start" },
       {
@@ -113,7 +122,8 @@ describe("integration: GenerateSequence streaming output", () => {
         is_streaming_output: true,
         properties: { stop: 4, step: 1 },
       },
-      { id: "sink", type: RerouteNode.nodeType, name: "values" },
+      { id: "collect", type: CollectNode.nodeType },
+      { id: "sink", type: OutputNode.nodeType, name: "values" },
     ];
     const edges: Edge[] = [
       {
@@ -125,8 +135,14 @@ describe("integration: GenerateSequence streaming output", () => {
       {
         source: "seq",
         sourceHandle: "output",
+        target: "collect",
+        targetHandle: "input_item",
+      },
+      {
+        source: "collect",
+        sourceHandle: "output",
         target: "sink",
-        targetHandle: "input_value",
+        targetHandle: "value",
       },
     ];
 
@@ -136,6 +152,6 @@ describe("integration: GenerateSequence streaming output", () => {
     );
 
     expect(result.status).toBe("completed");
-    expect(result.outputs.values).toEqual([3]);
+    expect(result.outputs.values).toEqual([[1, 2, 3]]);
   });
 });
