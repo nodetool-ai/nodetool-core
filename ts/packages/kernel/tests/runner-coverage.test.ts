@@ -384,7 +384,7 @@ describe("WorkflowRunner – edge without id", () => {
 });
 
 describe("WorkflowRunner – repeated runs on the same instance", () => {
-  it("accumulates output history and messages across runs", async () => {
+  it("starts each run with fresh outputs and messages", async () => {
     const nodes: NodeDescriptor[] = [
       { id: "input", type: "test.Input", name: "x" },
       { id: "output", type: "test.Output", name: "result" },
@@ -415,9 +415,9 @@ describe("WorkflowRunner – repeated runs on the same instance", () => {
 
     expect(firstOutputs.result).toEqual([1]);
     expect(firstMessageValues).toEqual([1]);
-    expect(second.outputs.result).toEqual([1, 2]);
+    expect(second.outputs.result).toEqual([2]);
     expect(
       second.messages.filter((message) => message.type === "output_update").map((message) => message.value),
-    ).toEqual([1, 2]);
+    ).toEqual([2]);
   });
 });

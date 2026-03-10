@@ -198,6 +198,8 @@ export class WorkflowRunner {
    * Execute a workflow graph.
    */
   async run(request: RunJobRequest, graphData: { nodes: NodeDescriptor[]; edges: Edge[] }): Promise<RunResult> {
+    this._resetRunState();
+
     try {
       log.info("Workflow started", { jobId: request.job_id, workflowId: request.workflow_id });
       this._graph = new Graph(graphData);
@@ -272,6 +274,18 @@ export class WorkflowRunner {
         error: message,
       };
     }
+  }
+
+  private _resetRunState(): void {
+    this._inboxes = new Map();
+    this._edgeCounters = new Map();
+    this._streamingEdges = new Map();
+    this._controlEdgesRouted = new Set();
+    this._multiEdgeListInputs = new Map();
+    this._outputs = new Map();
+    this._messages = [];
+    this._cancelled = false;
+    this._pendingControlResponses = new Map();
   }
 
   /**
