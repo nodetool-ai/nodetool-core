@@ -382,3 +382,42 @@ describe("WorkflowRunner – edge without id", () => {
     expect(edgeMsgs.length).toBeGreaterThan(0);
   });
 });
+
+describe("WorkflowRunner – repeated runs on the same instance", () => {
+  it("accumulates output history and messages across runs", async () => {
+    const nodes: NodeDescriptor[] = [
+      { id: "input", type: "test.Input", name: "x" },
+      { id: "output", type: "test.Output", name: "result" },
+    ];
+    const edges: Edge[] = [
+      { source: "input", sourceHandle: "value", target: "output", targetHandle: "value" },
+    ];
+
+    const runner = new WorkflowRunner("test-repeat", {
+      resolveExecutor: () =>
+        simpleExecutor((inputs) => ({
+          value: inputs.value,
+        })),
+    });
+
+    const first = await runner.run(
+      { job_id: "repeat-1", params: { x: 1 } },
+      { nodes, edges },
+    );
+    const firstOutputs = structuredClone(first.outputs);
+    const firstMessageValues = first.messages
+      .filter((message) => message.type === "output_update")
+      .map((message) => message.value);
+    const second = await runner.run(
+      { job_id: "repeat-2", params: { x: 2 } },
+      { nodes, edges },
+    );
+
+    expect(firstOutputs.result).toEqual([1]);
+    expect(firstMessageValues).toEqual([1]);
+    expect(second.outputs.result).toEqual([1, 2]);
+    expect(
+      second.messages.filter((message) => message.type === "output_update").map((message) => message.value),
+    ).toEqual([1, 2]);
+  });
+});
