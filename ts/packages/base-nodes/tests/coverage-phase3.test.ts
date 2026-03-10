@@ -498,7 +498,7 @@ describe("data nodes", () => {
     const out = res.output as { rows: any[] };
     expect(out.rows.length).toBe(2);
     expect(out.rows[0].name).toBe("Alice");
-    expect(out.rows[0].age).toBe("30");
+    expect(out.rows[0].age).toBe(30);
   });
 
   it("ImportCSVNode handles empty CSV", async () => {
@@ -976,8 +976,7 @@ describe("data FillNANode", () => {
       method: "mean",
     });
     const out = res.output as { rows: any[] };
-    // null -> Number(null) = 0, so values are [1, 0, 5], mean = 2
-    expect(out.rows[1].x).toBe(2);
+    expect(out.rows[1].x).toBe(3);
   });
 
   it("fills with median", async () => {
@@ -986,8 +985,7 @@ describe("data FillNANode", () => {
       method: "median",
     });
     const out = res.output as { rows: any[] };
-    // null -> Number(null) = 0, so values are [0, 1, 5], median = 1
-    expect(out.rows[1].x).toBe(1);
+    expect(out.rows[1].x).toBe(3);
   });
 
   it("fills specific columns", async () => {

@@ -2164,8 +2164,7 @@ describe("data.ts gaps", () => {
       dataframe: df([{ x: 10 }, { x: null }, { x: 20 }]),
       method: "mean",
     });
-    // toNumber(null)=0, so nums=[10,0,20], mean=10
-    expect((res.output as any).rows[1].x).toBe(10);
+    expect((res.output as any).rows[1].x).toBe(15);
   });
 
   it("FillNA median method", async () => {
@@ -2173,8 +2172,7 @@ describe("data.ts gaps", () => {
       dataframe: df([{ x: 10 }, { x: null }, { x: 20 }, { x: 30 }]),
       method: "median",
     });
-    // toNumber(null)=0, nums=[10,0,20,30], sorted=[0,10,20,30], median=15
-    expect((res.output as any).rows[1].x).toBe(15);
+    expect((res.output as any).rows[1].x).toBe(20);
   });
 
   it("FillNA unknown method throws", async () => {

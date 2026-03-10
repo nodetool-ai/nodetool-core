@@ -90,8 +90,8 @@ describe("data nodes", () => {
       });
       const out = result.output as DF;
       expect(out.rows).toHaveLength(2);
-      expect(out.rows[0]).toEqual({ name: "Alice", age: "30" });
-      expect(out.rows[1]).toEqual({ name: "Bob", age: "25" });
+      expect(out.rows[0]).toEqual({ name: "Alice", age: 30 });
+      expect(out.rows[1]).toEqual({ name: "Bob", age: 25 });
     });
 
     it("handles empty CSV", async () => {
@@ -565,8 +565,7 @@ describe("data nodes", () => {
         method: "mean",
       });
       const vals = (result.output as DF).rows.map((r) => r.v);
-      // null -> toNumber -> 0 (finite), so mean of [10, 0, 20] = 10
-      expect(vals).toEqual([10, 10, 20]);
+      expect(vals).toEqual([10, 15, 20]);
     });
 
     it("fills with median method", async () => {
@@ -574,8 +573,7 @@ describe("data nodes", () => {
         dataframe: df([{ v: 10 }, { v: null }, { v: 30 }]),
         method: "median",
       });
-      // null -> toNumber -> 0 (finite), so median of sorted [0, 10, 30] = 10
-      expect((result.output as DF).rows[1].v).toBe(10);
+      expect((result.output as DF).rows[1].v).toBe(20);
     });
 
     it("fills only specified columns", async () => {

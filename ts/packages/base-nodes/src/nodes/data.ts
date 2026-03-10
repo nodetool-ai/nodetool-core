@@ -21,6 +21,14 @@ function toDataframe(rows: Row[]): { rows: Row[] } {
   return { rows };
 }
 
+function parseCsvValue(value: string): unknown {
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  const numeric = Number(trimmed);
+  if (!Number.isNaN(numeric)) return numeric;
+  return trimmed;
+}
+
 function parseCsv(csv: string): Row[] {
   const lines = csv.split(/\r?\n/).filter((line) => line.length > 0);
   if (lines.length === 0) return [];
@@ -30,7 +38,7 @@ function parseCsv(csv: string): Row[] {
     const values = lines[i].split(",");
     const row: Row = {};
     for (let j = 0; j < headers.length; j += 1) {
-      row[headers[j]] = (values[j] ?? "").trim();
+      row[headers[j]] = parseCsvValue(values[j] ?? "");
     }
     rows.push(row);
   }
@@ -83,6 +91,7 @@ function uniqueRows(rows: Row[]): Row[] {
 }
 
 function toNumber(value: unknown): number {
+  if (value == null || value === "") return NaN;
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : NaN;
 }
@@ -773,9 +782,16 @@ export class SortByColumnNode extends BaseNode {
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const rows = asRows(inputs.df ?? this.df);
     const col = String(inputs.column ?? this.column ?? "");
-    const sorted = [...rows].sort((a, b) =>
-      String(a[col] ?? "").localeCompare(String(b[col] ?? ""))
-    );
+    const sorted = [...rows].sort((a, b) => {
+      const left = a[col];
+      const right = b[col];
+      const leftNum = toNumber(left);
+      const rightNum = toNumber(right);
+      if (Number.isFinite(leftNum) && Number.isFinite(rightNum)) {
+        return leftNum - rightNum;
+      }
+      return String(left ?? "").localeCompare(String(right ?? ""));
+    });
     return { output: toDataframe(sorted) };
   }
 }
