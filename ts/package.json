@@ -2,6 +2,8 @@
   "name": "nodetool-workflow-ts",
   "private": true,
   "workspaces": [
+    "packages/config",
+    "packages/security",
     "packages/protocol",
     "packages/kernel",
     "packages/runtime",
@@ -12,11 +14,9 @@
     "packages/websocket",
     "packages/agents",
     "packages/chat",
-    "packages/security",
     "packages/auth",
     "packages/cli",
-    "packages/storage",
-    "packages/config"
+    "packages/storage"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
