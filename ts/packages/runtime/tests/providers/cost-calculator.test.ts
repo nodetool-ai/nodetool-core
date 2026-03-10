@@ -65,7 +65,7 @@ describe("CostCalculator.getTier", () => {
 
 describe("CostCalculator.calculate", () => {
   it("returns 0 for unknown model with a warning", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const cost = CostCalculator.calculate("unknown-model", { inputTokens: 1000 }, "openai");
     expect(cost).toBe(0);
     expect(warnSpy).toHaveBeenCalled();
@@ -164,7 +164,7 @@ describe("CostCalculator.calculate", () => {
   });
 
   it("warns and returns 0 for undefined tier name", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     // Temporarily add a bad mapping to test the "tier not defined" path
     const original = MODEL_TO_TIER["openai:__test_model__"];
     MODEL_TO_TIER["openai:__test_model__"] = "nonexistent_tier";
