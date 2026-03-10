@@ -35,6 +35,17 @@ class LazyNode extends BaseNode {
   }
 }
 
+class ZipNode extends BaseNode {
+  static readonly nodeType = "test.zip.Node";
+  static readonly title = "Zip Node";
+  static readonly description = "";
+  static readonly syncMode = "zip_all" as const;
+
+  async process() {
+    return {};
+  }
+}
+
 describe("createGraphNodeTypeResolver", () => {
   it("resolves registered metadata into kernel graph metadata", async () => {
     const registry = new NodeRegistry({
@@ -94,5 +105,24 @@ describe("createGraphNodeTypeResolver", () => {
     const resolved = await lazyResolver.resolveNodeType("test.lazy.Node");
     expect(called).toBe(true);
     expect(resolved?.nodeType).toBe("test.lazy.Node");
+  });
+
+  it("hydrates descriptor sync_mode from the registered node class", async () => {
+    const registry = new NodeRegistry();
+    registry.register(ZipNode, {
+      metadata: {
+        ...sampleMetadata,
+        title: "Zip Node",
+        node_type: "test.zip.Node",
+      },
+    });
+    const resolver = createGraphNodeTypeResolver(registry);
+
+    const resolved = await resolver.resolveNodeType("test.zip.Node");
+    expect(resolved?.descriptorDefaults).toEqual({
+      name: "Zip Node",
+      is_streaming_output: true,
+      sync_mode: "zip_all",
+    });
   });
 });

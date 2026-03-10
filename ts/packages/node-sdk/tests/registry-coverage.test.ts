@@ -157,9 +157,8 @@ describe("NodeRegistry – _resolveLoadedMetadata Node suffix", () => {
     const registry = new NodeRegistry({ metadataByType: loaded });
     registry.register(TestNodeWithSuffix);
 
-    // TS-derived metadata takes precedence; loaded metadata is fallback
-    expect(registry.getMetadata("test.SampleNode")?.title).toBe("Sample Node");
-    // But loaded metadata can be retrieved via resolveMetadata with suffix stripping
-    expect(registry.resolveMetadata("test.SampleNode")?.title).toBe("Sample Node");
+    // Loaded Python metadata is merged in during registration and remains authoritative.
+    expect(registry.getMetadata("test.SampleNode")?.title).toBe("Sample From Python");
+    expect(registry.resolveMetadata("test.SampleNode")?.title).toBe("Sample From Python");
   });
 });

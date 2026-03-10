@@ -168,6 +168,7 @@ export function createGraphNodeTypeResolver(
       const outputs = Object.fromEntries(
         (metadata.outputs ?? []).map((output) => [output.name, typeMetadataToString(output.type)]),
       );
+      const NodeClass = registry._classes.get(nodeType);
       return {
         nodeType: metadata.node_type,
         propertyTypes,
@@ -176,6 +177,7 @@ export function createGraphNodeTypeResolver(
         descriptorDefaults: {
           name: metadata.title,
           is_streaming_output: metadata.is_streaming_output ?? false,
+          sync_mode: NodeClass?.syncMode,
         },
       };
     },

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { FaissSearchNode } from "../src/index.js";
 import {
   CreateIndexFlatL2Node,
   CreateIndexFlatIPNode,
@@ -352,6 +353,10 @@ describe("AddWithIdsNode", () => {
 // ---------------------------------------------------------------------------
 
 describe("SearchNode", () => {
+  it("export alias points to the faiss search implementation", () => {
+    expect(FaissSearchNode).toBe(SearchNode);
+  });
+
   it("returns distances and indices as NdArrays with correct shape", async () => {
     const idx = await makeL2Index(3);
     await run(AddVectorsNode, {

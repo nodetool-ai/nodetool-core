@@ -610,7 +610,7 @@ describe("getNodeMetadata – outputTypes support", () => {
 
     const meta = getNodeMetadata(StreamingOutputNode as unknown as import("../src/base-node.js").NodeClass);
     expect(meta.outputs).toHaveLength(1);
-    expect(meta.outputs[0].stream).toBe(true);
+    expect(meta.outputs[0].stream).toBeUndefined();
     expect(meta.is_streaming_output).toBe(true);
   });
 });

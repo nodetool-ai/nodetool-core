@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { LIB_GRID_NODES, registerBaseNodes } from "../../src/index.js";
+import {
+  CombineImageGridLibNode,
+  LIB_GRID_NODES,
+  registerBaseNodes,
+} from "../../src/index.js";
 import { NodeRegistry } from "@nodetool/node-sdk";
 
 async function solid(width: number, height: number, color: string): Promise<Record<string, unknown>> {
@@ -61,6 +65,22 @@ describe("native lib.grid nodes", () => {
     const meta = await sharp(bytes).metadata();
     expect(meta.width).toBe(20);
     expect(meta.height).toBe(20);
+  });
+
+  it("exports CombineImageGridLibNode through the public index", async () => {
+    const node = new CombineImageGridLibNode();
+    const tiles = [
+      await solid(8, 8, "#ff0000"),
+      await solid(8, 8, "#00ff00"),
+      await solid(8, 8, "#0000ff"),
+      await solid(8, 8, "#ffffff"),
+    ];
+
+    const out = await node.process({ tiles, columns: 2 });
+    const bytes = Buffer.from(String((out.output as { data: string }).data), "base64");
+    const meta = await sharp(bytes).metadata();
+    expect(meta.width).toBe(16);
+    expect(meta.height).toBe(16);
   });
 
   it("errors when combine receives no tiles", async () => {
