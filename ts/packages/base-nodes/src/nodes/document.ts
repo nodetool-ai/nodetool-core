@@ -8,6 +8,17 @@ type DocumentRefLike = {
   text?: string;
 };
 
+function documentSourceId(refOrPath: unknown): string {
+  if (typeof refOrPath === "string" && refOrPath) {
+    return refOrPath;
+  }
+  if (refOrPath && typeof refOrPath === "object") {
+    const ref = refOrPath as DocumentRefLike;
+    if (typeof ref.uri === "string" && ref.uri) return ref.uri;
+  }
+  return "document";
+}
+
 function asBytes(data: Uint8Array | string | undefined): Uint8Array {
   if (!data) return new Uint8Array();
   if (data instanceof Uint8Array) return data;
@@ -19,6 +30,20 @@ function toFilePath(uriOrPath: string): string {
     return uriOrPath.slice("file://".length);
   }
   return uriOrPath;
+}
+
+function wildcardToRegExp(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^${escaped.replaceAll("*", ".*")}$`);
+}
+
+function textChunk(text: string, sourceId: string, startIndex: number): Record<string, unknown> {
+  return {
+    chunk: text,
+    text,
+    source_id: sourceId,
+    start_index: startIndex,
+  };
 }
 
 function splitByChunk(text: string, chunkSize: number, overlap: number): string[] {
@@ -146,8 +171,10 @@ export class ListDocumentsNode extends BaseNode {
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
     const folder = String(inputs.folder ?? this.folder ?? ".");
+    const pattern = String(inputs.pattern ?? this.pattern ?? "*");
     const recursive = Boolean(inputs.recursive ?? this.recursive ?? false);
     const allowed = new Set([".txt", ".md", ".markdown", ".json", ".html", ".pdf", ".docx"]);
+    const matches = wildcardToRegExp(pattern);
     const visit = async function* (dir: string): AsyncGenerator<string> {
       const entries = await fs.readdir(dir, { withFileTypes: true });
       for (const entry of entries) {
@@ -162,7 +189,7 @@ export class ListDocumentsNode extends BaseNode {
       }
     };
     for await (const full of visit(folder)) {
-      if (allowed.has(path.extname(full).toLowerCase())) {
+      if (allowed.has(path.extname(full).toLowerCase()) && matches.test(path.basename(full))) {
         yield { document: { uri: `file://${full}` } };
       }
     }
@@ -250,11 +277,17 @@ export class SplitDocumentNode extends BaseNode {
   }
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
-    const text = await readDocumentText(inputs.document ?? this.document);
+    const document = inputs.document ?? this.document;
+    const text = await readDocumentText(document);
+    const sourceId = documentSourceId(document);
     const chunkSize = Number(inputs.chunk_size ?? this.chunk_size ?? 1200);
     const overlap = Number(inputs.chunk_overlap ?? this.chunk_overlap ?? 100);
+    let startIndex = 0;
     for (const chunk of splitByChunk(text, chunkSize, overlap)) {
-      yield { chunk };
+      const idx = text.indexOf(chunk, startIndex);
+      const resolvedIndex = idx >= 0 ? idx : startIndex;
+      yield textChunk(chunk, sourceId, resolvedIndex);
+      startIndex = resolvedIndex + Math.max(chunk.length - overlap, 1);
     }
   }
 }
@@ -287,12 +320,18 @@ export class SplitHTMLNode extends BaseNode {
   }
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
-    const html = await readDocumentText(inputs.document ?? this.document);
+    const document = inputs.document ?? this.document;
+    const html = await readDocumentText(document);
+    const sourceId = documentSourceId(document);
     const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     const chunkSize = Number(inputs.chunk_size ?? this.chunk_size ?? 1200);
     const overlap = Number(inputs.chunk_overlap ?? this.chunk_overlap ?? 100);
+    let startIndex = 0;
     for (const chunk of splitByChunk(text, chunkSize, overlap)) {
-      yield { chunk };
+      const idx = text.indexOf(chunk, startIndex);
+      const resolvedIndex = idx >= 0 ? idx : startIndex;
+      yield textChunk(chunk, sourceId, resolvedIndex);
+      startIndex = resolvedIndex + Math.max(chunk.length - overlap, 1);
     }
   }
 }
@@ -331,7 +370,9 @@ export class SplitJSONNode extends BaseNode {
   }
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
-    const raw = await readDocumentText(inputs.document ?? this.document);
+    const document = inputs.document ?? this.document;
+    const raw = await readDocumentText(document);
+    const sourceId = documentSourceId(document);
     let rendered: string;
     try {
       rendered = JSON.stringify(JSON.parse(raw), null, 2);
@@ -340,8 +381,12 @@ export class SplitJSONNode extends BaseNode {
     }
     const chunkSize = Number(inputs.chunk_size ?? this.chunk_size ?? 1200);
     const overlap = Number(inputs.chunk_overlap ?? this.chunk_overlap ?? 100);
+    let startIndex = 0;
     for (const chunk of splitByChunk(rendered, chunkSize, overlap)) {
-      yield { chunk };
+      const idx = rendered.indexOf(chunk, startIndex);
+      const resolvedIndex = idx >= 0 ? idx : startIndex;
+      yield textChunk(chunk, sourceId, resolvedIndex);
+      startIndex = resolvedIndex + Math.max(chunk.length - overlap, 1);
     }
   }
 }
@@ -387,13 +432,52 @@ export class SplitRecursivelyNode extends BaseNode {
   }
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
-    const text = await readDocumentText(inputs.document ?? this.document);
+    const document = inputs.document ?? this.document;
+    const text = await readDocumentText(document);
+    const sourceId = documentSourceId(document);
     const chunkSize = Number(inputs.chunk_size ?? this.chunk_size ?? 1200);
     const overlap = Number(inputs.chunk_overlap ?? this.chunk_overlap ?? 100);
-    const paragraphs = text.split(/\n{2,}/g).map((p) => p.trim()).filter(Boolean);
-    const normalized = paragraphs.join("\n\n");
-    for (const chunk of splitByChunk(normalized, chunkSize, overlap)) {
-      yield { chunk };
+    const separators = Array.isArray(inputs.separators ?? this.separators)
+      ? ((inputs.separators ?? this.separators) as unknown[]).map((s) => String(s))
+      : ["\n\n", "\n", "."];
+
+    const activeSeparator = separators.find((separator) => separator && text.includes(separator));
+    if (activeSeparator) {
+      const parts: Array<{ text: string; start: number }> = [];
+      let cursor = 0;
+      if (activeSeparator === "\n") {
+        const rawParts = text.split("\n");
+        rawParts.forEach((part, index) => {
+          const prefix = index === 0 ? "" : "\n";
+          const value = `${prefix}${part}`;
+          if (value) {
+            parts.push({ text: value, start: index === 0 ? cursor : cursor - 1 });
+          }
+          cursor += part.length + 1;
+        });
+      } else {
+        for (const part of text.split(activeSeparator)) {
+          if (!part) {
+            cursor += activeSeparator.length;
+            continue;
+          }
+          parts.push({ text: part, start: cursor });
+          cursor += part.length + activeSeparator.length;
+        }
+      }
+
+      for (const part of parts) {
+        yield textChunk(part.text, `${sourceId}:${parts.indexOf(part)}`, part.start);
+      }
+      return;
+    }
+
+    let startIndex = 0;
+    for (const chunk of splitByChunk(text, chunkSize, overlap)) {
+      const idx = text.indexOf(chunk, startIndex);
+      const resolvedIndex = idx >= 0 ? idx : startIndex;
+      yield textChunk(chunk, `${sourceId}:${Math.floor(resolvedIndex / Math.max(chunkSize - overlap, 1))}`, resolvedIndex);
+      startIndex = resolvedIndex + Math.max(chunk.length - overlap, 1);
     }
   }
 }
@@ -454,21 +538,45 @@ export class SplitMarkdownNode extends BaseNode {
   }
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
-    const markdown = await readDocumentText(inputs.document ?? this.document);
-    const chunks: string[] = [];
-    let current = "";
+    const document = inputs.document ?? this.document;
+    const markdown = await readDocumentText(document);
+    const sourceId = documentSourceId(document);
+    const stripHeaders = Boolean(inputs.strip_headers ?? this.strip_headers ?? true);
+    const chunkSize = Number(inputs.chunk_size ?? this.chunk_size ?? 1200);
+    const overlap = Number(inputs.chunk_overlap ?? this.chunk_overlap ?? 30);
+
+    const sections: string[] = [];
+    let current: string[] = [];
     for (const line of markdown.split("\n")) {
-      const next = current.length ? `${current}\n${line}` : line;
-      if (next.length > Number(inputs.chunk_size ?? this.chunk_size ?? 1200)) {
-        if (current.trim()) chunks.push(current.trim());
-        current = line;
-      } else {
-        current = next;
+      if (line.trim().startsWith("#")) {
+        if (current.length) sections.push(current.join("\n").trim());
+        current = stripHeaders ? [] : [line];
+        continue;
       }
+      current.push(line);
     }
-    if (current.trim()) chunks.push(current.trim());
-    for (const chunk of chunks) {
-      yield { chunk };
+    if (current.length) sections.push(current.join("\n").trim());
+
+    if (sections.length > 0) {
+      for (const section of sections.filter(Boolean)) {
+        const sectionChunks = splitByChunk(section, chunkSize, overlap);
+        let sectionStart = 0;
+        for (const chunk of sectionChunks) {
+          const idx = section.indexOf(chunk, sectionStart);
+          const resolvedIndex = idx >= 0 ? idx : sectionStart;
+          yield textChunk(chunk, sourceId, resolvedIndex);
+          sectionStart = resolvedIndex + Math.max(chunk.length - overlap, 1);
+        }
+      }
+      return;
+    }
+
+    let startIndex = 0;
+    for (const chunk of splitByChunk(markdown, chunkSize, overlap)) {
+      const idx = markdown.indexOf(chunk, startIndex);
+      const resolvedIndex = idx >= 0 ? idx : startIndex;
+      yield textChunk(chunk, sourceId, resolvedIndex);
+      startIndex = resolvedIndex + Math.max(chunk.length - overlap, 1);
     }
   }
 }
