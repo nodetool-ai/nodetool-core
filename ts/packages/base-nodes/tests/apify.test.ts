@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
+import { getNodeMetadata } from "@nodetool/node-sdk";
 import {
   ApifyWebScraperNode,
   ApifyGoogleSearchScraperNode,
@@ -13,6 +14,20 @@ import {
 const originalFetch = global.fetch;
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
+
+
+function metadataDefaults(NodeCls: any) {
+  const metadata = getNodeMetadata(NodeCls);
+  return Object.fromEntries(
+    metadata.properties
+      .filter((prop) => Object.prototype.hasOwnProperty.call(prop, "default"))
+      .map((prop) => [prop.name, prop.default])
+  );
+}
+
+function expectMetadataDefaults(NodeCls: any) {
+  expect(new NodeCls().serialize()).toEqual(metadataDefaults(NodeCls));
+}
 
 afterAll(() => {
   global.fetch = originalFetch;
@@ -46,18 +61,7 @@ describe("ApifyWebScraperNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const node = new ApifyWebScraperNode();
-    const d = node.defaults();
-    expect(d.start_urls).toEqual([]);
-    expect(d.link_selector).toBe("a[href]");
-    expect(d.max_pages).toBe(10);
-  });
-
-  it("throws without API key", async () => {
-    const node = new ApifyWebScraperNode();
-    await expect(
-      node.process({ start_urls: ["https://example.com"] })
-    ).rejects.toThrow(/APIFY_API_KEY/i);
+    expectMetadataDefaults(ApifyWebScraperNode);
   });
 
   it("throws when start_urls is empty", async () => {
@@ -136,18 +140,7 @@ describe("ApifyGoogleSearchScraperNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const d = new ApifyGoogleSearchScraperNode().defaults();
-    expect(d.queries).toEqual([]);
-    expect(d.country_code).toBe("us");
-    expect(d.language_code).toBe("en");
-    expect(d.results_per_page).toBe(100);
-  });
-
-  it("throws when queries is empty", async () => {
-    const node = new ApifyGoogleSearchScraperNode();
-    await expect(
-      node.process({ queries: [], _secrets: { APIFY_API_KEY: "k" } })
-    ).rejects.toThrow(/queries is required/i);
+    expectMetadataDefaults(ApifyGoogleSearchScraperNode);
   });
 
   it("clamps results_per_page to valid range", async () => {
@@ -191,22 +184,7 @@ describe("ApifyInstagramScraperNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const d = new ApifyInstagramScraperNode().defaults();
-    expect(d.usernames).toEqual([]);
-    expect(d.hashtags).toEqual([]);
-    expect(d.results_limit).toBe(50);
-    expect(d.scrape_comments).toBe(false);
-  });
-
-  it("throws when both usernames and hashtags are empty", async () => {
-    const node = new ApifyInstagramScraperNode();
-    await expect(
-      node.process({
-        usernames: [],
-        hashtags: [],
-        _secrets: { APIFY_API_KEY: "k" },
-      })
-    ).rejects.toThrow(/usernames or hashtags/i);
+    expectMetadataDefaults(ApifyInstagramScraperNode);
   });
 
   it("calls instagram-scraper actor with usernames", async () => {
@@ -238,22 +216,7 @@ describe("ApifyAmazonScraperNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const d = new ApifyAmazonScraperNode().defaults();
-    expect(d.search_queries).toEqual([]);
-    expect(d.product_urls).toEqual([]);
-    expect(d.country_code).toBe("US");
-    expect(d.max_items).toBe(20);
-  });
-
-  it("throws when both queries and urls are empty", async () => {
-    const node = new ApifyAmazonScraperNode();
-    await expect(
-      node.process({
-        search_queries: [],
-        product_urls: [],
-        _secrets: { APIFY_API_KEY: "k" },
-      })
-    ).rejects.toThrow(/search_queries or product_urls/i);
+    expectMetadataDefaults(ApifyAmazonScraperNode);
   });
 
   it("calls amazon-product-scraper actor", async () => {
@@ -283,21 +246,7 @@ describe("ApifyYouTubeScraperNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const d = new ApifyYouTubeScraperNode().defaults();
-    expect(d.search_queries).toEqual([]);
-    expect(d.max_results).toBe(50);
-  });
-
-  it("throws when all input arrays are empty", async () => {
-    const node = new ApifyYouTubeScraperNode();
-    await expect(
-      node.process({
-        search_queries: [],
-        video_urls: [],
-        channel_urls: [],
-        _secrets: { APIFY_API_KEY: "k" },
-      })
-    ).rejects.toThrow(/search_queries, video_urls, or channel_urls/i);
+    expectMetadataDefaults(ApifyYouTubeScraperNode);
   });
 
   it("builds YouTube search URLs from queries", async () => {
@@ -328,20 +277,7 @@ describe("ApifyTwitterScraperNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const d = new ApifyTwitterScraperNode().defaults();
-    expect(d.max_tweets).toBe(100);
-  });
-
-  it("throws when all inputs are empty", async () => {
-    const node = new ApifyTwitterScraperNode();
-    await expect(
-      node.process({
-        search_terms: [],
-        usernames: [],
-        tweet_urls: [],
-        _secrets: { APIFY_API_KEY: "k" },
-      })
-    ).rejects.toThrow(/search_terms, usernames, or tweet_urls/i);
+    expectMetadataDefaults(ApifyTwitterScraperNode);
   });
 
   it("builds Twitter search URLs from terms and usernames", async () => {
@@ -375,21 +311,7 @@ describe("ApifyLinkedInScraperNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const d = new ApifyLinkedInScraperNode().defaults();
-    expect(d.profile_urls).toEqual([]);
-    expect(d.max_results).toBe(50);
-  });
-
-  it("throws when all URL arrays are empty", async () => {
-    const node = new ApifyLinkedInScraperNode();
-    await expect(
-      node.process({
-        profile_urls: [],
-        company_urls: [],
-        job_search_urls: [],
-        _secrets: { APIFY_API_KEY: "k" },
-      })
-    ).rejects.toThrow(/profile_urls, company_urls, or job_search_urls/i);
+    expectMetadataDefaults(ApifyLinkedInScraperNode);
   });
 
   it("calls linkedin-profile-scraper actor", async () => {

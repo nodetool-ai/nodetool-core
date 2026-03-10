@@ -92,7 +92,7 @@ import {
 function exerciseDefaults(NodeClass: new () => { defaults?: () => Record<string, unknown> }) {
   const node = new NodeClass();
   if (typeof node.defaults === "function") {
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d).toBeDefined();
   }
 }
@@ -842,10 +842,9 @@ describe("coverage: lib-json", () => {
     exerciseDefaults(LoadJSONAssetsLibNode);
   });
 
-  it("GetJSONPathDict uses _props.default fallback", async () => {
-    // Create node, set _props.default, then call with no inputs.default
+  it("GetJSONPathDict uses assigned default fallback", async () => {
     const node = new GetJSONPathDictLibNode();
-    (node as any)._props = { data: {}, path: "missing", default: { propFallback: true } };
+    node.assign({ data: {}, path: "missing", default: { propFallback: true } });
     const res = await node.process({ data: {}, path: "missing" });
     expect(res.output).toEqual({ propFallback: true });
   });
@@ -1505,7 +1504,7 @@ describe("coverage: lib-secret", () => {
 
   it("defaults() returns correct shape", () => {
     const node = new GetSecretLibNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d).toEqual({ name: "", default: "" });
   });
 });

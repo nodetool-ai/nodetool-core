@@ -1,5 +1,5 @@
 import { createLogger } from "@nodetool/config";
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type {
   BaseProvider,
   Message,
@@ -630,20 +630,165 @@ function parseResearchOutput(raw: string, query: string): {
 
 export class SummarizerNode extends BaseNode {
   static readonly nodeType = "nodetool.agents.Summarizer";
-  static readonly title = "Summarizer";
-  static readonly description = "Create a concise summary from text.";
+            static readonly title = "Summarizer";
+            static readonly description = "Generate concise summaries of text content using LLM providers with streaming output.\n    text, summarization, nlp, content, streaming\n\n    Specialized for creating high-quality summaries with real-time streaming:\n    - Condensing long documents into key points\n    - Creating executive summaries with live output\n    - Extracting main ideas from text as they're generated\n    - Maintaining factual accuracy while reducing length";
+        static readonly metadataOutputTypes = {
+    text: "str",
+    chunk: "chunk"
+  };
+          static readonly basicFields = [
+  "text",
+  "model",
+  "image",
+  "audio"
+];
+          static readonly recommendedModels = [
+    {
+      "id": "phi3.5:latest",
+      "type": "llama_model",
+      "name": "Phi3.5",
+      "repo_id": "phi3.5:latest",
+      "description": "Lightweight 3.8B model tuned for crisp instruction following and compact summaries on modest hardware.",
+      "size_on_disk": 2362232012
+    },
+    {
+      "id": "mistral-small:latest",
+      "type": "llama_model",
+      "name": "Mistral Small",
+      "repo_id": "mistral-small:latest",
+      "description": "Efficient mixture-of-experts model that delivers reliable abstractive summaries with low latency.",
+      "size_on_disk": 7730941132
+    },
+    {
+      "id": "llama3.2:3b",
+      "type": "llama_model",
+      "name": "Llama 3.2 - 3B",
+      "repo_id": "llama3.2:3b",
+      "description": "Compact Llama variant that balances coverage and brevity for everyday summarization workloads.",
+      "size_on_disk": 2040109465
+    },
+    {
+      "id": "gemma3:4b",
+      "type": "llama_model",
+      "name": "Gemma3 - 4B",
+      "repo_id": "gemma3:4b",
+      "description": "Google's 4B multimodal model performs strong factual summaries while staying resource friendly.",
+      "size_on_disk": 2791728742
+    },
+    {
+      "id": "granite3.1-moe:3b",
+      "type": "llama_model",
+      "name": "Granite 3.1 MOE - 3B",
+      "repo_id": "granite3.1-moe:3b",
+      "description": "IBM Granite MoE delivers focused meeting notes and bullet summaries with minimal VRAM needs.",
+      "size_on_disk": 1717986918
+    },
+    {
+      "id": "qwen3:4b",
+      "type": "llama_model",
+      "name": "Qwen3 - 4B",
+      "repo_id": "qwen3:4b",
+      "description": "Qwen3 4B offers multilingual summarization with tight, well-structured outputs.",
+      "size_on_disk": 2684354560
+    },
+    {
+      "id": "ggml-org/gemma-3-4b-it-GGUF:gemma-3-4b-it-Q4_K_M.gguf",
+      "type": "llama_cpp_model",
+      "name": "Gemma 3 4B IT (GGUF)",
+      "repo_id": "ggml-org/gemma-3-4b-it-GGUF",
+      "path": "gemma-3-4b-it-Q4_K_M.gguf",
+      "description": "Efficient Gemma 3 for summarization via llama.cpp.",
+      "size_on_disk": 3113851289,
+      "pipeline_tag": "image-text-to-text",
+      "tags": [
+        "gguf",
+        "image-text-to-text",
+        "arxiv:1905.07830",
+        "arxiv:1905.10044",
+        "arxiv:1911.11641",
+        "arxiv:1904.09728",
+        "arxiv:1705.03551",
+        "arxiv:1911.01547",
+        "arxiv:1907.10641",
+        "arxiv:1903.00161",
+        "arxiv:2009.03300",
+        "arxiv:2304.06364",
+        "arxiv:2103.03874",
+        "arxiv:2110.14168",
+        "arxiv:2311.12022",
+        "arxiv:2108.07732",
+        "arxiv:2107.03374",
+        "arxiv:2210.03057",
+        "arxiv:2106.03193",
+        "arxiv:1910.11856",
+        "arxiv:2502.12404",
+        "arxiv:2502.21228",
+        "arxiv:2404.16816",
+        "arxiv:2104.12756",
+        "arxiv:2311.16502",
+        "arxiv:2203.10244",
+        "arxiv:2404.12390",
+        "arxiv:1810.12440",
+        "arxiv:1908.02660",
+        "arxiv:2312.11805",
+        "base_model:google/gemma-3-4b-it",
+        "base_model:quantized:google/gemma-3-4b-it",
+        "license:gemma",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "has_model_index": false,
+      "downloads": 25779,
+      "likes": 48
+    }
+  ];
+  
+          static readonly isStreamingOutput = true;
+  @prop({ type: "str", default: "\n        You are an expert summarizer. Your task is to create clear, accurate, and concise summaries using Markdown for structuring.\n        Follow these guidelines:\n        1. Identify and include only the most important information.\n        2. Maintain factual accuracy - do not add or modify information.\n        3. Use clear, direct language.\n        4. Aim for approximately {self.max_tokens} tokens.\n        ", title: "System Prompt", description: "The system prompt for the summarizer" })
+  declare system_prompt: any;
 
-  defaults() {
-    return { text: "", max_sentences: 3 };
-  }
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model to use for summarization" })
+  declare model: any;
+
+  @prop({ type: "str", default: "", title: "Text", description: "The text to summarize" })
+  declare text: any;
+
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "Optional image to condition the summary" })
+  declare image: any;
+
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "Optional audio to condition the summary" })
+  declare audio: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const text = asText(inputs.text ?? this._props.text ?? "");
-    const maxSentences = Number(inputs.max_sentences ?? this._props.max_sentences ?? 3);
-    const { providerId, modelId } = getModelConfig(inputs, this._props);
+    const text = asText(inputs.text ?? this.text ?? "");
+    const maxSentences = Number(inputs.max_sentences ?? this.max_sentences ?? 3);
+    const { providerId, modelId } = getModelConfig(inputs, this.serialize());
     if (hasProviderSupport(context, providerId, modelId)) {
       const provider = await context.getProvider(providerId);
       const result = await generateProviderMessage(provider, {
@@ -666,20 +811,28 @@ export class SummarizerNode extends BaseNode {
 
 export class CreateThreadNode extends BaseNode {
   static readonly nodeType = "nodetool.agents.CreateThread";
-  static readonly title = "Create Thread";
-  static readonly description = "Create or reuse an in-memory conversation thread.";
+            static readonly title = "Create Thread";
+            static readonly description = "Create a new conversation thread and return its ID.\n    threads, chat, conversation, context\n\n    Use this to seed a thread_id that downstream Agent nodes can reuse for\n    persistent history across the graph or multiple runs.";
+        static readonly metadataOutputTypes = {
+    thread_id: "str"
+  };
+  
+  @prop({ type: "str", default: "Agent Conversation", title: "Title", description: "Optional title for the new thread" })
+  declare title: any;
 
-  defaults() {
-    return { title: "Agent Conversation", thread_id: "" };
-  }
+  @prop({ type: "str", default: "", title: "Thread Id", description: "Optional custom thread ID. If provided and owned by the user, it will be reused; otherwise a new thread is created." })
+  declare thread_id: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const requested = String(inputs.thread_id ?? this._props.thread_id ?? "").trim();
+    const requested = String(inputs.thread_id ?? this.thread_id ?? "").trim();
     if (requested) {
       if (!THREAD_STORE.has(requested)) {
         THREAD_STORE.set(requested, {
           id: requested,
-          title: String(inputs.title ?? this._props.title ?? "Agent Conversation"),
+          title: String(inputs.title ?? this.title ?? "Agent Conversation"),
           messages: [],
         });
       }
@@ -689,7 +842,7 @@ export class CreateThreadNode extends BaseNode {
     const id = makeThreadId();
     THREAD_STORE.set(id, {
       id,
-      title: String(inputs.title ?? this._props.title ?? "Agent Conversation"),
+      title: String(inputs.title ?? this.title ?? "Agent Conversation"),
       messages: [],
     });
     return { thread_id: id };
@@ -698,24 +851,165 @@ export class CreateThreadNode extends BaseNode {
 
 export class ExtractorNode extends BaseNode {
   static readonly nodeType = "nodetool.agents.Extractor";
-  static readonly title = "Extractor";
-  static readonly description = "Extract structured JSON data from text.";
+            static readonly title = "Extractor";
+            static readonly description = "Extract structured data from text content using LLM providers.\n    data-extraction, structured-data, nlp, parsing\n\n    Specialized for extracting structured information:\n    - Converting unstructured text into structured data\n    - Identifying and extracting specific fields from documents\n    - Parsing text according to predefined schemas\n    - Creating structured records from natural language content";
+          static readonly basicFields = [
+  "text",
+  "model",
+  "image",
+  "audio"
+];
+          static readonly supportsDynamicOutputs = true;
+          static readonly recommendedModels = [
+    {
+      "id": "phi3.5:latest",
+      "type": "llama_model",
+      "name": "Phi3.5",
+      "repo_id": "phi3.5:latest",
+      "description": "Small Phi variant excels at JSON-style outputs and faithful field extraction on laptops.",
+      "size_on_disk": 2362232012
+    },
+    {
+      "id": "mistral-small:latest",
+      "type": "llama_model",
+      "name": "Mistral Small",
+      "repo_id": "mistral-small:latest",
+      "description": "MoE architecture keeps structured extraction consistent while staying resource efficient.",
+      "size_on_disk": 7730941132
+    },
+    {
+      "id": "granite3.1-moe:3b",
+      "type": "llama_model",
+      "name": "Granite 3.1 MOE - 3B",
+      "repo_id": "granite3.1-moe:3b",
+      "description": "Granite MoE models are tuned for business document parsing and schema-following tasks.",
+      "size_on_disk": 1717986918
+    },
+    {
+      "id": "gemma3:4b",
+      "type": "llama_model",
+      "name": "Gemma3 - 4B",
+      "repo_id": "gemma3:4b",
+      "description": "Gemma 3 4B handles multilingual extraction and adheres to required JSON schemas.",
+      "size_on_disk": 2791728742
+    },
+    {
+      "id": "qwen2.5-coder:3b",
+      "type": "llama_model",
+      "name": "Qwen2.5-Coder - 3B",
+      "repo_id": "qwen2.5-coder:3b",
+      "description": "Code-focused Qwen variant generates precise structured outputs and respects schema rules.",
+      "size_on_disk": 1932735283
+    },
+    {
+      "id": "deepseek-r1:7b",
+      "type": "llama_model",
+      "name": "Deepseek R1 - 7B",
+      "repo_id": "deepseek-r1:7b",
+      "description": "Reasoning-oriented DeepSeek shines when extraction needs cross-field validation.",
+      "size_on_disk": 4617089843
+    },
+    {
+      "id": "ggml-org/gemma-3-4b-it-GGUF:gemma-3-4b-it-Q4_K_M.gguf",
+      "type": "llama_cpp_model",
+      "name": "Gemma 3 4B IT (GGUF)",
+      "repo_id": "ggml-org/gemma-3-4b-it-GGUF",
+      "path": "gemma-3-4b-it-Q4_K_M.gguf",
+      "description": "Efficient Gemma 3 for extraction via llama.cpp.",
+      "size_on_disk": 3113851289,
+      "pipeline_tag": "image-text-to-text",
+      "tags": [
+        "gguf",
+        "image-text-to-text",
+        "arxiv:1905.07830",
+        "arxiv:1905.10044",
+        "arxiv:1911.11641",
+        "arxiv:1904.09728",
+        "arxiv:1705.03551",
+        "arxiv:1911.01547",
+        "arxiv:1907.10641",
+        "arxiv:1903.00161",
+        "arxiv:2009.03300",
+        "arxiv:2304.06364",
+        "arxiv:2103.03874",
+        "arxiv:2110.14168",
+        "arxiv:2311.12022",
+        "arxiv:2108.07732",
+        "arxiv:2107.03374",
+        "arxiv:2210.03057",
+        "arxiv:2106.03193",
+        "arxiv:1910.11856",
+        "arxiv:2502.12404",
+        "arxiv:2502.21228",
+        "arxiv:2404.16816",
+        "arxiv:2104.12756",
+        "arxiv:2311.16502",
+        "arxiv:2203.10244",
+        "arxiv:2404.12390",
+        "arxiv:1810.12440",
+        "arxiv:1908.02660",
+        "arxiv:2312.11805",
+        "base_model:google/gemma-3-4b-it",
+        "base_model:quantized:google/gemma-3-4b-it",
+        "license:gemma",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "has_model_index": false,
+      "downloads": 25779,
+      "likes": 48
+    }
+  ];
+  
+  @prop({ type: "str", default: "\nYou are a precise structured data extractor.\n\nGoal\n- Extract exactly the fields described in <JSON_SCHEMA> from the content in <TEXT> (and any attached media).\n\nOutput format (MANDATORY)\n- Output exactly ONE fenced code block labeled json containing ONLY the JSON object:\n\n  ```json\n  { ...single JSON object matching <JSON_SCHEMA>... }\n  ```\n\n- No additional prose before or after the block.\n\nExtraction rules\n- Use only information found in <TEXT> or attached media. Do not invent facts.\n- Preserve source values; normalize internal whitespace and trim leading/trailing spaces.\n- If a required field is missing or not explicitly stated, return the closest reasonable default consistent with its type:\n  - string: \"\"\n  - number: 0\n  - boolean: false\n  - array/object: empty value of that type (only if allowed by the schema)\n- Dates/times: prefer ISO 8601 when the schema type is string and the value represents a date/time.\n- If multiple candidates exist, choose the most precise and unambiguous one.\n\nValidation\n- Ensure the final JSON validates against <JSON_SCHEMA> exactly.\n", title: "System Prompt", description: "The system prompt for the data extractor" })
+  declare system_prompt: any;
 
-  defaults() {
-    return { text: "" };
-  }
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model to use for data extraction" })
+  declare model: any;
+
+  @prop({ type: "str", default: "", title: "Text", description: "The text to extract data from" })
+  declare text: any;
+
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "Optional image to assist extraction" })
+  declare image: any;
+
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "Optional audio to assist extraction" })
+  declare audio: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const text = asText(inputs.text ?? this._props.text ?? "");
-    const { providerId, modelId } = getModelConfig(inputs, this._props);
+    const text = asText(inputs.text ?? this.text ?? "");
+    const { providerId, modelId } = getModelConfig(inputs, this.serialize());
     if (hasProviderSupport(context, providerId, modelId)) {
       const provider = await context.getProvider(providerId);
       const raw = await generateProviderMessage(provider, {
         model: modelId,
-        maxTokens: Number(inputs.max_tokens ?? this._props.max_tokens ?? 1024),
+        maxTokens: Number(inputs.max_tokens ?? this.max_tokens ?? 1024),
         responseFormat: { type: "json_object" },
         messages: [
           { role: "system", content: EXTRACTOR_SYSTEM_PROMPT },
@@ -733,29 +1027,176 @@ export class ExtractorNode extends BaseNode {
 
 export class ClassifierNode extends BaseNode {
   static readonly nodeType = "nodetool.agents.Classifier";
-  static readonly title = "Classifier";
-  static readonly description = "Classify text to the closest category.";
+            static readonly title = "Classifier";
+            static readonly description = "Classify text into predefined or dynamic categories using LLM.\n    classification, nlp, categorization\n\n    Use cases:\n    - Sentiment analysis\n    - Topic classification\n    - Intent detection\n    - Content categorization";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+          static readonly basicFields = [
+  "text",
+  "categories",
+  "model",
+  "image",
+  "audio"
+];
+          static readonly recommendedModels = [
+    {
+      "id": "phi3.5:latest",
+      "type": "llama_model",
+      "name": "Phi3.5",
+      "repo_id": "phi3.5:latest",
+      "description": "Reliable small model for intent and sentiment classification when VRAM is tight.",
+      "size_on_disk": 2362232012
+    },
+    {
+      "id": "mistral-small:latest",
+      "type": "llama_model",
+      "name": "Mistral Small",
+      "repo_id": "mistral-small:latest",
+      "description": "Fast MoE model that keeps category predictions consistent across batches.",
+      "size_on_disk": 7730941132
+    },
+    {
+      "id": "granite3.1-moe:1b",
+      "type": "llama_model",
+      "name": "Granite 3.1 MOE - 1B",
+      "repo_id": "granite3.1-moe:1b",
+      "description": "IBM Granite 1B excels at classification and routing tasks on CPUs and edge devices.",
+      "size_on_disk": 751619276
+    },
+    {
+      "id": "qwen3:1.7b",
+      "type": "llama_model",
+      "name": "Qwen3 - 1.7B",
+      "repo_id": "qwen3:1.7b",
+      "description": "Compact Qwen variant provides multilingual label understanding with low latency.",
+      "size_on_disk": 1073741824
+    },
+    {
+      "id": "gemma3:1b",
+      "type": "llama_model",
+      "name": "Gemma3 - 1B",
+      "repo_id": "gemma3:1b",
+      "description": "Gemma 3 1B offers deterministic small-footprint classification for mobile scenarios.",
+      "size_on_disk": 805306368
+    },
+    {
+      "id": "deepseek-r1:1.5b",
+      "type": "llama_model",
+      "name": "Deepseek R1 - 1.5B",
+      "repo_id": "deepseek-r1:1.5b",
+      "description": "Reasoning-focused DeepSeek variant is great for multi-step label decisions.",
+      "size_on_disk": 912680550
+    },
+    {
+      "id": "ggml-org/gemma-3-4b-it-GGUF:gemma-3-4b-it-Q4_K_M.gguf",
+      "type": "llama_cpp_model",
+      "name": "Gemma 3 4B IT (GGUF)",
+      "repo_id": "ggml-org/gemma-3-4b-it-GGUF",
+      "path": "gemma-3-4b-it-Q4_K_M.gguf",
+      "description": "Efficient Gemma 3 for classification via llama.cpp.",
+      "size_on_disk": 3113851289,
+      "pipeline_tag": "image-text-to-text",
+      "tags": [
+        "gguf",
+        "image-text-to-text",
+        "arxiv:1905.07830",
+        "arxiv:1905.10044",
+        "arxiv:1911.11641",
+        "arxiv:1904.09728",
+        "arxiv:1705.03551",
+        "arxiv:1911.01547",
+        "arxiv:1907.10641",
+        "arxiv:1903.00161",
+        "arxiv:2009.03300",
+        "arxiv:2304.06364",
+        "arxiv:2103.03874",
+        "arxiv:2110.14168",
+        "arxiv:2311.12022",
+        "arxiv:2108.07732",
+        "arxiv:2107.03374",
+        "arxiv:2210.03057",
+        "arxiv:2106.03193",
+        "arxiv:1910.11856",
+        "arxiv:2502.12404",
+        "arxiv:2502.21228",
+        "arxiv:2404.16816",
+        "arxiv:2104.12756",
+        "arxiv:2311.16502",
+        "arxiv:2203.10244",
+        "arxiv:2404.12390",
+        "arxiv:1810.12440",
+        "arxiv:1908.02660",
+        "arxiv:2312.11805",
+        "base_model:google/gemma-3-4b-it",
+        "base_model:quantized:google/gemma-3-4b-it",
+        "license:gemma",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "has_model_index": false,
+      "downloads": 25779,
+      "likes": 48
+    }
+  ];
+  
+  @prop({ type: "str", default: "\nYou are a precise classifier.\n\nGoal\n- Select exactly one category from the list provided by the user.\n\nOutput format (MANDATORY)\n- Return ONLY a single JSON object with this exact schema and nothing else:\n  {\"category\": \"<one-of-the-allowed-categories>\"}\n- No prose, no Markdown, no code fences, no explanations, no extra keys.\n\nSelection criteria\n- Choose the single best category that captures the main intent of the text.\n- If multiple categories seem plausible, pick the most probable one; do not return multiple.\n- If none fit perfectly, choose the closest allowed category. If the list includes \"Other\" or \"Unknown\", prefer it when appropriate.\n- Be robust to casing, punctuation, emojis, and minor typos. Handle negation correctly (e.g., \"not spam\" ≠ spam).\n- Never invent categories that are not in the provided list.\n\nBehavior\n- Be deterministic for the same input.\n- Do not ask clarifying questions; make the best choice with what's given.\n", title: "System Prompt", description: "The system prompt for the classifier" })
+  declare system_prompt: any;
 
-  defaults() {
-    return { text: "", categories: [] };
-  }
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model to use for classification" })
+  declare model: any;
+
+  @prop({ type: "str", default: "", title: "Text", description: "Text to classify" })
+  declare text: any;
+
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "Optional image to classify in context" })
+  declare image: any;
+
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "Optional audio to classify in context" })
+  declare audio: any;
+
+  @prop({ type: "list[str]", default: [], title: "Categories", description: "List of possible categories. If empty, LLM will determine categories." })
+  declare categories: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const text = asText(inputs.text ?? this._props.text ?? "");
-    const categories = getCategories(inputs.categories ?? this._props.categories);
+    const text = asText(inputs.text ?? this.text ?? "");
+    const categories = getCategories(inputs.categories ?? this.categories);
     if (categories.length < 2) {
       throw new Error("At least 2 categories are required");
     }
 
-    const { providerId, modelId } = getModelConfig(inputs, this._props);
+    const { providerId, modelId } = getModelConfig(inputs, this.serialize());
     if (hasProviderSupport(context, providerId, modelId)) {
       const provider = await context.getProvider(providerId);
       const raw = await generateProviderMessage(provider, {
         model: modelId,
-        maxTokens: Number(inputs.max_tokens ?? this._props.max_tokens ?? 256),
+        maxTokens: Number(inputs.max_tokens ?? this.max_tokens ?? 256),
         responseFormat: {
           type: "json_schema",
           json_schema: {
@@ -805,68 +1246,573 @@ export class ClassifierNode extends BaseNode {
 
 export class AgentNode extends BaseNode {
   static readonly nodeType = "nodetool.agents.Agent";
-  static readonly title = "Agent";
-  static readonly description = "Generate natural language responses using LLM providers and stream output.";
-  static readonly isStreamingOutput = true;
+            static readonly title = "Agent";
+            static readonly description = "Generate natural language responses using LLM providers and streams output.\n    llm, text-generation, chatbot, question-answering, streaming";
+        static readonly metadataOutputTypes = {
+    text: "str",
+    chunk: "chunk",
+    thinking: "chunk",
+    audio: "audio"
+  };
+          static readonly basicFields = [
+  "prompt",
+  "model",
+  "tools",
+  "image",
+  "audio"
+];
+          static readonly supportsDynamicOutputs = true;
+          static readonly recommendedModels = [
+    {
+      "id": "gpt-oss:20b",
+      "type": "llama_model",
+      "name": "GPT - OSS",
+      "repo_id": "gpt-oss:20b",
+      "description": "OpenAI's open-weight model excels at multi-tool routing and reasoning.",
+      "size_on_disk": 15032385536
+    },
+    {
+      "id": "qwen3-vl:4b",
+      "type": "llama_model",
+      "name": "Qwen3 VL - 4B",
+      "repo_id": "qwen3-vl:4b",
+      "description": "The most powerful vision-language model in the Qwen model family to date.",
+      "size_on_disk": 3543348019
+    },
+    {
+      "id": "qwen3-vl:8b",
+      "type": "llama_model",
+      "name": "Qwen3 VL - 8B",
+      "repo_id": "qwen3-vl:8b",
+      "description": "The most powerful vision-language model in the Qwen model family to date.",
+      "size_on_disk": 6549825126
+    },
+    {
+      "id": "gemma3:1b",
+      "type": "llama_model",
+      "name": "Gemma3 - 1B",
+      "repo_id": "gemma3:1b",
+      "description": "Gemma3 1B is a small model that can process text and images.",
+      "size_on_disk": 875099586
+    },
+    {
+      "id": "gemma3:4b",
+      "type": "llama_model",
+      "name": "Gemma3 - 4B",
+      "repo_id": "gemma3:4b",
+      "description": "Gemma3 4B is a small model that can process text and images.",
+      "size_on_disk": 3543348019
+    },
+    {
+      "id": "llama3.2:3b",
+      "type": "llama_model",
+      "name": "Llama 3.2 - 3B",
+      "repo_id": "llama3.2:3b",
+      "description": "Compact Llama 3.2 variant keeps latency low while following tool schemas accurately.",
+      "size_on_disk": 2040109465
+    },
+    {
+      "id": "qwen3:4b",
+      "type": "llama_model",
+      "name": "Qwen3 - 4B",
+      "repo_id": "qwen3:4b",
+      "description": "Qwen3 4B ships strong function-calling primitives and dependable multi-turn tool use.",
+      "size_on_disk": 2684354560
+    },
+    {
+      "id": "qwen3:8b",
+      "type": "llama_model",
+      "name": "Qwen3 - 8B",
+      "repo_id": "qwen3:8b",
+      "description": "Qwen3 8B ships strong function-calling primitives and dependable multi-turn tool use.",
+      "size_on_disk": 5583457484
+    },
+    {
+      "id": "deepseek-r1:8b",
+      "type": "mistral_model",
+      "name": "Deepseek R1 - 8B",
+      "repo_id": "deepseek-r1:8",
+      "description": "DeepSeek R1 8B balances reasoning with precise function calls for iterative agents.",
+      "size_on_disk": 5583457484
+    },
+    {
+      "id": "ggml-org/gpt-oss-20b-GGUF:gpt-oss-20b-mxfp4.gguf",
+      "type": "llama_cpp_model",
+      "name": "GPT-OSS 20B (GGUF)",
+      "repo_id": "ggml-org/gpt-oss-20b-GGUF",
+      "path": "gpt-oss-20b-mxfp4.gguf",
+      "description": "OpenAI's open-weight model in efficient MXFP4 format for llama.cpp.",
+      "size_on_disk": 9191230013,
+      "tags": [
+        "gguf",
+        "base_model:openai/gpt-oss-20b",
+        "base_model:quantized:openai/gpt-oss-20b",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "has_model_index": false,
+      "downloads": 156909,
+      "likes": 135
+    },
+    {
+      "id": "ggml-org/gemma-3-4b-it-GGUF:gemma-3-4b-it-Q4_K_M.gguf",
+      "type": "llama_cpp_model",
+      "name": "Gemma 3 4B IT (GGUF)",
+      "repo_id": "ggml-org/gemma-3-4b-it-GGUF",
+      "path": "gemma-3-4b-it-Q4_K_M.gguf",
+      "description": "Google's Gemma 3 4B in Q4_K_M quantization for efficient inference.",
+      "size_on_disk": 3113851289,
+      "pipeline_tag": "image-text-to-text",
+      "tags": [
+        "gguf",
+        "image-text-to-text",
+        "arxiv:1905.07830",
+        "arxiv:1905.10044",
+        "arxiv:1911.11641",
+        "arxiv:1904.09728",
+        "arxiv:1705.03551",
+        "arxiv:1911.01547",
+        "arxiv:1907.10641",
+        "arxiv:1903.00161",
+        "arxiv:2009.03300",
+        "arxiv:2304.06364",
+        "arxiv:2103.03874",
+        "arxiv:2110.14168",
+        "arxiv:2311.12022",
+        "arxiv:2108.07732",
+        "arxiv:2107.03374",
+        "arxiv:2210.03057",
+        "arxiv:2106.03193",
+        "arxiv:1910.11856",
+        "arxiv:2502.12404",
+        "arxiv:2502.21228",
+        "arxiv:2404.16816",
+        "arxiv:2104.12756",
+        "arxiv:2311.16502",
+        "arxiv:2203.10244",
+        "arxiv:2404.12390",
+        "arxiv:1810.12440",
+        "arxiv:1908.02660",
+        "arxiv:2312.11805",
+        "base_model:google/gemma-3-4b-it",
+        "base_model:quantized:google/gemma-3-4b-it",
+        "license:gemma",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "has_model_index": false,
+      "downloads": 25779,
+      "likes": 48
+    },
+    {
+      "id": "ggml-org/gemma-3-12b-it-GGUF:gemma-3-12b-it-Q4_K_M.gguf",
+      "type": "llama_cpp_model",
+      "name": "Gemma 3 12B IT (GGUF)",
+      "repo_id": "ggml-org/gemma-3-12b-it-GGUF",
+      "path": "gemma-3-12b-it-Q4_K_M.gguf",
+      "description": "Google's Gemma 3 12B in Q4_K_M quantization with strong reasoning.",
+      "size_on_disk": 7838315315,
+      "pipeline_tag": "image-text-to-text",
+      "tags": [
+        "gguf",
+        "image-text-to-text",
+        "arxiv:1905.07830",
+        "arxiv:1905.10044",
+        "arxiv:1911.11641",
+        "arxiv:1904.09728",
+        "arxiv:1705.03551",
+        "arxiv:1911.01547",
+        "arxiv:1907.10641",
+        "arxiv:1903.00161",
+        "arxiv:2009.03300",
+        "arxiv:2304.06364",
+        "arxiv:2103.03874",
+        "arxiv:2110.14168",
+        "arxiv:2311.12022",
+        "arxiv:2108.07732",
+        "arxiv:2107.03374",
+        "arxiv:2210.03057",
+        "arxiv:2106.03193",
+        "arxiv:1910.11856",
+        "arxiv:2502.12404",
+        "arxiv:2502.21228",
+        "arxiv:2404.16816",
+        "arxiv:2104.12756",
+        "arxiv:2311.16502",
+        "arxiv:2203.10244",
+        "arxiv:2404.12390",
+        "arxiv:1810.12440",
+        "arxiv:1908.02660",
+        "arxiv:2312.11805",
+        "base_model:google/gemma-3-12b-it",
+        "base_model:quantized:google/gemma-3-12b-it",
+        "license:gemma",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "has_model_index": false,
+      "downloads": 214667,
+      "likes": 30
+    },
+    {
+      "id": "ggml-org/Kimi-VL-A3B-Thinking-2506-GGUF:Kimi-VL-A3B-Thinking-2506-Q4_K_M.gguf",
+      "type": "llama_cpp_model",
+      "name": "Kimi VL A3B Thinking (GGUF)",
+      "repo_id": "ggml-org/Kimi-VL-A3B-Thinking-2506-GGUF",
+      "path": "Kimi-VL-A3B-Thinking-2506-Q4_K_M.gguf",
+      "description": "Moonshot AI's vision-language model with enhanced reasoning capabilities.",
+      "size_on_disk": 2362232012,
+      "tags": [
+        "gguf",
+        "base_model:moonshotai/Kimi-VL-A3B-Thinking-2506",
+        "base_model:quantized:moonshotai/Kimi-VL-A3B-Thinking-2506",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "has_model_index": false,
+      "downloads": 3039,
+      "likes": 29
+    },
+    {
+      "id": "ggml-org/Qwen3-Coder-30B-A3B-Instruct-Q8_0-GGUF:qwen3-coder-30b-a3b-instruct-q8_0.gguf",
+      "type": "llama_cpp_model",
+      "name": "Qwen3 Coder 30B A3B (GGUF)",
+      "repo_id": "ggml-org/Qwen3-Coder-30B-A3B-Instruct-Q8_0-GGUF",
+      "path": "qwen3-coder-30b-a3b-instruct-q8_0.gguf",
+      "description": "MoE coding model with 3B active params, excellent for code generation.",
+      "size_on_disk": 3865470566,
+      "pipeline_tag": "text-generation",
+      "tags": [
+        "transformers",
+        "gguf",
+        "llama-cpp",
+        "gguf-my-repo",
+        "text-generation",
+        "base_model:Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        "base_model:quantized:Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        "license:apache-2.0",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "has_model_index": false,
+      "downloads": 80721,
+      "likes": 7
+    },
+    {
+      "id": "ggml-org/Qwen3-0.6B-GGUF:Qwen3-0.6B-Q4_0.gguf",
+      "type": "llama_cpp_model",
+      "name": "Qwen3 0.6B (GGUF)",
+      "repo_id": "ggml-org/Qwen3-0.6B-GGUF",
+      "path": "Qwen3-0.6B-Q4_0.gguf",
+      "description": "Ultra-lightweight Qwen3 for edge devices and fast inference.",
+      "size_on_disk": 429496729,
+      "tags": [
+        "gguf",
+        "base_model:Qwen/Qwen3-0.6B",
+        "base_model:quantized:Qwen/Qwen3-0.6B",
+        "license:apache-2.0",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "has_model_index": false,
+      "downloads": 44304,
+      "likes": 13
+    },
+    {
+      "id": "ggml-org/gemma-3-270m-GGUF:gemma-3-270m-Q8_0.gguf",
+      "type": "llama_cpp_model",
+      "name": "Gemma 3 270M (GGUF)",
+      "repo_id": "ggml-org/gemma-3-270m-GGUF",
+      "path": "gemma-3-270m-Q8_0.gguf",
+      "description": "Tiny Gemma 3 for ultra-fast inference on CPU.",
+      "size_on_disk": 375809638,
+      "tags": [
+        "gguf",
+        "base_model:google/gemma-3-270m",
+        "base_model:quantized:google/gemma-3-270m",
+        "endpoints_compatible",
+        "region:us"
+      ],
+      "has_model_index": false,
+      "downloads": 595,
+      "likes": 19
+    },
+    {
+      "id": "ggml-org/gemma-3-27b-it-GGUF:gemma-3-27b-it-Q4_K_M.gguf",
+      "type": "llama_cpp_model",
+      "name": "Gemma 3 27B IT (GGUF)",
+      "repo_id": "ggml-org/gemma-3-27b-it-GGUF",
+      "path": "gemma-3-27b-it-Q4_K_M.gguf",
+      "description": "Google's largest Gemma 3 with strong reasoning and tool use.",
+      "size_on_disk": 16965120819,
+      "pipeline_tag": "image-text-to-text",
+      "tags": [
+        "gguf",
+        "image-text-to-text",
+        "arxiv:1905.07830",
+        "arxiv:1905.10044",
+        "arxiv:1911.11641",
+        "arxiv:1904.09728",
+        "arxiv:1705.03551",
+        "arxiv:1911.01547",
+        "arxiv:1907.10641",
+        "arxiv:1903.00161",
+        "arxiv:2009.03300",
+        "arxiv:2304.06364",
+        "arxiv:2103.03874",
+        "arxiv:2110.14168",
+        "arxiv:2311.12022",
+        "arxiv:2108.07732",
+        "arxiv:2107.03374",
+        "arxiv:2210.03057",
+        "arxiv:2106.03193",
+        "arxiv:1910.11856",
+        "arxiv:2502.12404",
+        "arxiv:2502.21228",
+        "arxiv:2404.16816",
+        "arxiv:2104.12756",
+        "arxiv:2311.16502",
+        "arxiv:2203.10244",
+        "arxiv:2404.12390",
+        "arxiv:1810.12440",
+        "arxiv:1908.02660",
+        "arxiv:2312.11805",
+        "base_model:google/gemma-3-27b-it",
+        "base_model:quantized:google/gemma-3-27b-it",
+        "license:gemma",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "has_model_index": false,
+      "downloads": 2604,
+      "likes": 23
+    },
+    {
+      "id": "Qwen/Qwen3-30B-A3B-GGUF:Qwen3-30B-A3B-Q4_K_M.gguf",
+      "type": "llama_cpp_model",
+      "name": "Qwen3 30B A3B (GGUF)",
+      "repo_id": "Qwen/Qwen3-30B-A3B-GGUF",
+      "path": "Qwen3-30B-A3B-Q4_K_M.gguf",
+      "description": "Qwen3 30B MoE model (3B active) in Q4_K_M quantization.",
+      "size_on_disk": 19327352832,
+      "pipeline_tag": "text-generation",
+      "tags": [
+        "gguf",
+        "text-generation",
+        "arxiv:2309.00071",
+        "arxiv:2505.09388",
+        "base_model:Qwen/Qwen3-30B-A3B",
+        "base_model:quantized:Qwen/Qwen3-30B-A3B",
+        "license:apache-2.0",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "has_model_index": false,
+      "downloads": 17644,
+      "likes": 65
+    },
+    {
+      "id": "Qwen/Qwen3-32B-GGUF:Qwen3-32B-Q4_K_M.gguf",
+      "type": "llama_cpp_model",
+      "name": "Qwen3 32B (GGUF)",
+      "repo_id": "Qwen/Qwen3-32B-GGUF",
+      "path": "Qwen3-32B-Q4_K_M.gguf",
+      "description": "Qwen3 32B dense model in Q4_K_M quantization.",
+      "size_on_disk": 20401094656,
+      "pipeline_tag": "text-generation",
+      "tags": [
+        "gguf",
+        "text-generation",
+        "arxiv:2309.00071",
+        "base_model:Qwen/Qwen3-32B",
+        "base_model:quantized:Qwen/Qwen3-32B",
+        "license:apache-2.0",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "has_model_index": false,
+      "downloads": 27381,
+      "likes": 64
+    },
+    {
+      "id": "Qwen/Qwen3-14B-GGUF:Qwen3-14B-Q4_K_M.gguf",
+      "type": "llama_cpp_model",
+      "name": "Qwen3 14B (GGUF)",
+      "repo_id": "Qwen/Qwen3-14B-GGUF",
+      "path": "Qwen3-14B-Q4_K_M.gguf",
+      "description": "Qwen3 14B dense model in Q4_K_M quantization.",
+      "size_on_disk": 9663676416,
+      "pipeline_tag": "text-generation",
+      "tags": [
+        "gguf",
+        "text-generation",
+        "arxiv:2309.00071",
+        "base_model:Qwen/Qwen3-14B",
+        "base_model:quantized:Qwen/Qwen3-14B",
+        "license:apache-2.0",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "has_model_index": false,
+      "downloads": 61212,
+      "likes": 73
+    },
+    {
+      "id": "Qwen/Qwen3-8B-GGUF:Qwen3-8B-Q4_K_M.gguf",
+      "type": "llama_cpp_model",
+      "name": "Qwen3 8B (GGUF)",
+      "repo_id": "Qwen/Qwen3-8B-GGUF",
+      "path": "Qwen3-8B-Q4_K_M.gguf",
+      "description": "Qwen3 8B dense model in Q4_K_M quantization.",
+      "size_on_disk": 5368709120,
+      "pipeline_tag": "text-generation",
+      "tags": [
+        "gguf",
+        "text-generation",
+        "arxiv:2309.00071",
+        "arxiv:2505.09388",
+        "base_model:Qwen/Qwen3-8B",
+        "base_model:quantized:Qwen/Qwen3-8B",
+        "license:apache-2.0",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "has_model_index": false,
+      "downloads": 94189,
+      "likes": 156
+    },
+    {
+      "id": "Qwen/Qwen3-4B-GGUF:Qwen3-4B-Q4_K_M.gguf",
+      "type": "llama_cpp_model",
+      "name": "Qwen3 4B (GGUF)",
+      "repo_id": "Qwen/Qwen3-4B-GGUF",
+      "path": "Qwen3-4B-Q4_K_M.gguf",
+      "description": "Qwen3 4B dense model in Q4_K_M quantization.",
+      "size_on_disk": 2684354560,
+      "pipeline_tag": "text-generation",
+      "tags": [
+        "gguf",
+        "text-generation",
+        "arxiv:2309.00071",
+        "arxiv:2505.09388",
+        "base_model:Qwen/Qwen3-4B",
+        "base_model:quantized:Qwen/Qwen3-4B",
+        "license:apache-2.0",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "has_model_index": false,
+      "downloads": 48252,
+      "likes": 84
+    }
+  ];
+  
+            static readonly isStreamingOutput = true;
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model to use for execution" })
+  declare model: any;
 
-  defaults() {
-    return {
-      model: {},
-      system: DEFAULT_SYSTEM_PROMPT,
-      prompt: "",
-      tools: [],
-      image: {},
-      audio: {},
-      history: [],
-      thread_id: "",
-      max_tokens: 8192,
-    };
-  }
+  @prop({ type: "str", default: "You are a friendly assistant", title: "System", description: "The system prompt for the LLM" })
+  declare system: any;
+
+  @prop({ type: "str", default: "", title: "Prompt", description: "The prompt for the LLM" })
+  declare prompt: any;
+
+  @prop({ type: "list[tool_name]", default: [], title: "Tools", description: "Tools to enable for the agent. Select workspace tools (read_file, write_file, list_directory) to enable file operations." })
+  declare tools: any;
+
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "The image to analyze" })
+  declare image: any;
+
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio to analyze" })
+  declare audio: any;
+
+  @prop({ type: "list[message]", default: [], title: "Messages", description: "The messages for the LLM" })
+  declare history: any;
+
+  @prop({ type: "str", default: "", title: "Thread ID", description: "Optional thread ID for persistent conversation history. If provided, messages will be loaded from and saved to this thread." })
+  declare thread_id: any;
+
+  @prop({ type: "int", default: 8192, title: "Max Tokens", min: 1, max: 100000 })
+  declare max_tokens: any;
+
+
+
 
   async *genProcess(
     inputs: Record<string, unknown>,
     context?: ProcessingContext
   ): AsyncGenerator<Record<string, unknown>> {
-    const { providerId, modelId } = getModelConfig(inputs, this._props);
+    const { providerId, modelId } = getModelConfig(inputs, this.serialize());
     log.info("AgentNode starting", {
-      nodeId: this._props.__node_id ?? null,
+      nodeId: this.__node_id ?? null,
       providerId,
       modelId,
       hasContext: Boolean(context),
       hasGetProvider: Boolean(context && typeof context.getProvider === "function"),
-      propKeys: Object.keys(this._props),
+      propKeys: Object.keys(this.serialize()),
       inputKeys: Object.keys(inputs),
     });
     if (!providerId || !modelId) {
       log.error("AgentNode missing model selection", {
-        nodeId: this._props.__node_id ?? null,
+        nodeId: this.__node_id ?? null,
         providerId,
         modelId,
         modelInput: inputs.model ?? null,
-        modelProp: this._props.model ?? null,
+        modelProp: this.model ?? null,
       });
       throw new Error("Select a model");
     }
     if (!context || typeof context.getProvider !== "function") {
       log.error("AgentNode missing processing context or provider access", {
-        nodeId: this._props.__node_id ?? null,
+        nodeId: this.__node_id ?? null,
         providerId,
         modelId,
       });
       throw new Error("Processing context is required");
     }
 
-    const prompt = asText(inputs.prompt ?? this._props.prompt ?? "");
-    const system = asText(inputs.system ?? this._props.system ?? DEFAULT_SYSTEM_PROMPT);
-    const image = inputs.image ?? this._props.image;
-    const audio = inputs.audio ?? this._props.audio;
-    const historyInput = inputs.history ?? this._props.history;
+    const prompt = asText(inputs.prompt ?? this.prompt ?? "");
+    const system = asText(inputs.system ?? this.system ?? DEFAULT_SYSTEM_PROMPT);
+    const image = inputs.image ?? this.image;
+    const audio = inputs.audio ?? this.audio;
+    const historyInput = inputs.history ?? this.history;
     const history = Array.isArray(historyInput)
       ? historyInput.map((item) => normalizeMessage(item)).filter((item): item is Message => item !== null)
       : [];
-    const threadId = String(inputs.thread_id ?? this._props.thread_id ?? "").trim();
-    const maxTokens = Number(inputs.max_tokens ?? this._props.max_tokens ?? 8192);
-    const tools = normalizeTools(inputs.tools ?? this._props.tools);
+    const threadId = String(inputs.thread_id ?? this.thread_id ?? "").trim();
+    const maxTokens = Number(inputs.max_tokens ?? this.max_tokens ?? 8192);
+    const tools = normalizeTools(inputs.tools ?? this.tools);
     const structuredSchema = getStructuredOutputSchema(this);
     const responseFormat = structuredSchema
       ? {
@@ -886,7 +1832,7 @@ export class AgentNode extends BaseNode {
       buildUserMessage(prompt, image, audio),
     ];
     log.info("AgentNode prepared messages", {
-      nodeId: this._props.__node_id ?? null,
+      nodeId: this.__node_id ?? null,
       providerId,
       modelId,
       threadId: threadId || null,
@@ -912,7 +1858,7 @@ export class AgentNode extends BaseNode {
       firstIteration = false;
       shouldContinue = false;
       log.info("AgentNode provider iteration starting", {
-        nodeId: this._props.__node_id ?? null,
+        nodeId: this.__node_id ?? null,
         providerId,
         modelId,
         threadId: threadId || null,
@@ -937,7 +1883,7 @@ export class AgentNode extends BaseNode {
           if (item.thinking) {
             thinkingCount += 1;
             log.debug("AgentNode received thinking chunk", {
-              nodeId: this._props.__node_id ?? null,
+              nodeId: this.__node_id ?? null,
               providerId,
               modelId,
               contentLength: (item.content ?? "").length,
@@ -949,7 +1895,7 @@ export class AgentNode extends BaseNode {
           if (item.content_type === "audio") {
             audioChunkCount += 1;
             log.debug("AgentNode received audio chunk", {
-              nodeId: this._props.__node_id ?? null,
+              nodeId: this.__node_id ?? null,
               providerId,
               modelId,
               contentLength: (item.content ?? "").length,
@@ -966,7 +1912,7 @@ export class AgentNode extends BaseNode {
           } else {
             assistantText += item.content ?? "";
             log.debug("AgentNode received text chunk", {
-              nodeId: this._props.__node_id ?? null,
+              nodeId: this.__node_id ?? null,
               providerId,
               modelId,
               chunkLength: (item.content ?? "").length,
@@ -980,7 +1926,7 @@ export class AgentNode extends BaseNode {
         if (isToolCallItem(item)) {
           assistantToolCalls.push(item);
           log.info("AgentNode received tool call", {
-            nodeId: this._props.__node_id ?? null,
+            nodeId: this.__node_id ?? null,
             providerId,
             modelId,
             toolCallId: item.id,
@@ -991,7 +1937,7 @@ export class AgentNode extends BaseNode {
       }
 
       log.info("AgentNode provider iteration completed", {
-        nodeId: this._props.__node_id ?? null,
+        nodeId: this.__node_id ?? null,
         providerId,
         modelId,
         chunkCount,
@@ -1004,7 +1950,7 @@ export class AgentNode extends BaseNode {
       if (assistantText) {
         lastTextOutput = assistantText;
         log.info("AgentNode yielding final text", {
-          nodeId: this._props.__node_id ?? null,
+          nodeId: this.__node_id ?? null,
           providerId,
           modelId,
           textLength: assistantText.length,
@@ -1026,7 +1972,7 @@ export class AgentNode extends BaseNode {
         const tool = tools.find((candidate) => candidate.name === toolCall.name);
         if (!tool || typeof tool.process !== "function") {
           log.warn("AgentNode tool call had no matching executable tool", {
-            nodeId: this._props.__node_id ?? null,
+            nodeId: this.__node_id ?? null,
             toolCallId: toolCall.id,
             toolName: toolCall.name,
             availableTools: tools.map((candidate) => candidate.name),
@@ -1034,7 +1980,7 @@ export class AgentNode extends BaseNode {
           continue;
         }
         log.info("AgentNode executing tool", {
-          nodeId: this._props.__node_id ?? null,
+          nodeId: this.__node_id ?? null,
           toolCallId: toolCall.id,
           toolName: toolCall.name,
         });
@@ -1048,7 +1994,7 @@ export class AgentNode extends BaseNode {
         await saveThreadMessage(context, threadId, toolMessage);
         shouldContinue = true;
         log.info("AgentNode tool execution completed", {
-          nodeId: this._props.__node_id ?? null,
+          nodeId: this.__node_id ?? null,
           toolCallId: toolCall.id,
           toolName: toolCall.name,
           resultLength: String(toolMessage.content ?? "").length,
@@ -1059,7 +2005,7 @@ export class AgentNode extends BaseNode {
     if (structuredSchema) {
       if (!lastTextOutput) {
         log.error("AgentNode structured output missing text payload", {
-          nodeId: this._props.__node_id ?? null,
+          nodeId: this.__node_id ?? null,
           providerId,
           modelId,
         });
@@ -1068,7 +2014,7 @@ export class AgentNode extends BaseNode {
       const parsed = extractJson(lastTextOutput);
       if (!parsed) {
         log.error("AgentNode structured output was not valid JSON", {
-          nodeId: this._props.__node_id ?? null,
+          nodeId: this.__node_id ?? null,
           providerId,
           modelId,
           textPreview: lastTextOutput.slice(0, 200),
@@ -1081,7 +2027,7 @@ export class AgentNode extends BaseNode {
       for (const name of required) {
         if (!(name in parsed)) {
           log.error("AgentNode structured output missing required field", {
-            nodeId: this._props.__node_id ?? null,
+            nodeId: this.__node_id ?? null,
             missingField: name,
             parsedKeys: Object.keys(parsed),
           });
@@ -1089,14 +2035,14 @@ export class AgentNode extends BaseNode {
         }
       }
       log.info("AgentNode yielding structured output", {
-        nodeId: this._props.__node_id ?? null,
+        nodeId: this.__node_id ?? null,
         keys: Object.keys(parsed),
       });
       yield parsed;
     }
 
     log.info("AgentNode completed", {
-      nodeId: this._props.__node_id ?? null,
+      nodeId: this.__node_id ?? null,
       providerId,
       modelId,
       finalTextLength: lastTextOutput?.length ?? 0,
@@ -1132,14 +2078,14 @@ export class AgentNode extends BaseNode {
 
     if (structuredResult) {
       log.info("AgentNode process() returning structured result", {
-        nodeId: this._props.__node_id ?? null,
+        nodeId: this.__node_id ?? null,
         keys: Object.keys(structuredResult),
       });
       return structuredResult;
     }
 
     log.info("AgentNode process() returning aggregate result", {
-      nodeId: this._props.__node_id ?? null,
+      nodeId: this.__node_id ?? null,
       textLength: lastText.length,
       hasAudio: Boolean(lastAudio),
     });
@@ -1155,23 +2101,73 @@ export class AgentNode extends BaseNode {
 
 export class ControlAgentNode extends BaseNode {
   static readonly nodeType = "nodetool.agents.ControlAgent";
-  static readonly title = "Control Agent";
-  static readonly description = "Generate control parameters from context.";
+            static readonly title = "Control Agent";
+            static readonly description = "Agent that analyzes context and outputs control parameters for downstream nodes via control edges.\n    control, agent, flow-control, parameters, automation, decision-making\n\n    This agent receives _control_context as an auto-injected input when it has outgoing\n    control edges. It uses an LLM to analyze the context and controlled node properties,\n    then outputs control parameters that are routed to other nodes via control edges.\n    Control edges override normal data inputs, enabling dynamic workflow behavior.\n\n    The _control_context is automatically injected by the system and contains information\n    about which nodes this agent controls and their available properties.\n\n    Use cases:\n    - Dynamic parameter setting based on content analysis\n    - Conditional workflow routing based on LLM reasoning\n    - Adaptive processing based on input characteristics\n    - Context-aware parameter optimization";
+        static readonly metadataOutputTypes = {
+    __control_output__: "dict[str, any]"
+  };
+          static readonly recommendedModels = [
+    {
+      "id": "qwen3:4b",
+      "type": "llama_model",
+      "name": "Qwen3 - 4B",
+      "repo_id": "qwen3:4b",
+      "description": "Fast and efficient for control decisions with strong JSON output.",
+      "size_on_disk": 2684354560
+    },
+    {
+      "id": "gemma3:4b",
+      "type": "llama_model",
+      "name": "Gemma3 - 4B",
+      "repo_id": "gemma3:4b",
+      "description": "Compact model suitable for control flow decisions.",
+      "size_on_disk": 3543348019
+    },
+    {
+      "id": "llama3.2:3b",
+      "type": "llama_model",
+      "name": "Llama 3.2 - 3B",
+      "repo_id": "llama3.2:3b",
+      "description": "Lightweight Llama variant for fast control decisions.",
+      "size_on_disk": 2040109465
+    }
+  ];
+  
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model to use for control decisions" })
+  declare model: any;
 
-  defaults() {
-    return { _control_context: {} };
-  }
+  @prop({ type: "str", default: "You are a control flow agent that analyzes context and determines parameters for downstream nodes.\n\nYour task is to:\n1. Analyze the provided context (text, data, or previous results)\n2. Review the controlled nodes and their available properties (provided in _control_context)\n3. Reason about what parameter values should be set for each controlled node\n4. Output a JSON object with property names as keys and their values\n\nThe _control_context will tell you:\n- Which nodes you control (by node_id)\n- Each node's type and available properties\n- Current property values, types, descriptions, and defaults\n\nExample _control_context:\n{\n  \"target_node_id\": {\n    \"node_id\": \"target_node_id\",\n    \"node_type\": \"nodetool.processing.SomeNode\",\n    \"properties\": {\n      \"threshold\": {\n        \"value\": 0.5,\n        \"type\": \"float\",\n        \"description\": \"Processing threshold\",\n        \"default\": 0.5\n      }\n    }\n  }\n}\n\nExample output format:\n{\n  \"threshold\": 0.95,\n  \"mode\": \"turbo\"\n}\n\nGuidelines:\n- Output ONLY properties that exist in the controlled nodes' schemas\n- Use appropriate data types matching the property types (strings, numbers, booleans)\n- Be concise and precise in your parameter choices\n- Control parameters override normal data edge inputs\n- If multiple controlled nodes exist, return parameters for the relevant node(s)\n", title: "System", description: "The system prompt for the control agent" })
+  declare system: any;
+
+  @prop({ type: "str", default: "", title: "Context", description: "Legacy free-form context used to infer control parameters." })
+  declare context: any;
+
+  @prop({ type: "str", default: "", title: "Schema Description", description: "Legacy schema hint (e.g. 'brightness: int, contrast: int')." })
+  declare schema_description: any;
+
+  @prop({ type: "int", default: 2048, title: "Max Tokens", min: 1, max: 100000 })
+  declare max_tokens: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const value = inputs._control_context ?? this._props._control_context ?? {};
-    const legacyContext = asText(inputs.context ?? this._props.context ?? "");
+    const value = inputs._control_context ?? this._control_context ?? {};
+    const legacyContext = asText(inputs.context ?? this.context ?? "");
     const schemaDescription = asText(
-      inputs.schema_description ?? this._props.schema_description ?? ""
+      inputs.schema_description ?? this.schema_description ?? ""
     );
-    const { providerId, modelId } = getModelConfig(inputs, this._props);
+    const { providerId, modelId } = getModelConfig(inputs, this.serialize());
     if (hasProviderSupport(context, providerId, modelId)) {
       const provider = await context.getProvider(providerId);
       const userPrompt =
@@ -1180,7 +2176,7 @@ export class ControlAgentNode extends BaseNode {
           : `Context:\n${legacyContext}\n\nSchema description:\n${schemaDescription}`;
       const raw = await generateProviderMessage(provider, {
         model: modelId,
-        maxTokens: Number(inputs.max_tokens ?? this._props.max_tokens ?? 2048),
+        maxTokens: Number(inputs.max_tokens ?? this.max_tokens ?? 2048),
         responseFormat: { type: "json_object" },
         messages: [
           { role: "system", content: CONTROL_AGENT_SYSTEM_PROMPT },
@@ -1195,24 +2191,147 @@ export class ControlAgentNode extends BaseNode {
 
 export class ResearchAgentNode extends BaseNode {
   static readonly nodeType = "nodetool.agents.ResearchAgent";
-  static readonly title = "Research Agent";
-  static readonly description = "Produce lightweight research notes for a query.";
+            static readonly title = "Research Agent";
+            static readonly description = "Autonomous research agent that gathers information from the web and synthesizes findings.\n    research, web-search, data-gathering, agent, automation\n\n    Uses dynamic outputs to define the structure of research results.\n    The agent will:\n    - Search the web for relevant information\n    - Browse and extract content from web pages\n    - Organize findings in the workspace\n    - Return structured results matching your output schema\n\n    Perfect for:\n    - Market research and competitive analysis\n    - Literature reviews and fact-finding\n    - Data collection from multiple sources\n    - Automated research workflows";
+          static readonly basicFields = [
+  "objective",
+  "model",
+  "tools"
+];
+          static readonly supportsDynamicOutputs = true;
+          static readonly recommendedModels = [
+    {
+      "id": "gpt-oss:20b",
+      "type": "llama_model",
+      "name": "GPT - OSS",
+      "repo_id": "gpt-oss:20b",
+      "description": "Open-weight GPT-4o derivative handles research workflows with tool calling.",
+      "size_on_disk": 34359738368
+    },
+    {
+      "id": "qwen3:14b",
+      "type": "llama_model",
+      "name": "Qwen3 - 14B",
+      "repo_id": "qwen3:14b",
+      "description": "Qwen3 14B provides strong tool use and synthesis for local research agents.",
+      "size_on_disk": 30064771072
+    },
+    {
+      "id": "ggml-org/gpt-oss-20b-GGUF:gpt-oss-20b-mxfp4.gguf",
+      "type": "llama_cpp_model",
+      "name": "GPT-OSS 20B (GGUF)",
+      "repo_id": "ggml-org/gpt-oss-20b-GGUF",
+      "path": "gpt-oss-20b-mxfp4.gguf",
+      "description": "OpenAI's open-weight model for research via llama.cpp.",
+      "size_on_disk": 9191230013,
+      "tags": [
+        "gguf",
+        "base_model:openai/gpt-oss-20b",
+        "base_model:quantized:openai/gpt-oss-20b",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "has_model_index": false,
+      "downloads": 156909,
+      "likes": 135
+    },
+    {
+      "id": "ggml-org/gemma-3-12b-it-GGUF:gemma-3-12b-it-Q4_K_M.gguf",
+      "type": "llama_cpp_model",
+      "name": "Gemma 3 12B IT (GGUF)",
+      "repo_id": "ggml-org/gemma-3-12b-it-GGUF",
+      "path": "gemma-3-12b-it-Q4_K_M.gguf",
+      "description": "Google's Gemma 3 12B for research with strong reasoning.",
+      "size_on_disk": 7838315315,
+      "pipeline_tag": "image-text-to-text",
+      "tags": [
+        "gguf",
+        "image-text-to-text",
+        "arxiv:1905.07830",
+        "arxiv:1905.10044",
+        "arxiv:1911.11641",
+        "arxiv:1904.09728",
+        "arxiv:1705.03551",
+        "arxiv:1911.01547",
+        "arxiv:1907.10641",
+        "arxiv:1903.00161",
+        "arxiv:2009.03300",
+        "arxiv:2304.06364",
+        "arxiv:2103.03874",
+        "arxiv:2110.14168",
+        "arxiv:2311.12022",
+        "arxiv:2108.07732",
+        "arxiv:2107.03374",
+        "arxiv:2210.03057",
+        "arxiv:2106.03193",
+        "arxiv:1910.11856",
+        "arxiv:2502.12404",
+        "arxiv:2502.21228",
+        "arxiv:2404.16816",
+        "arxiv:2104.12756",
+        "arxiv:2311.16502",
+        "arxiv:2203.10244",
+        "arxiv:2404.12390",
+        "arxiv:1810.12440",
+        "arxiv:1908.02660",
+        "arxiv:2312.11805",
+        "base_model:google/gemma-3-12b-it",
+        "base_model:quantized:google/gemma-3-12b-it",
+        "license:gemma",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "has_model_index": false,
+      "downloads": 214667,
+      "likes": 30
+    }
+  ];
+  
+  @prop({ type: "str", default: "", title: "Objective", description: "The research objective or question to investigate" })
+  declare objective: any;
 
-  defaults() {
-    return { query: "", prompt: "" };
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model to use for research and synthesis" })
+  declare model: any;
+
+  @prop({ type: "str", default: "You are a research assistant.\n\nGoal\n- Conduct thorough research on the given objective\n- Use tools to gather information from multiple sources\n- Write intermediate findings to the workspace for reference\n- Synthesize information into the structured output format specified\n\nTools Available\n- google_search: Search the web for information\n- browser: Navigate to URLs and extract content\n- write_file: Save research findings to files\n- read_file: Read previously saved research files\n- list_directory: List files in the workspace\n\nWorkflow\n1. Break down the research objective into specific queries\n2. Use google_search to find relevant sources\n3. Use browser to extract content from promising URLs\n4. Save important findings using write_file\n5. Synthesize all findings into the requested output format\n\nOutput Format\n- Return a structured JSON object matching the defined output schema\n- Be thorough and cite sources where appropriate\n- Ensure all required fields are populated with accurate information\n", title: "System Prompt", description: "System prompt guiding the agent's research behavior" })
+  declare system_prompt: any;
+
+  @prop({ type: "list[tool_name]", default: [
+  {
+    "name": "google_search"
+  },
+  {
+    "name": "browser"
   }
+], title: "Tools", description: "Tools to enable for research. Select workspace tools (read_file, write_file, list_directory) to enable file operations." })
+  declare tools: any;
+
+  @prop({ type: "int", default: 8192, title: "Max Tokens", description: "Maximum tokens for agent responses", min: 1, max: 100000 })
+  declare max_tokens: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const query = asText(inputs.query ?? this._props.query ?? this._props.prompt ?? inputs.prompt ?? "");
-    const { providerId, modelId } = getModelConfig(inputs, this._props);
+    const query = asText(inputs.query ?? this.query ?? this.prompt ?? inputs.prompt ?? "");
+    const { providerId, modelId } = getModelConfig(inputs, this.serialize());
     if (hasProviderSupport(context, providerId, modelId)) {
       const provider = await context.getProvider(providerId);
       const raw = await generateProviderMessage(provider, {
         model: modelId,
-        maxTokens: Number(inputs.max_tokens ?? this._props.max_tokens ?? 2048),
+        maxTokens: Number(inputs.max_tokens ?? this.max_tokens ?? 2048),
         responseFormat: {
           type: "json_schema",
           json_schema: {

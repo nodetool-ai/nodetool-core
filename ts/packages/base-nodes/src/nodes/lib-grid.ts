@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import sharp from "sharp";
 import { promises as fs } from "node:fs";
 
@@ -42,15 +42,32 @@ function toImageRef(buf: Buffer): Record<string, unknown> {
 
 export class SliceImageGridLibNode extends BaseNode {
   static readonly nodeType = "lib.grid.SliceImageGrid";
-  static readonly title = "Slice Image Grid";
-  static readonly description = "Slice an image into a grid of tiles.";
+            static readonly title = "Slice Image Grid";
+            static readonly description = "Slice an image into a grid of tiles.\n    image, grid, slice, tiles\n\n    Use cases:\n    - Prepare large images for processing in smaller chunks\n    - Create image puzzles or mosaic effects\n    - Distribute image processing tasks across multiple workers";
+        static readonly metadataOutputTypes = {
+    output: "list[image]"
+  };
+  
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "The image to slice into a grid." })
+  declare image: any;
 
-  defaults() {
-    return { image: {}, columns: 0, rows: 0 };
-  }
+  @prop({ type: "int", default: 0, title: "Columns", description: "Number of columns in the grid.", min: 0 })
+  declare columns: any;
+
+  @prop({ type: "int", default: 0, title: "Rows", description: "Number of rows in the grid.", min: 0 })
+  declare rows: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const imageInput = inputs.image ?? this._props.image;
+    const imageInput = inputs.image ?? this.image;
     const src = await loadImageBuffer(imageInput);
     const srcSharp = sharp(src, { failOn: "none" });
     const meta = await srcSharp.metadata();
@@ -61,8 +78,8 @@ export class SliceImageGridLibNode extends BaseNode {
       throw new Error("Input image has invalid dimensions.");
     }
 
-    let columns = Number(inputs.columns ?? this._props.columns ?? 0);
-    let rows = Number(inputs.rows ?? this._props.rows ?? 0);
+    let columns = Number(inputs.columns ?? this.columns ?? 0);
+    let rows = Number(inputs.rows ?? this.rows ?? 0);
 
     if (columns <= 0 && rows <= 0) {
       columns = 3;
@@ -103,15 +120,23 @@ export class SliceImageGridLibNode extends BaseNode {
 
 export class CombineImageGridLibNode extends BaseNode {
   static readonly nodeType = "lib.grid.CombineImageGrid";
-  static readonly title = "Combine Image Grid";
-  static readonly description = "Combine a grid of image tiles into a single image.";
+            static readonly title = "Combine Image Grid";
+            static readonly description = "Combine a grid of image tiles into a single image.\n    image, grid, combine, tiles\n\n    Use cases:\n    - Reassemble processed image chunks\n    - Create composite images from smaller parts\n    - Merge tiled image data from distributed processing";
+        static readonly metadataOutputTypes = {
+    output: "image"
+  };
+  
+  @prop({ type: "list[image]", default: [], title: "Tiles", description: "List of image tiles to combine." })
+  declare tiles: any;
 
-  defaults() {
-    return { tiles: [], columns: 0 };
-  }
+  @prop({ type: "int", default: 0, title: "Columns", description: "Number of columns in the grid.", min: 0 })
+  declare columns: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const tileInputs = (inputs.tiles ?? this._props.tiles ?? []) as unknown[];
+    const tileInputs = (inputs.tiles ?? this.tiles ?? []) as unknown[];
     if (!Array.isArray(tileInputs) || tileInputs.length === 0) {
       throw new Error("No tiles provided for combining.");
     }
@@ -119,7 +144,7 @@ export class CombineImageGridLibNode extends BaseNode {
     const tiles = await Promise.all(tileInputs.map((tile) => loadImageBuffer(tile)));
     const metas = await Promise.all(tiles.map((tile) => sharp(tile, { failOn: "none" }).metadata()));
 
-    let columns = Number(inputs.columns ?? this._props.columns ?? 0);
+    let columns = Number(inputs.columns ?? this.columns ?? 0);
     if (columns <= 0) {
       columns = Math.floor(Math.sqrt(tiles.length));
     }

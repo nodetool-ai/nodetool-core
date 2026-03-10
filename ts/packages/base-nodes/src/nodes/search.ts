@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { NodeClass } from "@nodetool/node-sdk";
 
 // ---------------------------------------------------------------------------
@@ -46,13 +46,21 @@ async function serpRequest(
 // ---------------------------------------------------------------------------
 export class GoogleSearchNode extends BaseNode {
   static readonly nodeType = "search.google.GoogleSearch";
-  static readonly title = "Google Search";
-  static readonly description =
-    "Search Google to retrieve organic search results from the web.";
+            static readonly title = "Google Search";
+            static readonly description = "Search Google to retrieve organic search results from the web.\n    google, search, serp, web, query";
+        static readonly metadataOutputTypes = {
+    output: "list[organic_result]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Keyword", description: "Search query or keyword to search for" })
+  declare keyword: any;
 
-  defaults() {
-    return { keyword: "", num_results: 10 };
-  }
+  @prop({ type: "int", default: 10, title: "Num Results", description: "Maximum number of results to return" })
+  declare num_results: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const keyword = String(inputs.keyword ?? "");
@@ -78,13 +86,21 @@ export class GoogleSearchNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class GoogleNewsNode extends BaseNode {
   static readonly nodeType = "search.google.GoogleNews";
-  static readonly title = "Google News";
-  static readonly description =
-    "Search Google News to retrieve current news articles and headlines.";
+            static readonly title = "Google News";
+            static readonly description = "Search Google News to retrieve current news articles and headlines.\n    google, news, serp, articles, journalism";
+        static readonly metadataOutputTypes = {
+    output: "list[news_result]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Keyword", description: "Search query or keyword for news articles" })
+  declare keyword: any;
 
-  defaults() {
-    return { keyword: "", num_results: 10 };
-  }
+  @prop({ type: "int", default: 10, title: "Num Results", description: "Maximum number of news results to return" })
+  declare num_results: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const keyword = String(inputs.keyword ?? "");
@@ -110,13 +126,24 @@ export class GoogleNewsNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class GoogleImagesNode extends BaseNode {
   static readonly nodeType = "search.google.GoogleImages";
-  static readonly title = "Google Images";
-  static readonly description =
-    "Search Google Images to find visual content or perform reverse image search.";
+            static readonly title = "Google Images";
+            static readonly description = "Search Google Images to find visual content or perform reverse image search.\n    google, images, serp, visual, reverse, search";
+        static readonly metadataOutputTypes = {
+    output: "list[image]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Keyword", description: "Search query or keyword for images" })
+  declare keyword: any;
 
-  defaults() {
-    return { keyword: "", image_url: "", num_results: 20 };
-  }
+  @prop({ type: "str", default: "", title: "Image Url", description: "URL of image for reverse image search" })
+  declare image_url: any;
+
+  @prop({ type: "int", default: 20, title: "Num Results", description: "Maximum number of image results to return" })
+  declare num_results: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const keyword = String(inputs.keyword ?? "");
@@ -155,13 +182,21 @@ export class GoogleImagesNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class GoogleFinanceNode extends BaseNode {
   static readonly nodeType = "search.google.GoogleFinance";
-  static readonly title = "Google Finance";
-  static readonly description =
-    "Retrieve financial market data and stock information from Google Finance.";
+            static readonly title = "Google Finance";
+            static readonly description = "Retrieve financial market data and stock information from Google Finance.\n    google, finance, stocks, market, serp, trading";
+        static readonly metadataOutputTypes = {
+    output: "dict[str, any]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Query", description: "Stock symbol or company name to search for" })
+  declare query: any;
 
-  defaults() {
-    return { query: "", window: "" };
-  }
+  @prop({ type: "str", default: "", title: "Window", description: "Time window for financial data (e.g., '1d', '5d', '1m', '3m', '6m', '1y', '5y')" })
+  declare window: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const query = String(inputs.query ?? "");
@@ -187,13 +222,24 @@ export class GoogleFinanceNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class GoogleJobsNode extends BaseNode {
   static readonly nodeType = "search.google.GoogleJobs";
-  static readonly title = "Google Jobs";
-  static readonly description =
-    "Search Google Jobs for employment opportunities and job listings.";
+            static readonly title = "Google Jobs";
+            static readonly description = "Search Google Jobs for employment opportunities and job listings.\n    google, jobs, employment, careers, serp, hiring";
+        static readonly metadataOutputTypes = {
+    output: "list[job_result]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Query", description: "Job title, skills, or company name to search for" })
+  declare query: any;
 
-  defaults() {
-    return { query: "", location: "", num_results: 10 };
-  }
+  @prop({ type: "str", default: "", title: "Location", description: "Geographic location for job search" })
+  declare location: any;
+
+  @prop({ type: "int", default: 10, title: "Num Results", description: "Maximum number of job results to return" })
+  declare num_results: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const query = String(inputs.query ?? "");
@@ -220,13 +266,18 @@ export class GoogleJobsNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class GoogleLensNode extends BaseNode {
   static readonly nodeType = "search.google.GoogleLens";
-  static readonly title = "Google Lens";
-  static readonly description =
-    "Analyze images using Google Lens to find visual matches and related content.";
+            static readonly title = "Google Lens";
+            static readonly description = "Analyze images using Google Lens to find visual matches and related content.\n    google, lens, visual, image, search, serp, identify";
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Image Url", description: "URL of the image to analyze with Google Lens" })
+  declare image_url: any;
 
-  defaults() {
-    return { image_url: "", num_results: 10 };
-  }
+  @prop({ type: "int", default: 10, title: "Num Results", description: "Maximum number of visual search results to return" })
+  declare num_results: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const imageUrl = String(inputs.image_url ?? "");
@@ -253,13 +304,21 @@ export class GoogleLensNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class GoogleMapsNode extends BaseNode {
   static readonly nodeType = "search.google.GoogleMaps";
-  static readonly title = "Google Maps";
-  static readonly description =
-    "Search Google Maps for places, businesses, and get location details.";
+            static readonly title = "Google Maps";
+            static readonly description = "Search Google Maps for places, businesses, and get location details.\n    google, maps, places, locations, serp, geography";
+        static readonly metadataOutputTypes = {
+    output: "list[local_result]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Query", description: "Place name, address, or location query" })
+  declare query: any;
 
-  defaults() {
-    return { query: "", num_results: 10 };
-  }
+  @prop({ type: "int", default: 10, title: "Num Results", description: "Maximum number of map results to return" })
+  declare num_results: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const query = String(inputs.query ?? "");
@@ -290,21 +349,36 @@ export class GoogleMapsNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class GoogleShoppingNode extends BaseNode {
   static readonly nodeType = "search.google.GoogleShopping";
-  static readonly title = "Google Shopping";
-  static readonly description =
-    "Search Google Shopping for products with filters and pricing information.";
+            static readonly title = "Google Shopping";
+            static readonly description = "Search Google Shopping for products with filters and pricing information.\n    google, shopping, products, ecommerce, serp, prices";
+        static readonly metadataOutputTypes = {
+    output: "list[shopping_result]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Query", description: "Product name or description to search for" })
+  declare query: any;
 
-  defaults() {
-    return {
-      query: "",
-      country: "us",
-      min_price: 0,
-      max_price: 0,
-      condition: "",
-      sort_by: "",
-      num_results: 10,
-    };
-  }
+  @prop({ type: "str", default: "us", title: "Country", description: "Country code for shopping search (e.g., 'us', 'uk', 'ca')" })
+  declare country: any;
+
+  @prop({ type: "int", default: 0, title: "Min Price", description: "Minimum price filter for products" })
+  declare min_price: any;
+
+  @prop({ type: "int", default: 0, title: "Max Price", description: "Maximum price filter for products" })
+  declare max_price: any;
+
+  @prop({ type: "str", default: "", title: "Condition", description: "Product condition filter (e.g., 'new', 'used', 'refurbished')" })
+  declare condition: any;
+
+  @prop({ type: "str", default: "", title: "Sort By", description: "Sort order for results (e.g., 'price_low_to_high', 'price_high_to_low', 'review_score')" })
+  declare sort_by: any;
+
+  @prop({ type: "int", default: 10, title: "Num Results", description: "Maximum number of shopping results to return" })
+  declare num_results: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const query = String(inputs.query ?? "");

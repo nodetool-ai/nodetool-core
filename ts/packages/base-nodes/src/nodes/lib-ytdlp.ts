@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -101,25 +101,52 @@ async function findFileByExt(dir: string, exts: string[], preferredId = ""): Pro
 
 export class YtDlpDownloadLibNode extends BaseNode {
   static readonly nodeType = "lib.ytdlp.YtDlpDownload";
-  static readonly title = "YouTube Downloader";
-  static readonly description = "Download media from URLs using yt-dlp.";
+            static readonly title = "YouTube Downloader";
+            static readonly description = "Download media from URLs using yt-dlp.\n    download, video, audio, youtube, media, yt-dlp, metadata, subtitles\n\n    Use cases:\n    - Download videos from YouTube and other platforms\n    - Extract audio from video URLs\n    - Retrieve video/audio metadata without downloading\n    - Download subtitles and thumbnails";
+        static readonly metadataOutputTypes = {
+    video: "video",
+    audio: "audio",
+    metadata: "dict",
+    subtitles: "str",
+    thumbnail: "image"
+  };
+  
+  @prop({ type: "str", default: "", title: "Url", description: "URL of the media to download" })
+  declare url: any;
 
-  defaults() {
-    return {
-      url: "",
-      mode: "video",
-      format_selector: "best",
-      container: "auto",
-      subtitles: false,
-      thumbnail: false,
-      overwrite: false,
-      rate_limit_kbps: 0,
-      timeout: 600,
-    };
-  }
+  @prop({ type: "enum", default: "video", title: "Mode", description: "Download mode: video, audio, or metadata only", values: [
+  "video",
+  "audio",
+  "metadata"
+] })
+  declare mode: any;
+
+  @prop({ type: "str", default: "best", title: "Format Selector", description: "yt-dlp format selector (e.g., 'best', 'bestvideo+bestaudio')" })
+  declare format_selector: any;
+
+  @prop({ type: "str", default: "auto", title: "Container", description: "Output container format (e.g., 'mp4', 'webm', 'auto')" })
+  declare container: any;
+
+  @prop({ type: "bool", default: false, title: "Subtitles", description: "Download subtitles if available" })
+  declare subtitles: any;
+
+  @prop({ type: "bool", default: false, title: "Thumbnail", description: "Download thumbnail if available" })
+  declare thumbnail: any;
+
+  @prop({ type: "bool", default: false, title: "Overwrite", description: "Overwrite existing files" })
+  declare overwrite: any;
+
+  @prop({ type: "int", default: 0, title: "Rate Limit Kbps", description: "Rate limit in KB/s (0 = unlimited)", min: 0 })
+  declare rate_limit_kbps: any;
+
+  @prop({ type: "int", default: 600, title: "Timeout", description: "Timeout in seconds", min: 1, max: 3600 })
+  declare timeout: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const url = String(inputs.url ?? this._props.url ?? "").trim();
+    const url = String(inputs.url ?? this.url ?? "").trim();
     if (!url) {
       throw new Error("URL cannot be empty");
     }
@@ -127,14 +154,14 @@ export class YtDlpDownloadLibNode extends BaseNode {
       throw new Error(`Invalid URL format: ${url}`);
     }
 
-    const mode = String(inputs.mode ?? this._props.mode ?? "video").toLowerCase();
-    const timeoutMs = Math.max(1000, Number(inputs.timeout ?? this._props.timeout ?? 600) * 1000);
-    const formatSelector = String(inputs.format_selector ?? this._props.format_selector ?? "best");
-    const container = String(inputs.container ?? this._props.container ?? "auto");
-    const subtitles = Boolean(inputs.subtitles ?? this._props.subtitles ?? false);
-    const thumbnail = Boolean(inputs.thumbnail ?? this._props.thumbnail ?? false);
-    const overwrite = Boolean(inputs.overwrite ?? this._props.overwrite ?? false);
-    const rateLimitKbps = Number(inputs.rate_limit_kbps ?? this._props.rate_limit_kbps ?? 0);
+    const mode = String(inputs.mode ?? this.mode ?? "video").toLowerCase();
+    const timeoutMs = Math.max(1000, Number(inputs.timeout ?? this.timeout ?? 600) * 1000);
+    const formatSelector = String(inputs.format_selector ?? this.format_selector ?? "best");
+    const container = String(inputs.container ?? this.container ?? "auto");
+    const subtitles = Boolean(inputs.subtitles ?? this.subtitles ?? false);
+    const thumbnail = Boolean(inputs.thumbnail ?? this.thumbnail ?? false);
+    const overwrite = Boolean(inputs.overwrite ?? this.overwrite ?? false);
+    const rateLimitKbps = Number(inputs.rate_limit_kbps ?? this.rate_limit_kbps ?? 0);
 
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "ytdlp-"));
 

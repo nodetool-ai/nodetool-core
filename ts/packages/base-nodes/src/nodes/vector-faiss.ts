@@ -17,7 +17,7 @@
  *   - addWithIds not in types   — implemented via stored ID map in wrapper
  */
 
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { NodeClass } from "@nodetool/node-sdk";
 import type { ProcessingContext } from "@nodetool/runtime";
 
@@ -577,22 +577,23 @@ function createIVFFlatBackend(
 
 export class CreateIndexFlatL2Node extends BaseNode {
   static readonly nodeType = "vector.faiss.CreateIndexFlatL2";
-  static readonly title = "Create Index Flat L2";
-  static readonly description =
-    "Create a FAISS IndexFlatL2 for exact L2 (Euclidean) nearest-neighbor search. " +
-    "No training required. Uses native faiss-node when available, falls back to pure-TS brute force.";
+            static readonly title = "Create Index Flat L2";
+            static readonly description = "Create a FAISS IndexFlatL2.\n    faiss, index, l2, create";
+        static readonly metadataOutputTypes = {
+    output: "faiss_index"
+  };
+  
+  @prop({ type: "int", default: 768, title: "Dim", description: "Embedding dimensionality", min: 1 })
+  declare dim: any;
 
-  defaults() {
-    return {
-      dim: 768,
-    };
-  }
+
+
 
   async process(
     inputs: Record<string, unknown>,
     _context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const dim = Number(inputs.dim ?? this._props.dim ?? 768);
+    const dim = Number(inputs.dim ?? this.dim ?? 768);
     if (!Number.isInteger(dim) || dim < 1) {
       throw new Error(`dim must be a positive integer, got ${dim}`);
     }
@@ -607,22 +608,23 @@ export class CreateIndexFlatL2Node extends BaseNode {
 
 export class CreateIndexFlatIPNode extends BaseNode {
   static readonly nodeType = "vector.faiss.CreateIndexFlatIP";
-  static readonly title = "Create Index Flat IP";
-  static readonly description =
-    "Create a FAISS IndexFlatIP for exact inner-product (cosine similarity when vectors are normalized) search. " +
-    "No training required. Uses native faiss-node when available, falls back to pure-TS brute force.";
+            static readonly title = "Create Index Flat IP";
+            static readonly description = "Create a FAISS IndexFlatIP (inner product / cosine with normalized vectors).\n    faiss, index, ip, create";
+        static readonly metadataOutputTypes = {
+    output: "faiss_index"
+  };
+  
+  @prop({ type: "int", default: 768, title: "Dim", description: "Embedding dimensionality", min: 1 })
+  declare dim: any;
 
-  defaults() {
-    return {
-      dim: 768,
-    };
-  }
+
+
 
   async process(
     inputs: Record<string, unknown>,
     _context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const dim = Number(inputs.dim ?? this._props.dim ?? 768);
+    const dim = Number(inputs.dim ?? this.dim ?? 768);
     if (!Number.isInteger(dim) || dim < 1) {
       throw new Error(`dim must be a positive integer, got ${dim}`);
     }
@@ -637,27 +639,34 @@ export class CreateIndexFlatIPNode extends BaseNode {
 
 export class CreateIndexIVFFlatNode extends BaseNode {
   static readonly nodeType = "vector.faiss.CreateIndexIVFFlat";
-  static readonly title = "Create Index IVF Flat";
-  static readonly description =
-    "Create a FAISS IndexIVFFlat (inverted file index with flat quantizer) for approximate nearest-neighbor search. " +
-    "Requires training with representative vectors before adding data. " +
-    "Requires native faiss-node module.";
+            static readonly title = "Create Index IVFFlat";
+            static readonly description = "Create a FAISS IndexIVFFlat (inverted file index with flat quantizer).\n    faiss, index, ivf, create";
+        static readonly metadataOutputTypes = {
+    output: "faiss_index"
+  };
+  
+  @prop({ type: "int", default: 768, title: "Dim", description: "Embedding dimensionality", min: 1 })
+  declare dim: any;
 
-  defaults() {
-    return {
-      dim: 768,
-      nlist: 1024,
-      metric: "L2",
-    };
-  }
+  @prop({ type: "int", default: 1024, title: "Nlist", description: "Number of Voronoi cells", min: 1 })
+  declare nlist: any;
+
+  @prop({ type: "enum", default: "L2", title: "Metric", description: "Distance metric", values: [
+  "L2",
+  "IP"
+] })
+  declare metric: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     _context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const dim = Number(inputs.dim ?? this._props.dim ?? 768);
-    const nlist = Number(inputs.nlist ?? this._props.nlist ?? 1024);
-    const metric = String(inputs.metric ?? this._props.metric ?? "L2") as
+    const dim = Number(inputs.dim ?? this.dim ?? 768);
+    const nlist = Number(inputs.nlist ?? this.nlist ?? 1024);
+    const metric = String(inputs.metric ?? this.metric ?? "L2") as
       | "L2"
       | "IP";
 
@@ -682,24 +691,36 @@ export class CreateIndexIVFFlatNode extends BaseNode {
 
 export class TrainIndexNode extends BaseNode {
   static readonly nodeType = "vector.faiss.TrainIndex";
-  static readonly title = "Train Index";
-  static readonly description =
-    "Train a FAISS index with representative training vectors. " +
-    "Required for IVF indices before adding vectors. " +
-    "For Flat indices this is a no-op. Returns the (now trained) index.";
+            static readonly title = "Train Index";
+            static readonly description = "Train a FAISS index with training vectors (required for IVF indices).\n    faiss, train, index";
+        static readonly metadataOutputTypes = {
+    output: "faiss_index"
+  };
+  
+  @prop({ type: "faiss_index", default: {
+  "type": "faiss_index",
+  "index": null
+}, title: "Index", description: "FAISS index" })
+  declare index: any;
 
-  defaults() {
-    return {
-      index: null as unknown,
-      vectors: [] as number[][],
-    };
-  }
+  @prop({ type: "np_array", default: {
+  "type": "np_array",
+  "value": null,
+  "dtype": "<i8",
+  "shape": [
+    1
+  ]
+}, title: "Vectors", description: "Training vectors (n, d)" })
+  declare vectors: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     _context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const indexRaw = inputs.index ?? this._props.index;
+    const indexRaw = inputs.index ?? this.index;
     if (indexRaw === null || indexRaw === undefined) {
       throw new Error("FAISS index is not set");
     }
@@ -707,7 +728,7 @@ export class TrainIndexNode extends BaseNode {
     const ref = unwrapIndex(indexRaw);
     const { _index: backend, dim } = ref;
 
-    const vectorsRaw = inputs.vectors ?? this._props.vectors;
+    const vectorsRaw = inputs.vectors ?? this.vectors;
     const ndArr = asNdArray(vectorsRaw);
     if (ndArr.data.length === 0) {
       throw new Error("Training vectors are empty");
@@ -730,23 +751,36 @@ export class TrainIndexNode extends BaseNode {
 
 export class AddVectorsNode extends BaseNode {
   static readonly nodeType = "vector.faiss.AddVectors";
-  static readonly title = "Add Vectors";
-  static readonly description =
-    "Add vectors to a FAISS index. The index must be trained first for IVF indices. " +
-    "Returns the updated index with the new vectors added.";
+            static readonly title = "Add Vectors";
+            static readonly description = "Add vectors to a FAISS index.\n    faiss, add, vectors";
+        static readonly metadataOutputTypes = {
+    output: "faiss_index"
+  };
+  
+  @prop({ type: "faiss_index", default: {
+  "type": "faiss_index",
+  "index": null
+}, title: "Index", description: "FAISS index" })
+  declare index: any;
 
-  defaults() {
-    return {
-      index: null as unknown,
-      vectors: [] as number[][],
-    };
-  }
+  @prop({ type: "np_array", default: {
+  "type": "np_array",
+  "value": null,
+  "dtype": "<i8",
+  "shape": [
+    1
+  ]
+}, title: "Vectors", description: "Vectors to add (n, d)" })
+  declare vectors: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     _context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const indexRaw = inputs.index ?? this._props.index;
+    const indexRaw = inputs.index ?? this.index;
     if (indexRaw === null || indexRaw === undefined) {
       throw new Error("FAISS index is not set");
     }
@@ -754,7 +788,7 @@ export class AddVectorsNode extends BaseNode {
     const ref = unwrapIndex(indexRaw);
     const { _index: backend, dim } = ref;
 
-    const vectorsRaw = inputs.vectors ?? this._props.vectors;
+    const vectorsRaw = inputs.vectors ?? this.vectors;
     const ndArr = asNdArray(vectorsRaw);
     if (ndArr.data.length === 0) {
       throw new Error("Vectors are empty");
@@ -784,26 +818,46 @@ export class AddVectorsNode extends BaseNode {
 
 export class AddWithIdsNode extends BaseNode {
   static readonly nodeType = "vector.faiss.AddWithIds";
-  static readonly title = "Add With Ids";
-  static readonly description =
-    "Add vectors with explicit integer IDs to a FAISS index. " +
-    "IDs and vectors must have the same number of rows. " +
-    "The index must be trained for IVF indices. " +
-    "Returns the updated index.";
+            static readonly title = "Add With Ids";
+            static readonly description = "Add vectors with explicit integer IDs to a FAISS index.\n    faiss, add, ids, vectors";
+        static readonly metadataOutputTypes = {
+    output: "faiss_index"
+  };
+  
+  @prop({ type: "faiss_index", default: {
+  "type": "faiss_index",
+  "index": null
+}, title: "Index", description: "FAISS index" })
+  declare index: any;
 
-  defaults() {
-    return {
-      index: null as unknown,
-      vectors: [] as number[][],
-      ids: [] as number[],
-    };
-  }
+  @prop({ type: "np_array", default: {
+  "type": "np_array",
+  "value": null,
+  "dtype": "<i8",
+  "shape": [
+    1
+  ]
+}, title: "Vectors", description: "Vectors to add (n, d)" })
+  declare vectors: any;
+
+  @prop({ type: "np_array", default: {
+  "type": "np_array",
+  "value": null,
+  "dtype": "<i8",
+  "shape": [
+    1
+  ]
+}, title: "Ids", description: "1-D int64 IDs (n,)" })
+  declare ids: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     _context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const indexRaw = inputs.index ?? this._props.index;
+    const indexRaw = inputs.index ?? this.index;
     if (indexRaw === null || indexRaw === undefined) {
       throw new Error("FAISS index is not set");
     }
@@ -811,13 +865,13 @@ export class AddWithIdsNode extends BaseNode {
     const ref = unwrapIndex(indexRaw);
     const { _index: backend, dim } = ref;
 
-    const vectorsRaw = inputs.vectors ?? this._props.vectors;
+    const vectorsRaw = inputs.vectors ?? this.vectors;
     const ndArr = asNdArray(vectorsRaw);
     if (ndArr.data.length === 0) {
       throw new Error("Vectors are empty");
     }
 
-    const idsRaw = inputs.ids ?? this._props.ids;
+    const idsRaw = inputs.ids ?? this.ids;
     const idsArr = Array.isArray(idsRaw)
       ? (idsRaw as number[]).map(Number)
       : asNdArray(idsRaw).data.map(Number);
@@ -856,26 +910,43 @@ export class AddWithIdsNode extends BaseNode {
 
 export class SearchNode extends BaseNode {
   static readonly nodeType = "vector.faiss.Search";
-  static readonly title = "Search";
-  static readonly description =
-    "Search a FAISS index with query vectors, returning the k nearest neighbors. " +
-    "Returns distances and integer indices (labels) as 2-D NdArrays with shape [nQueries, k]. " +
-    "For IVF indices, nprobe controls the search quality vs speed trade-off.";
+            static readonly title = "Search";
+            static readonly description = "Search a FAISS index with query vectors, returning distances and indices.\n    faiss, search, query, knn";
+        static readonly metadataOutputTypes = {
+    distances: "np_array",
+    indices: "np_array"
+  };
+  
+  @prop({ type: "faiss_index", default: {
+  "type": "faiss_index",
+  "index": null
+}, title: "Index", description: "FAISS index" })
+  declare index: any;
 
-  defaults() {
-    return {
-      index: null as unknown,
-      query: [] as number[][],
-      k: 5,
-      nprobe: 10,
-    };
-  }
+  @prop({ type: "np_array", default: {
+  "type": "np_array",
+  "value": null,
+  "dtype": "<i8",
+  "shape": [
+    1
+  ]
+}, title: "Query", description: "Query vectors (m, d) or (d,)" })
+  declare query: any;
+
+  @prop({ type: "int", default: 5, title: "K", description: "Number of nearest neighbors", min: 1 })
+  declare k: any;
+
+  @prop({ type: "int", default: 10, title: "Nprobe", description: "nprobe for IVF indices", min: 1 })
+  declare nprobe: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     _context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const indexRaw = inputs.index ?? this._props.index;
+    const indexRaw = inputs.index ?? this.index;
     if (indexRaw === null || indexRaw === undefined) {
       throw new Error("FAISS index is not set");
     }
@@ -883,7 +954,7 @@ export class SearchNode extends BaseNode {
     const ref = unwrapIndex(indexRaw);
     const { _index: backend, dim } = ref;
 
-    const queryRaw = inputs.query ?? this._props.query;
+    const queryRaw = inputs.query ?? this.query;
     const ndArr = asNdArray(queryRaw);
     if (ndArr.data.length === 0) {
       throw new Error("Query vectors are empty");
@@ -894,12 +965,12 @@ export class SearchNode extends BaseNode {
       throw new Error("Query vectors are empty");
     }
 
-    const k = Number(inputs.k ?? this._props.k ?? 5);
+    const k = Number(inputs.k ?? this.k ?? 5);
     if (!Number.isInteger(k) || k < 1) {
       throw new Error(`k must be a positive integer, got ${k}`);
     }
 
-    const nprobe = Number(inputs.nprobe ?? this._props.nprobe ?? 10);
+    const nprobe = Number(inputs.nprobe ?? this.nprobe ?? 10);
     if (nprobe >= 1) {
       backend.setNprobe(Math.floor(nprobe));
     }

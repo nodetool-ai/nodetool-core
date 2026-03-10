@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 
 // ── WAV helpers (duplicated from lib-audio-dsp.ts) ─────────────────
 
@@ -117,18 +117,34 @@ function processPerChannel(
 
 export class BitcrushNode extends BaseNode {
   static readonly nodeType = "lib.pedalboard.Bitcrush";
-  static readonly title = "Bitcrush";
-  static readonly description =
-    "Applies a bitcrushing effect to an audio file, reducing bit depth and/or sample rate.";
+            static readonly title = "Bitcrush";
+            static readonly description = "Applies a bitcrushing effect to an audio file, reducing bit depth and/or sample rate.\n    audio, effect, distortion\n\n    Use cases:\n    - Create lo-fi or retro-style audio effects\n    - Simulate vintage digital audio equipment\n    - Add digital distortion and artifacts to sounds";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to process." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, bit_depth: 8, sample_rate_reduction: 1 };
-  }
+  @prop({ type: "int", default: 8, title: "Bit Depth", description: "The bit depth to reduce the audio to. Lower values create more distortion.", min: 1, max: 16 })
+  declare bit_depth: any;
+
+  @prop({ type: "int", default: 1, title: "Sample Rate Reduction", description: "Factor by which to reduce the sample rate. Higher values create more aliasing.", min: 1, max: 100 })
+  declare sample_rate_reduction: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audio = (inputs.audio ?? this._props.audio ?? {}) as Record<string, unknown>;
-    const bitDepth = Number(inputs.bit_depth ?? this._props.bit_depth ?? 8);
-    const srrFactor = Number(inputs.sample_rate_reduction ?? this._props.sample_rate_reduction ?? 1);
+    const audio = (inputs.audio ?? this.audio ?? {}) as Record<string, unknown>;
+    const bitDepth = Number(inputs.bit_depth ?? this.bit_depth ?? 8);
+    const srrFactor = Number(inputs.sample_rate_reduction ?? this.sample_rate_reduction ?? 1);
 
     if (!audio.data) return { output: audio };
 
@@ -152,20 +168,42 @@ export class BitcrushNode extends BaseNode {
 
 export class CompressNode extends BaseNode {
   static readonly nodeType = "lib.pedalboard.Compress";
-  static readonly title = "Compress";
-  static readonly description =
-    "Applies dynamic range compression to an audio file.";
+            static readonly title = "Compress";
+            static readonly description = "Applies dynamic range compression to an audio file.\n    audio, effect, dynamics\n\n    Use cases:\n    - Even out volume levels in a recording\n    - Increase perceived loudness of audio\n    - Control peaks in audio signals";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to process." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, threshold: -20.0, ratio: 4.0, attack: 5.0, release: 50.0 };
-  }
+  @prop({ type: "float", default: -20, title: "Threshold", description: "Threshold in dB above which compression is applied.", min: -60, max: 0 })
+  declare threshold: any;
+
+  @prop({ type: "float", default: 4, title: "Ratio", description: "Compression ratio. Higher values result in more compression.", min: 1, max: 20 })
+  declare ratio: any;
+
+  @prop({ type: "float", default: 5, title: "Attack", description: "Attack time in milliseconds.", min: 0.1, max: 100 })
+  declare attack: any;
+
+  @prop({ type: "float", default: 50, title: "Release", description: "Release time in milliseconds.", min: 5, max: 1000 })
+  declare release: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audio = (inputs.audio ?? this._props.audio ?? {}) as Record<string, unknown>;
-    const thresholdDb = Number(inputs.threshold ?? this._props.threshold ?? -20);
-    const ratio = Number(inputs.ratio ?? this._props.ratio ?? 4);
-    const attackMs = Number(inputs.attack ?? this._props.attack ?? 5);
-    const releaseMs = Number(inputs.release ?? this._props.release ?? 50);
+    const audio = (inputs.audio ?? this.audio ?? {}) as Record<string, unknown>;
+    const thresholdDb = Number(inputs.threshold ?? this.threshold ?? -20);
+    const ratio = Number(inputs.ratio ?? this.ratio ?? 4);
+    const attackMs = Number(inputs.attack ?? this.attack ?? 5);
+    const releaseMs = Number(inputs.release ?? this.release ?? 50);
 
     if (!audio.data) return { output: audio };
 
@@ -205,17 +243,30 @@ export class CompressNode extends BaseNode {
 
 export class DistortionNode extends BaseNode {
   static readonly nodeType = "lib.pedalboard.Distortion";
-  static readonly title = "Distortion";
-  static readonly description =
-    "Applies a distortion effect to an audio file.";
+            static readonly title = "Distortion";
+            static readonly description = "Applies a distortion effect to an audio file.\n    audio, effect, distortion\n\n    Use cases:\n    - Add grit and character to instruments\n    - Create aggressive sound effects\n    - Simulate overdriven amplifiers";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to process." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, drive_db: 25.0 };
-  }
+  @prop({ type: "float", default: 25, title: "Drive Db", description: "Amount of distortion to apply in decibels.", min: 0, max: 100 })
+  declare drive_db: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audio = (inputs.audio ?? this._props.audio ?? {}) as Record<string, unknown>;
-    const driveDb = Number(inputs.drive_db ?? this._props.drive_db ?? 25);
+    const audio = (inputs.audio ?? this.audio ?? {}) as Record<string, unknown>;
+    const driveDb = Number(inputs.drive_db ?? this.drive_db ?? 25);
 
     if (!audio.data) return { output: audio };
 
@@ -238,18 +289,34 @@ export class DistortionNode extends BaseNode {
 
 export class LimiterNode extends BaseNode {
   static readonly nodeType = "lib.pedalboard.Limiter";
-  static readonly title = "Limiter";
-  static readonly description =
-    "Applies a limiter effect to an audio file.";
+            static readonly title = "Limiter";
+            static readonly description = "Applies a limiter effect to an audio file.\n    audio, effect, dynamics\n\n    Use cases:\n    - Prevent audio clipping\n    - Increase perceived loudness without distortion\n    - Control dynamic range of audio";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to process." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, threshold_db: -2.0, release_ms: 250.0 };
-  }
+  @prop({ type: "float", default: -2, title: "Threshold Db", description: "Threshold in dB above which the limiter is applied.", min: -60, max: 0 })
+  declare threshold_db: any;
+
+  @prop({ type: "float", default: 250, title: "Release Ms", description: "Release time in milliseconds.", min: 1, max: 1000 })
+  declare release_ms: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audio = (inputs.audio ?? this._props.audio ?? {}) as Record<string, unknown>;
-    const thresholdDb = Number(inputs.threshold_db ?? this._props.threshold_db ?? -2);
-    const releaseMs = Number(inputs.release_ms ?? this._props.release_ms ?? 250);
+    const audio = (inputs.audio ?? this.audio ?? {}) as Record<string, unknown>;
+    const thresholdDb = Number(inputs.threshold_db ?? this.threshold_db ?? -2);
+    const releaseMs = Number(inputs.release_ms ?? this.release_ms ?? 250);
 
     if (!audio.data) return { output: audio };
 
@@ -283,20 +350,42 @@ export class LimiterNode extends BaseNode {
 
 export class ReverbNode extends BaseNode {
   static readonly nodeType = "lib.pedalboard.Reverb";
-  static readonly title = "Reverb";
-  static readonly description =
-    "Applies a reverb effect to an audio file.";
+            static readonly title = "Reverb";
+            static readonly description = "Applies a reverb effect to an audio file.\n    audio, effect, reverb\n\n    Use cases:\n    - Add spatial depth to dry recordings\n    - Simulate different room acoustics\n    - Create atmospheric sound effects";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to process." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, room_scale: 0.5, damping: 0.5, wet_level: 0.15, dry_level: 0.5 };
-  }
+  @prop({ type: "float", default: 0.5, title: "Room Scale", description: "Size of the simulated room. Higher values create larger spaces.", min: 0, max: 1 })
+  declare room_scale: any;
+
+  @prop({ type: "float", default: 0.5, title: "Damping", description: "Amount of high frequency absorption. Higher values create a duller sound.", min: 0, max: 1 })
+  declare damping: any;
+
+  @prop({ type: "float", default: 0.15, title: "Wet Level", description: "Level of the reverb effect in the output.", min: 0, max: 1 })
+  declare wet_level: any;
+
+  @prop({ type: "float", default: 0.5, title: "Dry Level", description: "Level of the original signal in the output.", min: 0, max: 1 })
+  declare dry_level: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audio = (inputs.audio ?? this._props.audio ?? {}) as Record<string, unknown>;
-    const roomScale = Number(inputs.room_scale ?? this._props.room_scale ?? 0.5);
-    const damping = Number(inputs.damping ?? this._props.damping ?? 0.5);
-    const wetLevel = Number(inputs.wet_level ?? this._props.wet_level ?? 0.15);
-    const dryLevel = Number(inputs.dry_level ?? this._props.dry_level ?? 0.5);
+    const audio = (inputs.audio ?? this.audio ?? {}) as Record<string, unknown>;
+    const roomScale = Number(inputs.room_scale ?? this.room_scale ?? 0.5);
+    const damping = Number(inputs.damping ?? this.damping ?? 0.5);
+    const wetLevel = Number(inputs.wet_level ?? this.wet_level ?? 0.15);
+    const dryLevel = Number(inputs.dry_level ?? this.dry_level ?? 0.5);
 
     if (!audio.data) return { output: audio };
 
@@ -374,17 +463,30 @@ export class ReverbNode extends BaseNode {
 
 export class PitchShiftNode extends BaseNode {
   static readonly nodeType = "lib.pedalboard.PitchShift";
-  static readonly title = "Pitch Shift";
-  static readonly description =
-    "Shifts the pitch of an audio file without changing its duration.";
+            static readonly title = "Pitch Shift";
+            static readonly description = "Shifts the pitch of an audio file without changing its duration.\n    audio, effect, pitch\n\n    Use cases:\n    - Transpose audio to a different key\n    - Create harmonies or vocal effects\n    - Adjust instrument tuning";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to process." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, semitones: 0.0 };
-  }
+  @prop({ type: "float", default: 0, title: "Semitones", description: "Number of semitones to shift the pitch. Positive values shift up, negative values shift down.", min: -12, max: 12 })
+  declare semitones: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audio = (inputs.audio ?? this._props.audio ?? {}) as Record<string, unknown>;
-    const semitones = Number(inputs.semitones ?? this._props.semitones ?? 0);
+    const audio = (inputs.audio ?? this.audio ?? {}) as Record<string, unknown>;
+    const semitones = Number(inputs.semitones ?? this.semitones ?? 0);
 
     if (!audio.data) return { output: audio };
     if (semitones === 0) {
@@ -463,17 +565,30 @@ export class PitchShiftNode extends BaseNode {
 
 export class TimeStretchNode extends BaseNode {
   static readonly nodeType = "lib.pedalboard.TimeStretch";
-  static readonly title = "Time Stretch";
-  static readonly description =
-    "Changes the speed of an audio file without altering its pitch.";
+            static readonly title = "Time Stretch";
+            static readonly description = "Changes the speed of an audio file without altering its pitch.\n    audio, transform, time\n\n    Use cases:\n    - Adjust audio duration to fit video length\n    - Create slow-motion or fast-motion audio effects\n    - Synchronize audio tracks of different lengths";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to process." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, rate: 1.0 };
-  }
+  @prop({ type: "float", default: 1, title: "Rate", description: "Time stretch factor. Values > 1 speed up, < 1 slow down.", min: 0.5, max: 2 })
+  declare rate: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audio = (inputs.audio ?? this._props.audio ?? {}) as Record<string, unknown>;
-    const rate = Number(inputs.rate ?? this._props.rate ?? 1.0);
+    const audio = (inputs.audio ?? this.audio ?? {}) as Record<string, unknown>;
+    const rate = Number(inputs.rate ?? this.rate ?? 1.0);
 
     if (!audio.data) return { output: audio };
     if (rate === 1.0) {
@@ -546,13 +661,32 @@ export class TimeStretchNode extends BaseNode {
 
 export class NoiseGateNode extends BaseNode {
   static readonly nodeType = "lib.pedalboard.NoiseGate";
-  static readonly title = "Noise Gate";
-  static readonly description =
-    "Applies a noise gate effect to an audio file.";
+            static readonly title = "Noise Gate";
+            static readonly description = "Applies a noise gate effect to an audio file.\n    audio, effect, dynamics\n\n    Use cases:\n    - Reduce background noise in recordings\n    - Clean up audio tracks with unwanted low-level sounds\n    - Create rhythmic effects by gating sustained sounds";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to process." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, threshold_db: -50.0, attack_ms: 1.0, release_ms: 100.0 };
-  }
+  @prop({ type: "float", default: -50, title: "Threshold Db", description: "Threshold in dB below which the gate is active.", min: -90, max: 0 })
+  declare threshold_db: any;
+
+  @prop({ type: "float", default: 1, title: "Attack Ms", description: "Attack time in milliseconds.", min: 0.1, max: 100 })
+  declare attack_ms: any;
+
+  @prop({ type: "float", default: 100, title: "Release Ms", description: "Release time in milliseconds.", min: 5, max: 1000 })
+  declare release_ms: any;
+
+
+
 
   async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     throw new Error("lib.pedalboard.NoiseGate: not yet implemented in TypeScript. Use Python bridge.");
@@ -563,13 +697,38 @@ export class NoiseGateNode extends BaseNode {
 
 export class PhaserNode extends BaseNode {
   static readonly nodeType = "lib.pedalboard.Phaser";
-  static readonly title = "Phaser";
-  static readonly description =
-    "Applies a phaser effect to an audio file.";
+            static readonly title = "Phaser";
+            static readonly description = "Applies a phaser effect to an audio file.\n    audio, effect, modulation\n\n    Use cases:\n    - Create sweeping, swooshing sounds\n    - Add movement to static sounds\n    - Produce psychedelic or space-like effects";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to process." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, rate_hz: 1.0, depth: 0.5, centre_frequency_hz: 1300.0, feedback: 0.0, mix: 0.5 };
-  }
+  @prop({ type: "float", default: 1, title: "Rate Hz", description: "Rate of the phaser effect in Hz.", min: 0.1, max: 10 })
+  declare rate_hz: any;
+
+  @prop({ type: "float", default: 0.5, title: "Depth", description: "Depth of the phaser effect.", min: 0, max: 1 })
+  declare depth: any;
+
+  @prop({ type: "float", default: 1300, title: "Centre Frequency Hz", description: "Centre frequency of the phaser in Hz.", min: 100, max: 5000 })
+  declare centre_frequency_hz: any;
+
+  @prop({ type: "float", default: 0, title: "Feedback", description: "Feedback of the phaser effect. Negative values invert the phase.", min: -1, max: 1 })
+  declare feedback: any;
+
+  @prop({ type: "float", default: 0.5, title: "Mix", description: "Mix between the dry (original) and wet (effected) signals.", min: 0, max: 1 })
+  declare mix: any;
+
+
+
 
   async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     throw new Error("lib.pedalboard.Phaser: not yet implemented in TypeScript. Use Python bridge.");

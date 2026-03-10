@@ -132,7 +132,6 @@ describe("base node registration", () => {
     expect(registry.has("nodetool.data.Aggregate")).toBe(true);
     expect(registry.has("nodetool.code.ExecuteCommand")).toBe(true);
     expect(registry.has("nodetool.audio.TextToSpeech")).toBe(true);
-    expect(registry.has("nodetool.triggers.WaitNode")).toBe(true);
     expect(registry.has("nodetool.triggers.Wait")).toBe(true);
     expect(registry.has("nodetool.triggers.ManualTrigger")).toBe(true);
     expect(registry.has("nodetool.triggers.IntervalTrigger")).toBe(true);
@@ -321,7 +320,9 @@ describe("input/output/workspace nodes", () => {
   });
 
   it("FilterNoneNode omits null and forwards non-null", async () => {
-    await expect(new FilterNoneNode().process({ value: null })).resolves.toEqual({});
+    await expect(new FilterNoneNode().process({ value: null })).resolves.toEqual({
+      output: [],
+    });
     await expect(new FilterNoneNode().process({ value: "ok" })).resolves.toEqual({
       output: "ok",
     });
@@ -881,9 +882,9 @@ describe("dictionary nodes", () => {
   });
 
   it("MakeDictionary and ArgMax work", async () => {
-    const make = new MakeDictionaryNode();
-    make.assign({ a: 1, b: "x" });
-    await expect(make.process({})).resolves.toEqual({ output: { a: 1, b: "x" } });
+    await expect(new MakeDictionaryNode().process({ a: 1, b: "x" })).resolves.toEqual({
+      output: { a: 1, b: "x" },
+    });
     await expect(new ArgMaxNode().process({ scores: { a: 0.1, b: 0.9 } })).resolves
       .toEqual({ output: "b" });
   });

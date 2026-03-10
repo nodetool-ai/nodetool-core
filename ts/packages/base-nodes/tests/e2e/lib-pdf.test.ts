@@ -10,7 +10,7 @@ import {
   ExtractTextBlocksPyMuPdfNode,
   ExtractTextWithStylePyMuPdfNode,
   ExtractTablesPyMuPdfNode,
-} from "../src/index.js";
+} from "../../src/index.js";
 
 // Minimal valid PDF with text content (single page, "Hello World" text)
 function makeTestPdf(): string {

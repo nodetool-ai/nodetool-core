@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { NodeClass } from "@nodetool/node-sdk";
 
 type FilterOp = "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "in" | "like" | "contains";
@@ -34,34 +34,52 @@ function applyFilters(query: any, filters: Filter[]): any {
 
 export class SelectLibNode extends BaseNode {
   static readonly nodeType = "lib.supabase.Select";
-  static readonly title = "Select";
-  static readonly description = "Query records from a Supabase table.";
+            static readonly title = "Select";
+            static readonly description = "Query records from a Supabase table.\n    supabase, database, query, select";
+        static readonly metadataOutputTypes = {
+    output: "any"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Table Name", description: "Table to query" })
+  declare table_name: any;
 
-  defaults() {
-    return {
-      supabase_url: "",
-      supabase_key: "",
-      table_name: "",
-      columns: { type: "record_type", columns: [] },
-      filters: [] as Filter[],
-      order_by: "",
-      descending: false,
-      limit: 0,
-    };
-  }
+  @prop({ type: "record_type", default: {
+  "type": "record_type",
+  "columns": []
+}, title: "Columns", description: "Columns to select" })
+  declare columns: any;
+
+  @prop({ type: "list[tuple[str, enum, any]]", default: [], title: "Filters", description: "List of typed filters to apply" })
+  declare filters: any;
+
+  @prop({ type: "str", default: "", title: "Order By", description: "Column to order by" })
+  declare order_by: any;
+
+  @prop({ type: "bool", default: false, title: "Descending", description: "Order direction" })
+  declare descending: any;
+
+  @prop({ type: "int", default: 0, title: "Limit", description: "Max rows to return (0 = no limit)" })
+  declare limit: any;
+
+  @prop({ type: "bool", default: false, title: "To Dataframe", description: "Return a DataframeRef instead of list of dicts" })
+  declare to_dataframe: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const url = String(inputs.supabase_url ?? this._props.supabase_url ?? "");
-    const key = String(inputs.supabase_key ?? this._props.supabase_key ?? "");
-    const tableName = String(inputs.table_name ?? this._props.table_name ?? "");
-    const columnsInput = (inputs.columns ?? this._props.columns ?? { columns: [] }) as {
+    const url = String(inputs.supabase_url ?? this.supabase_url ?? "");
+    const key = String(inputs.supabase_key ?? this.supabase_key ?? "");
+    const tableName = String(inputs.table_name ?? this.table_name ?? "");
+    const columnsInput = (inputs.columns ?? this.columns ?? { columns: [] }) as {
       columns?: Array<{ name: string }>;
     };
     const cols = columnsInput.columns ?? [];
-    const filters = (inputs.filters ?? this._props.filters ?? []) as Filter[];
-    const orderBy = String(inputs.order_by ?? this._props.order_by ?? "");
-    const descending = Boolean(inputs.descending ?? this._props.descending ?? false);
-    const limit = Number(inputs.limit ?? this._props.limit ?? 0);
+    const filters = (inputs.filters ?? this.filters ?? []) as Filter[];
+    const orderBy = String(inputs.order_by ?? this.order_by ?? "");
+    const descending = Boolean(inputs.descending ?? this.descending ?? false);
+    const limit = Number(inputs.limit ?? this.limit ?? 0);
 
     if (!tableName) throw new Error("table_name cannot be empty");
 
@@ -89,25 +107,31 @@ export class SelectLibNode extends BaseNode {
 
 export class InsertLibNode extends BaseNode {
   static readonly nodeType = "lib.supabase.Insert";
-  static readonly title = "Insert";
-  static readonly description = "Insert record(s) into a Supabase table.";
+            static readonly title = "Insert";
+            static readonly description = "Insert record(s) into a Supabase table.\n    supabase, database, insert, add, record";
+        static readonly metadataOutputTypes = {
+    output: "any"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Table Name", description: "Table to insert into" })
+  declare table_name: any;
 
-  defaults() {
-    return {
-      supabase_url: "",
-      supabase_key: "",
-      table_name: "",
-      records: [] as Record<string, unknown>[],
-      return_rows: true,
-    };
-  }
+  @prop({ type: "union[list[dict[str, any]], dict[str, any]]", default: [], title: "Records", description: "One or multiple rows to insert" })
+  declare records: any;
+
+  @prop({ type: "bool", default: true, title: "Return Rows", description: "Return inserted rows (uses select('*'))" })
+  declare return_rows: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const url = String(inputs.supabase_url ?? this._props.supabase_url ?? "");
-    const key = String(inputs.supabase_key ?? this._props.supabase_key ?? "");
-    const tableName = String(inputs.table_name ?? this._props.table_name ?? "");
-    const recordsInput = inputs.records ?? this._props.records ?? [];
-    const returnRows = Boolean(inputs.return_rows ?? this._props.return_rows ?? true);
+    const url = String(inputs.supabase_url ?? this.supabase_url ?? "");
+    const key = String(inputs.supabase_key ?? this.supabase_key ?? "");
+    const tableName = String(inputs.table_name ?? this.table_name ?? "");
+    const recordsInput = inputs.records ?? this.records ?? [];
+    const returnRows = Boolean(inputs.return_rows ?? this.return_rows ?? true);
 
     if (!tableName) throw new Error("table_name cannot be empty");
 
@@ -131,27 +155,35 @@ export class InsertLibNode extends BaseNode {
 
 export class UpdateLibNode extends BaseNode {
   static readonly nodeType = "lib.supabase.Update";
-  static readonly title = "Update";
-  static readonly description = "Update records in a Supabase table.";
+            static readonly title = "Update";
+            static readonly description = "Update records in a Supabase table.\n    supabase, database, update, modify, change";
+        static readonly metadataOutputTypes = {
+    output: "any"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Table Name", description: "Table to update" })
+  declare table_name: any;
 
-  defaults() {
-    return {
-      supabase_url: "",
-      supabase_key: "",
-      table_name: "",
-      values: {} as Record<string, unknown>,
-      filters: [] as Filter[],
-      return_rows: true,
-    };
-  }
+  @prop({ type: "dict[str, any]", default: {}, title: "Values", description: "New values" })
+  declare values: any;
+
+  @prop({ type: "list[tuple[str, enum, any]]", default: [], title: "Filters", description: "Filters to select rows to update" })
+  declare filters: any;
+
+  @prop({ type: "bool", default: true, title: "Return Rows", description: "Return updated rows (uses select('*'))" })
+  declare return_rows: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const url = String(inputs.supabase_url ?? this._props.supabase_url ?? "");
-    const key = String(inputs.supabase_key ?? this._props.supabase_key ?? "");
-    const tableName = String(inputs.table_name ?? this._props.table_name ?? "");
-    const values = (inputs.values ?? this._props.values ?? {}) as Record<string, unknown>;
-    const filters = (inputs.filters ?? this._props.filters ?? []) as Filter[];
-    const returnRows = Boolean(inputs.return_rows ?? this._props.return_rows ?? true);
+    const url = String(inputs.supabase_url ?? this.supabase_url ?? "");
+    const key = String(inputs.supabase_key ?? this.supabase_key ?? "");
+    const tableName = String(inputs.table_name ?? this.table_name ?? "");
+    const values = (inputs.values ?? this.values ?? {}) as Record<string, unknown>;
+    const filters = (inputs.filters ?? this.filters ?? []) as Filter[];
+    const returnRows = Boolean(inputs.return_rows ?? this.return_rows ?? true);
 
     if (!tableName) throw new Error("table_name cannot be empty");
     if (Object.keys(values).length === 0) throw new Error("values cannot be empty");
@@ -176,23 +208,27 @@ export class UpdateLibNode extends BaseNode {
 
 export class DeleteLibNode extends BaseNode {
   static readonly nodeType = "lib.supabase.Delete";
-  static readonly title = "Delete";
-  static readonly description = "Delete records from a Supabase table.";
+            static readonly title = "Delete";
+            static readonly description = "Delete records from a Supabase table.\n    supabase, database, delete, remove";
+        static readonly metadataOutputTypes = {
+    output: "dict[str, any]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Table Name", description: "Table to delete from" })
+  declare table_name: any;
 
-  defaults() {
-    return {
-      supabase_url: "",
-      supabase_key: "",
-      table_name: "",
-      filters: [] as Filter[],
-    };
-  }
+  @prop({ type: "list[tuple[str, enum, any]]", default: [], title: "Filters", description: "Filters to select rows to delete (required for safety)" })
+  declare filters: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const url = String(inputs.supabase_url ?? this._props.supabase_url ?? "");
-    const key = String(inputs.supabase_key ?? this._props.supabase_key ?? "");
-    const tableName = String(inputs.table_name ?? this._props.table_name ?? "");
-    const filters = (inputs.filters ?? this._props.filters ?? []) as Filter[];
+    const url = String(inputs.supabase_url ?? this.supabase_url ?? "");
+    const key = String(inputs.supabase_key ?? this.supabase_key ?? "");
+    const tableName = String(inputs.table_name ?? this.table_name ?? "");
+    const filters = (inputs.filters ?? this.filters ?? []) as Filter[];
 
     if (!tableName) throw new Error("table_name cannot be empty");
     if (filters.length === 0) {
@@ -213,25 +249,31 @@ export class DeleteLibNode extends BaseNode {
 
 export class UpsertLibNode extends BaseNode {
   static readonly nodeType = "lib.supabase.Upsert";
-  static readonly title = "Upsert";
-  static readonly description = "Insert or update (upsert) records in a Supabase table.";
+            static readonly title = "Upsert";
+            static readonly description = "Insert or update (upsert) records in a Supabase table.\n    supabase, database, upsert, merge";
+        static readonly metadataOutputTypes = {
+    output: "any"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Table Name", description: "Table to upsert into" })
+  declare table_name: any;
 
-  defaults() {
-    return {
-      supabase_url: "",
-      supabase_key: "",
-      table_name: "",
-      records: [] as Record<string, unknown>[],
-      return_rows: true,
-    };
-  }
+  @prop({ type: "union[list[dict[str, any]], dict[str, any]]", default: [], title: "Records", description: "One or multiple rows to upsert" })
+  declare records: any;
+
+  @prop({ type: "bool", default: true, title: "Return Rows", description: "Return upserted rows (uses select('*'))" })
+  declare return_rows: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const url = String(inputs.supabase_url ?? this._props.supabase_url ?? "");
-    const key = String(inputs.supabase_key ?? this._props.supabase_key ?? "");
-    const tableName = String(inputs.table_name ?? this._props.table_name ?? "");
-    const recordsInput = inputs.records ?? this._props.records ?? [];
-    const returnRows = Boolean(inputs.return_rows ?? this._props.return_rows ?? true);
+    const url = String(inputs.supabase_url ?? this.supabase_url ?? "");
+    const key = String(inputs.supabase_key ?? this.supabase_key ?? "");
+    const tableName = String(inputs.table_name ?? this.table_name ?? "");
+    const recordsInput = inputs.records ?? this.records ?? [];
+    const returnRows = Boolean(inputs.return_rows ?? this.return_rows ?? true);
 
     if (!tableName) throw new Error("table_name cannot be empty");
 
@@ -256,23 +298,30 @@ export class UpsertLibNode extends BaseNode {
 
 export class RPCLibNode extends BaseNode {
   static readonly nodeType = "lib.supabase.RPC";
-  static readonly title = "RPC";
-  static readonly description = "Call a PostgreSQL function via Supabase RPC.";
+            static readonly title = "RPC";
+            static readonly description = "Call a PostgreSQL function via Supabase RPC.\n    supabase, database, rpc, function";
+        static readonly metadataOutputTypes = {
+    output: "any"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Function", description: "RPC function name" })
+  declare function: any;
 
-  defaults() {
-    return {
-      supabase_url: "",
-      supabase_key: "",
-      function: "",
-      params: {} as Record<string, unknown>,
-    };
-  }
+  @prop({ type: "dict[str, any]", default: {}, title: "Params", description: "Function params" })
+  declare params: any;
+
+  @prop({ type: "bool", default: false, title: "To Dataframe", description: "Return DataframeRef if result is a list of records" })
+  declare to_dataframe: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const url = String(inputs.supabase_url ?? this._props.supabase_url ?? "");
-    const key = String(inputs.supabase_key ?? this._props.supabase_key ?? "");
-    const fnName = String(inputs.function ?? this._props.function ?? "");
-    const params = (inputs.params ?? this._props.params ?? {}) as Record<string, unknown>;
+    const url = String(inputs.supabase_url ?? this.supabase_url ?? "");
+    const key = String(inputs.supabase_key ?? this.supabase_key ?? "");
+    const fnName = String(inputs.function ?? this.function ?? "");
+    const params = (inputs.params ?? this.params ?? {}) as Record<string, unknown>;
 
     if (!fnName) throw new Error("function cannot be empty");
 

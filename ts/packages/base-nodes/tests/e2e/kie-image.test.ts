@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
+import { getNodeMetadata } from "@nodetool/node-sdk";
 
-vi.mock("../src/nodes/kie-base.js", () => ({
+vi.mock("../../src/nodes/kie-base.js", () => ({
   getApiKey: vi.fn(() => "test-api-key"),
   kieExecuteTask: vi.fn(async () => ({
     data: "base64data",
@@ -51,17 +52,31 @@ import {
   Seedream40TextToImageNode,
   Seedream40ImageToImageNode,
   KIE_IMAGE_NODES,
-} from "../src/nodes/kie-image.js";
+} from "../../src/nodes/kie-image.js";
 import {
   getApiKey,
   kieExecuteTask,
   uploadImageInput,
   isRefSet,
-} from "../src/nodes/kie-base.js";
+} from "../../src/nodes/kie-base.js";
 
 const secrets = { _secrets: { KIE_API_KEY: "test-key" } };
 const fakeImage = { data: "abc123", uri: "" };
 const fakeImages = [fakeImage];
+
+function metadataDefaults(NodeCls: any) {
+  const metadata = getNodeMetadata(NodeCls);
+  return Object.fromEntries(
+    metadata.properties
+      .filter((prop) => Object.prototype.hasOwnProperty.call(prop, "default"))
+      .map((prop) => [prop.name, prop.default])
+  );
+}
+
+function expectMetadataDefaults(NodeCls: any) {
+  expect(new NodeCls().serialize()).toEqual(metadataDefaults(NodeCls));
+}
+
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -95,11 +110,7 @@ describe("Flux2ProTextToImageNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Flux2ProTextToImageNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("1:1");
-    expect(d.resolution).toBe("1K");
+    expectMetadataDefaults(Flux2ProTextToImageNode);
   });
 
   it("process with valid inputs", async () => {
@@ -141,12 +152,7 @@ describe("Flux2ProImageToImageNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Flux2ProImageToImageNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.images).toEqual([]);
-    expect(d.aspect_ratio).toBe("1:1");
-    expect(d.resolution).toBe("1K");
+    expectMetadataDefaults(Flux2ProImageToImageNode);
   });
 
   it("process with valid inputs", async () => {
@@ -188,11 +194,7 @@ describe("Flux2FlexTextToImageNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Flux2FlexTextToImageNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("1:1");
-    expect(d.resolution).toBe("1K");
+    expectMetadataDefaults(Flux2FlexTextToImageNode);
   });
 
   it("process with valid inputs", async () => {
@@ -232,12 +234,7 @@ describe("Flux2FlexImageToImageNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Flux2FlexImageToImageNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.images).toEqual([]);
-    expect(d.aspect_ratio).toBe("1:1");
-    expect(d.resolution).toBe("1K");
+    expectMetadataDefaults(Flux2FlexImageToImageNode);
   });
 
   it("process with valid inputs", async () => {
@@ -279,11 +276,7 @@ describe("Seedream45TextToImageNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Seedream45TextToImageNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("1:1");
-    expect(d.resolution).toBe("1K");
+    expectMetadataDefaults(Seedream45TextToImageNode);
   });
 
   it("process with valid inputs", async () => {
@@ -318,12 +311,7 @@ describe("Seedream45EditNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Seedream45EditNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.image).toBeNull();
-    expect(d.aspect_ratio).toBe("1:1");
-    expect(d.resolution).toBe("1K");
+    expectMetadataDefaults(Seedream45EditNode);
   });
 
   it("process with valid inputs", async () => {
@@ -363,11 +351,7 @@ describe("ZImageNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (ZImageNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("1:1");
-    expect(d.seed).toBe(-1);
+    expectMetadataDefaults(ZImageNode);
   });
 
   it("process with valid inputs", async () => {
@@ -414,10 +398,7 @@ describe("NanoBananaNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (NanoBananaNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("1:1");
+    expectMetadataDefaults(NanoBananaNode);
   });
 
   it("process with valid inputs", async () => {
@@ -452,10 +433,7 @@ describe("NanoBananaProNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (NanoBananaProNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("1:1");
+    expectMetadataDefaults(NanoBananaProNode);
   });
 
   it("process with valid inputs", async () => {
@@ -490,11 +468,7 @@ describe("FluxKontextNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (FluxKontextNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("1:1");
-    expect(d.images).toEqual([]);
+    expectMetadataDefaults(FluxKontextNode);
   });
 
   it("process text-only (no images)", async () => {
@@ -537,10 +511,7 @@ describe("GrokImagineTextToImageNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (GrokImagineTextToImageNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.n).toBe(1);
+    expectMetadataDefaults(GrokImagineTextToImageNode);
   });
 
   it("process with valid inputs", async () => {
@@ -577,10 +548,7 @@ describe("GrokImagineUpscaleNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (GrokImagineUpscaleNode as any)();
-    const d = n.defaults();
-    expect(d.image).toBeNull();
-    expect(d.scale_factor).toBe(2);
+    expectMetadataDefaults(GrokImagineUpscaleNode);
   });
 
   it("process with valid inputs", async () => {
@@ -613,11 +581,7 @@ describe("QwenTextToImageNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (QwenTextToImageNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("1:1");
-    expect(d.resolution).toBe("1K");
+    expectMetadataDefaults(QwenTextToImageNode);
   });
 
   it("process with valid inputs", async () => {
@@ -652,12 +616,7 @@ describe("QwenImageToImageNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (QwenImageToImageNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.image).toBeNull();
-    expect(d.aspect_ratio).toBe("1:1");
-    expect(d.resolution).toBe("1K");
+    expectMetadataDefaults(QwenImageToImageNode);
   });
 
   it("process with valid inputs", async () => {
@@ -697,11 +656,7 @@ describe("TopazImageUpscaleNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (TopazImageUpscaleNode as any)();
-    const d = n.defaults();
-    expect(d.image).toBeNull();
-    expect(d.scale_factor).toBe(2);
-    expect(d.model_name).toBe("Standard V2");
+    expectMetadataDefaults(TopazImageUpscaleNode);
   });
 
   it("process with valid inputs", async () => {
@@ -737,9 +692,7 @@ describe("RecraftRemoveBackgroundNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (RecraftRemoveBackgroundNode as any)();
-    const d = n.defaults();
-    expect(d.image).toBeNull();
+    expectMetadataDefaults(RecraftRemoveBackgroundNode);
   });
 
   it("process with valid inputs", async () => {
@@ -768,13 +721,7 @@ describe("IdeogramCharacterNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (IdeogramCharacterNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("1:1");
-    expect(d.character_description).toBe("");
-    expect(d.images).toEqual([]);
-    expect(d.rendering_speed).toBe("DEFAULT");
+    expectMetadataDefaults(IdeogramCharacterNode);
   });
 
   it("process with valid inputs", async () => {
@@ -817,14 +764,7 @@ describe("IdeogramCharacterEditNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (IdeogramCharacterEditNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.image).toBeNull();
-    expect(d.mask).toBeNull();
-    expect(d.character_description).toBe("");
-    expect(d.images).toEqual([]);
-    expect(d.rendering_speed).toBe("DEFAULT");
+    expectMetadataDefaults(IdeogramCharacterEditNode);
   });
 
   it("process with valid inputs (no mask)", async () => {
@@ -903,14 +843,7 @@ describe("IdeogramCharacterRemixNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (IdeogramCharacterRemixNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.image).toBeNull();
-    expect(d.character_description).toBe("");
-    expect(d.images).toEqual([]);
-    expect(d.rendering_speed).toBe("DEFAULT");
-    expect(d.style_type).toBe("AUTO");
+    expectMetadataDefaults(IdeogramCharacterRemixNode);
   });
 
   it("process with valid inputs", async () => {
@@ -975,11 +908,7 @@ describe("IdeogramV3ReframeNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (IdeogramV3ReframeNode as any)();
-    const d = n.defaults();
-    expect(d.image).toBeNull();
-    expect(d.resolution).toBe("AUTO");
-    expect(d.rendering_speed).toBe("DEFAULT");
+    expectMetadataDefaults(IdeogramV3ReframeNode);
   });
 
   it("process with valid inputs", async () => {
@@ -1016,9 +945,7 @@ describe("RecraftCrispUpscaleNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (RecraftCrispUpscaleNode as any)();
-    const d = n.defaults();
-    expect(d.image).toBeNull();
+    expectMetadataDefaults(RecraftCrispUpscaleNode);
   });
 
   it("process with valid inputs", async () => {
@@ -1049,10 +976,7 @@ describe("Imagen4FastNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Imagen4FastNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("1:1");
+    expectMetadataDefaults(Imagen4FastNode);
   });
 
   it("process with valid inputs", async () => {
@@ -1087,10 +1011,7 @@ describe("Imagen4UltraNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Imagen4UltraNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("1:1");
+    expectMetadataDefaults(Imagen4UltraNode);
   });
 
   it("process with valid inputs", async () => {
@@ -1125,10 +1046,7 @@ describe("Imagen4Node", () => {
   });
 
   it("defaults", () => {
-    const n = new (Imagen4Node as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("1:1");
+    expectMetadataDefaults(Imagen4Node);
   });
 
   it("process with valid inputs", async () => {
@@ -1163,11 +1081,7 @@ describe("NanoBananaEditNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (NanoBananaEditNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.image).toBeNull();
-    expect(d.mask).toBeNull();
+    expectMetadataDefaults(NanoBananaEditNode);
   });
 
   it("process with valid inputs (no mask)", async () => {
@@ -1221,11 +1135,7 @@ describe("GPTImage4oTextToImageNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (GPTImage4oTextToImageNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("1:1");
-    expect(d.quality).toBe("standard");
+    expectMetadataDefaults(GPTImage4oTextToImageNode);
   });
 
   it("process with valid inputs", async () => {
@@ -1266,11 +1176,7 @@ describe("GPTImage4oImageToImageNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (GPTImage4oImageToImageNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.images).toEqual([]);
-    expect(d.quality).toBe("standard");
+    expectMetadataDefaults(GPTImage4oImageToImageNode);
   });
 
   it("process with valid inputs", async () => {
@@ -1312,11 +1218,7 @@ describe("GPTImage15TextToImageNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (GPTImage15TextToImageNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("1:1");
-    expect(d.quality).toBe("standard");
+    expectMetadataDefaults(GPTImage15TextToImageNode);
   });
 
   it("process with valid inputs", async () => {
@@ -1356,11 +1258,7 @@ describe("GPTImage15ImageToImageNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (GPTImage15ImageToImageNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.images).toEqual([]);
-    expect(d.quality).toBe("standard");
+    expectMetadataDefaults(GPTImage15ImageToImageNode);
   });
 
   it("process with valid inputs", async () => {
@@ -1402,13 +1300,7 @@ describe("IdeogramV3TextToImageNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (IdeogramV3TextToImageNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("1:1");
-    expect(d.rendering_speed).toBe("DEFAULT");
-    expect(d.style_type).toBe("AUTO");
-    expect(d.negative_prompt).toBe("");
+    expectMetadataDefaults(IdeogramV3TextToImageNode);
   });
 
   it("process with valid inputs", async () => {
@@ -1459,14 +1351,7 @@ describe("IdeogramV3ImageToImageNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (IdeogramV3ImageToImageNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.image).toBeNull();
-    expect(d.aspect_ratio).toBe("1:1");
-    expect(d.rendering_speed).toBe("DEFAULT");
-    expect(d.style_type).toBe("AUTO");
-    expect(d.image_weight).toBe(50);
+    expectMetadataDefaults(IdeogramV3ImageToImageNode);
   });
 
   it("process with valid inputs", async () => {
@@ -1512,11 +1397,7 @@ describe("Seedream40TextToImageNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Seedream40TextToImageNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("1:1");
-    expect(d.resolution).toBe("1K");
+    expectMetadataDefaults(Seedream40TextToImageNode);
   });
 
   it("process with valid inputs", async () => {
@@ -1553,12 +1434,7 @@ describe("Seedream40ImageToImageNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Seedream40ImageToImageNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.image).toBeNull();
-    expect(d.aspect_ratio).toBe("1:1");
-    expect(d.resolution).toBe("1K");
+    expectMetadataDefaults(Seedream40ImageToImageNode);
   });
 
   it("process with valid inputs", async () => {

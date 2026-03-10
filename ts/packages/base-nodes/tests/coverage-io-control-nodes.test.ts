@@ -97,7 +97,6 @@ import {
   SaveVideoFileNode,
   // triggers
   WaitNode,
-  WaitAliasNode,
   ManualTriggerNode,
   IntervalTriggerNode,
   WebhookTriggerNode,
@@ -135,9 +134,8 @@ describe("control nodes — full coverage", () => {
 
   it("CollectNode defaults returns input_item null", () => {
     const node = new CollectNode();
-    // Lines 61-62: defaults() returning { input_item: null }
-    const d = node.defaults();
-    expect(d).toEqual({ input_item: null });
+    const d = node.serialize();
+    expect(d).toEqual({ input_item: [] });
   });
 
   it("CollectNode.process without input_item key does not push", async () => {
@@ -158,14 +156,13 @@ describe("control nodes — full coverage", () => {
   it("RerouteNode returns null when nothing set", async () => {
     const node = new RerouteNode();
     const result = await node.process({});
-    expect(result).toEqual({ output: null });
+    expect(result).toEqual({ output: [] });
   });
 
   it("IfNode uses prop defaults", async () => {
     const node = new IfNode();
-    // defaults test
-    const d = node.defaults();
-    expect(d).toEqual({ condition: false, value: null });
+    const d = node.serialize();
+    expect(d).toEqual({ condition: false, value: [] });
   });
 });
 
@@ -180,36 +177,37 @@ describe("input nodes — full coverage", () => {
     { Cls: SelectInputNode, expected: "" },
     { Cls: StringListInputNode, expected: [] },
     { Cls: FolderPathInputNode, expected: "" },
-    { Cls: HuggingFaceModelInputNode, expected: {} },
-    { Cls: ColorInputNode, expected: {} },
+    { Cls: HuggingFaceModelInputNode, verify: (value: any) => expect(value).toMatchObject({ type: "hf.model", repo_id: "" }) },
+    { Cls: ColorInputNode, verify: (value: any) => expect(value).toMatchObject({ type: "color", value: null }) },
     { Cls: ImageSizeInputNode, expected: {} },
-    { Cls: LanguageModelInputNode, expected: {} },
-    { Cls: ImageModelInputNode, expected: {} },
-    { Cls: VideoModelInputNode, expected: {} },
-    { Cls: TTSModelInputNode, expected: {} },
-    { Cls: ASRModelInputNode, expected: {} },
-    { Cls: EmbeddingModelInputNode, expected: {} },
-    { Cls: DataframeInputNode, expected: {} },
-    { Cls: DocumentInputNode, expected: {} },
-    { Cls: ImageInputNode, expected: {} },
+    { Cls: LanguageModelInputNode, verify: (value: any) => expect(value).toMatchObject({ type: "language_model", provider: "empty", id: "" }) },
+    { Cls: ImageModelInputNode, verify: (value: any) => expect(value).toMatchObject({ type: "image_model", provider: "empty", id: "" }) },
+    { Cls: VideoModelInputNode, verify: (value: any) => expect(value).toMatchObject({ type: "video_model", provider: "empty", id: "" }) },
+    { Cls: TTSModelInputNode, verify: (value: any) => expect(value).toMatchObject({ type: "tts_model", provider: "empty", id: "", selected_voice: "" }) },
+    { Cls: ASRModelInputNode, verify: (value: any) => expect(value).toMatchObject({ type: "asr_model", provider: "empty", id: "" }) },
+    { Cls: EmbeddingModelInputNode, verify: (value: any) => expect(value).toMatchObject({ type: "embedding_model", provider: "empty", id: "", dimensions: 0 }) },
+    { Cls: DataframeInputNode, verify: (value: any) => expect(value).toMatchObject({ type: "dataframe", uri: "" }) },
+    { Cls: DocumentInputNode, verify: (value: any) => expect(value).toMatchObject({ type: "document", uri: "" }) },
+    { Cls: ImageInputNode, verify: (value: any) => expect(value).toMatchObject({ type: "image", uri: "" }) },
     { Cls: ImageListInputNode, expected: [] },
     { Cls: VideoListInputNode, expected: [] },
     { Cls: AudioListInputNode, expected: [] },
     { Cls: TextListInputNode, expected: [] },
-    { Cls: VideoInputNode, expected: {} },
-    { Cls: AudioInputNode, expected: {} },
-    { Cls: Model3DInputNode, expected: {} },
-    { Cls: AssetFolderInputNode, expected: {} },
+    { Cls: VideoInputNode, verify: (value: any) => expect(value).toMatchObject({ type: "video", uri: "" }) },
+    { Cls: AudioInputNode, verify: (value: any) => expect(value).toMatchObject({ type: "audio", uri: "" }) },
+    { Cls: Model3DInputNode, verify: (value: any) => expect(value).toMatchObject({ type: "model_3d", uri: "", texture_files: [] }) },
+    { Cls: AssetFolderInputNode, verify: (value: any) => expect(value).toMatchObject({ type: "folder", uri: "" }) },
     { Cls: FilePathInputNode, expected: "" },
-    { Cls: MessageInputNode, expected: {} },
+    { Cls: MessageInputNode, verify: (value: any) => expect(value).toMatchObject({ type: "message", role: "" }) },
     { Cls: MessageListInputNode, expected: [] },
   ];
 
-  for (const { Cls, expected } of simpleInputNodes) {
+  for (const { Cls, expected, verify } of simpleInputNodes) {
     it(`${Cls.nodeType} returns default value`, async () => {
       const node = new Cls();
       const result = await node.process({});
-      expect(result).toEqual({ value: expected });
+      if (verify) verify(result.value);
+      else expect(result).toEqual({ value: expected });
     });
   }
 
@@ -229,8 +227,14 @@ describe("input nodes — full coverage", () => {
 
   it("StringInputNode defaults include line_mode", () => {
     const node = new StringInputNode();
-    const d = node.defaults();
-    expect(d).toEqual({ value: "", max_length: 0, line_mode: "single_line" });
+    const d = node.serialize();
+    expect(d).toEqual({
+      name: "",
+      value: "",
+      description: "",
+      max_length: 0,
+      line_mode: "single_line",
+    });
   });
 
   it("RealtimeAudioInputNode returns chunk", async () => {
@@ -243,7 +247,7 @@ describe("input nodes — full coverage", () => {
   it("RealtimeAudioInputNode returns null by default", async () => {
     const node = new RealtimeAudioInputNode();
     const result = await node.process({});
-    expect(result).toEqual({ chunk: null });
+    expect(result.chunk).toMatchObject({ type: "audio", uri: "" });
   });
 
   it("DocumentFileInputNode produces uri and path", async () => {
@@ -451,10 +455,10 @@ describe("output nodes — full coverage", () => {
 describe("constant nodes — full coverage", () => {
   it("ConstantBoolNode uses defaults and process via input", async () => {
     const node = new ConstantBoolNode();
-    expect(node.defaults()).toEqual({ value: false });
-    // Without assign, _props.value is undefined, so falls back to null
+    expect(node.serialize()).toEqual({ value: false });
+    // Without assign, defaults() still provides the decorator default
     const r1 = await node.process({});
-    expect(r1).toEqual({ output: null });
+    expect(r1).toEqual({ output: false });
     // With value in inputs
     const r2 = await node.process({ value: true });
     expect(r2).toEqual({ output: true });
@@ -462,26 +466,26 @@ describe("constant nodes — full coverage", () => {
 
   it("ConstantFloatNode", async () => {
     const node = new ConstantFloatNode();
-    expect(node.defaults()).toEqual({ value: 0.0 });
+    expect(node.serialize()).toEqual({ value: 0.0 });
     node.assign({ value: 2.5 });
     expect(await node.process({})).toEqual({ output: 2.5 });
   });
 
   it("ConstantStringNode", async () => {
     const node = new ConstantStringNode();
-    expect(node.defaults()).toEqual({ value: "" });
+    expect(node.serialize()).toEqual({ value: "" });
     expect(await node.process({ value: "hi" })).toEqual({ output: "hi" });
   });
 
   it("ConstantListNode", async () => {
     const node = new ConstantListNode();
-    expect(node.defaults()).toEqual({ value: [] });
+    expect(node.serialize()).toEqual({ value: [] });
     expect(await node.process({ value: [1, 2] })).toEqual({ output: [1, 2] });
   });
 
   it("ConstantTextListNode", async () => {
     const node = new ConstantTextListNode();
-    expect(node.defaults()).toEqual({ value: [] });
+    expect(node.serialize()).toEqual({ value: null });
     expect(await node.process({ value: ["a", "b"] })).toEqual({ output: ["a", "b"] });
   });
 
@@ -537,11 +541,11 @@ describe("constant nodes — full coverage", () => {
 
   it("ConstantDateTimeNode with defaults", async () => {
     const node = new ConstantDateTimeNode();
-    const d = node.defaults();
-    expect(d.year).toBe(2024);
+    const d = node.serialize();
+    expect(d.year).toBe(1900);
     expect(d.millisecond).toBe(0);
-    expect(d.tzinfo).toBe("");
-    expect(d.utc_offset).toBe("");
+    expect(d.tzinfo).toBe("UTC");
+    expect(d.utc_offset).toBe(0);
 
     const result = await node.process({
       year: 2025,
@@ -571,15 +575,15 @@ describe("constant nodes — full coverage", () => {
     const node = new ConstantDateTimeNode();
     const result = await node.process({});
     expect(result.output).toEqual({
-      year: 2024,
+      year: 1900,
       month: 1,
       day: 1,
       hour: 0,
       minute: 0,
       second: 0,
       millisecond: 0,
-      tzinfo: "",
-      utc_offset: "",
+      tzinfo: "UTC",
+      utc_offset: "0",
     });
   });
 
@@ -615,8 +619,8 @@ describe("constant nodes — full coverage", () => {
 
   it("ConstantImageSizeNode defaults and process", async () => {
     const node = new ConstantImageSizeNode();
-    const d = node.defaults();
-    expect(d).toEqual({ value: { width: 1024, height: 1024 } });
+    const d = node.serialize();
+    expect(d).toEqual({ value: null });
     const result = await node.process({});
     expect(result).toEqual({
       output: { width: 1024, height: 1024 },
@@ -628,22 +632,22 @@ describe("constant nodes — full coverage", () => {
 
   it("ConstantDateNode defaults and process", async () => {
     const node = new ConstantDateNode();
-    const d = node.defaults();
-    expect(d).toEqual({ year: 2024, month: 1, day: 1 });
+    const d = node.serialize();
+    expect(d).toEqual({ year: 1900, month: 1, day: 1 });
     const result = await node.process({});
-    expect(result).toEqual({ output: { year: 2024, month: 1, day: 1 } });
+    expect(result).toEqual({ output: { year: 1900, month: 1, day: 1 } });
   });
 
   it("ConstantSelectNode defaults and prop defaults", async () => {
     const node = new ConstantSelectNode();
-    expect(node.defaults()).toEqual({ value: "", options: [], enum_type_name: "" });
+    expect(node.serialize()).toEqual({ value: "", options: [], enum_type_name: "" });
     const result = await node.process({});
     expect(result).toEqual({ output: "" });
   });
 
   it("ConstantDictNode defaults", () => {
     const node = new ConstantDictNode();
-    expect(node.defaults()).toEqual({ value: {} });
+    expect(node.serialize()).toEqual({ value: {} });
   });
 
   it("ConstantNode abstract falls back to prop value", async () => {
@@ -656,10 +660,10 @@ describe("constant nodes — full coverage", () => {
   });
 
   it("ConstantNode abstract falls back to null when no prop", async () => {
-    // ConstantIntegerNode extends ConstantNode — when nothing assigned, _props.value is undefined
+    // ConstantIntegerNode with decorator defaults — returns default when nothing assigned
     const node = new ConstantIntegerNode();
     const result = await node.process({});
-    expect(result).toEqual({ output: null });
+    expect(result).toEqual({ output: 0 });
   });
 });
 
@@ -779,18 +783,18 @@ describe("workspace nodes — full coverage", () => {
   });
 
   it("workspace node defaults are accessible", () => {
-    expect(new ReadTextFileNode().defaults()).toEqual({ path: "", encoding: "utf-8" });
-    expect(new WriteTextFileNode().defaults()).toEqual({ path: "", content: "", encoding: "utf-8", append: false });
-    expect(new ReadBinaryFileNode().defaults()).toEqual({ path: "" });
-    expect(new WriteBinaryFileNode().defaults()).toEqual({ path: "", content: "" });
-    expect(new DeleteWorkspaceFileNode().defaults()).toEqual({ path: "", recursive: false });
-    expect(new CreateWorkspaceDirectoryNode().defaults()).toEqual({ path: "" });
-    expect(new WorkspaceFileExistsNode().defaults()).toEqual({ path: "" });
-    expect(new GetWorkspaceFileInfoNode().defaults()).toEqual({ path: "" });
-    expect(new CopyWorkspaceFileNode().defaults()).toEqual({ source: "", destination: "" });
-    expect(new MoveWorkspaceFileNode().defaults()).toEqual({ source: "", destination: "" });
-    expect(new GetWorkspaceFileSizeNode().defaults()).toEqual({ path: "" });
-    expect(new IsWorkspaceFileNode().defaults()).toEqual({ path: "" });
+    expect(new ReadTextFileNode().serialize()).toEqual({ path: "", encoding: "utf-8" });
+    expect(new WriteTextFileNode().serialize()).toEqual({ path: "", content: "", encoding: "utf-8", append: false });
+    expect(new ReadBinaryFileNode().serialize()).toEqual({ path: "" });
+    expect(new WriteBinaryFileNode().serialize()).toEqual({ path: "", content: "" });
+    expect(new DeleteWorkspaceFileNode().serialize()).toEqual({ path: "", recursive: false });
+    expect(new CreateWorkspaceDirectoryNode().serialize()).toEqual({ path: "" });
+    expect(new WorkspaceFileExistsNode().serialize()).toEqual({ path: "" });
+    expect(new GetWorkspaceFileInfoNode().serialize()).toEqual({ path: "" });
+    expect(new CopyWorkspaceFileNode().serialize()).toEqual({ source: "", destination: "" });
+    expect(new MoveWorkspaceFileNode().serialize()).toEqual({ source: "", destination: "" });
+    expect(new GetWorkspaceFileSizeNode().serialize()).toEqual({ path: "" });
+    expect(new IsWorkspaceFileNode().serialize()).toEqual({ path: "" });
   });
 
   it("GetWorkspaceFileSizeNode returns file size", async () => {
@@ -827,11 +831,11 @@ describe("workspace nodes — full coverage", () => {
   });
 
   it("IsWorkspaceDirectoryNode defaults", () => {
-    expect(new IsWorkspaceDirectoryNode().defaults()).toEqual({ path: "" });
+    expect(new IsWorkspaceDirectoryNode().serialize()).toEqual({ path: "" });
   });
 
   it("JoinWorkspacePathsNode defaults", () => {
-    expect(new JoinWorkspacePathsNode().defaults()).toEqual({ paths: [] });
+    expect(new JoinWorkspacePathsNode().serialize()).toEqual({ paths: [] });
   });
 
   it("JoinWorkspacePathsNode throws when paths is not an array", async () => {
@@ -880,18 +884,28 @@ describe("workspace nodes — full coverage", () => {
 
   it("ListWorkspaceFilesNode defaults and process", async () => {
     const node = new ListWorkspaceFilesNode();
-    expect(node.defaults()).toEqual({ path: ".", pattern: "*", recursive: false });
+    expect(node.serialize()).toEqual({ path: ".", pattern: "*", recursive: false });
     expect(await node.process({})).toEqual({});
   });
 
   it("SaveImageFileNode defaults", () => {
     const node = new SaveImageFileNode();
-    expect(node.defaults()).toEqual({ image: {}, folder: ".", filename: "image.png", overwrite: false });
+    expect(node.serialize()).toMatchObject({
+      image: { type: "image", uri: "" },
+      folder: ".",
+      filename: "image.png",
+      overwrite: false,
+    });
   });
 
   it("SaveVideoFileNode defaults", () => {
     const node = new SaveVideoFileNode();
-    expect(node.defaults()).toEqual({ video: {}, folder: ".", filename: "video.mp4", overwrite: false });
+    expect(node.serialize()).toMatchObject({
+      video: { type: "video", uri: "" },
+      folder: ".",
+      filename: "video.mp4",
+      overwrite: false,
+    });
   });
 
   it("SaveImageFileNode saves image bytes and handles overwrite=false", async () => {
@@ -1007,7 +1021,7 @@ describe("workspace nodes — full coverage", () => {
 // ============================================================
 describe("trigger nodes — full coverage", () => {
   it("WaitNode defaults", () => {
-    expect(new WaitNode().defaults()).toEqual({ timeout_seconds: 0, input: "" });
+    expect(new WaitNode().serialize()).toEqual({ timeout_seconds: 0, input: "" });
   });
 
   it("WaitNode with zero timeout", async () => {
@@ -1025,34 +1039,12 @@ describe("trigger nodes — full coverage", () => {
     expect(typeof result.resumed_at).toBe("string");
   });
 
-  it("WaitAliasNode defaults", () => {
-    const node = new WaitAliasNode();
-    expect(node.defaults()).toEqual({ timeout_seconds: 0, input: "" });
-  });
-
-  it("WaitAliasNode with zero timeout", async () => {
-    const node = new WaitAliasNode();
-    const result = await node.process({ timeout_seconds: 0, input: "test-data" });
-    expect(result.data).toBe("test-data");
-    expect(typeof result.resumed_at).toBe("string");
-    expect(Number(result.waited_seconds)).toBeGreaterThanOrEqual(0);
-  });
-
-  it("WaitAliasNode with small positive timeout", async () => {
-    const node = new WaitAliasNode();
-    const result = await node.process({ timeout_seconds: 0.01, input: "timed" });
-    expect(result.data).toBe("timed");
-    expect(Number(result.waited_seconds)).toBeGreaterThanOrEqual(0);
-  });
-
-  it("WaitAliasNode uses prop defaults", async () => {
-    const node = new WaitAliasNode();
-    const result = await node.process({});
-    expect(result.data).toBe("");
-  });
-
   it("ManualTriggerNode defaults", () => {
-    expect(new ManualTriggerNode().defaults()).toEqual({ payload: {} });
+    expect(new ManualTriggerNode().serialize()).toEqual({
+      max_events: 0,
+      name: "manual_trigger",
+      timeout_seconds: null,
+    });
   });
 
   it("ManualTriggerNode emits payload", async () => {
@@ -1068,7 +1060,13 @@ describe("trigger nodes — full coverage", () => {
   });
 
   it("IntervalTriggerNode defaults", () => {
-    expect(new IntervalTriggerNode().defaults()).toEqual({ interval_seconds: 60 });
+    expect(new IntervalTriggerNode().serialize()).toEqual({
+      max_events: 0,
+      interval_seconds: 60,
+      initial_delay_seconds: 0,
+      emit_on_start: true,
+      include_drift_compensation: true,
+    });
   });
 
   it("IntervalTriggerNode emits interval metadata", async () => {
@@ -1103,20 +1101,35 @@ describe("trigger nodes — full coverage", () => {
 
   it("WebhookTriggerNode defaults and process with defaults", async () => {
     const node = new WebhookTriggerNode();
-    const d = node.defaults();
-    expect(d).toEqual({ body: {}, headers: {}, method: "POST", path: "/" });
+    const d = node.serialize();
+    expect(d).toEqual({
+      max_events: 0,
+      port: 8080,
+      path: "/webhook",
+      host: "127.0.0.1",
+      methods: ["POST"],
+      secret: "",
+    });
     const result = await node.process({});
     const output = result.output as Record<string, unknown>;
     expect(output.method).toBe("POST");
-    expect(output.path).toBe("/");
+    expect(output.path).toBe("/webhook");
     expect(output.headers).toEqual({});
     expect(output.body).toEqual({});
   });
 
   it("FileWatchTriggerNode defaults and process with inputs", async () => {
     const node = new FileWatchTriggerNode();
-    const d = node.defaults();
-    expect(d).toEqual({ path: "", event: "modified" });
+    const d = node.serialize();
+    expect(d).toEqual({
+      max_events: 0,
+      path: ".",
+      recursive: false,
+      patterns: ["*"],
+      ignore_patterns: [],
+      events: ["created", "modified", "deleted", "moved"],
+      debounce_seconds: 0.5,
+    });
     const result = await node.process({ path: "/tmp/watch.txt", event: "created" });
     const output = result.output as Record<string, unknown>;
     expect(output.path).toBe("/tmp/watch.txt");
@@ -1128,7 +1141,7 @@ describe("trigger nodes — full coverage", () => {
     const node = new FileWatchTriggerNode();
     const result = await node.process({});
     const output = result.output as Record<string, unknown>;
-    expect(output.path).toBe("");
+    expect(output.path).toBe(".");
     expect(output.event).toBe("modified");
   });
 });

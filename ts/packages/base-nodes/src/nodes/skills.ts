@@ -7,7 +7,7 @@
  * direct HTTP calls against OpenAI, Anthropic, or Ollama.
  */
 
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { NodeClass } from "@nodetool/node-sdk";
 import type { ProcessingContext } from "@nodetool/runtime";
 
@@ -226,23 +226,14 @@ class SkillNode extends BaseNode {
   static readonly _systemPrompt: string =
     "You are a helpful assistant. Complete the task described by the user.";
 
-  defaults(): Record<string, unknown> {
-    return {
-      model: { provider: "", id: "" },
-      prompt: "",
-      timeout_seconds: 180,
-      max_output_chars: 200000,
-    };
-  }
-
   async process(
     inputs: Record<string, unknown>,
     context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const prompt = String(inputs.prompt ?? this._props.prompt ?? "").trim();
+    const prompt = String(inputs.prompt ?? this.prompt ?? "").trim();
     if (!prompt) throw new Error("Prompt is required");
 
-    const model = (inputs.model ?? this._props.model ?? {}) as Record<
+    const model = (inputs.model ?? this.model ?? {}) as Record<
       string,
       unknown
     >;
@@ -271,12 +262,33 @@ class SkillNode extends BaseNode {
 
 export class ShellAgentSkillNode extends SkillNode {
   static readonly nodeType = "skills._shell_agent.ShellAgentSkill";
-  static readonly title = "Shell Agent Skill";
-  static readonly description =
-    "Reusable prompt-driven skill backed by execute_bash. skills, shell, agent, bash";
+      static readonly title = "Shell Agent Skill";
+      static readonly description = "Reusable prompt-driven skill backed by execute_bash.";
+    static readonly metadataOutputTypes = {
+    text: "str"
+  };
   static readonly _systemPrompt =
     "You are a bounded workspace agent. Use execute_bash for concrete actions. " +
     "Ground all claims in command output and keep results concise.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for task planning and execution reasoning." })
+  declare model: any;
+
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt describing the requested task." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 180, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 200000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
 }
 
 // ---------------------------------------------------------------------------
@@ -285,23 +297,38 @@ export class ShellAgentSkillNode extends SkillNode {
 
 export class BrowserSkillNode extends SkillNode {
   static readonly nodeType = "skills.browser.BrowserSkill";
-  static readonly title = "Browser Skill";
-  static readonly description =
-    "Prompt-driven browser skill with bounded tool validation and schema outputs. Supports extraction and browser automation workflows. skills, browser, scrape, extraction, automation";
+      static readonly title = "Browser Skill";
+      static readonly description = "Prompt-driven browser skill with bounded tool validation and schema outputs.\n    Supports extraction and browser automation workflows.\n    skills, browser, scrape, extraction, automation";
+    static readonly metadataOutputTypes = {
+    text: "str"
+  };
   static readonly _systemPrompt =
     "You are a browser automation and extraction agent using Playwright-backed browser tools. " +
     "Use `browser` to fetch page content and metadata, `take_screenshot` for screenshots, " +
     "and DOM tools (`dom_examine`, `dom_search`, `dom_extract`) for structured inspection. " +
     "The `browser` tool returns JSON fields like `success`, `url`, `content`, `metadata`, or `error`. " +
     "Do not browse search engine result pages directly; explain that direct SERP browsing is disabled.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for free-form browsing tasks." })
+  declare model: any;
 
-  defaults(): Record<string, unknown> {
-    return {
-      ...super.defaults(),
-      timeout_seconds: 150,
-      max_output_chars: 180000,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt for browser navigation/extraction." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 150, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 180000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
+
+
 }
 
 // ---------------------------------------------------------------------------
@@ -310,21 +337,43 @@ export class BrowserSkillNode extends SkillNode {
 
 export class SQLiteSkillNode extends SkillNode {
   static readonly nodeType = "skills.data.SQLiteSkill";
-  static readonly title = "SQLite Skill";
-  static readonly description =
-    "Prompt-driven SQLite skill with guarded query execution. skills, data, sqlite, query";
+      static readonly title = "SQLite Skill";
+      static readonly description = "Prompt-driven SQLite skill with guarded query execution.\n    skills, data, sqlite, query";
+    static readonly metadataOutputTypes = {
+    text: "str",
+    json: "dict[str, any]",
+    dataframe: "dataframe"
+  };
   static readonly _systemPrompt =
     "You are a data analysis skill. Use tools to run queries and ground every " +
     "answer in tool outputs. Keep answers concise and factual.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for optional agent reasoning over query results." })
+  declare model: any;
 
-  defaults(): Record<string, unknown> {
-    return {
-      ...super.defaults(),
-      timeout_seconds: 120,
-      db_path: "memory.db",
-      allow_mutation: false,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt for data query/transform task." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 120, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 200000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
+  @prop({ type: "str", default: "memory.db", title: "Db Path", description: "Path to SQLite database relative to workspace." })
+  declare db_path: any;
+
+  @prop({ type: "bool", default: false, title: "Allow Mutation", description: "Allow INSERT/UPDATE/DELETE/DDL statements when enabled." })
+  declare allow_mutation: any;
+
+
+
 }
 
 // ---------------------------------------------------------------------------
@@ -333,19 +382,37 @@ export class SQLiteSkillNode extends SkillNode {
 
 export class SupabaseSkillNode extends SkillNode {
   static readonly nodeType = "skills.data.SupabaseSkill";
-  static readonly title = "Supabase Skill";
-  static readonly description =
-    "Prompt-driven Supabase skill with guarded SELECT execution. skills, data, supabase, query";
+      static readonly title = "Supabase Skill";
+      static readonly description = "Prompt-driven Supabase skill with guarded SELECT execution.\n    skills, data, supabase, query";
+    static readonly metadataOutputTypes = {
+    text: "str",
+    json: "dict[str, any]",
+    dataframe: "dataframe"
+  };
   static readonly _systemPrompt =
     "You are a data analysis skill. Use tools to run queries and ground every " +
     "answer in tool outputs. Keep answers concise and factual.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for optional agent reasoning over query results." })
+  declare model: any;
 
-  defaults(): Record<string, unknown> {
-    return {
-      ...super.defaults(),
-      timeout_seconds: 120,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt for data query/transform task." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 120, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 200000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
+
+
 }
 
 // ---------------------------------------------------------------------------
@@ -354,19 +421,35 @@ export class SupabaseSkillNode extends SkillNode {
 
 export class DocumentSkillNode extends SkillNode {
   static readonly nodeType = "skills.document.DocumentSkill";
-  static readonly title = "Document Skill";
-  static readonly description =
-    "Prompt-driven document skill for model-based document analysis. skills, document, extraction, conversion, markdown";
+      static readonly title = "Document Skill";
+      static readonly description = "Prompt-driven document skill for model-based document analysis.\n    skills, document, extraction, conversion, markdown";
+    static readonly metadataOutputTypes = {
+    text: "str",
+    document: "document"
+  };
   static readonly _systemPrompt =
     "You are a document skill. Use attached document/text inputs and return concise results.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for free-form document tasks." })
+  declare model: any;
 
-  defaults(): Record<string, unknown> {
-    return {
-      ...super.defaults(),
-      timeout_seconds: 120,
-      max_output_chars: 150000,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt describing the document task." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 120, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 150000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
+
+
 }
 
 // ---------------------------------------------------------------------------
@@ -375,9 +458,12 @@ export class DocumentSkillNode extends SkillNode {
 
 export class DocxSkillNode extends SkillNode {
   static readonly nodeType = "skills.docx.DocxSkill";
-  static readonly title = "DOCX Skill";
-  static readonly description =
-    "Prompt-driven DOCX creation skill. skills, docx, word, document creation, docx-js";
+      static readonly title = "DOCX Skill";
+      static readonly description = "Prompt-driven DOCX creation skill.\n    skills, docx, word, document creation, docx-js";
+    static readonly metadataOutputTypes = {
+    document: "document",
+    text: "str"
+  };
   static readonly _systemPrompt =
     "You are a DOCX creation specialist. This skill is creation-only.\n\n" +
     "Scope:\n" +
@@ -414,14 +500,27 @@ export class DocxSkillNode extends SkillNode {
     "Output rules:\n" +
     "- Keep response concise and include output path.\n" +
     "- If no DOCX was produced, clearly explain why.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for DOCX creation planning and execution." })
+  declare model: any;
 
-  defaults(): Record<string, unknown> {
-    return {
-      ...super.defaults(),
-      timeout_seconds: 300,
-      max_output_chars: 220000,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt describing what DOCX to create." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 300, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 220000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
+
+
 }
 
 // ---------------------------------------------------------------------------
@@ -430,14 +529,35 @@ export class DocxSkillNode extends SkillNode {
 
 export class EmailSkillNode extends SkillNode {
   static readonly nodeType = "skills.email.EmailSkill";
-  static readonly title = "Email Skill";
-  static readonly description =
-    "Prompt-driven email skill for IMAP/SMTP and message processing tasks. skills, email, imap, smtp, messaging";
+      static readonly title = "Email Skill";
+      static readonly description = "Prompt-driven email skill for IMAP/SMTP and message processing tasks.\n    skills, email, imap, smtp, messaging";
+    static readonly metadataOutputTypes = {
+    text: "str"
+  };
   static readonly _systemPrompt =
     "You are an email automation specialist. Use execute_bash for mailbox tasks " +
     "(parse RFC822/EML, summarize threads, draft content, IMAP/SMTP workflows). " +
     "Protect sensitive data and redact secrets or private message content unless requested. " +
     "For outbound actions, clearly state recipients, subject, and intent before execution.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for task planning and execution reasoning." })
+  declare model: any;
+
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt describing the requested task." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 180, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 200000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
 }
 
 // ---------------------------------------------------------------------------
@@ -446,9 +566,13 @@ export class EmailSkillNode extends SkillNode {
 
 export class FfmpegSkillNode extends SkillNode {
   static readonly nodeType = "skills.ffmpeg.FfmpegSkill";
-  static readonly title = "FFmpeg Skill";
-  static readonly description =
-    "Prompt-driven FFmpeg skill for audio/video editing, conversion, and packaging. skills, ffmpeg, media, video, audio, transcode, remux";
+      static readonly title = "FFmpeg Skill";
+      static readonly description = "Prompt-driven FFmpeg skill for audio/video editing, conversion, and packaging.\n    skills, ffmpeg, media, video, audio, transcode, remux";
+    static readonly metadataOutputTypes = {
+    video: "video",
+    audio: "audio",
+    text: "str"
+  };
   static readonly _systemPrompt =
     "You are an FFmpeg specialist skill for audio/video processing. " +
     "Use attached media inputs when provided and return concise results.\n\n" +
@@ -478,14 +602,47 @@ export class FfmpegSkillNode extends SkillNode {
     "- Clip segment: ffmpeg -ss 00:00:30 -to 00:01:00 -i in.ext -c copy clip.ext\n" +
     "- Extract MP3: ffmpeg -i in.ext -vn -c:a libmp3lame -b:a 192k out.mp3\n" +
     "- Burn subtitles: ffmpeg -i in.ext -vf subtitles=subs.srt -c:v libx264 -c:a copy out_subbed.mp4";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for media prompts." })
+  declare model: any;
 
-  defaults(): Record<string, unknown> {
-    return {
-      ...super.defaults(),
-      audio: { type: "audio", uri: "", asset_id: null, data: null },
-      video: { type: "video", uri: "", asset_id: null, data: null },
-    };
-  }
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "Optional audio input for media reasoning tasks." })
+  declare audio: any;
+
+  @prop({ type: "video", default: {
+  "type": "video",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null,
+  "duration": null,
+  "format": null
+}, title: "Video", description: "Optional video input for media reasoning tasks." })
+  declare video: any;
+
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt for media task execution." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 180, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 200000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
+
+
 }
 
 // ---------------------------------------------------------------------------
@@ -494,14 +651,35 @@ export class FfmpegSkillNode extends SkillNode {
 
 export class FilesystemSkillNode extends SkillNode {
   static readonly nodeType = "skills.filesystem.FilesystemSkill";
-  static readonly title = "Filesystem Skill";
-  static readonly description =
-    "Prompt-driven filesystem skill for file inspection and transformations. skills, filesystem, files, directories, io";
+      static readonly title = "Filesystem Skill";
+      static readonly description = "Prompt-driven filesystem skill for file inspection and transformations.\n    skills, filesystem, files, directories, io";
+    static readonly metadataOutputTypes = {
+    text: "str"
+  };
   static readonly _systemPrompt =
     "You are a filesystem operations specialist constrained to the workspace. " +
     "Use execute_bash for listing, searching, creating, moving, copying, and deleting files. " +
     "Prefer reversible actions and confirm paths before mutating data. " +
     "When changing files, summarize what changed and where.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for task planning and execution reasoning." })
+  declare model: any;
+
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt describing the requested task." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 180, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 200000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
 }
 
 // ---------------------------------------------------------------------------
@@ -510,14 +688,35 @@ export class FilesystemSkillNode extends SkillNode {
 
 export class GitSkillNode extends SkillNode {
   static readonly nodeType = "skills.git.GitSkill";
-  static readonly title = "Git Skill";
-  static readonly description =
-    "Prompt-driven Git skill for repository inspection and change management. skills, git, repository, version-control";
+      static readonly title = "Git Skill";
+      static readonly description = "Prompt-driven Git skill for repository inspection and change management.\n    skills, git, repository, version-control";
+    static readonly metadataOutputTypes = {
+    text: "str"
+  };
   static readonly _systemPrompt =
     "You are a Git workflow specialist. Use execute_bash for all repository actions. " +
     "Prefer non-destructive commands (status, diff, log, branch, add, commit, fetch, pull). " +
     "Do not run destructive history-rewriting commands unless explicitly requested. " +
     "Report exact files, commit IDs, and branch names from command output.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for task planning and execution reasoning." })
+  declare model: any;
+
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt describing the requested task." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 180, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 200000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
 }
 
 // ---------------------------------------------------------------------------
@@ -526,9 +725,12 @@ export class GitSkillNode extends SkillNode {
 
 export class HtmlSkillNode extends SkillNode {
   static readonly nodeType = "skills.html.HtmlSkill";
-  static readonly title = "HTML Skill";
-  static readonly description =
-    "Prompt-driven HTML creation skill. skills, html, web, template, static-site";
+      static readonly title = "HTML Skill";
+      static readonly description = "Prompt-driven HTML creation skill.\n    skills, html, web, template, static-site";
+    static readonly metadataOutputTypes = {
+    html: "html",
+    text: "str"
+  };
   static readonly _systemPrompt =
     "You are an HTML creation specialist.\n\n" +
     "Scope:\n" +
@@ -545,13 +747,27 @@ export class HtmlSkillNode extends SkillNode {
     "Output rules:\n" +
     "- Keep response concise and include final save path.\n" +
     "- If no HTML file was produced, clearly explain why.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for HTML generation planning/execution." })
+  declare model: any;
 
-  defaults(): Record<string, unknown> {
-    return {
-      ...super.defaults(),
-      max_output_chars: 180000,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt describing HTML to create." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 180, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 180000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
+
+
 }
 
 // ---------------------------------------------------------------------------
@@ -560,9 +776,11 @@ export class HtmlSkillNode extends SkillNode {
 
 export class HttpApiSkillNode extends SkillNode {
   static readonly nodeType = "skills.httpapi.HttpApiSkill";
-  static readonly title = "HTTP API Skill";
-  static readonly description =
-    "Prompt-driven HTTP API skill for calling REST/GraphQL endpoints. skills, http, api, rest, graphql";
+      static readonly title = "HTTP API Skill";
+      static readonly description = "Prompt-driven HTTP API skill for calling REST/GraphQL endpoints.\n    skills, http, api, rest, graphql";
+    static readonly metadataOutputTypes = {
+    text: "str"
+  };
   static readonly _systemPrompt =
     "You are an HTTP API integration specialist. " +
     "You can use exactly one tool: `http_request`. " +
@@ -576,6 +794,25 @@ export class HttpApiSkillNode extends SkillNode {
     "1) Direct answer in 1-3 sentences. " +
     "2) Evidence: status code(s) and key response fields used. " +
     "3) If unresolved, the exact missing data needed.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for task planning and execution reasoning." })
+  declare model: any;
+
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt describing the requested task." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 180, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 200000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
 }
 
 // ---------------------------------------------------------------------------
@@ -584,22 +821,46 @@ export class HttpApiSkillNode extends SkillNode {
 
 export class ImageSkillNode extends SkillNode {
   static readonly nodeType = "skills.image.ImageSkill";
-  static readonly title = "Image Skill";
-  static readonly description =
-    "Prompt-driven image skill for model-based image reasoning. skills, image, agent, transform, extraction";
+      static readonly title = "Image Skill";
+      static readonly description = "Prompt-driven image skill for model-based image reasoning.\n    skills, image, agent, transform, extraction";
+    static readonly metadataOutputTypes = {
+    image: "image",
+    text: "str"
+  };
   static readonly _systemPrompt =
     "You are an image skill. Use attached inputs and return concise results. " +
     "Use execute_bash when shell-based processing is needed. " +
     "When you create a final output image file, call set_output_image with that path.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for image prompts." })
+  declare model: any;
 
-  defaults(): Record<string, unknown> {
-    return {
-      ...super.defaults(),
-      image: { type: "image", uri: "", asset_id: null, data: null },
-      timeout_seconds: 90,
-      max_output_chars: 120000,
-    };
-  }
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "Optional image input for image reasoning tasks." })
+  declare image: any;
+
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt describing the image task." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 90, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 120000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
+
+
 }
 
 // ---------------------------------------------------------------------------
@@ -608,23 +869,60 @@ export class ImageSkillNode extends SkillNode {
 
 export class MediaSkillNode extends SkillNode {
   static readonly nodeType = "skills.media.MediaSkill";
-  static readonly title = "Media Skill";
-  static readonly description =
-    "Prompt-driven media skill for model-based audio/video reasoning. skills, media, audio, video, agent";
+      static readonly title = "Media Skill";
+      static readonly description = "Prompt-driven media skill for model-based audio/video reasoning.\n    skills, media, audio, video, agent";
+    static readonly metadataOutputTypes = {
+    video: "video",
+    audio: "audio",
+    text: "str"
+  };
   static readonly _systemPrompt =
     "You are a media skill for audio/video tasks. " +
     "Use attached media inputs when provided and return concise results. " +
     "Use execute_bash for shell-based operations. " +
     "When you create final media files, call set_output_audio and/or " +
     "set_output_video using workspace-relative paths.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for media prompts." })
+  declare model: any;
 
-  defaults(): Record<string, unknown> {
-    return {
-      ...super.defaults(),
-      audio: { type: "audio", uri: "", asset_id: null, data: null },
-      video: { type: "video", uri: "", asset_id: null, data: null },
-    };
-  }
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "Optional audio input for media reasoning tasks." })
+  declare audio: any;
+
+  @prop({ type: "video", default: {
+  "type": "video",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null,
+  "duration": null,
+  "format": null
+}, title: "Video", description: "Optional video input for media reasoning tasks." })
+  declare video: any;
+
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt for media task execution." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 180, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 200000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
+
+
 }
 
 // ---------------------------------------------------------------------------
@@ -633,9 +931,12 @@ export class MediaSkillNode extends SkillNode {
 
 export class PdfLibSkillNode extends SkillNode {
   static readonly nodeType = "skills.pdf_lib.PdfLibSkill";
-  static readonly title = "PDF Skill";
-  static readonly description =
-    "Prompt-driven PDF processing skill with pdf-lib and complementary tooling. skills, pdf, pdf-lib, qpdf, poppler, pdfjs, pypdfium2";
+      static readonly title = "PDF-lib Skill";
+      static readonly description = "Prompt-driven PDF processing skill with pdf-lib and complementary tooling.\n    skills, pdf, pdf-lib, qpdf, poppler, pdfjs, pypdfium2";
+    static readonly metadataOutputTypes = {
+    document: "document",
+    text: "str"
+  };
   static readonly _systemPrompt =
     "You are a PDF processing specialist. Focus on robust, reproducible PDF workflows.\n\n" +
     "Primary scope:\n" +
@@ -661,15 +962,36 @@ export class PdfLibSkillNode extends SkillNode {
     "- Keep responses concise.\n" +
     "- If a final PDF was produced, publish it with set_output_document.\n" +
     "- If no PDF was produced, clearly explain why.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for PDF task planning and execution reasoning." })
+  declare model: any;
 
-  defaults(): Record<string, unknown> {
-    return {
-      ...super.defaults(),
-      document: { type: "document", uri: "", asset_id: null, data: null },
-      timeout_seconds: 300,
-      max_output_chars: 220000,
-    };
-  }
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Document", description: "Optional PDF/document input for transformation or analysis." })
+  declare document: any;
+
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt describing the PDF processing task." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 300, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 220000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
+
+
 }
 
 // ---------------------------------------------------------------------------
@@ -678,9 +1000,12 @@ export class PdfLibSkillNode extends SkillNode {
 
 export class PptxSkillNode extends SkillNode {
   static readonly nodeType = "skills.pptx.PptxSkill";
-  static readonly title = "PPTX Skill";
-  static readonly description =
-    "Prompt-driven PowerPoint generation skill with PptxGenJS. skills, pptx, powerpoint, pptxgenjs, slides";
+      static readonly title = "PPTX Skill";
+      static readonly description = "Prompt-driven PowerPoint generation skill with PptxGenJS.\n    skills, pptx, powerpoint, pptxgenjs, slides";
+    static readonly metadataOutputTypes = {
+    document: "document",
+    text: "str"
+  };
   static readonly _systemPrompt =
     "You are a PptxGenJS specialist for creating and editing .pptx presentations.\n\n" +
     "Execution policy:\n" +
@@ -703,15 +1028,36 @@ export class PptxSkillNode extends SkillNode {
     "- NEVER use 8-char hex for opacity in colors. Use opacity field.\n" +
     "- Shadow offset must be non-negative.\n" +
     "- Do not reuse option objects across calls because PptxGenJS may mutate them.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for PPTX planning and generation reasoning." })
+  declare model: any;
 
-  defaults(): Record<string, unknown> {
-    return {
-      ...super.defaults(),
-      document: { type: "document", uri: "", asset_id: null, data: null },
-      timeout_seconds: 300,
-      max_output_chars: 220000,
-    };
-  }
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Document", description: "Optional source PPTX/document input." })
+  declare document: any;
+
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt describing PPTX task." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 300, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 220000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
+
+
 }
 
 // ---------------------------------------------------------------------------
@@ -720,14 +1066,35 @@ export class PptxSkillNode extends SkillNode {
 
 export class SpreadsheetSkillNode extends SkillNode {
   static readonly nodeType = "skills.spreadsheet.SpreadsheetSkill";
-  static readonly title = "Spreadsheet Skill";
-  static readonly description =
-    "Prompt-driven spreadsheet skill for CSV/XLSX processing. skills, spreadsheet, csv, xlsx, tabular";
+      static readonly title = "Spreadsheet Skill";
+      static readonly description = "Prompt-driven spreadsheet skill for CSV/XLSX processing.\n    skills, spreadsheet, csv, xlsx, tabular";
+    static readonly metadataOutputTypes = {
+    text: "str"
+  };
   static readonly _systemPrompt =
     "You are a spreadsheet and tabular data specialist. Use execute_bash for transformations " +
     "using tools like Python/pandas, csvkit, or shell utilities. Preserve data fidelity and " +
     "call out schema/column assumptions before applying formulas or joins. " +
     "Return concise summaries plus output file paths for generated tables.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for task planning and execution reasoning." })
+  declare model: any;
+
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt describing the requested task." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 180, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 200000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
 }
 
 // ---------------------------------------------------------------------------
@@ -736,13 +1103,34 @@ export class SpreadsheetSkillNode extends SkillNode {
 
 export class VectorStoreSkillNode extends SkillNode {
   static readonly nodeType = "skills.vectorstore.VectorStoreSkill";
-  static readonly title = "Vector Store Skill";
-  static readonly description =
-    "Prompt-driven vector store skill for indexing and similarity search workflows. skills, vectorstore, embeddings, rag, retrieval";
+      static readonly title = "Vector Store Skill";
+      static readonly description = "Prompt-driven vector store skill for indexing and similarity search workflows.\n    skills, vectorstore, embeddings, rag, retrieval";
+    static readonly metadataOutputTypes = {
+    text: "str"
+  };
   static readonly _systemPrompt =
     "You are a vector retrieval specialist. Use execute_bash to run embedding/indexing/search " +
     "operations with local or remote vector stores. Be explicit about embedding model, chunking, " +
     "distance metric, and top-k parameters. Ground retrieval quality claims in measurable outputs.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for task planning and execution reasoning." })
+  declare model: any;
+
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt describing the requested task." })
+  declare prompt: any;
+
+  @prop({ type: "int", default: 180, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 200000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
 }
 
 // ---------------------------------------------------------------------------
@@ -751,9 +1139,12 @@ export class VectorStoreSkillNode extends SkillNode {
 
 export class YtDlpDownloaderSkillNode extends SkillNode {
   static readonly nodeType = "skills.ytdlp.YtDlpDownloaderSkill";
-  static readonly title = "YouTube Downloader Skill";
-  static readonly description =
-    "Download videos from YouTube/Bilibili/Twitter and other sites via yt-dlp. skills, media, yt-dlp, downloader, youtube, bilibili, twitter";
+      static readonly title = "yt-dlp Downloader Skill";
+      static readonly description = "Download videos from YouTube/Bilibili/Twitter and other sites via yt-dlp.\n    skills, media, yt-dlp, downloader, youtube, bilibili, twitter";
+    static readonly metadataOutputTypes = {
+    video: "video",
+    text: "str"
+  };
   static readonly _systemPrompt =
     "You are yt-dlp-downloader.\n" +
     "Goal: download web videos with yt-dlp and publish the resulting video file path.\n\n" +
@@ -775,16 +1166,33 @@ export class YtDlpDownloaderSkillNode extends SkillNode {
     "- Keep response concise and include final save location.\n" +
     "- Always save outputs under workspace-relative output_dir.\n" +
     "- If no video file is produced, clearly explain why.";
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model used for yt-dlp planning and execution reasoning." })
+  declare model: any;
 
-  defaults(): Record<string, unknown> {
-    return {
-      ...super.defaults(),
-      url: "",
-      output_dir: "downloads/yt-dlp",
-      timeout_seconds: 300,
-      max_output_chars: 220000,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Prompt", description: "Prompt describing what to download." })
+  declare prompt: any;
+
+  @prop({ type: "str", default: "", title: "Url", description: "Optional explicit video URL to download." })
+  declare url: any;
+
+  @prop({ type: "str", default: "downloads/yt-dlp", title: "Output Dir", description: "Workspace-relative output directory for downloads." })
+  declare output_dir: any;
+
+  @prop({ type: "int", default: 300, title: "Timeout Seconds", description: "Maximum runtime for agent execution.", min: 1, max: 3600 })
+  declare timeout_seconds: any;
+
+  @prop({ type: "int", default: 220000, title: "Max Output Chars", description: "Maximum serialized output chars before truncation.", min: 1000, max: 2000000 })
+  declare max_output_chars: any;
+
+
+
 }
 
 // ---------------------------------------------------------------------------

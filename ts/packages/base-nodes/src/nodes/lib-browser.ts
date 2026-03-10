@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { NodeClass } from "@nodetool/node-sdk";
 
 const USER_AGENT =
@@ -6,19 +6,27 @@ const USER_AGENT =
 
 export class WebFetchLibNode extends BaseNode {
   static readonly nodeType = "lib.browser.WebFetch";
-  static readonly title = "Web Fetch";
-  static readonly description =
-    "Fetches HTML content from a URL and converts it to text.";
+            static readonly title = "Web Fetch";
+            static readonly description = "Fetches HTML content from a URL and converts it to text.\n    web, fetch, html, markdown, http\n\n    Use cases:\n    - Extract text content from web pages\n    - Process web content for analysis\n    - Save web content to files";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Url", description: "URL to fetch content from" })
+  declare url: any;
 
-  defaults() {
-    return { url: "", selector: "body" };
-  }
+  @prop({ type: "str", default: "body", title: "Selector", description: "CSS selector to extract specific elements" })
+  declare selector: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    const url = String(inputs.url ?? this._props.url ?? "");
-    const selector = String(inputs.selector ?? this._props.selector ?? "body");
+    const url = String(inputs.url ?? this.url ?? "");
+    const selector = String(inputs.selector ?? this.selector ?? "body");
     if (!url) throw new Error("URL is required");
 
     const axios = (await import("axios")).default;
@@ -60,18 +68,23 @@ export class WebFetchLibNode extends BaseNode {
 
 export class DownloadFileLibNode extends BaseNode {
   static readonly nodeType = "lib.browser.DownloadFile";
-  static readonly title = "Download File";
-  static readonly description =
-    "Downloads a file from a URL and saves it to disk.";
+            static readonly title = "Download File";
+            static readonly description = "Downloads a file from a URL and saves it to disk.\n    download, file, web, save\n\n    Use cases:\n    - Download documents, images, or other files from the web\n    - Save data for further processing\n    - Retrieve file assets for analysis";
+        static readonly metadataOutputTypes = {
+    output: "bytes"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Url", description: "URL of the file to download" })
+  declare url: any;
 
-  defaults() {
-    return { url: "" };
-  }
+
+
 
   async process(
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    const url = String(inputs.url ?? this._props.url ?? "");
+    const url = String(inputs.url ?? this.url ?? "");
     if (!url) throw new Error("URL is required");
 
     const axios = (await import("axios")).default;
@@ -88,19 +101,29 @@ export class DownloadFileLibNode extends BaseNode {
 
 export class BrowserLibNode extends BaseNode {
   static readonly nodeType = "lib.browser.Browser";
-  static readonly title = "Browser";
-  static readonly description =
-    "Fetches content from a web page using a headless browser.";
+            static readonly title = "Browser";
+            static readonly description = "Fetches content from a web page using a headless browser.\n    browser, web, scraping, content, fetch\n\n    Use cases:\n    - Extract content from JavaScript-heavy websites\n    - Retrieve text content from web pages\n    - Get metadata from web pages\n    - Save extracted content to files";
+        static readonly metadataOutputTypes = {
+    success: "bool",
+    content: "str",
+    metadata: "dict[str, any]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Url", description: "URL to navigate to" })
+  declare url: any;
 
-  defaults() {
-    return { url: "", timeout: 20000 };
-  }
+  @prop({ type: "int", default: 20000, title: "Timeout", description: "Timeout in milliseconds for page navigation" })
+  declare timeout: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    const url = String(inputs.url ?? this._props.url ?? "");
-    const timeout = Number(inputs.timeout ?? this._props.timeout ?? 20000);
+    const url = String(inputs.url ?? this.url ?? "");
+    const timeout = Number(inputs.timeout ?? this.timeout ?? 20000);
     if (!url) throw new Error("URL is required");
 
     const { chromium } = await import("playwright");
@@ -129,20 +152,34 @@ export class BrowserLibNode extends BaseNode {
 
 export class ScreenshotLibNode extends BaseNode {
   static readonly nodeType = "lib.browser.Screenshot";
-  static readonly title = "Screenshot";
-  static readonly description =
-    "Takes a screenshot of a web page or specific element.";
+            static readonly title = "Screenshot";
+            static readonly description = "Takes a screenshot of a web page or specific element.\n    browser, screenshot, capture, image\n\n    Use cases:\n    - Capture visual representation of web pages\n    - Document specific UI elements\n    - Create visual records of web content";
+        static readonly metadataOutputTypes = {
+    output: "dict[str, any]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Url", description: "URL to navigate to before taking screenshot" })
+  declare url: any;
 
-  defaults() {
-    return { url: "", selector: "", timeout: 30000 };
-  }
+  @prop({ type: "str", default: "", title: "Selector", description: "Optional CSS selector for capturing a specific element" })
+  declare selector: any;
+
+  @prop({ type: "str", default: "screenshot.png", title: "Output File", description: "Path to save the screenshot (relative to workspace)" })
+  declare output_file: any;
+
+  @prop({ type: "int", default: 30000, title: "Timeout", description: "Timeout in milliseconds for page navigation" })
+  declare timeout: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    const url = String(inputs.url ?? this._props.url ?? "");
-    const selector = String(inputs.selector ?? this._props.selector ?? "");
-    const timeout = Number(inputs.timeout ?? this._props.timeout ?? 30000);
+    const url = String(inputs.url ?? this.url ?? "");
+    const selector = String(inputs.selector ?? this.selector ?? "");
+    const timeout = Number(inputs.timeout ?? this.timeout ?? 30000);
     if (!url) throw new Error("URL is required");
 
     const { chromium } = await import("playwright");
@@ -178,32 +215,58 @@ type ExtractType = "text" | "html" | "value" | "attribute";
 
 export class BrowserNavigationLibNode extends BaseNode {
   static readonly nodeType = "lib.browser.BrowserNavigation";
-  static readonly title = "Browser Navigation";
-  static readonly description =
-    "Navigates and interacts with web pages in a browser session.";
+            static readonly title = "Browser Navigation";
+            static readonly description = "Navigates and interacts with web pages in a browser session.\n    browser, navigation, interaction, click, extract\n\n    Use cases:\n    - Perform complex web interactions\n    - Navigate through multi-step web processes\n    - Extract content after interaction";
+        static readonly metadataOutputTypes = {
+    output: "dict[str, any]"
+  };
+  
+  @prop({ type: "str", default: "", title: "Url", description: "URL to navigate to (required for 'goto' action)" })
+  declare url: any;
 
-  defaults() {
-    return {
-      url: "",
-      action: "goto" as BrowserAction,
-      selector: "",
-      timeout: 30000,
-      wait_for: "",
-      extract_type: "text" as ExtractType,
-      attribute: "",
-    };
-  }
+  @prop({ type: "enum", default: "goto", title: "Action", description: "Navigation or extraction action to perform", values: [
+  "click",
+  "goto",
+  "back",
+  "forward",
+  "reload",
+  "extract"
+] })
+  declare action: any;
+
+  @prop({ type: "str", default: "", title: "Selector", description: "CSS selector for the element to interact with or extract from" })
+  declare selector: any;
+
+  @prop({ type: "int", default: 30000, title: "Timeout", description: "Timeout in milliseconds for the action" })
+  declare timeout: any;
+
+  @prop({ type: "str", default: "", title: "Wait For", description: "Optional selector to wait for after performing the action" })
+  declare wait_for: any;
+
+  @prop({ type: "enum", default: "text", title: "Extract Type", description: "Type of content to extract (for 'extract' action)", values: [
+  "text",
+  "html",
+  "value",
+  "attribute"
+] })
+  declare extract_type: any;
+
+  @prop({ type: "str", default: "", title: "Attribute", description: "Attribute name to extract (when extract_type is 'attribute')" })
+  declare attribute: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    const url = String(inputs.url ?? this._props.url ?? "");
-    const action = String(inputs.action ?? this._props.action ?? "goto") as BrowserAction;
-    const selector = String(inputs.selector ?? this._props.selector ?? "");
-    const timeout = Number(inputs.timeout ?? this._props.timeout ?? 30000);
-    const waitFor = String(inputs.wait_for ?? this._props.wait_for ?? "");
-    const extractType = String(inputs.extract_type ?? this._props.extract_type ?? "text") as ExtractType;
-    const attribute = String(inputs.attribute ?? this._props.attribute ?? "");
+    const url = String(inputs.url ?? this.url ?? "");
+    const action = String(inputs.action ?? this.action ?? "goto") as BrowserAction;
+    const selector = String(inputs.selector ?? this.selector ?? "");
+    const timeout = Number(inputs.timeout ?? this.timeout ?? 30000);
+    const waitFor = String(inputs.wait_for ?? this.wait_for ?? "");
+    const extractType = String(inputs.extract_type ?? this.extract_type ?? "text") as ExtractType;
+    const attribute = String(inputs.attribute ?? this.attribute ?? "");
 
     if (action === "goto" && !url) throw new Error("URL is required for goto action");
 
@@ -274,36 +337,63 @@ export class BrowserNavigationLibNode extends BaseNode {
 
 export class SpiderCrawlLibNode extends BaseNode {
   static readonly nodeType = "lib.browser.SpiderCrawl";
-  static readonly title = "Spider Crawl";
-  static readonly description =
-    "Crawls websites following links and emitting URLs with optional HTML content.";
+            static readonly title = "Spider Crawl";
+            static readonly description = "Crawls websites following links and emitting URLs with optional HTML content.\n    spider, crawler, web scraping, links, sitemap\n\n    Use cases:\n    - Build sitemaps and discover website structure\n    - Collect URLs for bulk processing\n    - Find all pages on a website\n    - Extract content from multiple pages\n    - Feed agentic workflows with discovered pages\n    - Analyze website content and structure";
+        static readonly metadataOutputTypes = {
+    url: "str",
+    depth: "int",
+    html: "str",
+    title: "str",
+    status_code: "int"
+  };
+          static readonly exposeAsTool = true;
+  
+          static readonly isStreamingOutput = true;
+  @prop({ type: "str", default: "", title: "Start Url", description: "The starting URL to begin crawling from" })
+  declare start_url: any;
 
-  defaults() {
-    return {
-      start_url: "",
-      max_depth: 2,
-      max_pages: 50,
-      same_domain_only: true,
-      include_html: false,
-      delay_ms: 1000,
-      timeout: 30000,
-      url_pattern: "",
-      exclude_pattern: "",
-    };
-  }
+  @prop({ type: "int", default: 2, title: "Max Depth", description: "Maximum depth to crawl (0 = start page only, 1 = start + linked pages, etc.)", min: 0, max: 10 })
+  declare max_depth: any;
+
+  @prop({ type: "int", default: 50, title: "Max Pages", description: "Maximum number of pages to crawl (safety limit)", min: 1, max: 1000 })
+  declare max_pages: any;
+
+  @prop({ type: "bool", default: true, title: "Same Domain Only", description: "Only follow links within the same domain as the start URL" })
+  declare same_domain_only: any;
+
+  @prop({ type: "bool", default: false, title: "Include Html", description: "Include the HTML content of each page in the output (increases bandwidth)" })
+  declare include_html: any;
+
+  @prop({ type: "bool", default: true, title: "Respect Robots Txt", description: "Respect robots.txt rules (follows web crawler best practices)" })
+  declare respect_robots_txt: any;
+
+  @prop({ type: "int", default: 1000, title: "Delay Ms", description: "Delay in milliseconds between requests (politeness policy)", min: 0, max: 10000 })
+  declare delay_ms: any;
+
+  @prop({ type: "int", default: 30000, title: "Timeout", description: "Timeout in milliseconds for each page load", min: 1000, max: 120000 })
+  declare timeout: any;
+
+  @prop({ type: "str", default: "", title: "Url Pattern", description: "Optional regex pattern to filter URLs (only crawl matching URLs)" })
+  declare url_pattern: any;
+
+  @prop({ type: "str", default: "", title: "Exclude Pattern", description: "Optional regex pattern to exclude URLs (skip matching URLs)" })
+  declare exclude_pattern: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    const startUrl = String(inputs.start_url ?? this._props.start_url ?? "");
-    const maxDepth = Number(inputs.max_depth ?? this._props.max_depth ?? 2);
-    const maxPages = Number(inputs.max_pages ?? this._props.max_pages ?? 50);
-    const sameDomainOnly = Boolean(inputs.same_domain_only ?? this._props.same_domain_only ?? true);
-    const includeHtml = Boolean(inputs.include_html ?? this._props.include_html ?? false);
-    const delayMs = Number(inputs.delay_ms ?? this._props.delay_ms ?? 1000);
-    const timeout = Number(inputs.timeout ?? this._props.timeout ?? 30000);
-    const urlPattern = String(inputs.url_pattern ?? this._props.url_pattern ?? "");
-    const excludePattern = String(inputs.exclude_pattern ?? this._props.exclude_pattern ?? "");
+    const startUrl = String(inputs.start_url ?? this.start_url ?? "");
+    const maxDepth = Number(inputs.max_depth ?? this.max_depth ?? 2);
+    const maxPages = Number(inputs.max_pages ?? this.max_pages ?? 50);
+    const sameDomainOnly = Boolean(inputs.same_domain_only ?? this.same_domain_only ?? true);
+    const includeHtml = Boolean(inputs.include_html ?? this.include_html ?? false);
+    const delayMs = Number(inputs.delay_ms ?? this.delay_ms ?? 1000);
+    const timeout = Number(inputs.timeout ?? this.timeout ?? 30000);
+    const urlPattern = String(inputs.url_pattern ?? this.url_pattern ?? "");
+    const excludePattern = String(inputs.exclude_pattern ?? this.exclude_pattern ?? "");
 
     if (!startUrl) throw new Error("start_url is required");
 
@@ -398,12 +488,36 @@ export class SpiderCrawlLibNode extends BaseNode {
 
 export class BrowserUseLibNode extends BaseNode {
   static readonly nodeType = "lib.browser.BrowserUse";
-  static readonly title = "Browser Use";
-  static readonly description = "Browser agent tool that uses browser_use under the hood.";
+            static readonly title = "Browser Use";
+            static readonly description = "Browser agent tool that uses browser_use under the hood.\n\n    This module provides a tool for running browser-based agents using the browser_use library.\n    The agent can perform complex web automation tasks like form filling, navigation, data extraction,\n    and multi-step workflows using natural language instructions.\n\n    Use cases:\n    - Perform complex web automation tasks based on natural language.\n    - Automate form filling and data entry.\n    - Scrape data after complex navigation or interaction sequences.\n    - Automate multi-step web workflows.";
+        static readonly metadataOutputTypes = {
+    success: "bool",
+    task: "str",
+    result: "any",
+    error: "str"
+  };
+          static readonly requiredSettings = [
+  "OPENAI_API_KEY"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "enum", default: "gpt-4o", title: "Model", description: "The model to use for the browser agent.", values: [
+  "gpt-4o",
+  "claude-3-5-sonnet"
+] })
+  declare model: any;
 
-  defaults() {
-    return { task: "", model: "gpt-4o" };
-  }
+  @prop({ type: "str", default: "", title: "Task", description: "Natural language description of the browser task to perform. Can include complex multi-step instructions like 'Compare prices between websites', 'Fill out forms', or 'Extract specific data'." })
+  declare task: any;
+
+  @prop({ type: "int", default: 300, title: "Timeout", description: "Maximum time in seconds to allow for task completion. Complex tasks may require longer timeouts.", min: 1, max: 3600 })
+  declare timeout: any;
+
+  @prop({ type: "bool", default: true, title: "Use Remote Browser", description: "Use a remote browser instead of a local one" })
+  declare use_remote_browser: any;
+
+
+
 
   async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     throw new Error("lib.browser.BrowserUse: not yet implemented in TypeScript. Use the Python bridge.");

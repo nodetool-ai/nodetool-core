@@ -1091,13 +1091,14 @@ export function createTestUiServer(options: TestUiServerOptions = {}) {
   const examplesDir = resolveExamplesDir(options);
 
   const metadataRoots = resolveMetadataRoots(options);
-  const resolvedApiOptions: TestUiServerOptions = {
-    ...options,
-    metadataRoots,
-  };
   const registry = new NodeRegistry();
   registry.loadPythonMetadata({ roots: metadataRoots, maxDepth: options.metadataMaxDepth ?? 8 });
   registerBaseNodes(registry);
+  const resolvedApiOptions: HttpApiOptions = {
+    ...options,
+    metadataRoots,
+    registry,
+  };
   const graphNodeTypeResolver = createGraphNodeTypeResolver(registry);
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {

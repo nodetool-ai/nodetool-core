@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
+import { getNodeMetadata } from "@nodetool/node-sdk";
 
 vi.mock("../src/nodes/kie-base.js", () => ({
   getApiKey: vi.fn(() => "test-api-key"),
@@ -88,6 +89,20 @@ const AUDIO_REF = { data: "audiodata", uri: "" };
 const VIDEO_REF = { data: "videodata", uri: "" };
 const EXPECTED_OUTPUT = { output: { data: "dmlkZW9kYXRh" } };
 
+function metadataDefaults(NodeCls: any) {
+  const metadata = getNodeMetadata(NodeCls);
+  return Object.fromEntries(
+    metadata.properties
+      .filter((prop) => Object.prototype.hasOwnProperty.call(prop, "default"))
+      .map((prop) => [prop.name, prop.default])
+  );
+}
+
+function expectMetadataDefaults(NodeCls: any) {
+  expect(new NodeCls().serialize()).toEqual(metadataDefaults(NodeCls));
+}
+
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -102,13 +117,7 @@ describe("KlingTextToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (KlingTextToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toContain("cinematic");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.duration).toBe(5);
-    expect(d.resolution).toBe("768P");
-    expect(d.seed).toBe(-1);
+    expectMetadataDefaults(KlingTextToVideoNode);
   });
 
   it("process succeeds with valid prompt", async () => {
@@ -139,11 +148,7 @@ describe("KlingImageToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (KlingImageToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.sound).toBe(false);
-    expect(d.duration).toBe(5);
+    expectMetadataDefaults(KlingImageToVideoNode);
   });
 
   it("process with image", async () => {
@@ -177,10 +182,7 @@ describe("KlingAIAvatarStandardNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (KlingAIAvatarStandardNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.mode).toBe("standard");
+    expectMetadataDefaults(KlingAIAvatarStandardNode);
   });
 
   it("process with image and audio", async () => {
@@ -206,10 +208,7 @@ describe("KlingAIAvatarProNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (KlingAIAvatarProNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.mode).toBe("standard");
+    expectMetadataDefaults(KlingAIAvatarProNode);
   });
 
   it("process with image and audio", async () => {
@@ -237,11 +236,7 @@ describe("GrokImagineTextToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (GrokImagineTextToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.resolution).toBe("1080p");
-    expect(d.duration).toBe("medium");
+    expectMetadataDefaults(GrokImagineTextToVideoNode);
   });
 
   it("process succeeds", async () => {
@@ -273,10 +268,7 @@ describe("GrokImagineImageToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (GrokImagineImageToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.duration).toBe("medium");
+    expectMetadataDefaults(GrokImagineImageToVideoNode);
   });
 
   it("process with image", async () => {
@@ -303,13 +295,7 @@ describe("SeedanceV1LiteTextToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (SeedanceV1LiteTextToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.resolution).toBe("720p");
-    expect(d.duration).toBe("5");
-    expect(d.remove_watermark).toBe(true);
+    expectMetadataDefaults(SeedanceV1LiteTextToVideoNode);
   });
 
   it("process succeeds", async () => {
@@ -341,12 +327,7 @@ describe("SeedanceV1ProTextToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (SeedanceV1ProTextToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.resolution).toBe("720p");
-    expect(d.remove_watermark).toBe(true);
+    expectMetadataDefaults(SeedanceV1ProTextToVideoNode);
   });
 
   it("process succeeds", async () => {
@@ -378,12 +359,7 @@ describe("SeedanceV1LiteImageToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (SeedanceV1LiteImageToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.resolution).toBe("720p");
-    expect(d.remove_watermark).toBe(true);
+    expectMetadataDefaults(SeedanceV1LiteImageToVideoNode);
   });
 
   it("process with image", async () => {
@@ -416,12 +392,7 @@ describe("SeedanceV1ProImageToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (SeedanceV1ProImageToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.resolution).toBe("720p");
-    expect(d.remove_watermark).toBe(true);
+    expectMetadataDefaults(SeedanceV1ProImageToVideoNode);
   });
 
   it("process with image", async () => {
@@ -454,12 +425,7 @@ describe("SeedanceV1ProFastImageToVideoNode", () => {
   });
 
   it("defaults — no prompt field", () => {
-    const n = new (SeedanceV1ProFastImageToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.resolution).toBe("720p");
-    expect(d.remove_watermark).toBe(true);
-    expect(d).not.toHaveProperty("prompt");
+    expectMetadataDefaults(SeedanceV1ProFastImageToVideoNode);
   });
 
   it("process with image", async () => {
@@ -492,11 +458,7 @@ describe("HailuoTextToVideoProNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (HailuoTextToVideoProNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.duration).toBe("6");
-    expect(d.resolution).toBe("768P");
+    expectMetadataDefaults(HailuoTextToVideoProNode);
   });
 
   it("process succeeds", async () => {
@@ -540,11 +502,7 @@ describe("HailuoTextToVideoStandardNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (HailuoTextToVideoStandardNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.duration).toBe("6");
-    expect(d.resolution).toBe("768P");
+    expectMetadataDefaults(HailuoTextToVideoStandardNode);
   });
 
   it("process succeeds", async () => {
@@ -588,11 +546,7 @@ describe("HailuoImageToVideoProNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (HailuoImageToVideoProNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.duration).toBe("6");
-    expect(d.resolution).toBe("768P");
+    expectMetadataDefaults(HailuoImageToVideoProNode);
   });
 
   it("process with image", async () => {
@@ -630,11 +584,7 @@ describe("HailuoImageToVideoStandardNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (HailuoImageToVideoStandardNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.duration).toBe("6");
-    expect(d.resolution).toBe("768P");
+    expectMetadataDefaults(HailuoImageToVideoStandardNode);
   });
 
   it("process with image", async () => {
@@ -672,13 +622,7 @@ describe("Kling25TurboTextToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Kling25TurboTextToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.duration).toBe("5");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.negative_prompt).toBe("");
-    expect(d.cfg_scale).toBe(0.5);
+    expectMetadataDefaults(Kling25TurboTextToVideoNode);
   });
 
   it("process succeeds", async () => {
@@ -710,13 +654,7 @@ describe("Kling25TurboImageToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Kling25TurboImageToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.duration).toBe("5");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.negative_prompt).toBe("");
-    expect(d.cfg_scale).toBe(0.5);
+    expectMetadataDefaults(Kling25TurboImageToVideoNode);
   });
 
   it("process with image", async () => {
@@ -743,11 +681,7 @@ describe("Sora2ProTextToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Sora2ProTextToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.n_frames).toBe("default");
+    expectMetadataDefaults(Sora2ProTextToVideoNode);
   });
 
   it("process succeeds", async () => {
@@ -779,11 +713,7 @@ describe("Sora2ProImageToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Sora2ProImageToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.n_frames).toBe("default");
+    expectMetadataDefaults(Sora2ProImageToVideoNode);
   });
 
   it("process with image", async () => {
@@ -810,10 +740,7 @@ describe("Sora2ProStoryboardNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Sora2ProStoryboardNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.images).toEqual([]);
+    expectMetadataDefaults(Sora2ProStoryboardNode);
   });
 
   it("process succeeds with prompt", async () => {
@@ -844,11 +771,7 @@ describe("Sora2TextToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Sora2TextToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.n_frames).toBe("default");
+    expectMetadataDefaults(Sora2TextToVideoNode);
   });
 
   it("process succeeds", async () => {
@@ -880,13 +803,7 @@ describe("WanMultiShotTextToVideoProNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (WanMultiShotTextToVideoProNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.resolution).toBe("720P");
-    expect(d.duration).toBe(5);
-    expect(d.shot_count).toBe(3);
+    expectMetadataDefaults(WanMultiShotTextToVideoProNode);
   });
 
   it("process succeeds", async () => {
@@ -916,12 +833,7 @@ describe("Wan26TextToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Wan26TextToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.resolution).toBe("720P");
-    expect(d.duration).toBe(5);
+    expectMetadataDefaults(Wan26TextToVideoNode);
   });
 
   it("process succeeds", async () => {
@@ -951,11 +863,7 @@ describe("Wan26ImageToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Wan26ImageToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.resolution).toBe("720P");
-    expect(d.duration).toBe(5);
+    expectMetadataDefaults(Wan26ImageToVideoNode);
   });
 
   it("process with image", async () => {
@@ -980,10 +888,7 @@ describe("Wan26VideoToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Wan26VideoToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.resolution).toBe("720P");
+    expectMetadataDefaults(Wan26VideoToVideoNode);
   });
 
   it("process with video", async () => {
@@ -1008,10 +913,7 @@ describe("TopazVideoUpscaleNode", () => {
   });
 
   it("defaults — no prompt", () => {
-    const n = new (TopazVideoUpscaleNode as any)();
-    const d = n.defaults();
-    expect(d.scale_factor).toBe(2);
-    expect(d).not.toHaveProperty("prompt");
+    expectMetadataDefaults(TopazVideoUpscaleNode);
   });
 
   it("process with video", async () => {
@@ -1035,9 +937,7 @@ describe("InfinitalkV1Node", () => {
   });
 
   it("defaults — empty", () => {
-    const n = new (InfinitalkV1Node as any)();
-    const d = n.defaults();
-    expect(Object.keys(d).length).toBe(0);
+    expectMetadataDefaults(InfinitalkV1Node);
   });
 
   it("process with image and audio", async () => {
@@ -1063,13 +963,7 @@ describe("Veo31TextToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Veo31TextToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.duration).toBe("8");
-    expect(d.generate_audio).toBe(true);
-    expect(d.negative_prompt).toBe("");
+    expectMetadataDefaults(Veo31TextToVideoNode);
   });
 
   it("process succeeds", async () => {
@@ -1101,13 +995,7 @@ describe("RunwayGen3AlphaTextToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (RunwayGen3AlphaTextToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.duration).toBe(5);
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.watermark).toBe(false);
-    expect(d.seed).toBe(-1);
+    expectMetadataDefaults(RunwayGen3AlphaTextToVideoNode);
   });
 
   it("process succeeds", async () => {
@@ -1139,13 +1027,7 @@ describe("RunwayGen3AlphaImageToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (RunwayGen3AlphaImageToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.duration).toBe(5);
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.watermark).toBe(false);
-    expect(d.seed).toBe(-1);
+    expectMetadataDefaults(RunwayGen3AlphaImageToVideoNode);
   });
 
   it("process with image", async () => {
@@ -1172,12 +1054,7 @@ describe("RunwayGen3AlphaExtendVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (RunwayGen3AlphaExtendVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.duration).toBe(5);
-    expect(d.watermark).toBe(false);
-    expect(d.seed).toBe(-1);
+    expectMetadataDefaults(RunwayGen3AlphaExtendVideoNode);
   });
 
   it("process with video", async () => {
@@ -1202,13 +1079,7 @@ describe("RunwayAlephVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (RunwayAlephVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.duration).toBe(5);
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.watermark).toBe(false);
-    expect(d.seed).toBe(-1);
+    expectMetadataDefaults(RunwayAlephVideoNode);
   });
 
   it("process without image", async () => {
@@ -1243,11 +1114,7 @@ describe("LumaModifyVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (LumaModifyVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.loop).toBe(false);
+    expectMetadataDefaults(LumaModifyVideoNode);
   });
 
   it("process with video", async () => {
@@ -1272,13 +1139,7 @@ describe("Veo31ImageToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Veo31ImageToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.duration).toBe("8");
-    expect(d.generate_audio).toBe(true);
-    expect(d.negative_prompt).toBe("");
+    expectMetadataDefaults(Veo31ImageToVideoNode);
   });
 
   it("process with image", async () => {
@@ -1305,14 +1166,7 @@ describe("Veo31ReferenceToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Veo31ReferenceToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.images).toEqual([]);
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.duration).toBe("8");
-    expect(d.generate_audio).toBe(true);
-    expect(d.negative_prompt).toBe("");
+    expectMetadataDefaults(Veo31ReferenceToVideoNode);
   });
 
   it("process with reference images", async () => {
@@ -1339,11 +1193,7 @@ describe("KlingMotionControlNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (KlingMotionControlNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.motion_type).toBe("camera");
-    expect(d.duration).toBe(5);
+    expectMetadataDefaults(KlingMotionControlNode);
   });
 
   it("process with image", async () => {
@@ -1370,13 +1220,7 @@ describe("Kling21TextToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Kling21TextToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.duration).toBe(5);
-    expect(d.negative_prompt).toBe("");
-    expect(d.cfg_scale).toBe(0.5);
+    expectMetadataDefaults(Kling21TextToVideoNode);
   });
 
   it("process succeeds", async () => {
@@ -1408,12 +1252,7 @@ describe("Kling21ImageToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Kling21ImageToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.duration).toBe(5);
-    expect(d.negative_prompt).toBe("");
-    expect(d.cfg_scale).toBe(0.5);
+    expectMetadataDefaults(Kling21ImageToVideoNode);
   });
 
   it("process with image", async () => {
@@ -1438,12 +1277,7 @@ describe("Wan25TextToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Wan25TextToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.resolution).toBe("720P");
-    expect(d.duration).toBe(5);
+    expectMetadataDefaults(Wan25TextToVideoNode);
   });
 
   it("process succeeds", async () => {
@@ -1473,11 +1307,7 @@ describe("Wan25ImageToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Wan25ImageToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.resolution).toBe("720P");
-    expect(d.duration).toBe(5);
+    expectMetadataDefaults(Wan25ImageToVideoNode);
   });
 
   it("process with image", async () => {
@@ -1502,11 +1332,7 @@ describe("WanAnimateNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (WanAnimateNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.resolution).toBe("720P");
-    expect(d.duration).toBe(5);
+    expectMetadataDefaults(WanAnimateNode);
   });
 
   it("process with image", async () => {
@@ -1531,9 +1357,7 @@ describe("WanSpeechToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (WanSpeechToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
+    expectMetadataDefaults(WanSpeechToVideoNode);
   });
 
   it("process with image and audio", async () => {
@@ -1560,12 +1384,7 @@ describe("Wan22TextToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Wan22TextToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.aspect_ratio).toBe("16:9");
-    expect(d.resolution).toBe("720P");
-    expect(d.duration).toBe(5);
+    expectMetadataDefaults(Wan22TextToVideoNode);
   });
 
   it("process succeeds", async () => {
@@ -1595,11 +1414,7 @@ describe("Wan22ImageToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Wan22ImageToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.resolution).toBe("720P");
-    expect(d.duration).toBe(5);
+    expectMetadataDefaults(Wan22ImageToVideoNode);
   });
 
   it("process with image", async () => {
@@ -1626,11 +1441,7 @@ describe("Hailuo02TextToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Hailuo02TextToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.duration).toBe("6");
-    expect(d.resolution).toBe("768P");
+    expectMetadataDefaults(Hailuo02TextToVideoNode);
   });
 
   it("process succeeds", async () => {
@@ -1662,11 +1473,7 @@ describe("Hailuo02ImageToVideoNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (Hailuo02ImageToVideoNode as any)();
-    const d = n.defaults();
-    expect(d.prompt).toBe("");
-    expect(d.duration).toBe("6");
-    expect(d.resolution).toBe("768P");
+    expectMetadataDefaults(Hailuo02ImageToVideoNode);
   });
 
   it("process with image", async () => {
@@ -1693,9 +1500,7 @@ describe("Sora2WatermarkRemoverNode", () => {
   });
 
   it("defaults — empty", () => {
-    const n = new (Sora2WatermarkRemoverNode as any)();
-    const d = n.defaults();
-    expect(Object.keys(d).length).toBe(0);
+    expectMetadataDefaults(Sora2WatermarkRemoverNode);
   });
 
   it("process with video", async () => {
@@ -1783,10 +1588,10 @@ describe("All KIE video nodes", () => {
   );
 
   it.each(allNodeClasses.map((c) => [c.nodeType, c]))(
-    "%s defaults() returns an object",
+    "%s serialize() returns an object",
     (_type, cls) => {
       const n = new cls();
-      const d = n.defaults();
+      const d = n.serialize();
       expect(typeof d).toBe("object");
     }
   );

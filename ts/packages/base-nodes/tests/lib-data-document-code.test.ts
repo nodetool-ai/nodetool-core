@@ -77,7 +77,7 @@ describe("data nodes", () => {
     it("returns empty object when no columns configured", async () => {
       const node = new SchemaNode();
       const result = await node.process({});
-      expect(result.output).toEqual({});
+      expect(result.output).toEqual({ type: "record_type", columns: [] });
     });
   });
 
@@ -603,13 +603,15 @@ describe("data nodes", () => {
   // -- FilterNoneNode --
   describe("FilterNoneNode", () => {
     it("returns empty for null value", async () => {
-      expect(await new FilterNoneNode().process({ value: null })).toEqual({});
+      expect(await new FilterNoneNode().process({ value: null })).toEqual({
+        output: [],
+      });
     });
 
     it("returns empty for undefined value", async () => {
       expect(
         await new FilterNoneNode().process({ value: undefined })
-      ).toEqual({});
+      ).toEqual({ output: [] });
     });
 
     it("passes through non-null values", async () => {

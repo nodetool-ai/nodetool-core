@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { BaseNode } from "../src/base-node.js";
+import { prop } from "../src/decorators.js";
 
 // Concrete subclass for testing
 class ConcreteNode extends BaseNode {
@@ -7,9 +8,11 @@ class ConcreteNode extends BaseNode {
   static readonly title = "Concrete";
   static readonly description = "Test node";
 
-  defaults() {
-    return { x: 10, y: "hello" };
-  }
+  @prop({ type: "int", default: 10 })
+  declare x: number;
+
+  @prop({ type: "str", default: "hello" })
+  declare y: string;
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     return { out: inputs.x };
@@ -22,18 +25,18 @@ describe("BaseNode", () => {
     expect(node).toBeInstanceOf(BaseNode);
   });
 
-  it("defaults() are applied during assign()", () => {
+  it("decorator defaults are applied during assign()", () => {
     const node = new ConcreteNode();
     node.assign({});
-    expect(node.props.x).toBe(10);
-    expect(node.props.y).toBe("hello");
+    expect(node.x).toBe(10);
+    expect(node.y).toBe("hello");
   });
 
   it("assign() overrides defaults with provided properties", () => {
     const node = new ConcreteNode();
     node.assign({ x: 42 });
-    expect(node.props.x).toBe(42);
-    expect(node.props.y).toBe("hello");
+    expect(node.x).toBe(42);
+    expect(node.y).toBe("hello");
   });
 
   it("process() is called by toExecutor()", async () => {

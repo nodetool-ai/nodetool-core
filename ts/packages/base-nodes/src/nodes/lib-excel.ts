@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import ExcelJS from "exceljs";
 import os from "node:os";
 import path from "node:path";
@@ -51,15 +51,20 @@ function getWorkbook(input: unknown): ExcelJS.Workbook {
 
 export class CreateWorkbookLibNode extends BaseNode {
   static readonly nodeType = "lib.excel.CreateWorkbook";
-  static readonly title = "Create Workbook";
-  static readonly description = "Creates a new Excel workbook.";
+            static readonly title = "Create Workbook";
+            static readonly description = "Creates a new Excel workbook.\n    excel, workbook, create\n\n    Use cases:\n    - Initialize new Excel files\n    - Start spreadsheet creation workflows";
+        static readonly metadataOutputTypes = {
+    output: "excel"
+  };
+  
+  @prop({ type: "str", default: "Sheet1", title: "Sheet Name", description: "Name for the first worksheet" })
+  declare sheet_name: any;
 
-  defaults() {
-    return { sheet_name: "Sheet1" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const sheetName = String(inputs.sheet_name ?? this._props.sheet_name ?? "Sheet1");
+    const sheetName = String(inputs.sheet_name ?? this.sheet_name ?? "Sheet1");
     const wb = new ExcelJS.Workbook();
     wb.addWorksheet(sheetName);
     return { output: { data: wb } };
@@ -68,17 +73,34 @@ export class CreateWorkbookLibNode extends BaseNode {
 
 export class ExcelToDataFrameLibNode extends BaseNode {
   static readonly nodeType = "lib.excel.ExcelToDataFrame";
-  static readonly title = "Excel To Data Frame";
-  static readonly description = "Reads an Excel worksheet into a list of row dicts.";
+            static readonly title = "Excel To Data Frame";
+            static readonly description = "Reads an Excel worksheet into a pandas DataFrame.\n    excel, dataframe, import\n\n    Use cases:\n    - Import Excel data for analysis\n    - Process spreadsheet contents";
+        static readonly metadataOutputTypes = {
+    output: "dataframe"
+  };
+  
+  @prop({ type: "excel", default: {
+  "type": "excel",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Workbook", description: "The Excel workbook to read from" })
+  declare workbook: any;
 
-  defaults() {
-    return { workbook: {}, sheet_name: "Sheet1", has_header: true };
-  }
+  @prop({ type: "str", default: "Sheet1", title: "Sheet Name", description: "Source worksheet name" })
+  declare sheet_name: any;
+
+  @prop({ type: "bool", default: true, title: "Has Header", description: "First row contains headers" })
+  declare has_header: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const wb = getWorkbook(inputs.workbook ?? this._props.workbook);
-    const sheetName = String(inputs.sheet_name ?? this._props.sheet_name ?? "Sheet1");
-    const hasHeader = inputs.has_header ?? this._props.has_header ?? true;
+    const wb = getWorkbook(inputs.workbook ?? this.workbook);
+    const sheetName = String(inputs.sheet_name ?? this.sheet_name ?? "Sheet1");
+    const hasHeader = inputs.has_header ?? this.has_header ?? true;
     const ws = wb.getWorksheet(sheetName);
     if (!ws) throw new Error(`Worksheet '${sheetName}' not found`);
 
@@ -115,24 +137,48 @@ export class ExcelToDataFrameLibNode extends BaseNode {
 
 export class DataFrameToExcelLibNode extends BaseNode {
   static readonly nodeType = "lib.excel.DataFrameToExcel";
-  static readonly title = "Data Frame To Excel";
-  static readonly description = "Writes a DataFrame to an Excel worksheet.";
+            static readonly title = "Data Frame To Excel";
+            static readonly description = "Writes a DataFrame to an Excel worksheet.\n    excel, dataframe, export\n\n    Use cases:\n    - Export data analysis results\n    - Create reports from data";
+        static readonly metadataOutputTypes = {
+    output: "any"
+  };
+  
+  @prop({ type: "excel", default: {
+  "type": "excel",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Workbook", description: "The Excel workbook to write to" })
+  declare workbook: any;
 
-  defaults() {
-    return {
-      workbook: {},
-      dataframe: { rows: [] },
-      sheet_name: "Sheet1",
-      start_cell: "A1",
-      include_header: true,
-    };
-  }
+  @prop({ type: "dataframe", default: {
+  "type": "dataframe",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null,
+  "columns": null
+}, title: "Dataframe", description: "DataFrame to write" })
+  declare dataframe: any;
+
+  @prop({ type: "str", default: "Sheet1", title: "Sheet Name", description: "Target worksheet name" })
+  declare sheet_name: any;
+
+  @prop({ type: "str", default: "A1", title: "Start Cell", description: "Starting cell for data" })
+  declare start_cell: any;
+
+  @prop({ type: "bool", default: true, title: "Include Header", description: "Include column headers" })
+  declare include_header: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const wb = getWorkbook(inputs.workbook ?? this._props.workbook);
-    const rows = asRows(inputs.dataframe ?? this._props.dataframe);
-    const sheetName = String(inputs.sheet_name ?? this._props.sheet_name ?? "Sheet1");
-    const includeHeader = inputs.include_header ?? this._props.include_header ?? true;
+    const wb = getWorkbook(inputs.workbook ?? this.workbook);
+    const rows = asRows(inputs.dataframe ?? this.dataframe);
+    const sheetName = String(inputs.sheet_name ?? this.sheet_name ?? "Sheet1");
+    const includeHeader = inputs.include_header ?? this.include_header ?? true;
 
     let ws = wb.getWorksheet(sheetName);
     if (!ws) {
@@ -165,27 +211,46 @@ export class DataFrameToExcelLibNode extends BaseNode {
 
 export class FormatCellsLibNode extends BaseNode {
   static readonly nodeType = "lib.excel.FormatCells";
-  static readonly title = "Format Cells";
-  static readonly description = "Applies formatting to a range of cells.";
+            static readonly title = "Format Cells";
+            static readonly description = "Applies formatting to a range of cells.\n    excel, format, style\n\n    Use cases:\n    - Highlight important data\n    - Create professional looking reports";
+        static readonly metadataOutputTypes = {
+    output: "any"
+  };
+  
+  @prop({ type: "excel", default: {
+  "type": "excel",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Workbook", description: "The Excel workbook to format" })
+  declare workbook: any;
 
-  defaults() {
-    return {
-      workbook: {},
-      sheet_name: "Sheet1",
-      cell_range: "A1:B10",
-      bold: false,
-      background_color: "FFFF00",
-      text_color: "000000",
-    };
-  }
+  @prop({ type: "str", default: "Sheet1", title: "Sheet Name", description: "Target worksheet name" })
+  declare sheet_name: any;
+
+  @prop({ type: "str", default: "A1:B10", title: "Cell Range", description: "Cell range to format (e.g. 'A1:B10')" })
+  declare cell_range: any;
+
+  @prop({ type: "bool", default: false, title: "Bold", description: "Make text bold" })
+  declare bold: any;
+
+  @prop({ type: "str", default: "FFFF00", title: "Background Color", description: "Background color in hex format (e.g. 'FFFF00' for yellow)" })
+  declare background_color: any;
+
+  @prop({ type: "str", default: "000000", title: "Text Color", description: "Text color in hex format" })
+  declare text_color: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const wb = getWorkbook(inputs.workbook ?? this._props.workbook);
-    const sheetName = String(inputs.sheet_name ?? this._props.sheet_name ?? "Sheet1");
-    const cellRange = String(inputs.cell_range ?? this._props.cell_range ?? "A1:B10");
-    const bold = Boolean(inputs.bold ?? this._props.bold ?? false);
-    const bgColor = String(inputs.background_color ?? this._props.background_color ?? "FFFF00");
-    const textColor = String(inputs.text_color ?? this._props.text_color ?? "000000");
+    const wb = getWorkbook(inputs.workbook ?? this.workbook);
+    const sheetName = String(inputs.sheet_name ?? this.sheet_name ?? "Sheet1");
+    const cellRange = String(inputs.cell_range ?? this.cell_range ?? "A1:B10");
+    const bold = Boolean(inputs.bold ?? this.bold ?? false);
+    const bgColor = String(inputs.background_color ?? this.background_color ?? "FFFF00");
+    const textColor = String(inputs.text_color ?? this.text_color ?? "000000");
 
     const ws = wb.getWorksheet(sheetName);
     if (!ws) throw new Error(`Worksheet '${sheetName}' not found`);
@@ -225,16 +290,30 @@ function columnNameToNumber(name: string): number {
 
 export class AutoFitColumnsLibNode extends BaseNode {
   static readonly nodeType = "lib.excel.AutoFitColumns";
-  static readonly title = "Auto Fit Columns";
-  static readonly description = "Automatically adjusts column widths to fit content.";
+            static readonly title = "Auto Fit Columns";
+            static readonly description = "Automatically adjusts column widths to fit content.\n    excel, format, columns\n\n    Use cases:\n    - Improve spreadsheet readability\n    - Professional presentation";
+        static readonly metadataOutputTypes = {
+    output: "any"
+  };
+  
+  @prop({ type: "excel", default: {
+  "type": "excel",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Workbook", description: "The Excel workbook to format" })
+  declare workbook: any;
 
-  defaults() {
-    return { workbook: {}, sheet_name: "Sheet1" };
-  }
+  @prop({ type: "str", default: "Sheet1", title: "Sheet Name", description: "Target worksheet name" })
+  declare sheet_name: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const wb = getWorkbook(inputs.workbook ?? this._props.workbook);
-    const sheetName = String(inputs.sheet_name ?? this._props.sheet_name ?? "Sheet1");
+    const wb = getWorkbook(inputs.workbook ?? this.workbook);
+    const sheetName = String(inputs.sheet_name ?? this.sheet_name ?? "Sheet1");
 
     const ws = wb.getWorksheet(sheetName);
     if (!ws) throw new Error(`Worksheet '${sheetName}' not found`);
@@ -254,23 +333,40 @@ export class AutoFitColumnsLibNode extends BaseNode {
 
 export class SaveWorkbookLibNode extends BaseNode {
   static readonly nodeType = "lib.excel.SaveWorkbook";
-  static readonly title = "Save Workbook";
-  static readonly description = "Saves an Excel workbook to disk.";
+            static readonly title = "Save Workbook";
+            static readonly description = "Saves an Excel workbook to disk.\n    excel, save, export\n\n    Use cases:\n    - Export final spreadsheet\n    - Save work in progress";
+  
+  @prop({ type: "excel", default: {
+  "type": "excel",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Workbook", description: "The Excel workbook to save" })
+  declare workbook: any;
 
-  defaults() {
-    return { workbook: {}, folder: { path: "" }, filename: "" };
-  }
+  @prop({ type: "file_path", default: {
+  "type": "file_path",
+  "path": ""
+}, title: "Folder", description: "The folder to save the file to." })
+  declare folder: any;
+
+  @prop({ type: "str", default: "", title: "Filename", description: "\n        The filename to save the file to.\n        You can use time and date variables to create unique names:\n        %Y - Year\n        %m - Month\n        %d - Day\n        %H - Hour\n        %M - Minute\n        %S - Second\n        " })
+  declare filename: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const wb = getWorkbook(inputs.workbook ?? this._props.workbook);
-    const folderInput = inputs.folder ?? this._props.folder;
+    const wb = getWorkbook(inputs.workbook ?? this.workbook);
+    const folderInput = inputs.folder ?? this.folder;
     const folderPath =
       typeof folderInput === "string"
         ? folderInput
         : (folderInput as { path?: string })?.path ?? "";
     if (!folderPath) throw new Error("Path is not set");
 
-    const filenameTemplate = String(inputs.filename ?? this._props.filename ?? "");
+    const filenameTemplate = String(inputs.filename ?? this.filename ?? "");
     const filename = formatDate(filenameTemplate);
     const fullPath = expandUser(path.join(folderPath, filename));
 

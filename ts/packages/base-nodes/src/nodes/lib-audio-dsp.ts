@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import sharp from "sharp";
 
 // ── WAV helpers (shared with lib-synthesis.ts pattern) ──────────────
@@ -89,16 +89,27 @@ function decodeWav(audio: Record<string, unknown>): WavData {
 
 export class AmplitudeToDBNode extends BaseNode {
   static readonly nodeType = "lib.librosa.analysis.AmplitudeToDB";
-  static readonly title = "Amplitude To DB";
-  static readonly description =
-    "Converts an amplitude spectrogram to a dB-scaled spectrogram.";
+            static readonly title = "Amplitude To DB";
+            static readonly description = "Converts an amplitude spectrogram to a dB-scaled spectrogram.\n    audio, analysis, spectrogram\n\n    This node is useful for:\n    - Compressing the dynamic range of spectrograms for visualization\n    - Preparing input for audio models that expect dB-scaled data";
+        static readonly metadataOutputTypes = {
+    output: "np_array"
+  };
+  
+  @prop({ type: "np_array", default: {
+  "type": "np_array",
+  "value": null,
+  "dtype": "<i8",
+  "shape": [
+    1
+  ]
+}, title: "Tensor", description: "The amplitude tensor to be converted to dB scale." })
+  declare tensor: any;
 
-  defaults() {
-    return { tensor: { data: [] } };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const tensor = (inputs.tensor ?? this._props.tensor ?? { data: [] }) as { data: number[] | number[][] };
+    const tensor = (inputs.tensor ?? this.tensor ?? { data: [] }) as { data: number[] | number[][] };
     const data = tensor.data;
 
     const convert = (arr: number[]): number[] =>
@@ -117,16 +128,27 @@ export class AmplitudeToDBNode extends BaseNode {
 
 export class DBToAmplitudeNode extends BaseNode {
   static readonly nodeType = "lib.librosa.analysis.DBToAmplitude";
-  static readonly title = "DB To Amplitude";
-  static readonly description =
-    "Converts a dB-scaled spectrogram to an amplitude spectrogram.";
+            static readonly title = "DBTo Amplitude";
+            static readonly description = "The DBToAmplitude node Converts a dB-scaled spectrogram to an amplitude spectrogram.\n    audio, analysis, spectrogram\n    Useful for:\n    - Reversing dB scaling before audio synthesis\n    - Preparing data for models that expect linear amplitude scaling";
+        static readonly metadataOutputTypes = {
+    output: "np_array"
+  };
+  
+  @prop({ type: "np_array", default: {
+  "type": "np_array",
+  "value": null,
+  "dtype": "<i8",
+  "shape": [
+    1
+  ]
+}, title: "Tensor", description: "The dB-scaled tensor to be converted to amplitude scale." })
+  declare tensor: any;
 
-  defaults() {
-    return { tensor: { data: [] } };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const tensor = (inputs.tensor ?? this._props.tensor ?? { data: [] }) as { data: number[] | number[][] };
+    const tensor = (inputs.tensor ?? this.tensor ?? { data: [] }) as { data: number[] | number[][] };
     const data = tensor.data;
 
     const convert = (arr: number[]): number[] =>
@@ -145,16 +167,27 @@ export class DBToAmplitudeNode extends BaseNode {
 
 export class DBToPowerNode extends BaseNode {
   static readonly nodeType = "lib.librosa.analysis.DBToPower";
-  static readonly title = "DB To Power";
-  static readonly description =
-    "Converts a decibel (dB) spectrogram back to power scale.";
+            static readonly title = "DBTo Power";
+            static readonly description = "This node converts a decibel (dB) spectrogram back to power scale.\n    audio, analysis, spectrogram\n\n    Useful for:\n    - Reversing dB scaling for audio synthesis\n    - Preparing data for models that expect power-scaled data";
+        static readonly metadataOutputTypes = {
+    output: "np_array"
+  };
+  
+  @prop({ type: "np_array", default: {
+  "type": "np_array",
+  "value": null,
+  "dtype": "<i8",
+  "shape": [
+    1
+  ]
+}, title: "Tensor", description: "The tensor containing the decibel spectrogram." })
+  declare tensor: any;
 
-  defaults() {
-    return { tensor: { data: [] } };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const tensor = (inputs.tensor ?? this._props.tensor ?? { data: [] }) as { data: number[] | number[][] };
+    const tensor = (inputs.tensor ?? this.tensor ?? { data: [] }) as { data: number[] | number[][] };
     const data = tensor.data;
 
     const convert = (arr: number[]): number[] =>
@@ -173,16 +206,27 @@ export class DBToPowerNode extends BaseNode {
 
 export class PowerToDBNode extends BaseNode {
   static readonly nodeType = "lib.librosa.analysis.PowertToDB";
-  static readonly title = "Power To DB";
-  static readonly description =
-    "Converts a power spectrogram to decibel (dB) scale.";
+            static readonly title = "Powert To DB";
+            static readonly description = "Converts a power spectrogram to decibel (dB) scale.\n    audio, analysis, decibel, spectrogram";
+        static readonly metadataOutputTypes = {
+    output: "np_array"
+  };
+  
+  @prop({ type: "np_array", default: {
+  "type": "np_array",
+  "value": null,
+  "dtype": "<i8",
+  "shape": [
+    1
+  ]
+}, title: "Tensor", description: "The tensor containing the power spectrogram." })
+  declare tensor: any;
 
-  defaults() {
-    return { tensor: { data: [] } };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const tensor = (inputs.tensor ?? this._props.tensor ?? { data: [] }) as { data: number[] | number[][] };
+    const tensor = (inputs.tensor ?? this.tensor ?? { data: [] }) as { data: number[] | number[][] };
     const data = tensor.data;
 
     const convert = (arr: number[]): number[] =>
@@ -201,16 +245,30 @@ export class PowerToDBNode extends BaseNode {
 
 export class PlotSpectrogramNode extends BaseNode {
   static readonly nodeType = "lib.librosa.analysis.PlotSpectrogram";
-  static readonly title = "Plot Spectrogram";
-  static readonly description =
-    "Generates a visual representation of the spectrum of frequencies in an audio signal as they vary with time.";
+            static readonly title = "Plot Spectrogram";
+            static readonly description = "The PlotSpectrogram node generates a visual representation of the spectrum of frequencies in an audio signal as they vary with time.\n    audio, analysis, frequency, spectrogram\n\n    #### Applications\n    - Audio Analysis: Allows users to visually see the spectrum of frequencies in their data.\n    - Machine Learning: Used as a preprocessing step for feeding data into image-based ML models.\n    - Sound engineering: Helps in identifying specific tones or frequencies in a music piece or a sound bite.";
+        static readonly metadataOutputTypes = {
+    output: "image"
+  };
+  
+  @prop({ type: "np_array", default: {
+  "type": "np_array",
+  "value": null,
+  "dtype": "<i8",
+  "shape": [
+    1
+  ]
+}, title: "Tensor", description: "The tensor containing the mel spectrogram." })
+  declare tensor: any;
 
-  defaults() {
-    return { tensor: { data: [] }, fmax: 8000 };
-  }
+  @prop({ type: "int", default: 8000, title: "Fmax", description: "The highest frequency (in Hz).", min: 0 })
+  declare fmax: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const tensor = (inputs.tensor ?? this._props.tensor ?? { data: [] }) as { data: number[][] };
+    const tensor = (inputs.tensor ?? this.tensor ?? { data: [] }) as { data: number[][] };
     const spec = tensor.data;
 
     if (!spec.length || !spec[0]?.length) {
@@ -305,17 +363,30 @@ async function processAudioWithEffect(
 
 export class GainNode_ extends BaseNode {
   static readonly nodeType = "lib.pedalboard.Gain";
-  static readonly title = "Gain";
-  static readonly description =
-    "Applies a gain (volume adjustment) to an audio file.";
+            static readonly title = "Gain";
+            static readonly description = "Applies a gain (volume adjustment) to an audio file.\n    audio, effect, volume\n\n    Use cases:\n    - Increase or decrease overall volume of audio\n    - Balance levels between different audio tracks\n    - Prepare audio for further processing";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to process." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, gain_db: 0.0 };
-  }
+  @prop({ type: "float", default: 0, title: "Gain Db", description: "Gain to apply in decibels. Positive values increase volume, negative values decrease it.", min: -60, max: 24 })
+  declare gain_db: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audio = (inputs.audio ?? this._props.audio ?? {}) as Record<string, unknown>;
-    const gainDb = Number(inputs.gain_db ?? this._props.gain_db ?? 0);
+    const audio = (inputs.audio ?? this.audio ?? {}) as Record<string, unknown>;
+    const gainDb = Number(inputs.gain_db ?? this.gain_db ?? 0);
 
     if (!audio.data) return { output: audio };
 
@@ -332,18 +403,38 @@ export class GainNode_ extends BaseNode {
 
 export class DelayNode_ extends BaseNode {
   static readonly nodeType = "lib.pedalboard.Delay";
-  static readonly title = "Delay";
-  static readonly description = "Applies a delay effect to an audio file.";
+            static readonly title = "Delay";
+            static readonly description = "Applies a delay effect to an audio file.\n    audio, effect, time-based\n\n    Use cases:\n    - Create echo effects\n    - Add spaciousness to sounds\n    - Produce rhythmic patterns";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to process." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, delay_seconds: 0.5, feedback: 0.3, mix: 0.5 };
-  }
+  @prop({ type: "float", default: 0.5, title: "Delay Seconds", description: "Delay time in seconds.", min: 0.01, max: 5 })
+  declare delay_seconds: any;
+
+  @prop({ type: "float", default: 0.3, title: "Feedback", description: "Amount of delayed signal fed back into the effect.", min: 0, max: 0.99 })
+  declare feedback: any;
+
+  @prop({ type: "float", default: 0.5, title: "Mix", description: "Mix between the dry (original) and wet (delayed) signals.", min: 0, max: 1 })
+  declare mix: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audio = (inputs.audio ?? this._props.audio ?? {}) as Record<string, unknown>;
-    const delaySec = Number(inputs.delay_seconds ?? this._props.delay_seconds ?? 0.5);
-    const feedback = Number(inputs.feedback ?? this._props.feedback ?? 0.3);
-    const mix = Number(inputs.mix ?? this._props.mix ?? 0.5);
+    const audio = (inputs.audio ?? this.audio ?? {}) as Record<string, unknown>;
+    const delaySec = Number(inputs.delay_seconds ?? this.delay_seconds ?? 0.5);
+    const feedback = Number(inputs.feedback ?? this.feedback ?? 0.3);
+    const mix = Number(inputs.mix ?? this.mix ?? 0.5);
 
     if (!audio.data) return { output: audio };
 
@@ -384,17 +475,30 @@ export class DelayNode_ extends BaseNode {
 
 export class HighPassFilterNode extends BaseNode {
   static readonly nodeType = "lib.pedalboard.HighPassFilter";
-  static readonly title = "High Pass Filter";
-  static readonly description =
-    "Applies a high-pass filter to attenuate frequencies below a cutoff point.";
+            static readonly title = "High Pass Filter";
+            static readonly description = "Applies a high-pass filter to attenuate frequencies below a cutoff point.\n    audio, effect, equalizer\n\n    Use cases:\n    - Remove low-frequency rumble or noise\n    - Clean up the low end of a mix\n    - Create filter sweep effects";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to process." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, cutoff_frequency_hz: 80.0 };
-  }
+  @prop({ type: "float", default: 80, title: "Cutoff Frequency Hz", description: "The cutoff frequency of the high-pass filter in Hz.", min: 20, max: 5000 })
+  declare cutoff_frequency_hz: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audio = (inputs.audio ?? this._props.audio ?? {}) as Record<string, unknown>;
-    const cutoff = Number(inputs.cutoff_frequency_hz ?? this._props.cutoff_frequency_hz ?? 80);
+    const audio = (inputs.audio ?? this.audio ?? {}) as Record<string, unknown>;
+    const cutoff = Number(inputs.cutoff_frequency_hz ?? this.cutoff_frequency_hz ?? 80);
 
     if (!audio.data) return { output: audio };
 
@@ -412,17 +516,30 @@ export class HighPassFilterNode extends BaseNode {
 
 export class LowPassFilterNode extends BaseNode {
   static readonly nodeType = "lib.pedalboard.LowPassFilter";
-  static readonly title = "Low Pass Filter";
-  static readonly description =
-    "Applies a low-pass filter to attenuate frequencies above a cutoff point.";
+            static readonly title = "Low Pass Filter";
+            static readonly description = "Applies a low-pass filter to attenuate frequencies above a cutoff point.\n    audio, effect, equalizer\n\n    Use cases:\n    - Reduce high-frequency harshness\n    - Simulate muffled or distant sounds\n    - Create dub-style effects";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to process." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, cutoff_frequency_hz: 5000.0 };
-  }
+  @prop({ type: "float", default: 5000, title: "Cutoff Frequency Hz", description: "The cutoff frequency of the low-pass filter in Hz.", min: 500, max: 20000 })
+  declare cutoff_frequency_hz: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audio = (inputs.audio ?? this._props.audio ?? {}) as Record<string, unknown>;
-    const cutoff = Number(inputs.cutoff_frequency_hz ?? this._props.cutoff_frequency_hz ?? 5000);
+    const audio = (inputs.audio ?? this.audio ?? {}) as Record<string, unknown>;
+    const cutoff = Number(inputs.cutoff_frequency_hz ?? this.cutoff_frequency_hz ?? 5000);
 
     if (!audio.data) return { output: audio };
 
@@ -440,18 +557,34 @@ export class LowPassFilterNode extends BaseNode {
 
 export class HighShelfFilterNode extends BaseNode {
   static readonly nodeType = "lib.pedalboard.HighShelfFilter";
-  static readonly title = "High Shelf Filter";
-  static readonly description =
-    "Applies a high shelf filter to boost or cut high frequencies.";
+            static readonly title = "High Shelf Filter";
+            static readonly description = "Applies a high shelf filter to boost or cut high frequencies.\n    audio, effect, equalizer\n\n    Use cases:\n    - Enhance or reduce treble frequencies\n    - Add brightness or air to audio\n    - Tame harsh high frequencies";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to process." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, cutoff_frequency_hz: 5000.0, gain_db: 0.0 };
-  }
+  @prop({ type: "float", default: 5000, title: "Cutoff Frequency Hz", description: "The cutoff frequency of the shelf filter in Hz.", min: 1000, max: 20000 })
+  declare cutoff_frequency_hz: any;
+
+  @prop({ type: "float", default: 0, title: "Gain Db", description: "The gain to apply to the frequencies above the cutoff, in dB.", min: -24, max: 24 })
+  declare gain_db: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audio = (inputs.audio ?? this._props.audio ?? {}) as Record<string, unknown>;
-    const cutoff = Number(inputs.cutoff_frequency_hz ?? this._props.cutoff_frequency_hz ?? 5000);
-    const gainDb = Number(inputs.gain_db ?? this._props.gain_db ?? 0);
+    const audio = (inputs.audio ?? this.audio ?? {}) as Record<string, unknown>;
+    const cutoff = Number(inputs.cutoff_frequency_hz ?? this.cutoff_frequency_hz ?? 5000);
+    const gainDb = Number(inputs.gain_db ?? this.gain_db ?? 0);
 
     if (!audio.data) return { output: audio };
 
@@ -470,18 +603,34 @@ export class HighShelfFilterNode extends BaseNode {
 
 export class LowShelfFilterNode extends BaseNode {
   static readonly nodeType = "lib.pedalboard.LowShelfFilter";
-  static readonly title = "Low Shelf Filter";
-  static readonly description =
-    "Applies a low shelf filter to boost or cut low frequencies.";
+            static readonly title = "Low Shelf Filter";
+            static readonly description = "Applies a low shelf filter to boost or cut low frequencies.\n    audio, effect, equalizer\n\n    Use cases:\n    - Enhance or reduce bass frequencies\n    - Shape the low-end response of audio\n    - Compensate for speaker or room deficiencies";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to process." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, cutoff_frequency_hz: 200.0, gain_db: 0.0 };
-  }
+  @prop({ type: "float", default: 200, title: "Cutoff Frequency Hz", description: "The cutoff frequency of the shelf filter in Hz.", min: 20, max: 1000 })
+  declare cutoff_frequency_hz: any;
+
+  @prop({ type: "float", default: 0, title: "Gain Db", description: "The gain to apply to the frequencies below the cutoff, in dB.", min: -24, max: 24 })
+  declare gain_db: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audio = (inputs.audio ?? this._props.audio ?? {}) as Record<string, unknown>;
-    const cutoff = Number(inputs.cutoff_frequency_hz ?? this._props.cutoff_frequency_hz ?? 200);
-    const gainDb = Number(inputs.gain_db ?? this._props.gain_db ?? 0);
+    const audio = (inputs.audio ?? this.audio ?? {}) as Record<string, unknown>;
+    const cutoff = Number(inputs.cutoff_frequency_hz ?? this.cutoff_frequency_hz ?? 200);
+    const gainDb = Number(inputs.gain_db ?? this.gain_db ?? 0);
 
     if (!audio.data) return { output: audio };
 
@@ -500,18 +649,34 @@ export class LowShelfFilterNode extends BaseNode {
 
 export class PeakFilterNode extends BaseNode {
   static readonly nodeType = "lib.pedalboard.PeakFilter";
-  static readonly title = "Peak Filter";
-  static readonly description =
-    "Applies a peak filter to boost or cut a specific frequency range.";
+            static readonly title = "Peak Filter";
+            static readonly description = "Applies a peak filter to boost or cut a specific frequency range.\n    audio, effect, equalizer\n\n    Use cases:\n    - Isolate specific frequency ranges\n    - Create telephone or radio voice effects\n    - Focus on particular instrument ranges in a mix";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to process." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, cutoff_frequency_hz: 1000.0, q_factor: 1.0 };
-  }
+  @prop({ type: "float", default: 1000, title: "Cutoff Frequency Hz", description: "The cutoff frequency of the band-pass filter in Hz.", min: 20, max: 20000 })
+  declare cutoff_frequency_hz: any;
+
+  @prop({ type: "float", default: 1, title: "Q Factor", description: "The Q factor, determining the width of the band. Higher values create narrower bands.", min: 0.1, max: 10 })
+  declare q_factor: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audio = (inputs.audio ?? this._props.audio ?? {}) as Record<string, unknown>;
-    const cutoff = Number(inputs.cutoff_frequency_hz ?? this._props.cutoff_frequency_hz ?? 1000);
-    const q = Number(inputs.q_factor ?? this._props.q_factor ?? 1.0);
+    const audio = (inputs.audio ?? this.audio ?? {}) as Record<string, unknown>;
+    const cutoff = Number(inputs.cutoff_frequency_hz ?? this.cutoff_frequency_hz ?? 1000);
+    const q = Number(inputs.q_factor ?? this.q_factor ?? 1.0);
 
     if (!audio.data) return { output: audio };
 

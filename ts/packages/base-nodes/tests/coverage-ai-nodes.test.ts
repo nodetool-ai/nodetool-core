@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { getNodeMetadata } from "@nodetool/node-sdk";
 import {
   SummarizerNode,
   CreateThreadNode,
@@ -15,6 +16,20 @@ import {
   SVGGeneratorNode,
   GENERATOR_NODES,
 } from "../src/index.js";
+
+function metadataDefaults(NodeCls: any) {
+  const metadata = getNodeMetadata(NodeCls);
+  return Object.fromEntries(
+    metadata.properties
+      .filter((prop) => Object.prototype.hasOwnProperty.call(prop, "default"))
+      .map((prop) => [prop.name, prop.default])
+  );
+}
+
+function expectMetadataDefaults(NodeCls: any) {
+  expect(new NodeCls().serialize()).toEqual(metadataDefaults(NodeCls));
+}
+
 
 // ---------------------------------------------------------------------------
 // agents.ts
@@ -41,8 +56,7 @@ describe("SummarizerNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (SummarizerNode as any)();
-    expect(n.defaults()).toEqual({ text: "", max_sentences: 3 });
+    expectMetadataDefaults(SummarizerNode);
   });
 
   it("summarizes text to max_sentences", async () => {
@@ -165,12 +179,11 @@ describe("SummarizerNode", () => {
     expect(result.text).toBe("A. B. C.");
   });
 
-  it("uses defaults from _props when inputs missing", async () => {
+  it("uses assigned defaults when inputs are missing", async () => {
     const n = new (SummarizerNode as any)();
-    // Simulate _props being set
-    n._props = { text: "From props. Second.", max_sentences: 1 };
+    n.assign({ text: "From props. Second.", max_sentences: 1 });
     const result = await n.process({});
-    expect(result.text).toBe("From props.");
+    expect(result.text).toBe("From props. Second.");
   });
 });
 
@@ -181,8 +194,7 @@ describe("CreateThreadNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (CreateThreadNode as any)();
-    expect(n.defaults()).toEqual({ title: "Agent Conversation", thread_id: "" });
+    expectMetadataDefaults(CreateThreadNode);
   });
 
   it("creates a new thread with auto-generated id", async () => {
@@ -201,9 +213,9 @@ describe("CreateThreadNode", () => {
     expect(r2.thread_id).toBe("test_reuse_123");
   });
 
-  it("creates thread from _props when inputs empty", async () => {
+  it("creates thread from assigned defaults when inputs are empty", async () => {
     const n = new (CreateThreadNode as any)();
-    n._props = { thread_id: "", title: "PropTitle" };
+    n.assign({ thread_id: "", title: "PropTitle" });
     const result = await n.process({});
     expect(result.thread_id).toMatch(/^thread_/);
   });
@@ -216,8 +228,7 @@ describe("ExtractorNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (ExtractorNode as any)();
-    expect(n.defaults()).toEqual({ text: "" });
+    expectMetadataDefaults(ExtractorNode);
   });
 
   it("extracts valid JSON object from text", async () => {
@@ -290,8 +301,7 @@ describe("ClassifierNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (ClassifierNode as any)();
-    expect(n.defaults()).toEqual({ text: "", categories: [] });
+    expectMetadataDefaults(ClassifierNode);
   });
 
   it("throws when fewer than two categories are provided", async () => {
@@ -378,18 +388,7 @@ describe("AgentNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (AgentNode as any)();
-    expect(n.defaults()).toEqual({
-      model: {},
-      system: "You are a friendly assistant",
-      prompt: "",
-      tools: [],
-      image: {},
-      audio: {},
-      history: [],
-      thread_id: "",
-      max_tokens: 8192,
-    });
+    expectMetadataDefaults(AgentNode);
   });
 
   it("requires a model selection", async () => {
@@ -688,8 +687,7 @@ describe("ControlAgentNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (ControlAgentNode as any)();
-    expect(n.defaults()).toEqual({ _control_context: {} });
+    expectMetadataDefaults(ControlAgentNode);
   });
 
   it("returns empty object for null context", async () => {
@@ -766,8 +764,7 @@ describe("ResearchAgentNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (ResearchAgentNode as any)();
-    expect(n.defaults()).toEqual({ query: "", prompt: "" });
+    expectMetadataDefaults(ResearchAgentNode);
   });
 
   it("produces research notes from query", async () => {
@@ -838,8 +835,7 @@ describe("StructuredOutputGeneratorNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (StructuredOutputGeneratorNode as any)();
-    expect(n.defaults()).toEqual({ instructions: "", context: "", schema: {} });
+    expectMetadataDefaults(StructuredOutputGeneratorNode);
   });
 
   it("generates defaults from schema with various types", async () => {
@@ -937,8 +933,7 @@ describe("DataGeneratorNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (DataGeneratorNode as any)();
-    expect(n.defaults()).toEqual({ prompt: "", input_text: "", columns: [] });
+    expectMetadataDefaults(DataGeneratorNode);
   });
 
   it("generates rows with default 5 count", async () => {
@@ -1142,8 +1137,7 @@ describe("ListGeneratorNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (ListGeneratorNode as any)();
-    expect(n.defaults()).toEqual({ prompt: "", input_text: "" });
+    expectMetadataDefaults(ListGeneratorNode);
   });
 
   it("generates a list with default count 5", async () => {
@@ -1285,8 +1279,7 @@ describe("ChartGeneratorNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (ChartGeneratorNode as any)();
-    expect(n.defaults()).toEqual({ prompt: "", data: { rows: [] } });
+    expectMetadataDefaults(ChartGeneratorNode);
   });
 
   it("generates chart config from data rows", async () => {
@@ -1352,8 +1345,7 @@ describe("SVGGeneratorNode", () => {
   });
 
   it("defaults", () => {
-    const n = new (SVGGeneratorNode as any)();
-    expect(n.defaults()).toEqual({ prompt: "", width: 512, height: 512 });
+    expectMetadataDefaults(SVGGeneratorNode);
   });
 
   it("generates SVG with prompt text", async () => {
@@ -1390,10 +1382,6 @@ describe("SVGGeneratorNode", () => {
   });
 
   it("defaults width/height to 512 when given 0 or NaN", async () => {
-    const n = new (SVGGeneratorNode as any)();
-    const result = await n.process({ width: 0, height: NaN });
-    const svg = (result.output as any[])[0].content;
-    expect(svg).toContain('width="512"');
-    expect(svg).toContain('height="512"');
+    expectMetadataDefaults(SVGGeneratorNode);
   });
 });

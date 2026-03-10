@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { NodeClass } from "@nodetool/node-sdk";
 
 const OPENAI_API_BASE = "https://api.openai.com/v1";
@@ -24,17 +24,30 @@ function authHeaders(apiKey: string): Record<string, string> {
 // ---------------------------------------------------------------------------
 export class EmbeddingNode extends BaseNode {
   static readonly nodeType = "openai.text.Embedding";
-  static readonly title = "Embedding";
-  static readonly description =
-    "Generate vector representations of text for semantic analysis using OpenAI embedding models.";
+            static readonly title = "Embedding";
+            static readonly description = "Generate vector representations of text for semantic analysis.\n    embeddings, similarity, search, clustering, classification\n\n    Uses OpenAI's embedding models to create dense vector representations of text.\n    These vectors capture semantic meaning, enabling:\n    - Semantic search\n    - Text clustering\n    - Document classification\n    - Recommendation systems\n    - Anomaly detection\n    - Measuring text similarity and diversity";
+        static readonly metadataOutputTypes = {
+    output: "np_array"
+  };
+          static readonly requiredSettings = [
+  "OPENAI_API_KEY"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Input" })
+  declare input: any;
 
-  defaults() {
-    return {
-      input: "",
-      model: "text-embedding-3-small",
-      chunk_size: 4096,
-    };
-  }
+  @prop({ type: "enum", default: "text-embedding-3-small", title: "Model", values: [
+  "text-embedding-3-large",
+  "text-embedding-3-small"
+] })
+  declare model: any;
+
+  @prop({ type: "int", default: 4096, title: "Chunk Size" })
+  declare chunk_size: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const apiKey = getApiKey(inputs);
@@ -81,13 +94,20 @@ export class EmbeddingNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class WebSearchNode extends BaseNode {
   static readonly nodeType = "openai.text.WebSearch";
-  static readonly title = "Web Search";
-  static readonly description =
-    "Search the web using OpenAI's web search capabilities with gpt-4o-search-preview.";
+            static readonly title = "Web Search";
+            static readonly description = "🔍 OpenAI Web Search - Searches the web using OpenAI's web search capabilities.\n\n    This node uses an OpenAI model equipped with web search functionality\n    (like gpt-4o with search preview) to answer queries based on current web information.\n    Requires an OpenAI API key.";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+          static readonly requiredSettings = [
+  "OPENAI_API_KEY"
+];
+  
+  @prop({ type: "str", default: "", title: "Query", description: "The search query to execute." })
+  declare query: any;
 
-  defaults() {
-    return { query: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const apiKey = getApiKey(inputs);
@@ -127,16 +147,34 @@ export class WebSearchNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class ModerationNode extends BaseNode {
   static readonly nodeType = "openai.text.Moderation";
-  static readonly title = "Moderation";
-  static readonly description =
-    "Check text content for potential policy violations using OpenAI's moderation API.";
+            static readonly title = "Moderation";
+            static readonly description = "Check text content for potential policy violations using OpenAI's moderation API.\n    moderation, safety, content, filter, policy, harmful, toxic\n\n    Uses OpenAI's moderation models to detect potentially harmful content including:\n    - Hate speech\n    - Harassment\n    - Self-harm content\n    - Sexual content\n    - Violence\n    - Graphic violence\n\n    Returns flagged status and category scores for comprehensive content analysis.";
+        static readonly metadataOutputTypes = {
+    flagged: "bool",
+    categories: "dict[str, bool]",
+    category_scores: "dict[str, float]"
+  };
+          static readonly basicFields = [
+  "input"
+];
+          static readonly requiredSettings = [
+  "OPENAI_API_KEY"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Input", description: "The text content to check for policy violations." })
+  declare input: any;
 
-  defaults() {
-    return {
-      input: "",
-      model: "omni-moderation-latest",
-    };
-  }
+  @prop({ type: "enum", default: "omni-moderation-latest", title: "Model", description: "The moderation model to use.", values: [
+  "omni-moderation-latest",
+  "omni-moderation-2024-09-26",
+  "text-moderation-latest",
+  "text-moderation-stable"
+] })
+  declare model: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const apiKey = getApiKey(inputs);
@@ -174,19 +212,47 @@ export class ModerationNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class CreateImageNode extends BaseNode {
   static readonly nodeType = "openai.image.CreateImage";
-  static readonly title = "Create Image";
-  static readonly description =
-    "Generate images from textual descriptions using OpenAI's image generation models.";
+            static readonly title = "Create Image";
+            static readonly description = "Generates images from textual descriptions.\n    image, t2i, tti, text-to-image, create, generate, picture, photo, art, drawing, illustration";
+        static readonly metadataOutputTypes = {
+    output: "image"
+  };
+          static readonly requiredSettings = [
+  "OPENAI_API_KEY"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Prompt", description: "The prompt to use." })
+  declare prompt: any;
 
-  defaults() {
-    return {
-      prompt: "",
-      model: "gpt-image-1",
-      size: "1024x1024",
-      background: "auto",
-      quality: "high",
-    };
-  }
+  @prop({ type: "enum", default: "gpt-image-1", title: "Model", description: "The model to use for image generation.", values: [
+  "gpt-image-1"
+] })
+  declare model: any;
+
+  @prop({ type: "enum", default: "1024x1024", title: "Size", description: "The size of the image to generate.", values: [
+  "1024x1024",
+  "1536x1024",
+  "1024x1536"
+] })
+  declare size: any;
+
+  @prop({ type: "enum", default: "auto", title: "Background", description: "The background of the image to generate.", values: [
+  "transparent",
+  "opaque",
+  "auto"
+] })
+  declare background: any;
+
+  @prop({ type: "enum", default: "high", title: "Quality", description: "The quality of the image to generate.", values: [
+  "high",
+  "medium",
+  "low"
+] })
+  declare quality: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const apiKey = getApiKey(inputs);
@@ -234,20 +300,58 @@ export class CreateImageNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class EditImageNode extends BaseNode {
   static readonly nodeType = "openai.image.EditImage";
-  static readonly title = "Edit Image";
-  static readonly description =
-    "Edit images using OpenAI's gpt-image-1 model with text prompts and optional masks.";
+            static readonly title = "Edit Image";
+            static readonly description = "Edit images using OpenAI's gpt-image-1 model.\n    image, edit, modify, transform, inpaint, outpaint, variation\n\n    Takes an input image and a text prompt to generate a modified version.\n    Can be used for inpainting, outpainting, style transfer, and image modification.\n    Optionally accepts a mask to specify which areas to edit.";
+        static readonly metadataOutputTypes = {
+    output: "image"
+  };
+          static readonly requiredSettings = [
+  "OPENAI_API_KEY"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "The image to edit." })
+  declare image: any;
 
-  defaults() {
-    return {
-      image: {},
-      mask: {},
-      prompt: "",
-      model: "gpt-image-1",
-      size: "1024x1024",
-      quality: "high",
-    };
-  }
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Mask", description: "Optional mask image. White areas will be edited, black areas preserved." })
+  declare mask: any;
+
+  @prop({ type: "str", default: "", title: "Prompt", description: "The prompt describing the desired edit." })
+  declare prompt: any;
+
+  @prop({ type: "enum", default: "gpt-image-1", title: "Model", description: "The model to use for image editing.", values: [
+  "gpt-image-1"
+] })
+  declare model: any;
+
+  @prop({ type: "enum", default: "1024x1024", title: "Size", description: "The size of the output image.", values: [
+  "1024x1024",
+  "1536x1024",
+  "1024x1536"
+] })
+  declare size: any;
+
+  @prop({ type: "enum", default: "high", title: "Quality", description: "The quality of the generated image.", values: [
+  "high",
+  "medium",
+  "low"
+] })
+  declare quality: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const apiKey = getApiKey(inputs);
@@ -332,18 +436,51 @@ async function refToBlob(ref: Record<string, unknown>): Promise<Blob> {
 // ---------------------------------------------------------------------------
 export class TextToSpeechNode extends BaseNode {
   static readonly nodeType = "openai.audio.TextToSpeech";
-  static readonly title = "Text to Speech";
-  static readonly description =
-    "Convert text to speech using OpenAI TTS models.";
+            static readonly title = "Text To Speech";
+            static readonly description = "Converts text to speech using OpenAI TTS models.\n    audio, tts, text-to-speech, voice, synthesis";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+          static readonly basicFields = [
+  "input",
+  "model",
+  "voice"
+];
+          static readonly requiredSettings = [
+  "OPENAI_API_KEY"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "enum", default: "tts-1", title: "Model", values: [
+  "tts-1",
+  "tts-1-hd",
+  "gpt-4o-mini-tts"
+] })
+  declare model: any;
 
-  defaults() {
-    return {
-      model: "tts-1",
-      voice: "alloy",
-      input: "",
-      speed: 1.0,
-    };
-  }
+  @prop({ type: "enum", default: "alloy", title: "Voice", values: [
+  "alloy",
+  "ash",
+  "ballad",
+  "coral",
+  "echo",
+  "fable",
+  "onyx",
+  "nova",
+  "sage",
+  "shimmer",
+  "verse"
+] })
+  declare voice: any;
+
+  @prop({ type: "str", default: "", title: "Input" })
+  declare input: any;
+
+  @prop({ type: "float", default: 1, title: "Speed", min: 0.25, max: 4 })
+  declare speed: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const apiKey = getApiKey(inputs);
@@ -373,16 +510,30 @@ export class TextToSpeechNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class TranslateNode extends BaseNode {
   static readonly nodeType = "openai.audio.Translate";
-  static readonly title = "Translate";
-  static readonly description =
-    "Translate speech in audio to English text using OpenAI Whisper.";
+            static readonly title = "Translate";
+            static readonly description = "Translates speech in audio to English text.\n    audio, translation, speech-to-text, localization";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+          static readonly requiredSettings = [
+  "OPENAI_API_KEY"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to translate." })
+  declare audio: any;
 
-  defaults() {
-    return {
-      audio: {},
-      temperature: 0.0,
-    };
-  }
+  @prop({ type: "float", default: 0, title: "Temperature", description: "The temperature to use for the translation." })
+  declare temperature: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const apiKey = getApiKey(inputs);
@@ -417,20 +568,116 @@ export class TranslateNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class TranscribeNode extends BaseNode {
   static readonly nodeType = "openai.audio.Transcribe";
-  static readonly title = "Transcribe";
-  static readonly description =
-    "Convert speech to text using OpenAI's speech-to-text API (Whisper / GPT-4o transcribe).";
+            static readonly title = "Transcribe";
+            static readonly description = "Converts speech to text using OpenAI's speech-to-text API.\n    audio, transcription, speech-to-text, stt, whisper";
+        static readonly metadataOutputTypes = {
+    text: "str",
+    words: "list[audio_chunk]",
+    segments: "list[audio_chunk]"
+  };
+          static readonly basicFields = [
+  "audio",
+  "language",
+  "timestamps"
+];
+          static readonly requiredSettings = [
+  "OPENAI_API_KEY"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "enum", default: "whisper-1", title: "Model", description: "The model to use for transcription.", values: [
+  "whisper-1",
+  "gpt-4o-transcribe",
+  "gpt-4o-mini-transcribe"
+] })
+  declare model: any;
 
-  defaults() {
-    return {
-      model: "whisper-1",
-      audio: {},
-      language: "auto_detect",
-      timestamps: false,
-      prompt: "",
-      temperature: 0,
-    };
-  }
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to transcribe (max 25 MB)." })
+  declare audio: any;
+
+  @prop({ type: "enum", default: "auto_detect", title: "Language", description: "The language of the input audio", values: [
+  "auto_detect",
+  "af",
+  "ar",
+  "hy",
+  "az",
+  "be",
+  "bn",
+  "bs",
+  "bg",
+  "ca",
+  "hr",
+  "cs",
+  "da",
+  "nl",
+  "en",
+  "et",
+  "tl",
+  "fi",
+  "fr",
+  "gl",
+  "de",
+  "el",
+  "gu",
+  "he",
+  "hi",
+  "hu",
+  "is",
+  "id",
+  "it",
+  "ja",
+  "kn",
+  "kk",
+  "ko",
+  "lv",
+  "lt",
+  "mk",
+  "ms",
+  "zh",
+  "mi",
+  "mr",
+  "ne",
+  "no",
+  "fa",
+  "pl",
+  "pt",
+  "pa",
+  "ro",
+  "ru",
+  "sr",
+  "sk",
+  "sl",
+  "es",
+  "sw",
+  "sv",
+  "ta",
+  "te",
+  "th",
+  "tr",
+  "uk",
+  "ur",
+  "vi",
+  "cy"
+] })
+  declare language: any;
+
+  @prop({ type: "bool", default: false, title: "Timestamps", description: "Whether to return timestamps for the generated text." })
+  declare timestamps: any;
+
+  @prop({ type: "str", default: "", title: "Prompt", description: "Optional text to guide the model's style or continue a previous audio segment." })
+  declare prompt: any;
+
+  @prop({ type: "float", default: 0, title: "Temperature", description: "The sampling temperature between 0 and 1. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.", min: 0, max: 1 })
+  declare temperature: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const apiKey = getApiKey(inputs);
@@ -516,28 +763,79 @@ export class TranscribeNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class RealtimeAgentNode extends BaseNode {
   static readonly nodeType = "openai.agents.RealtimeAgent";
-  static readonly title = "Realtime Agent";
-  static readonly description =
-    "Generate a low-latency text response with optional audio transcription and synthesized speech using OpenAI APIs.";
+            static readonly title = "Realtime Agent";
+            static readonly description = "Stream responses using the official OpenAI Realtime client. Supports optional audio input and streams text chunks.\n    realtime, streaming, openai, audio-input, text-output\n\n    Uses `AsyncOpenAI().beta.realtime.connect(...)` with the events API:\n    - Sends session settings via `session.update`\n    - Adds user input via `conversation.item.create`\n    - Streams back `response.text.delta` events until `response.done`";
+        static readonly metadataOutputTypes = {
+    chunk: "chunk",
+    audio: "audio",
+    text: "str"
+  };
+          static readonly basicFields = [
+  "model",
+  "prompt",
+  "chunk",
+  "speed"
+];
+          static readonly requiredSettings = [
+  "OPENAI_API_KEY"
+];
+          static readonly supportsDynamicOutputs = true;
+  
+          static readonly isStreamingOutput = true;
+  @prop({ type: "enum", default: "gpt-4o-mini-realtime-preview", title: "Model", values: [
+  "gpt-4o-realtime-preview",
+  "gpt-4o-mini-realtime-preview"
+] })
+  declare model: any;
 
-  defaults() {
-    return {
-      model: "gpt-4o-mini-realtime-preview",
-      system: "",
-      chunk: {},
-      voice: "alloy",
-      speed: 1.0,
-      temperature: 0.8,
-    };
-  }
+  @prop({ type: "str", default: "\nYou are an AI assistant interacting in real-time. Follow these rules unless explicitly overridden by the user:\n\n1. Respond promptly — minimize delay. If you do not yet have a complete answer, acknowledge the question and indicate what you are doing to find the answer.\n2. Maintain correctness. Always aim for accuracy; if you’re uncertain, say so and optionally offer to verify.\n3. Be concise but clear. Prioritize key information first, then supporting details if helpful.\n4. Ask clarifying questions when needed. If the user’s request is ambiguous, request clarification rather than guessing.\n5. Be consistent in terminology and definitions. Once you adopt a term or abbreviation, use it consistently in this conversation.\n6. Respect politeness and neutrality. Do not use emotive language unless the conversation tone demands it.\n7. Stay within safe and ethical bounds. Avoid disallowed content; follow OpenAI policies.\n8. Adapt to the user’s style and level. If the user seems technical, use technical detail; if non-technical, explain with simpler language.\n---\nYou are now active. Await the user’s request.\n", title: "System", description: "System instructions for the realtime session" })
+  declare system: any;
+
+  @prop({ type: "chunk", default: {
+  "type": "chunk",
+  "node_id": null,
+  "thread_id": null,
+  "workflow_id": null,
+  "content_type": "text",
+  "content": "",
+  "content_metadata": {},
+  "done": false,
+  "thinking": false
+}, title: "Chunk", description: "The audio chunk to use as input." })
+  declare chunk: any;
+
+  @prop({ type: "enum", default: "alloy", title: "Voice", description: "The voice for the audio output", values: [
+  "none",
+  "ash",
+  "alloy",
+  "ballad",
+  "coral",
+  "echo",
+  "fable",
+  "onyx",
+  "nova",
+  "shimmer",
+  "sage",
+  "verse"
+] })
+  declare voice: any;
+
+  @prop({ type: "float", default: 1, title: "Speed", description: "The speed of the model's spoken response", min: 0.25, max: 1.5 })
+  declare speed: any;
+
+  @prop({ type: "float", default: 0.8, title: "Temperature", description: "The temperature for the response", min: 0.6, max: 1.2 })
+  declare temperature: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const apiKey = getApiKey(inputs);
-    const system = String(inputs.system ?? this._props.system ?? "");
-    const voice = String(inputs.voice ?? this._props.voice ?? "alloy");
-    const speed = Number(inputs.speed ?? this._props.speed ?? 1);
-    const model = String(inputs.model ?? this._props.model ?? "gpt-4o-mini-realtime-preview");
-    const chunk = (inputs.chunk ?? this._props.chunk ?? {}) as Record<string, unknown>;
+    const system = String(inputs.system ?? this.system ?? "");
+    const voice = String(inputs.voice ?? this.voice ?? "alloy");
+    const speed = Number(inputs.speed ?? this.speed ?? 1);
+    const model = String(inputs.model ?? this.model ?? "gpt-4o-mini-realtime-preview");
+    const chunk = (inputs.chunk ?? this.chunk ?? {}) as Record<string, unknown>;
 
     let userText = "";
     if (typeof chunk.content === "string" && chunk.content) {
@@ -567,7 +865,7 @@ export class RealtimeAgentNode extends BaseNode {
       headers: authHeaders(apiKey),
       body: JSON.stringify({
         model: model.replace("-realtime-preview", ""),
-        temperature: Number(inputs.temperature ?? this._props.temperature ?? 0.8),
+        temperature: Number(inputs.temperature ?? this.temperature ?? 0.8),
         messages: [
           ...(system ? [{ role: "system", content: system }] : []),
           { role: "user", content: userText || String(inputs.prompt ?? "") || "" },
@@ -616,21 +914,39 @@ export class RealtimeAgentNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class RealtimeTranscriptionNode extends BaseNode {
   static readonly nodeType = "openai.agents.RealtimeTranscription";
-  static readonly title = "Realtime Transcription";
-  static readonly description =
-    "Transcribe microphone or audio input using OpenAI speech-to-text APIs.";
+            static readonly title = "Realtime Transcription";
+            static readonly description = "Stream microphone or audio input to OpenAI Realtime and emit transcription.\n\n    Emits:\n      - `chunk` Chunk(content=..., done=False) for transcript deltas\n      - `chunk` Chunk(content=\"\", done=True) to mark segment end\n      - `text` final aggregated transcript when input ends";
+        static readonly metadataOutputTypes = {
+    text: "str",
+    chunk: "chunk"
+  };
+          static readonly requiredSettings = [
+  "OPENAI_API_KEY"
+];
+  
+          static readonly isStreamingOutput = true;
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model to use" })
+  declare model: any;
 
-  defaults() {
-    return {
-      model: {},
-      system: "",
-      temperature: 0.8,
-    };
-  }
+  @prop({ type: "str", default: "", title: "System", description: "System instructions (optional)" })
+  declare system: any;
+
+  @prop({ type: "float", default: 0.8, title: "Temperature", description: "Decoding temperature" })
+  declare temperature: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const apiKey = getApiKey(inputs);
-    const chunk = (inputs.chunk ?? this._props.chunk ?? inputs.audio ?? {}) as Record<string, unknown>;
+    const chunk = (inputs.chunk ?? this.chunk ?? inputs.audio ?? {}) as Record<string, unknown>;
     const content =
       typeof chunk.content === "string"
         ? chunk.content
@@ -647,8 +963,8 @@ export class RealtimeTranscriptionNode extends BaseNode {
       "model",
       String((inputs.model as Record<string, unknown> | undefined)?.id ?? inputs.model ?? "gpt-4o-mini-transcribe")
     );
-    if (inputs.system ?? this._props.system) {
-      formData.append("prompt", String(inputs.system ?? this._props.system ?? ""));
+    if (inputs.system ?? this.system) {
+      formData.append("prompt", String(inputs.system ?? this.system ?? ""));
     }
 
     const res = await fetch(`${OPENAI_API_BASE}/audio/transcriptions`, {

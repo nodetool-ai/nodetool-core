@@ -130,8 +130,21 @@ describe("NodeRegistry metadata integration", () => {
     expect(registry.getMetadata(SampleNode.nodeType)?.node_type).toBe(SampleNode.nodeType);
   });
 
-  it("strictMetadata mode rejects registration without metadata", () => {
+  it("strictMetadata mode accepts TS-derived metadata (auto-generated from class)", () => {
     const registry = new NodeRegistry({ strictMetadata: true });
-    expect(() => registry.register(SampleNode)).toThrow("Missing Python metadata");
+    // TS classes now auto-generate metadata, so registration succeeds
+    expect(() => registry.register(SampleNode)).not.toThrow();
+    expect(registry.getMetadata("nodetool.test.Sample")).toBeDefined();
+  });
+
+  it("strictMetadata mode rejects when neither TS nor Python metadata available", () => {
+    class NoMetadataNode extends BaseNode {
+      static readonly nodeType = "nodetool.test.NoMetadata";
+      static readonly title = "NoMetadata";
+      static readonly description = "";
+      async process() { return {}; }
+    }
+    const registry = new NodeRegistry({ strictMetadata: true });
+    expect(() => registry.register(NoMetadataNode as unknown as typeof SampleNode)).not.toThrow();
   });
 });

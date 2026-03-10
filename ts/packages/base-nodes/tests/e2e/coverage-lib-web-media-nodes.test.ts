@@ -50,7 +50,7 @@ import {
   ConvertFilePandocLibNode,
   // Ytdlp nodes
   YtDlpDownloadLibNode,
-} from "../src/index.js";
+} from "../../src/index.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -838,18 +838,18 @@ describe("lib.http — uncovered nodes", () => {
 
   it("covers defaults() methods on HTTP nodes", () => {
     // Touch defaults to ensure v8 covers them
-    expect(new DownloadFilesLibNode().defaults()).toBeTruthy();
-    expect(new JSONPostRequestLibNode().defaults()).toBeTruthy();
-    expect(new JSONPutRequestLibNode().defaults()).toBeTruthy();
-    expect(new JSONPatchRequestLibNode().defaults()).toBeTruthy();
-    expect(new PostRequestLibNode().defaults()).toBeTruthy();
-    expect(new PutRequestLibNode().defaults()).toBeTruthy();
-    expect(new DownloadDataframeLibNode().defaults()).toBeTruthy();
-    expect(new FilterValidURLsLibNode().defaults()).toBeTruthy();
-    expect(new ImageDownloaderLibNode().defaults()).toBeTruthy();
-    expect(new FetchPageLibNode().defaults()).toBeTruthy();
-    expect(new GetRequestLibNode().defaults()).toBeTruthy();
-    expect(new PostRequestBinaryLibNode().defaults()).toBeTruthy();
+    expect(new DownloadFilesLibNode().serialize()).toBeTruthy();
+    expect(new JSONPostRequestLibNode().serialize()).toBeTruthy();
+    expect(new JSONPutRequestLibNode().serialize()).toBeTruthy();
+    expect(new JSONPatchRequestLibNode().serialize()).toBeTruthy();
+    expect(new PostRequestLibNode().serialize()).toBeTruthy();
+    expect(new PutRequestLibNode().serialize()).toBeTruthy();
+    expect(new DownloadDataframeLibNode().serialize()).toBeTruthy();
+    expect(new FilterValidURLsLibNode().serialize()).toBeTruthy();
+    expect(new ImageDownloaderLibNode().serialize()).toBeTruthy();
+    expect(new FetchPageLibNode().serialize()).toBeTruthy();
+    expect(new GetRequestLibNode().serialize()).toBeTruthy();
+    expect(new PostRequestBinaryLibNode().serialize()).toBeTruthy();
   });
 });
 
@@ -1335,11 +1335,9 @@ describe("lib.pillow — uncovered operations", () => {
     const blurClass = LIB_PILLOW_NODES.find(
       (n) => n.nodeType === "lib.pillow.filter.Blur"
     )!;
-    // No image-related keys in inputs — pickImage falls through to props
-    // defaults() puts image: {} in props, so it returns {} from props
-    const out = await new blurClass().process({ unrelated_key: "value" });
-    // baseObj is {} from props, decodeImage returns null, returns baseObj
-    expect(out.output).toEqual({});
+    const node = new blurClass();
+    const out = await node.process({ unrelated_key: "value" });
+    expect(out.output).toEqual(node.serialize().image);
   });
 
   for (const nodeType of [
@@ -1506,15 +1504,15 @@ describe("lib.grid — defaults coverage", () => {
   it("covers defaults() methods", () => {
     const sliceCls = LIB_GRID_NODES.find((n) => n.nodeType === "lib.grid.SliceImageGrid")!;
     const combineCls = LIB_GRID_NODES.find((n) => n.nodeType === "lib.grid.CombineImageGrid")!;
-    expect(new sliceCls().defaults()).toBeTruthy();
-    expect(new combineCls().defaults()).toBeTruthy();
+    expect(new sliceCls().serialize()).toBeTruthy();
+    expect(new combineCls().serialize()).toBeTruthy();
   });
 });
 
 describe("lib.pillow — defaults coverage", () => {
   it("covers defaults() on all pillow nodes", () => {
     for (const cls of LIB_PILLOW_NODES) {
-      expect(new cls().defaults()).toBeTruthy();
+      expect(new cls().serialize()).toBeTruthy();
     }
   });
 });
@@ -1529,8 +1527,8 @@ describe("lib.rss — additional coverage", () => {
 
 describe("lib.rss — defaults coverage", () => {
   it("covers defaults() methods", () => {
-    expect(new FetchRSSFeedLibNode().defaults()).toBeTruthy();
-    expect(new ExtractFeedMetadataLibNode().defaults()).toBeTruthy();
+    expect(new FetchRSSFeedLibNode().serialize()).toBeTruthy();
+    expect(new ExtractFeedMetadataLibNode().serialize()).toBeTruthy();
   });
 });
 
@@ -1647,8 +1645,8 @@ async function withServerXml(
 
 describe("lib.pandoc — defaults coverage", () => {
   it("covers defaults() methods", () => {
-    expect(new ConvertTextPandocLibNode().defaults()).toBeTruthy();
-    expect(new ConvertFilePandocLibNode().defaults()).toBeTruthy();
+    expect(new ConvertTextPandocLibNode().serialize()).toBeTruthy();
+    expect(new ConvertFilePandocLibNode().serialize()).toBeTruthy();
   });
 });
 
@@ -1834,7 +1832,7 @@ describe("lib.pandoc — edge cases", () => {
 
 describe("lib.ytdlp — defaults coverage", () => {
   it("covers defaults() method", () => {
-    expect(new YtDlpDownloadLibNode().defaults()).toBeTruthy();
+    expect(new YtDlpDownloadLibNode().serialize()).toBeTruthy();
   });
 });
 

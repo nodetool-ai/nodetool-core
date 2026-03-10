@@ -311,7 +311,6 @@ export {
 } from "./nodes/audio.js";
 export {
   WaitNode,
-  WaitAliasNode,
   ManualTriggerNode,
   IntervalTriggerNode,
   WebhookTriggerNode,
@@ -349,7 +348,6 @@ export {
   ConcatVideoNode,
   TrimVideoNode,
   ResizeVideoNode,
-  ResizeVideoAliasNode,
   RotateVideoNode,
   SetSpeedVideoNode,
   OverlayVideoNode,

@@ -231,7 +231,7 @@ async function resolveTools(toolNames: string[]): Promise<Tool[]> {
 const host = process.env["HOST"] ?? "127.0.0.1";
 const port = Number(process.env["PORT"] ?? 7777);
 
-const apiOptions: HttpApiOptions = { metadataRoots };
+const apiOptions: HttpApiOptions = { metadataRoots, registry };
 
 // Adapter: bridge ws.WebSocket to WebSocketConnection interface
 class WsAdapter implements WebSocketConnection {

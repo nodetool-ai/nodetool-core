@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { NodeClass } from "@nodetool/node-sdk";
 
 type OCRLanguage =
@@ -29,25 +29,71 @@ const LANG_MAP: Record<string, string> = {
 
 export class PaddleOCRLibNode extends BaseNode {
   static readonly nodeType = "lib.ocr.PaddleOCR";
-  static readonly title = "Paddle OCR";
-  static readonly description =
-    "Performs Optical Character Recognition (OCR) on images using PaddleOCR.";
+            static readonly title = "Paddle OCR";
+            static readonly description = "Performs Optical Character Recognition (OCR) on images using PaddleOCR.\n    image, text, ocr, document\n\n    Use cases:\n    - Text extraction from images\n    - Document digitization\n    - Receipt/invoice processing\n    - Handwriting recognition";
+        static readonly metadataOutputTypes = {
+    boxes: "list[ocr_result]",
+    text: "str"
+  };
+  
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Input Image", description: "The image to perform OCR on" })
+  declare image: any;
 
-  defaults() {
-    return {
-      image: { type: "image", uri: "", asset_id: null, data: null },
-      language: "en" as OCRLanguage,
-    };
-  }
+  @prop({ type: "enum", default: "en", title: "Language", description: "Language code for OCR", values: [
+  "en",
+  "fr",
+  "de",
+  "es",
+  "it",
+  "pt",
+  "nl",
+  "pl",
+  "ro",
+  "hr",
+  "cs",
+  "hu",
+  "sk",
+  "sl",
+  "tr",
+  "vi",
+  "id",
+  "ms",
+  "la",
+  "ru",
+  "bg",
+  "uk",
+  "be",
+  "mn",
+  "ch",
+  "ja",
+  "ko",
+  "ar",
+  "fa",
+  "ur",
+  "hi",
+  "mr",
+  "ne",
+  "sa"
+] })
+  declare language: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    const image = (inputs.image ?? this._props.image ?? {}) as {
+    const image = (inputs.image ?? this.image ?? {}) as {
       uri?: string;
       data?: string | null;
     };
-    const language = String(inputs.language ?? this._props.language ?? "en") as OCRLanguage;
+    const language = String(inputs.language ?? this.language ?? "en") as OCRLanguage;
 
     const Tesseract = await import("tesseract.js");
     const createWorker = Tesseract.createWorker;

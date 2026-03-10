@@ -4,7 +4,7 @@ import {
   WebFetchLibNode,
   DownloadFileLibNode,
   SpiderCrawlLibNode,
-} from "../src/index.js";
+} from "../../src/index.js";
 
 async function withServer(
   handler: (req: http.IncomingMessage, res: http.ServerResponse) => void,

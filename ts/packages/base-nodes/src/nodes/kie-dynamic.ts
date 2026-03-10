@@ -1,7 +1,7 @@
 /**
  * Dynamic Kie.ai node that creates inputs/outputs from pasted API documentation.
  */
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { NodeClass } from "@nodetool/node-sdk";
 import { getApiKey, kieExecuteTask } from "./kie-base.js";
 
@@ -139,12 +139,25 @@ function parseKieDocs(text: string): KieSchemaBundle {
 
 export class KieAINode extends BaseNode {
   static readonly nodeType = "kie.dynamic_schema.KieAI";
-  static readonly title = "Kie AI";
-  static readonly description = "Dynamic Kie.ai node for running any model by pasting API documentation.";
+            static readonly title = "Kie AI";
+            static readonly description = "Dynamic Kie.ai node for running any kie.ai model.\n    kie, dynamic, schema, api, inference, runtime, model\n\n    Use cases:\n    - Call any kie.ai model without a dedicated Python node\n    - Prototype workflows with new models as they appear\n    - Run models by pasting their API documentation\n    - Access the full kie.ai catalog dynamically";
+          static readonly basicFields = [
+  "model_info"
+];
+          static readonly requiredSettings = [
+  "KIE_API_KEY"
+];
+          static readonly isDynamic = true;
+          static readonly supportsDynamicOutputs = true;
+  
+  @prop({ type: "int", default: 0, title: "Timeout Seconds", description: "Timeout in seconds for API calls (0 = use default)", min: 0, max: 3600 })
+  declare timeout_seconds: any;
 
-  defaults() {
-    return { model_info: "" };
-  }
+  @prop({ type: "str", default: "", title: "Model Info", description: "Paste the full API documentation from the kie.ai model page." })
+  declare model_info: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const modelInfo = String(inputs.model_info ?? "").trim();

@@ -56,9 +56,9 @@ describe("KieAINode static metadata", () => {
     expect(KieAINode.description).toContain("Dynamic Kie.ai node");
   });
 
-  it("defaults returns { model_info: '' }", () => {
+  it("defaults returns the current serialized metadata fields", () => {
     const node = new KieAINode();
-    expect(node.defaults()).toEqual({ model_info: "" });
+    expect(node.serialize()).toEqual({ timeout_seconds: 0, model_info: "" });
   });
 });
 

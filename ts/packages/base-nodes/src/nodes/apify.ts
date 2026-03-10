@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { NodeClass } from "@nodetool/node-sdk";
 
 // Constants
@@ -66,19 +66,30 @@ async function runActor(
 // ---------------------------------------------------------------------------
 export class ApifyWebScraperNode extends BaseNode {
   static readonly nodeType = "apify.scraping.ApifyWebScraper";
-  static readonly title = "Apify Web Scraper";
-  static readonly description =
-    "Scrape websites using Apify's Web Scraper actor. Extracts data from web pages using CSS selectors or custom JavaScript.";
+            static readonly title = "Apify Web Scraper";
+            static readonly description = "Scrape websites using Apify's Web Scraper actor.\n    Extracts data from web pages using CSS selectors or custom JavaScript.\n    apify, scraping, web, data, extraction, crawler";
+        static readonly metadataOutputTypes = {
+    output: "list[dict[str, any]]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "list[str]", default: null, title: "Start Urls", description: "List of URLs to scrape", required: true })
+  declare start_urls: any;
 
-  defaults() {
-    return {
-      start_urls: [],
-      link_selector: "a[href]",
-      page_function: "",
-      max_pages: 10,
-      wait_for_finish: 300,
-    };
-  }
+  @prop({ type: "str", default: "a[href]", title: "Link Selector", description: "CSS selector for links to follow" })
+  declare link_selector: any;
+
+  @prop({ type: "str", default: "", title: "Page Function", description: "JavaScript function to execute on each page" })
+  declare page_function: any;
+
+  @prop({ type: "int", default: 10, title: "Max Pages", description: "Maximum number of pages to scrape" })
+  declare max_pages: any;
+
+  @prop({ type: "int", default: 300, title: "Wait For Finish", description: "Maximum time to wait for scraping to complete (seconds)" })
+  declare wait_for_finish: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
@@ -112,20 +123,33 @@ export class ApifyWebScraperNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class ApifyGoogleSearchScraperNode extends BaseNode {
   static readonly nodeType = "apify.scraping.ApifyGoogleSearchScraper";
-  static readonly title = "Apify Google Search Scraper";
-  static readonly description =
-    "Scrape Google Search results using Apify's Google Search Scraper. Extract organic results, ads, related searches, and more.";
+            static readonly title = "Apify Google Search Scraper";
+            static readonly description = "Scrape Google Search results using Apify's Google Search Scraper.\n    Extract organic results, ads, related searches, and more.\n    apify, google, search, serp, scraping, seo";
+        static readonly metadataOutputTypes = {
+    output: "list[dict[str, any]]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "list[str]", default: null, title: "Queries", description: "List of search queries to execute", required: true })
+  declare queries: any;
 
-  defaults() {
-    return {
-      queries: [],
-      country_code: "us",
-      language_code: "en",
-      max_pages: 1,
-      results_per_page: 100,
-      wait_for_finish: 300,
-    };
-  }
+  @prop({ type: "str", default: "us", title: "Country Code", description: "Country code for Google search (e.g., 'us', 'uk', 'de')" })
+  declare country_code: any;
+
+  @prop({ type: "str", default: "en", title: "Language Code", description: "Language code for results (e.g., 'en', 'es', 'fr')" })
+  declare language_code: any;
+
+  @prop({ type: "int", default: 1, title: "Max Pages", description: "Maximum number of result pages per query" })
+  declare max_pages: any;
+
+  @prop({ type: "int", default: 100, title: "Results Per Page", description: "Number of results per page (10-100)" })
+  declare results_per_page: any;
+
+  @prop({ type: "int", default: 300, title: "Wait For Finish", description: "Maximum time to wait for scraping to complete (seconds)" })
+  declare wait_for_finish: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
@@ -162,20 +186,33 @@ export class ApifyGoogleSearchScraperNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class ApifyInstagramScraperNode extends BaseNode {
   static readonly nodeType = "apify.scraping.ApifyInstagramScraper";
-  static readonly title = "Apify Instagram Scraper";
-  static readonly description =
-    "Scrape Instagram profiles, posts, comments, and hashtags. Extract user data, post details, engagement metrics, and more.";
+            static readonly title = "Apify Instagram Scraper";
+            static readonly description = "Scrape Instagram profiles, posts, comments, and hashtags.\n    Extract user data, post details, engagement metrics, and more.\n    apify, instagram, social, media, scraping, posts, profiles";
+        static readonly metadataOutputTypes = {
+    output: "list[dict[str, any]]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "list[str]", default: null, title: "Usernames", description: "List of Instagram usernames to scrape", required: true })
+  declare usernames: any;
 
-  defaults() {
-    return {
-      usernames: [],
-      hashtags: [],
-      results_limit: 50,
-      scrape_comments: false,
-      scrape_likes: false,
-      wait_for_finish: 600,
-    };
-  }
+  @prop({ type: "list[str]", default: null, title: "Hashtags", description: "List of hashtags to scrape", required: true })
+  declare hashtags: any;
+
+  @prop({ type: "int", default: 50, title: "Results Limit", description: "Maximum number of posts to scrape per profile/hashtag" })
+  declare results_limit: any;
+
+  @prop({ type: "bool", default: false, title: "Scrape Comments", description: "Whether to scrape comments on posts" })
+  declare scrape_comments: any;
+
+  @prop({ type: "bool", default: false, title: "Scrape Likes", description: "Whether to scrape likes on posts" })
+  declare scrape_likes: any;
+
+  @prop({ type: "int", default: 600, title: "Wait For Finish", description: "Maximum time to wait for scraping to complete (seconds)" })
+  declare wait_for_finish: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
@@ -211,20 +248,33 @@ export class ApifyInstagramScraperNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class ApifyAmazonScraperNode extends BaseNode {
   static readonly nodeType = "apify.scraping.ApifyAmazonScraper";
-  static readonly title = "Apify Amazon Scraper";
-  static readonly description =
-    "Scrape Amazon product data including prices, reviews, and ratings. Extract product details, seller information, and customer reviews.";
+            static readonly title = "Apify Amazon Scraper";
+            static readonly description = "Scrape Amazon product data including prices, reviews, and ratings.\n    Extract product details, seller information, and customer reviews.\n    apify, amazon, ecommerce, products, scraping, prices, reviews";
+        static readonly metadataOutputTypes = {
+    output: "list[dict[str, any]]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "list[str]", default: null, title: "Search Queries", description: "List of search queries to execute on Amazon", required: true })
+  declare search_queries: any;
 
-  defaults() {
-    return {
-      search_queries: [],
-      product_urls: [],
-      country_code: "US",
-      max_items: 20,
-      scrape_reviews: false,
-      wait_for_finish: 600,
-    };
-  }
+  @prop({ type: "list[str]", default: null, title: "Product Urls", description: "List of Amazon product URLs to scrape", required: true })
+  declare product_urls: any;
+
+  @prop({ type: "str", default: "US", title: "Country Code", description: "Amazon country code (US, UK, DE, FR, ES, IT, etc.)" })
+  declare country_code: any;
+
+  @prop({ type: "int", default: 20, title: "Max Items", description: "Maximum number of products to scrape per search" })
+  declare max_items: any;
+
+  @prop({ type: "bool", default: false, title: "Scrape Reviews", description: "Whether to scrape product reviews" })
+  declare scrape_reviews: any;
+
+  @prop({ type: "int", default: 600, title: "Wait For Finish", description: "Maximum time to wait for scraping to complete (seconds)" })
+  declare wait_for_finish: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
@@ -260,20 +310,33 @@ export class ApifyAmazonScraperNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class ApifyYouTubeScraperNode extends BaseNode {
   static readonly nodeType = "apify.scraping.ApifyYouTubeScraper";
-  static readonly title = "Apify YouTube Scraper";
-  static readonly description =
-    "Scrape YouTube videos, channels, and playlists. Extract video metadata, comments, channel info, and statistics.";
+            static readonly title = "Apify You Tube Scraper";
+            static readonly description = "Scrape YouTube videos, channels, and playlists.\n    Extract video metadata, comments, channel info, and statistics.\n    apify, youtube, video, scraping, social, media, channels";
+        static readonly metadataOutputTypes = {
+    output: "list[dict[str, any]]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "list[str]", default: null, title: "Search Queries", description: "List of search queries to execute on YouTube", required: true })
+  declare search_queries: any;
 
-  defaults() {
-    return {
-      search_queries: [],
-      video_urls: [],
-      channel_urls: [],
-      max_results: 50,
-      scrape_comments: false,
-      wait_for_finish: 600,
-    };
-  }
+  @prop({ type: "list[str]", default: null, title: "Video Urls", description: "List of YouTube video URLs to scrape", required: true })
+  declare video_urls: any;
+
+  @prop({ type: "list[str]", default: null, title: "Channel Urls", description: "List of YouTube channel URLs to scrape", required: true })
+  declare channel_urls: any;
+
+  @prop({ type: "int", default: 50, title: "Max Results", description: "Maximum number of videos to scrape" })
+  declare max_results: any;
+
+  @prop({ type: "bool", default: false, title: "Scrape Comments", description: "Whether to scrape video comments" })
+  declare scrape_comments: any;
+
+  @prop({ type: "int", default: 600, title: "Wait For Finish", description: "Maximum time to wait for scraping to complete (seconds)" })
+  declare wait_for_finish: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
@@ -326,19 +389,30 @@ export class ApifyYouTubeScraperNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class ApifyTwitterScraperNode extends BaseNode {
   static readonly nodeType = "apify.scraping.ApifyTwitterScraper";
-  static readonly title = "Apify Twitter Scraper";
-  static readonly description =
-    "Scrape Twitter/X posts, profiles, and followers. Extract tweets, user information, and engagement metrics.";
+            static readonly title = "Apify Twitter Scraper";
+            static readonly description = "Scrape Twitter/X posts, profiles, and followers.\n    Extract tweets, user information, and engagement metrics.\n    apify, twitter, x, social, media, scraping, tweets, posts";
+        static readonly metadataOutputTypes = {
+    output: "list[dict[str, any]]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "list[str]", default: null, title: "Search Terms", description: "List of search terms to find tweets", required: true })
+  declare search_terms: any;
 
-  defaults() {
-    return {
-      search_terms: [],
-      usernames: [],
-      tweet_urls: [],
-      max_tweets: 100,
-      wait_for_finish: 600,
-    };
-  }
+  @prop({ type: "list[str]", default: null, title: "Usernames", description: "List of Twitter usernames to scrape", required: true })
+  declare usernames: any;
+
+  @prop({ type: "list[str]", default: null, title: "Tweet Urls", description: "List of specific tweet URLs to scrape", required: true })
+  declare tweet_urls: any;
+
+  @prop({ type: "int", default: 100, title: "Max Tweets", description: "Maximum number of tweets to scrape" })
+  declare max_tweets: any;
+
+  @prop({ type: "int", default: 600, title: "Wait For Finish", description: "Maximum time to wait for scraping to complete (seconds)" })
+  declare wait_for_finish: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
@@ -388,19 +462,30 @@ export class ApifyTwitterScraperNode extends BaseNode {
 // ---------------------------------------------------------------------------
 export class ApifyLinkedInScraperNode extends BaseNode {
   static readonly nodeType = "apify.scraping.ApifyLinkedInScraper";
-  static readonly title = "Apify LinkedIn Scraper";
-  static readonly description =
-    "Scrape LinkedIn profiles, company pages, and job postings. Extract professional information, connections, and company data.";
+            static readonly title = "Apify Linked In Scraper";
+            static readonly description = "Scrape LinkedIn profiles, company pages, and job postings.\n    Extract professional information, connections, and company data.\n    apify, linkedin, professional, social, scraping, profiles, jobs";
+        static readonly metadataOutputTypes = {
+    output: "list[dict[str, any]]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "list[str]", default: null, title: "Profile Urls", description: "List of LinkedIn profile URLs to scrape", required: true })
+  declare profile_urls: any;
 
-  defaults() {
-    return {
-      profile_urls: [],
-      company_urls: [],
-      job_search_urls: [],
-      max_results: 50,
-      wait_for_finish: 600,
-    };
-  }
+  @prop({ type: "list[str]", default: null, title: "Company Urls", description: "List of LinkedIn company page URLs to scrape", required: true })
+  declare company_urls: any;
+
+  @prop({ type: "list[str]", default: null, title: "Job Search Urls", description: "List of LinkedIn job search URLs", required: true })
+  declare job_search_urls: any;
+
+  @prop({ type: "int", default: 50, title: "Max Results", description: "Maximum number of results to scrape" })
+  declare max_results: any;
+
+  @prop({ type: "int", default: 600, title: "Wait For Finish", description: "Maximum time to wait for scraping to complete (seconds)" })
+  declare wait_for_finish: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>

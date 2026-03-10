@@ -1,36 +1,53 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { NodeClass } from "@nodetool/node-sdk";
 
 // ── Discord Nodes ───────────────────────────────────────────────────────────
 
 export class DiscordBotTrigger extends BaseNode {
   static readonly nodeType = "messaging.discord.DiscordBotTrigger";
-  static readonly title = "Discord Bot Trigger";
-  static readonly description =
-    "Trigger node that listens for Discord messages from a bot account. " +
-    "Connects to Discord using a bot token and emits events for incoming messages.";
+            static readonly title = "Discord Bot Trigger";
+            static readonly description = "Trigger node that listens for Discord messages from a bot account.\n\n    This trigger connects to Discord using a bot token and emits events\n    for incoming messages.";
+        static readonly metadataOutputTypes = {
+    message_id: "int",
+    content: "str",
+    author: "dict[str, any]",
+    channel: "dict[str, any]",
+    guild: "dict[str, any]",
+    attachments: "list[dict[str, any]]",
+    timestamp: "str",
+    source: "str",
+    event_type: "str"
+  };
+  
+          static readonly isStreamingOutput = true;
+  @prop({ type: "int", default: 0, title: "Max Events", description: "Maximum number of events to process (0 = unlimited)", min: 0 })
+  declare max_events: any;
 
-  defaults() {
-    return {
-      token: "",
-      channel_id: "",
-      allow_bot_messages: false,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Token", description: "Discord bot token" })
+  declare token: any;
+
+  @prop({ type: "str", default: null, title: "Channel Id", description: "Optional channel ID to filter messages" })
+  declare channel_id: any;
+
+  @prop({ type: "bool", default: false, title: "Allow Bot Messages", description: "Include messages authored by bots" })
+  declare allow_bot_messages: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
     const secrets = (inputs._secrets as Record<string, string>) ?? {};
     const token =
-      String(inputs.token ?? this._props.token ?? "") ||
+      String(inputs.token ?? this.token ?? "") ||
       secrets.DISCORD_BOT_TOKEN ||
       "";
     const channelId = String(
-      inputs.channel_id ?? this._props.channel_id ?? ""
+      inputs.channel_id ?? this.channel_id ?? ""
     );
     const allowBotMessages = Boolean(
-      inputs.allow_bot_messages ?? this._props.allow_bot_messages ?? false
+      inputs.allow_bot_messages ?? this.allow_bot_messages ?? false
     );
 
     if (!token) {
@@ -61,34 +78,44 @@ export class DiscordBotTrigger extends BaseNode {
 
 export class DiscordSendMessage extends BaseNode {
   static readonly nodeType = "messaging.discord.DiscordSendMessage";
-  static readonly title = "Discord Send Message";
-  static readonly description =
-    "Sends a message to a Discord channel using a bot token.";
+            static readonly title = "Discord Send Message";
+            static readonly description = "Node that sends a message to a Discord channel using a bot token.";
+        static readonly metadataOutputTypes = {
+    output: "dict[str, any]"
+  };
+  
+  @prop({ type: "str", default: "", title: "Token", description: "Discord bot token" })
+  declare token: any;
 
-  defaults() {
-    return {
-      token: "",
-      channel_id: "",
-      content: "",
-      tts: false,
-      embeds: [],
-    };
-  }
+  @prop({ type: "str", default: "", title: "Channel Id", description: "Target channel ID" })
+  declare channel_id: any;
+
+  @prop({ type: "str", default: "", title: "Content", description: "Message content" })
+  declare content: any;
+
+  @prop({ type: "bool", default: false, title: "Tts", description: "Send as text-to-speech" })
+  declare tts: any;
+
+  @prop({ type: "list[dict[str, any]]", default: null, title: "Embeds", description: "Embeds as Discord embed dictionaries", required: true })
+  declare embeds: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
     const secrets = (inputs._secrets as Record<string, string>) ?? {};
     const token =
-      String(inputs.token ?? this._props.token ?? "") ||
+      String(inputs.token ?? this.token ?? "") ||
       secrets.DISCORD_BOT_TOKEN ||
       "";
     const channelId = String(
-      inputs.channel_id ?? this._props.channel_id ?? ""
+      inputs.channel_id ?? this.channel_id ?? ""
     );
-    const content = String(inputs.content ?? this._props.content ?? "");
-    const tts = Boolean(inputs.tts ?? this._props.tts ?? false);
-    const embeds = (inputs.embeds ?? this._props.embeds ?? []) as unknown[];
+    const content = String(inputs.content ?? this.content ?? "");
+    const tts = Boolean(inputs.tts ?? this.tts ?? false);
+    const embeds = (inputs.embeds ?? this.embeds ?? []) as unknown[];
 
     if (!token) {
       throw new Error("Discord bot token is required");
@@ -135,37 +162,63 @@ export class DiscordSendMessage extends BaseNode {
 
 export class TelegramBotTrigger extends BaseNode {
   static readonly nodeType = "messaging.telegram.TelegramBotTrigger";
-  static readonly title = "Telegram Bot Trigger";
-  static readonly description =
-    "Trigger node that listens for Telegram messages using long polling. " +
-    "Connects to Telegram using a bot token and emits events for incoming messages.";
+            static readonly title = "Telegram Bot Trigger";
+            static readonly description = "Trigger node that listens for Telegram messages using long polling.\n\n    This trigger connects to Telegram using a bot token and emits events\n    for incoming messages.";
+        static readonly metadataOutputTypes = {
+    update_id: "int",
+    update_type: "str",
+    message_id: "int",
+    text: "str",
+    caption: "str",
+    entities: "list[dict[str, any]]",
+    chat: "dict[str, any]",
+    from_user: "dict[str, any]",
+    attachments: "list[dict[str, any]]",
+    timestamp: "str",
+    source: "str",
+    event_type: "str"
+  };
+  
+          static readonly isStreamingOutput = true;
+  @prop({ type: "int", default: 0, title: "Max Events", description: "Maximum number of events to process (0 = unlimited)", min: 0 })
+  declare max_events: any;
 
-  defaults() {
-    return {
-      token: "",
-      chat_id: 0,
-      allow_bot_messages: false,
-      include_edited_messages: false,
-      poll_timeout_seconds: 30,
-      poll_interval_seconds: 0.2,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Token", description: "Telegram bot token" })
+  declare token: any;
+
+  @prop({ type: "int", default: null, title: "Chat Id", description: "Optional chat ID to filter messages" })
+  declare chat_id: any;
+
+  @prop({ type: "bool", default: false, title: "Allow Bot Messages", description: "Include messages authored by bots" })
+  declare allow_bot_messages: any;
+
+  @prop({ type: "bool", default: false, title: "Include Edited Messages", description: "Include edited messages" })
+  declare include_edited_messages: any;
+
+  @prop({ type: "int", default: 30, title: "Poll Timeout Seconds", description: "Long polling timeout in seconds", min: 1, max: 60 })
+  declare poll_timeout_seconds: any;
+
+  @prop({ type: "float", default: 0.2, title: "Poll Interval Seconds", description: "Delay between polling requests", min: 0 })
+  declare poll_interval_seconds: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
     const secrets = (inputs._secrets as Record<string, string>) ?? {};
     const token =
-      String(inputs.token ?? this._props.token ?? "") ||
+      String(inputs.token ?? this.token ?? "") ||
       secrets.TELEGRAM_BOT_TOKEN ||
       "";
-    const chatId = Number(inputs.chat_id ?? this._props.chat_id ?? 0);
+    const chatId = Number(inputs.chat_id ?? this.chat_id ?? 0);
     const allowBotMessages = Boolean(
-      inputs.allow_bot_messages ?? this._props.allow_bot_messages ?? false
+      inputs.allow_bot_messages ?? this.allow_bot_messages ?? false
     );
     const includeEditedMessages = Boolean(
       inputs.include_edited_messages ??
-        this._props.include_edited_messages ??
+        this.include_edited_messages ??
         false
     );
 
@@ -204,47 +257,61 @@ export class TelegramBotTrigger extends BaseNode {
 
 export class TelegramSendMessage extends BaseNode {
   static readonly nodeType = "messaging.telegram.TelegramSendMessage";
-  static readonly title = "Telegram Send Message";
-  static readonly description =
-    "Sends a message to a Telegram chat using a bot token.";
+            static readonly title = "Telegram Send Message";
+            static readonly description = "Node that sends a message to a Telegram chat using a bot token.";
+        static readonly metadataOutputTypes = {
+    output: "dict[str, any]"
+  };
+  
+  @prop({ type: "str", default: "", title: "Token", description: "Telegram bot token" })
+  declare token: any;
 
-  defaults() {
-    return {
-      token: "",
-      chat_id: 0,
-      text: "",
-      parse_mode: "",
-      disable_web_page_preview: false,
-      disable_notification: false,
-      reply_to_message_id: 0,
-    };
-  }
+  @prop({ type: "int", default: 0, title: "Chat Id", description: "Target chat ID", min: 1 })
+  declare chat_id: any;
+
+  @prop({ type: "str", default: "", title: "Text", description: "Message text" })
+  declare text: any;
+
+  @prop({ type: "str", default: "", title: "Parse Mode", description: "Optional parse mode (MarkdownV2 or HTML)" })
+  declare parse_mode: any;
+
+  @prop({ type: "bool", default: false, title: "Disable Web Page Preview", description: "Disable link previews" })
+  declare disable_web_page_preview: any;
+
+  @prop({ type: "bool", default: false, title: "Disable Notification", description: "Send silently" })
+  declare disable_notification: any;
+
+  @prop({ type: "int", default: null, title: "Reply To Message Id", description: "Reply to a specific message ID", min: 1 })
+  declare reply_to_message_id: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
     const secrets = (inputs._secrets as Record<string, string>) ?? {};
     const token =
-      String(inputs.token ?? this._props.token ?? "") ||
+      String(inputs.token ?? this.token ?? "") ||
       secrets.TELEGRAM_BOT_TOKEN ||
       "";
-    const chatId = Number(inputs.chat_id ?? this._props.chat_id ?? 0);
-    const text = String(inputs.text ?? this._props.text ?? "");
+    const chatId = Number(inputs.chat_id ?? this.chat_id ?? 0);
+    const text = String(inputs.text ?? this.text ?? "");
     const parseMode = String(
-      inputs.parse_mode ?? this._props.parse_mode ?? ""
+      inputs.parse_mode ?? this.parse_mode ?? ""
     );
     const disableWebPagePreview = Boolean(
       inputs.disable_web_page_preview ??
-        this._props.disable_web_page_preview ??
+        this.disable_web_page_preview ??
         false
     );
     const disableNotification = Boolean(
       inputs.disable_notification ??
-        this._props.disable_notification ??
+        this.disable_notification ??
         false
     );
     const replyToMessageId = Number(
-      inputs.reply_to_message_id ?? this._props.reply_to_message_id ?? 0
+      inputs.reply_to_message_id ?? this.reply_to_message_id ?? 0
     );
 
     if (!token) {

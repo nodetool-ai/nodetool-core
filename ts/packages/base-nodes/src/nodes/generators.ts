@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { ProcessingContext } from "@nodetool/runtime";
 
 type Row = Record<string, unknown>;
@@ -228,22 +228,49 @@ async function streamProviderText(
 
 export class StructuredOutputGeneratorNode extends BaseNode {
   static readonly nodeType = "nodetool.generators.StructuredOutputGenerator";
-  static readonly title = "Structured Output Generator";
-  static readonly description = "Generate a structured JSON object from instructions.";
+            static readonly title = "Structured Output Generator";
+            static readonly description = "Generate structured JSON objects from instructions using LLM providers.\n    data-generation, structured-data, json, synthesis\n\n    Specialized for creating structured information:\n    - Generating JSON that follows dynamic schemas\n    - Fabricating records from requirements and guidance\n    - Simulating sample data for downstream workflows\n    - Producing consistent structured outputs for testing";
+          static readonly basicFields = [
+  "instructions",
+  "context",
+  "model"
+];
+          static readonly supportsDynamicOutputs = true;
+  
+  @prop({ type: "str", default: "\nYou are a structured data generator focused on JSON outputs.\n\nGoal\n- Produce a high-quality JSON object that matches <JSON_SCHEMA> using the guidance in <INSTRUCTIONS> and any supplemental <CONTEXT>.\n\nOutput format (MANDATORY)\n- Output exactly ONE fenced code block labeled json containing ONLY the JSON object:\n\n  ```json\n  { ...single JSON object matching <JSON_SCHEMA>... }\n  ```\n\n- No additional prose before or after the block.\n\nGeneration rules\n- Invent plausible, internally consistent values when not explicitly provided.\n- Honor all constraints from <JSON_SCHEMA> (types, enums, ranges, formats).\n- Prefer ISO 8601 for dates/times when applicable.\n- Ensure numbers respect reasonable magnitudes and relationships described in <INSTRUCTIONS>.\n- Avoid referencing external sources; rely solely on the provided guidance.\n\nValidation\n- Ensure the final JSON validates against <JSON_SCHEMA> exactly.\n", title: "System Prompt", description: "The system prompt guiding JSON generation." })
+  declare system_prompt: any;
 
-  defaults() {
-    return { instructions: "", context: "", schema: {} };
-  }
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "Model to use for structured generation." })
+  declare model: any;
+
+  @prop({ type: "str", default: "", title: "Instructions", description: "Detailed instructions for the structured output." })
+  declare instructions: any;
+
+  @prop({ type: "str", default: "", title: "Context", description: "Optional context to ground the generation." })
+  declare context: any;
+
+  @prop({ type: "int", default: 4096, title: "Max Tokens", description: "The maximum number of tokens to generate.", min: 1, max: 16384 })
+  declare max_tokens: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const { providerId, modelId } = getModelConfig(inputs, this._props);
-    const schema = inputs.schema ?? this._props.schema;
+    const { providerId, modelId } = getModelConfig(inputs, this.serialize());
+    const schema = inputs.schema ?? this.schema;
     if (schema && typeof schema === "object" && !Array.isArray(schema) && hasProviderSupport(context, providerId, modelId)) {
-      const instructions = asText(inputs.instructions ?? this._props.instructions ?? "");
-      const extraContext = asText(inputs.context ?? this._props.context ?? "");
+      const instructions = asText(inputs.instructions ?? this.instructions ?? "");
+      const extraContext = asText(inputs.context ?? this.context ?? "");
       const result = await context.runProviderPrediction({
         provider: providerId,
         capability: "generate_message",
@@ -288,8 +315,8 @@ export class StructuredOutputGeneratorNode extends BaseNode {
       return out;
     }
 
-    const instructions = asText(inputs.instructions ?? this._props.instructions ?? "");
-    const contextText = asText(inputs.context ?? this._props.context ?? "");
+    const instructions = asText(inputs.instructions ?? this.instructions ?? "");
+    const contextText = asText(inputs.context ?? this.context ?? "");
     return {
       output: {
         instructions,
@@ -301,31 +328,65 @@ export class StructuredOutputGeneratorNode extends BaseNode {
 
 export class DataGeneratorNode extends BaseNode {
   static readonly nodeType = "nodetool.generators.DataGenerator";
-  static readonly title = "Data Generator";
-  static readonly description = "Generate tabular records and dataframe output.";
-  static readonly isStreamingOutput = true;
+            static readonly title = "Data Generator";
+            static readonly description = "LLM Agent to create a dataframe based on a user prompt.\n    llm, dataframe creation, data structuring\n\n    Use cases:\n    - Generating structured data from natural language descriptions\n    - Creating sample datasets for testing or demonstration\n    - Converting unstructured text into tabular format";
+        static readonly metadataOutputTypes = {
+    record: "dict",
+    dataframe: "dataframe",
+    index: "int"
+  };
+          static readonly basicFields = [
+  "prompt",
+  "model",
+  "columns"
+];
+  
+            static readonly isStreamingOutput = true;
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "The model to use for data generation." })
+  declare model: any;
 
-  defaults() {
-    return { prompt: "", input_text: "", columns: [] };
-  }
+  @prop({ type: "str", default: "", title: "Prompt", description: "The user prompt" })
+  declare prompt: any;
+
+  @prop({ type: "str", default: "", title: "Input Text", description: "The input text to be analyzed by the agent." })
+  declare input_text: any;
+
+  @prop({ type: "int", default: 4096, title: "Max Tokens", description: "The maximum number of tokens to generate.", min: 1, max: 100000 })
+  declare max_tokens: any;
+
+  @prop({ type: "record_type", default: {
+  "type": "record_type",
+  "columns": []
+}, title: "Columns", description: "The columns to use in the dataframe." })
+  declare columns: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const prompt = asText(inputs.prompt ?? this._props.prompt ?? "");
-    const inputText = asText(inputs.input_text ?? this._props.input_text ?? "");
-    const columnsInput = inputs.columns ?? this._props.columns;
+    const prompt = asText(inputs.prompt ?? this.prompt ?? "");
+    const inputText = asText(inputs.input_text ?? this.input_text ?? "");
+    const columnsInput = inputs.columns ?? this.columns;
     const columns = parseColumns(columnsInput);
     const count = parseRequestedCount(`${prompt} ${inputText}`, 5);
-    const { providerId, modelId } = getModelConfig(inputs, this._props);
+    const { providerId, modelId } = getModelConfig(inputs, this.serialize());
     if (hasProviderSupport(context, providerId, modelId)) {
       const providerText = await generateProviderText(
         context,
         providerId,
         modelId,
         [prompt, inputText].filter(Boolean).join("\n\n"),
-        Number(inputs.max_tokens ?? this._props.max_tokens ?? 256)
+        Number(inputs.max_tokens ?? this.max_tokens ?? 256)
       );
       const rows = parseMarkdownTable(providerText, columnsInput);
       if (rows.length > 0) {
@@ -340,17 +401,17 @@ export class DataGeneratorNode extends BaseNode {
     inputs: Record<string, unknown>,
     context?: ProcessingContext
   ): AsyncGenerator<Record<string, unknown>> {
-    const { providerId, modelId } = getModelConfig(inputs, this._props);
-    const columnsInput = inputs.columns ?? this._props.columns;
+    const { providerId, modelId } = getModelConfig(inputs, this.serialize());
+    const columnsInput = inputs.columns ?? this.columns;
     if (hasProviderSupport(context, providerId, modelId)) {
-      const prompt = asText(inputs.prompt ?? this._props.prompt ?? "");
-      const inputText = asText(inputs.input_text ?? this._props.input_text ?? "");
+      const prompt = asText(inputs.prompt ?? this.prompt ?? "");
+      const inputText = asText(inputs.input_text ?? this.input_text ?? "");
       const providerText = await streamProviderText(
         context,
         providerId,
         modelId,
         [prompt, inputText].filter(Boolean).join("\n\n"),
-        Number(inputs.max_tokens ?? this._props.max_tokens ?? 256)
+        Number(inputs.max_tokens ?? this.max_tokens ?? 256)
       );
       const rows = parseMarkdownTable(providerText, columnsInput);
       if (rows.length > 0) {
@@ -373,28 +434,54 @@ export class DataGeneratorNode extends BaseNode {
 
 export class ListGeneratorNode extends BaseNode {
   static readonly nodeType = "nodetool.generators.ListGenerator";
-  static readonly title = "List Generator";
-  static readonly description = "Generate a list of items from prompt text.";
-  static readonly isStreamingOutput = true;
+            static readonly title = "List Generator";
+            static readonly description = "LLM Agent to create a stream of strings based on a user prompt.\n    llm, text streaming\n\n    Use cases:\n    - Generating text from natural language descriptions\n    - Streaming responses from an LLM";
+        static readonly metadataOutputTypes = {
+    item: "str",
+    index: "int"
+  };
+          static readonly basicFields = [
+  "prompt",
+  "model"
+];
+  
+            static readonly isStreamingOutput = true;
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "The model to use for string generation." })
+  declare model: any;
 
-  defaults() {
-    return { prompt: "", input_text: "" };
-  }
+  @prop({ type: "str", default: "", title: "Prompt", description: "The user prompt" })
+  declare prompt: any;
+
+  @prop({ type: "str", default: "", title: "Input Text", description: "The input text to be analyzed by the agent." })
+  declare input_text: any;
+
+  @prop({ type: "int", default: 4096, title: "Max Tokens", description: "The maximum number of tokens to generate.", min: 1, max: 100000 })
+  declare max_tokens: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const prompt = asText(inputs.prompt ?? this._props.prompt ?? "");
-    const inputText = asText(inputs.input_text ?? this._props.input_text ?? "");
-    const { providerId, modelId } = getModelConfig(inputs, this._props);
+    const prompt = asText(inputs.prompt ?? this.prompt ?? "");
+    const inputText = asText(inputs.input_text ?? this.input_text ?? "");
+    const { providerId, modelId } = getModelConfig(inputs, this.serialize());
     if (hasProviderSupport(context, providerId, modelId)) {
       const providerText = await generateProviderText(
         context,
         providerId,
         modelId,
         [prompt, inputText].filter(Boolean).join("\n\n"),
-        Number(inputs.max_tokens ?? this._props.max_tokens ?? 128)
+        Number(inputs.max_tokens ?? this.max_tokens ?? 128)
       );
       const items = parseListItems(providerText);
       if (items.length === 0) {
@@ -412,16 +499,16 @@ export class ListGeneratorNode extends BaseNode {
     inputs: Record<string, unknown>,
     context?: ProcessingContext
   ): AsyncGenerator<Record<string, unknown>> {
-    const { providerId, modelId } = getModelConfig(inputs, this._props);
+    const { providerId, modelId } = getModelConfig(inputs, this.serialize());
     if (hasProviderSupport(context, providerId, modelId)) {
-      const prompt = asText(inputs.prompt ?? this._props.prompt ?? "");
-      const inputText = asText(inputs.input_text ?? this._props.input_text ?? "");
+      const prompt = asText(inputs.prompt ?? this.prompt ?? "");
+      const inputText = asText(inputs.input_text ?? this.input_text ?? "");
       const providerText = await streamProviderText(
         context,
         providerId,
         modelId,
         [prompt, inputText].filter(Boolean).join("\n\n"),
-        Number(inputs.max_tokens ?? this._props.max_tokens ?? 128)
+        Number(inputs.max_tokens ?? this.max_tokens ?? 128)
       );
       const items = parseListItems(providerText);
       if (items.length === 0) {
@@ -443,16 +530,49 @@ export class ListGeneratorNode extends BaseNode {
 
 export class ChartGeneratorNode extends BaseNode {
   static readonly nodeType = "nodetool.generators.ChartGenerator";
-  static readonly title = "Chart Generator";
-  static readonly description = "Build a simple Plotly-compatible chart config.";
+            static readonly title = "Chart Generator";
+            static readonly description = "LLM Agent to create Plotly Express charts based on natural language descriptions.\n    llm, data visualization, charts\n\n    Use cases:\n    - Generating interactive charts from natural language descriptions\n    - Creating data visualizations with minimal configuration\n    - Converting data analysis requirements into visual representations";
+        static readonly metadataOutputTypes = {
+    output: "plotly_config"
+  };
+          static readonly basicFields = [
+  "prompt",
+  "data",
+  "model"
+];
+  
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "The model to use for chart generation." })
+  declare model: any;
 
-  defaults() {
-    return { prompt: "", data: { rows: [] } };
-  }
+  @prop({ type: "str", default: "", title: "Prompt", description: "Natural language description of the desired chart" })
+  declare prompt: any;
+
+  @prop({ type: "dataframe", default: {
+  "type": "dataframe",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null,
+  "columns": null
+}, title: "Data", description: "The data to visualize" })
+  declare data: any;
+
+  @prop({ type: "int", default: 4096, title: "Max Tokens", description: "The maximum number of tokens to generate.", min: 1, max: 100000 })
+  declare max_tokens: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const prompt = asText(inputs.prompt ?? this._props.prompt ?? "");
-    const data = inputs.data ?? this._props.data ?? { rows: [] };
+    const prompt = asText(inputs.prompt ?? this.prompt ?? "");
+    const data = inputs.data ?? this.data ?? { rows: [] };
     const rows = Array.isArray((data as { rows?: unknown }).rows)
       ? ((data as { rows: Row[] }).rows ?? [])
       : [];
@@ -472,17 +592,59 @@ export class ChartGeneratorNode extends BaseNode {
 
 export class SVGGeneratorNode extends BaseNode {
   static readonly nodeType = "nodetool.generators.SVGGenerator";
-  static readonly title = "SVG Generator";
-  static readonly description = "Generate basic SVG content from prompt.";
+            static readonly title = "SVGGenerator";
+            static readonly description = "LLM Agent to create SVG elements based on user prompts.\n    svg, generator, vector, graphics\n\n    Use cases:\n    - Creating vector graphics from text descriptions\n    - Generating scalable illustrations\n    - Creating custom icons and diagrams";
+        static readonly metadataOutputTypes = {
+    output: "list[svg_element]"
+  };
+          static readonly basicFields = [
+  "prompt",
+  "image",
+  "audio",
+  "model"
+];
+  
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "empty",
+  "id": "",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "The language model to use for SVG generation." })
+  declare model: any;
 
-  defaults() {
-    return { prompt: "", width: 512, height: 512 };
-  }
+  @prop({ type: "str", default: "", title: "Prompt", description: "The user prompt for SVG generation" })
+  declare prompt: any;
+
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "Image to use for generation" })
+  declare image: any;
+
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "Audio to use for generation" })
+  declare audio: any;
+
+  @prop({ type: "int", default: 8192, title: "Max Tokens", description: "The maximum number of tokens to generate.", min: 1, max: 100000 })
+  declare max_tokens: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const prompt = asText(inputs.prompt ?? this._props.prompt ?? "");
-    const width = Number(inputs.width ?? this._props.width ?? 512) || 512;
-    const height = Number(inputs.height ?? this._props.height ?? 512) || 512;
+    const prompt = asText(inputs.prompt ?? this.prompt ?? "");
+    const width = Number(inputs.width ?? this.width ?? 512) || 512;
+    const height = Number(inputs.height ?? this.height ?? 512) || 512;
     const text = prompt || "SVG";
     const safeText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#f2f2f2"/><text x="16" y="32" font-size="20" fill="#111">${safeText}</text></svg>`;

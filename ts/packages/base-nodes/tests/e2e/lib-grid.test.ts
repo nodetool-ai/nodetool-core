@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { LIB_GRID_NODES, registerBaseNodes } from "../src/index.js";
+import { LIB_GRID_NODES, registerBaseNodes } from "../../src/index.js";
 import { NodeRegistry } from "@nodetool/node-sdk";
 
 async function solid(width: number, height: number, color: string): Promise<Record<string, unknown>> {

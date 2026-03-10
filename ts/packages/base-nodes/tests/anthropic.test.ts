@@ -13,7 +13,7 @@ describe("ClaudeAgentNode", () => {
 
   it("returns correct defaults", () => {
     const node = new ClaudeAgentNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.prompt).toBe("");
     expect(d.max_turns).toBe(20);
     expect(d.allowed_tools).toEqual(["Read", "Write", "Bash"]);

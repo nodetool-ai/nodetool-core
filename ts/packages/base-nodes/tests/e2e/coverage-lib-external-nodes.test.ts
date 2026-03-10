@@ -30,12 +30,12 @@ import {
   ConvertToMarkdownLibNode,
   PaddleOCRLibNode,
   LIB_COMPAT_PY_NODES,
-} from "../src/index.js";
+} from "../../src/index.js";
 
-import { SpiderCrawlLibNode, WebFetchLibNode, DownloadFileLibNode } from "../src/nodes/lib-browser.js";
+import { SpiderCrawlLibNode, WebFetchLibNode, DownloadFileLibNode } from "../../src/nodes/lib-browser.js";
 
 // BrowserUseLibNode is not re-exported from index; import directly
-import { BrowserUseLibNode } from "../src/nodes/lib-browser.js";
+import { BrowserUseLibNode } from "../../src/nodes/lib-browser.js";
 
 // Supabase nodes with qualified imports to avoid name collisions with sqlite
 import {
@@ -44,7 +44,7 @@ import {
   DeleteLibNode as SupabaseDeleteLibNode,
   UpsertLibNode as SupabaseUpsertLibNode,
   RPCLibNode as SupabaseRPCLibNode,
-} from "../src/nodes/lib-supabase.js";
+} from "../../src/nodes/lib-supabase.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -123,12 +123,12 @@ describe("lib.browser.DownloadFile (coverage)", () => {
   });
 
   it("defaults method", () => {
-    const d = new DownloadFileLibNode().defaults();
+    const d = new DownloadFileLibNode().serialize();
     expect(d).toHaveProperty("url");
   });
 
   it("WebFetchLibNode defaults", () => {
-    const d = new WebFetchLibNode().defaults();
+    const d = new WebFetchLibNode().serialize();
     expect(d).toHaveProperty("url");
     expect(d).toHaveProperty("selector");
   });
@@ -1020,102 +1020,102 @@ describe("lib.markitdown.ConvertToMarkdown", () => {
 
 describe("defaults() methods", () => {
   it("BrowserLibNode defaults", () => {
-    const d = new BrowserLibNode().defaults();
+    const d = new BrowserLibNode().serialize();
     expect(d).toHaveProperty("url");
     expect(d).toHaveProperty("timeout");
   });
 
   it("ScreenshotLibNode defaults", () => {
-    const d = new ScreenshotLibNode().defaults();
+    const d = new ScreenshotLibNode().serialize();
     expect(d).toHaveProperty("url");
     expect(d).toHaveProperty("selector");
     expect(d).toHaveProperty("timeout");
   });
 
   it("BrowserNavigationLibNode defaults", () => {
-    const d = new BrowserNavigationLibNode().defaults();
+    const d = new BrowserNavigationLibNode().serialize();
     expect(d).toHaveProperty("action");
     expect(d).toHaveProperty("extract_type");
   });
 
   it("SpiderCrawlLibNode defaults", () => {
-    const d = new SpiderCrawlLibNode().defaults();
+    const d = new SpiderCrawlLibNode().serialize();
     expect(d).toHaveProperty("start_url");
     expect(d).toHaveProperty("max_depth");
     expect(d).toHaveProperty("delay_ms");
   });
 
   it("BrowserUseLibNode defaults", () => {
-    const d = new BrowserUseLibNode().defaults();
+    const d = new BrowserUseLibNode().serialize();
     expect(d).toHaveProperty("task");
     expect(d).toHaveProperty("model");
   });
 
   it("SendEmailLibNode defaults", () => {
-    const d = new SendEmailLibNode().defaults();
+    const d = new SendEmailLibNode().serialize();
     expect(d).toHaveProperty("smtp_server");
     expect(d).toHaveProperty("to_address");
   });
 
   it("GmailSearchLibNode defaults", () => {
-    const d = new GmailSearchLibNode().defaults();
+    const d = new GmailSearchLibNode().serialize();
     expect(d).toHaveProperty("folder");
     expect(d).toHaveProperty("max_results");
   });
 
   it("AddLabelLibNode defaults", () => {
-    const d = new AddLabelLibNode().defaults();
+    const d = new AddLabelLibNode().serialize();
     expect(d).toHaveProperty("message_id");
     expect(d).toHaveProperty("label");
   });
 
   it("MoveToArchiveLibNode defaults", () => {
-    const d = new MoveToArchiveLibNode().defaults();
+    const d = new MoveToArchiveLibNode().serialize();
     expect(d).toHaveProperty("message_id");
   });
 
   it("SelectLibNode defaults", () => {
-    const d = new SelectLibNode().defaults();
+    const d = new SelectLibNode().serialize();
     expect(d).toHaveProperty("table_name");
     expect(d).toHaveProperty("filters");
   });
 
   it("SupabaseInsertLibNode defaults", () => {
-    const d = new SupabaseInsertLibNode().defaults();
+    const d = new SupabaseInsertLibNode().serialize();
     expect(d).toHaveProperty("records");
     expect(d).toHaveProperty("return_rows");
   });
 
   it("SupabaseUpdateLibNode defaults", () => {
-    const d = new SupabaseUpdateLibNode().defaults();
+    const d = new SupabaseUpdateLibNode().serialize();
     expect(d).toHaveProperty("values");
     expect(d).toHaveProperty("filters");
   });
 
   it("SupabaseDeleteLibNode defaults", () => {
-    const d = new SupabaseDeleteLibNode().defaults();
+    const d = new SupabaseDeleteLibNode().serialize();
     expect(d).toHaveProperty("filters");
   });
 
   it("SupabaseUpsertLibNode defaults", () => {
-    const d = new SupabaseUpsertLibNode().defaults();
+    const d = new SupabaseUpsertLibNode().serialize();
     expect(d).toHaveProperty("records");
   });
 
   it("SupabaseRPCLibNode defaults", () => {
-    const d = new SupabaseRPCLibNode().defaults();
+    const d = new SupabaseRPCLibNode().serialize();
     expect(d).toHaveProperty("function");
     expect(d).toHaveProperty("params");
   });
 
   it("PaddleOCRLibNode defaults", () => {
-    const d = new PaddleOCRLibNode().defaults();
+    const d = new PaddleOCRLibNode().serialize();
     expect(d).toHaveProperty("image");
     expect(d).toHaveProperty("language");
   });
 
   it("ConvertToMarkdownLibNode defaults", () => {
-    const d = new ConvertToMarkdownLibNode().defaults();
+    const d = new ConvertToMarkdownLibNode().serialize();
     expect(d).toHaveProperty("document");
   });
 });

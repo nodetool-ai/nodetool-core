@@ -451,21 +451,21 @@ describe("GoogleShoppingNode", () => {
 describe("Node defaults coverage", () => {
   it("GoogleSearchNode defaults", () => {
     const node = new GoogleSearchNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.keyword).toBe("");
     expect(d.num_results).toBe(10);
   });
 
   it("GoogleNewsNode defaults", () => {
     const node = new GoogleNewsNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.keyword).toBe("");
     expect(d.num_results).toBe(10);
   });
 
   it("GoogleImagesNode defaults", () => {
     const node = new GoogleImagesNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.keyword).toBe("");
     expect(d.image_url).toBe("");
     expect(d.num_results).toBe(20);
@@ -473,14 +473,14 @@ describe("Node defaults coverage", () => {
 
   it("GoogleFinanceNode defaults", () => {
     const node = new GoogleFinanceNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.query).toBe("");
     expect(d.window).toBe("");
   });
 
   it("GoogleJobsNode defaults", () => {
     const node = new GoogleJobsNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.query).toBe("");
     expect(d.location).toBe("");
     expect(d.num_results).toBe(10);
@@ -488,21 +488,21 @@ describe("Node defaults coverage", () => {
 
   it("GoogleLensNode defaults", () => {
     const node = new GoogleLensNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.image_url).toBe("");
     expect(d.num_results).toBe(10);
   });
 
   it("GoogleMapsNode defaults", () => {
     const node = new GoogleMapsNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.query).toBe("");
     expect(d.num_results).toBe(10);
   });
 
   it("GoogleShoppingNode defaults", () => {
     const node = new GoogleShoppingNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.query).toBe("");
     expect(d.country).toBe("us");
     expect(d.min_price).toBe(0);

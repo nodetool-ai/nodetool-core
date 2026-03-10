@@ -442,7 +442,7 @@ describe("data nodes", () => {
 
   it("SchemaNode returns columns", async () => {
     const res = await new SchemaNode().process({});
-    expect(res.output).toEqual({});
+    expect(res.output).toEqual({ type: "record_type", columns: [] });
   });
 
   it("FilterDataframeNode filters by condition", async () => {
@@ -708,7 +708,7 @@ describe("data nodes", () => {
 
   it("FilterNoneNode filters null values", async () => {
     const res1 = await new FilterNoneNode().process({ value: null });
-    expect(res1).toEqual({});
+    expect(res1).toEqual({ output: [] });
 
     const res2 = await new FilterNoneNode().process({ value: 42 });
     expect(res2).toEqual({ output: 42 });

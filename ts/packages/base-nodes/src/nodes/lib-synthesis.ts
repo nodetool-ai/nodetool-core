@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 
 type OscillatorWaveform = "sine" | "square" | "sawtooth" | "triangle";
 type PitchEnvelopeCurve = "linear" | "exponential";
@@ -39,46 +39,70 @@ function audioRefFromWav(wav: Uint8Array): Record<string, unknown> {
 
 export class OscillatorLibNode extends BaseNode {
   static readonly nodeType = "lib.synthesis.Oscillator";
-  static readonly title = "Oscillator";
-  static readonly description =
-    "Generates basic waveforms (sine, square, sawtooth, triangle).";
+            static readonly title = "Oscillator";
+            static readonly description = "Generates basic waveforms (sine, square, sawtooth, triangle).\n    audio, synthesis, waveform\n\n    Use cases:\n    - Create fundamental waveforms for synthesis\n    - Generate test signals\n    - Build complex sounds from basic waves";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "enum", default: "sine", title: "Waveform", description: "Type of waveform to generate (sine, square, sawtooth, triangle).", values: [
+  "sine",
+  "square",
+  "sawtooth",
+  "triangle"
+] })
+  declare waveform: any;
 
-  defaults() {
-    return {
-      waveform: "sine" as OscillatorWaveform,
-      frequency: 440.0,
-      amplitude: 0.5,
-      duration: 1.0,
-      sample_rate: 44100,
-      pitch_envelope_amount: 0.0,
-      pitch_envelope_time: 0.5,
-      pitch_envelope_curve: "linear" as PitchEnvelopeCurve,
-    };
-  }
+  @prop({ type: "float", default: 440, title: "Frequency", description: "Frequency of the waveform in Hz.", min: 20, max: 20000 })
+  declare frequency: any;
+
+  @prop({ type: "float", default: 0.5, title: "Amplitude", description: "Amplitude of the waveform.", min: 0, max: 1 })
+  declare amplitude: any;
+
+  @prop({ type: "float", default: 1, title: "Duration", description: "Duration in seconds.", min: 0, max: 30 })
+  declare duration: any;
+
+  @prop({ type: "int", default: 44100, title: "Sample Rate", description: "Sampling rate in Hz." })
+  declare sample_rate: any;
+
+  @prop({ type: "float", default: 0, title: "Pitch Envelope Amount", description: "Amount of pitch envelope in semitones", min: -24, max: 24 })
+  declare pitch_envelope_amount: any;
+
+  @prop({ type: "float", default: 0.5, title: "Pitch Envelope Time", description: "Duration of pitch envelope in seconds", min: 0, max: 10 })
+  declare pitch_envelope_time: any;
+
+  @prop({ type: "enum", default: "linear", title: "Pitch Envelope Curve", description: "Shape of pitch envelope (linear, exponential)", values: [
+  "linear",
+  "exponential"
+] })
+  declare pitch_envelope_curve: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
     const waveform = String(
-      inputs.waveform ?? this._props.waveform ?? "sine"
+      inputs.waveform ?? this.waveform ?? "sine"
     ) as OscillatorWaveform;
-    const frequency = Number(inputs.frequency ?? this._props.frequency ?? 440);
-    const amplitude = Number(inputs.amplitude ?? this._props.amplitude ?? 0.5);
-    const duration = Number(inputs.duration ?? this._props.duration ?? 1.0);
+    const frequency = Number(inputs.frequency ?? this.frequency ?? 440);
+    const amplitude = Number(inputs.amplitude ?? this.amplitude ?? 0.5);
+    const duration = Number(inputs.duration ?? this.duration ?? 1.0);
     const sampleRate = Number(
-      inputs.sample_rate ?? this._props.sample_rate ?? 44100
+      inputs.sample_rate ?? this.sample_rate ?? 44100
     );
     const pitchEnvAmount = Number(
       inputs.pitch_envelope_amount ??
-        this._props.pitch_envelope_amount ??
+        this.pitch_envelope_amount ??
         0.0
     );
     const pitchEnvTime = Number(
-      inputs.pitch_envelope_time ?? this._props.pitch_envelope_time ?? 0.5
+      inputs.pitch_envelope_time ?? this.pitch_envelope_time ?? 0.5
     );
     const pitchEnvCurve = String(
       inputs.pitch_envelope_curve ??
-        this._props.pitch_envelope_curve ??
+        this.pitch_envelope_curve ??
         "linear"
     ) as PitchEnvelopeCurve;
 
@@ -149,24 +173,31 @@ export class OscillatorLibNode extends BaseNode {
 
 export class WhiteNoiseLibNode extends BaseNode {
   static readonly nodeType = "lib.synthesis.WhiteNoise";
-  static readonly title = "White Noise";
-  static readonly description = "Generates white noise.";
+            static readonly title = "White Noise";
+            static readonly description = "Generates white noise.\n    audio, synthesis, noise\n\n    Use cases:\n    - Create background ambience\n    - Generate percussion sounds\n    - Test audio equipment";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "float", default: 0.5, title: "Amplitude", description: "Amplitude of the noise.", min: 0, max: 1 })
+  declare amplitude: any;
 
-  defaults() {
-    return {
-      amplitude: 0.5,
-      duration: 1.0,
-      sample_rate: 44100,
-    };
-  }
+  @prop({ type: "float", default: 1, title: "Duration", description: "Duration in seconds.", min: 0, max: 30 })
+  declare duration: any;
+
+  @prop({ type: "int", default: 44100, title: "Sample Rate", description: "Sampling rate in Hz." })
+  declare sample_rate: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    const amplitude = Number(inputs.amplitude ?? this._props.amplitude ?? 0.5);
-    const duration = Number(inputs.duration ?? this._props.duration ?? 1.0);
+    const amplitude = Number(inputs.amplitude ?? this.amplitude ?? 0.5);
+    const duration = Number(inputs.duration ?? this.duration ?? 1.0);
     const sampleRate = Number(
-      inputs.sample_rate ?? this._props.sample_rate ?? 44100
+      inputs.sample_rate ?? this.sample_rate ?? 44100
     );
 
     const numSamples = Math.floor(sampleRate * duration);
@@ -181,24 +212,31 @@ export class WhiteNoiseLibNode extends BaseNode {
 
 export class PinkNoiseLibNode extends BaseNode {
   static readonly nodeType = "lib.synthesis.PinkNoise";
-  static readonly title = "Pink Noise";
-  static readonly description = "Generates pink noise (1/f noise).";
+            static readonly title = "Pink Noise";
+            static readonly description = "Generates pink noise (1/f noise).\n    audio, synthesis, noise\n\n    Use cases:\n    - Create natural-sounding background noise\n    - Test speaker response\n    - Sound masking";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "float", default: 0.5, title: "Amplitude", description: "Amplitude of the noise.", min: 0, max: 1 })
+  declare amplitude: any;
 
-  defaults() {
-    return {
-      amplitude: 0.5,
-      duration: 1.0,
-      sample_rate: 44100,
-    };
-  }
+  @prop({ type: "float", default: 1, title: "Duration", description: "Duration in seconds.", min: 0, max: 30 })
+  declare duration: any;
+
+  @prop({ type: "int", default: 44100, title: "Sample Rate", description: "Sampling rate in Hz." })
+  declare sample_rate: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    const amplitude = Number(inputs.amplitude ?? this._props.amplitude ?? 0.5);
-    const duration = Number(inputs.duration ?? this._props.duration ?? 1.0);
+    const amplitude = Number(inputs.amplitude ?? this.amplitude ?? 0.5);
+    const duration = Number(inputs.duration ?? this.duration ?? 1.0);
     const sampleRate = Number(
-      inputs.sample_rate ?? this._props.sample_rate ?? 44100
+      inputs.sample_rate ?? this.sample_rate ?? 44100
     );
 
     const numSamples = Math.floor(sampleRate * duration);
@@ -250,37 +288,49 @@ export class PinkNoiseLibNode extends BaseNode {
 
 export class FM_SynthesisLibNode extends BaseNode {
   static readonly nodeType = "lib.synthesis.FM_Synthesis";
-  static readonly title = "FM Synthesis";
-  static readonly description =
-    "Performs FM (Frequency Modulation) synthesis.";
+            static readonly title = "FM Synthesis";
+            static readonly description = "Performs FM (Frequency Modulation) synthesis.\n    audio, synthesis, modulation\n\n    Use cases:\n    - Create complex timbres\n    - Generate bell-like sounds\n    - Synthesize metallic tones";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "float", default: 440, title: "Carrier Freq", description: "Carrier frequency in Hz.", min: 20, max: 20000 })
+  declare carrier_freq: any;
 
-  defaults() {
-    return {
-      carrier_freq: 440.0,
-      modulator_freq: 110.0,
-      modulation_index: 5.0,
-      amplitude: 0.5,
-      duration: 1.0,
-      sample_rate: 44100,
-    };
-  }
+  @prop({ type: "float", default: 110, title: "Modulator Freq", description: "Modulator frequency in Hz.", min: 1, max: 20000 })
+  declare modulator_freq: any;
+
+  @prop({ type: "float", default: 5, title: "Modulation Index", description: "Modulation index (affects richness of sound).", min: 0, max: 100 })
+  declare modulation_index: any;
+
+  @prop({ type: "float", default: 0.5, title: "Amplitude", description: "Amplitude of the output.", min: 0, max: 1 })
+  declare amplitude: any;
+
+  @prop({ type: "float", default: 1, title: "Duration", description: "Duration in seconds.", min: 0, max: 30 })
+  declare duration: any;
+
+  @prop({ type: "int", default: 44100, title: "Sample Rate", description: "Sampling rate in Hz." })
+  declare sample_rate: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
     const carrierFreq = Number(
-      inputs.carrier_freq ?? this._props.carrier_freq ?? 440
+      inputs.carrier_freq ?? this.carrier_freq ?? 440
     );
     const modulatorFreq = Number(
-      inputs.modulator_freq ?? this._props.modulator_freq ?? 110
+      inputs.modulator_freq ?? this.modulator_freq ?? 110
     );
     const modIndex = Number(
-      inputs.modulation_index ?? this._props.modulation_index ?? 5
+      inputs.modulation_index ?? this.modulation_index ?? 5
     );
-    const amplitude = Number(inputs.amplitude ?? this._props.amplitude ?? 0.5);
-    const duration = Number(inputs.duration ?? this._props.duration ?? 1.0);
+    const amplitude = Number(inputs.amplitude ?? this.amplitude ?? 0.5);
+    const duration = Number(inputs.duration ?? this.duration ?? 1.0);
     const sampleRate = Number(
-      inputs.sample_rate ?? this._props.sample_rate ?? 44100
+      inputs.sample_rate ?? this.sample_rate ?? 44100
     );
 
     const numSamples = Math.floor(sampleRate * duration);
@@ -299,31 +349,47 @@ export class FM_SynthesisLibNode extends BaseNode {
 
 export class EnvelopeLibNode extends BaseNode {
   static readonly nodeType = "lib.synthesis.Envelope";
-  static readonly title = "Envelope";
-  static readonly description =
-    "Applies an ADR (Attack-Decay-Release) envelope to an audio signal.";
+            static readonly title = "Envelope";
+            static readonly description = "Applies an ADR (Attack-Decay-Release) envelope to an audio signal.\n    audio, synthesis, envelope\n\n    Use cases:\n    - Shape the amplitude of synthesized sounds\n    - Create percussion-like instruments\n    - Control sound dynamics";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio to apply the envelope to." })
+  declare audio: any;
 
-  defaults() {
-    return {
-      audio: {},
-      attack: 0.1,
-      decay: 0.3,
-      release: 0.5,
-      peak_amplitude: 1.0,
-    };
-  }
+  @prop({ type: "float", default: 0.1, title: "Attack", description: "Attack time in seconds.", min: 0, max: 5 })
+  declare attack: any;
+
+  @prop({ type: "float", default: 0.3, title: "Decay", description: "Decay time in seconds.", min: 0, max: 5 })
+  declare decay: any;
+
+  @prop({ type: "float", default: 0.5, title: "Release", description: "Release time in seconds.", min: 0, max: 5 })
+  declare release: any;
+
+  @prop({ type: "float", default: 1, title: "Peak Amplitude", description: "Peak amplitude after attack phase (0-1).", min: 0, max: 1 })
+  declare peak_amplitude: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    const audio = (inputs.audio ?? this._props.audio ?? {}) as {
+    const audio = (inputs.audio ?? this.audio ?? {}) as {
       data?: string | Uint8Array;
     };
-    const attack = Number(inputs.attack ?? this._props.attack ?? 0.1);
-    const decay = Number(inputs.decay ?? this._props.decay ?? 0.3);
-    const release = Number(inputs.release ?? this._props.release ?? 0.5);
+    const attack = Number(inputs.attack ?? this.attack ?? 0.1);
+    const decay = Number(inputs.decay ?? this.decay ?? 0.3);
+    const release = Number(inputs.release ?? this.release ?? 0.5);
     const peakAmp = Number(
-      inputs.peak_amplitude ?? this._props.peak_amplitude ?? 1.0
+      inputs.peak_amplitude ?? this.peak_amplitude ?? 1.0
     );
 
     // Decode WAV data

@@ -351,7 +351,7 @@ describe("OCR", () => {
 describe("Node defaults coverage", () => {
   it("ChatComplete defaults", () => {
     const node = new ChatComplete();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.model).toBe("mistral-small-latest");
     expect(d.prompt).toBe("");
     expect(d.system_prompt).toBe("");
@@ -361,7 +361,7 @@ describe("Node defaults coverage", () => {
 
   it("CodeComplete defaults", () => {
     const node = new CodeComplete();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.prompt).toBe("");
     expect(d.suffix).toBe("");
     expect(d.temperature).toBe(0.0);
@@ -370,7 +370,7 @@ describe("Node defaults coverage", () => {
 
   it("Embedding defaults", () => {
     const node = new Embedding();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.input).toBe("");
     expect(d.model).toBe("mistral-embed");
     expect(d.chunk_size).toBe(4096);
@@ -378,7 +378,7 @@ describe("Node defaults coverage", () => {
 
   it("ImageToText defaults", () => {
     const node = new ImageToText();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.prompt).toBe("Describe this image in detail.");
     expect(d.model).toBe("pixtral-large-latest");
     expect(d.temperature).toBe(0.3);
@@ -387,7 +387,7 @@ describe("Node defaults coverage", () => {
 
   it("OCR defaults", () => {
     const node = new OCR();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.model).toBe("pixtral-large-latest");
   });
 

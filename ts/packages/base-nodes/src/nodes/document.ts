@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
@@ -53,15 +53,20 @@ async function readDocumentText(refOrPath: unknown): Promise<string> {
 
 export class LoadDocumentFileNode extends BaseNode {
   static readonly nodeType = "nodetool.document.LoadDocumentFile";
-  static readonly title = "Load Document File";
-  static readonly description = "Load local document file";
+            static readonly title = "Load Document File";
+            static readonly description = "Read a document from disk.\n    files, document, read, input, load, file";
+        static readonly metadataOutputTypes = {
+    output: "document"
+  };
+  
+  @prop({ type: "str", default: "", title: "Path", description: "Path to the document to read" })
+  declare path: any;
 
-  defaults() {
-    return { path: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const p = String(inputs.path ?? this._props.path ?? "");
+    const p = String(inputs.path ?? this.path ?? "");
     const full = toFilePath(p);
     const bytes = new Uint8Array(await fs.readFile(full));
     return {
@@ -75,16 +80,30 @@ export class LoadDocumentFileNode extends BaseNode {
 
 export class SaveDocumentFileNode extends BaseNode {
   static readonly nodeType = "nodetool.document.SaveDocumentFile";
-  static readonly title = "Save Document File";
-  static readonly description = "Save document to local file";
+            static readonly title = "Save Document File";
+            static readonly description = "Write a document to disk.\n    files, document, write, output, save, file\n\n    The filename can include time and date variables:\n    %Y - Year, %m - Month, %d - Day\n    %H - Hour, %M - Minute, %S - Second";
+  
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Document", description: "The document to save" })
+  declare document: any;
 
-  defaults() {
-    return { document: {}, path: "" };
-  }
+  @prop({ type: "str", default: "", title: "Folder", description: "Folder where the file will be saved" })
+  declare folder: any;
+
+  @prop({ type: "str", default: "", title: "Filename", description: "Name of the file to save. Supports strftime format codes." })
+  declare filename: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const document = (inputs.document ?? this._props.document ?? {}) as DocumentRefLike;
-    const p = String(inputs.path ?? this._props.path ?? "");
+    const document = (inputs.document ?? this.document ?? {}) as DocumentRefLike;
+    const p = String(inputs.path ?? this.path ?? "");
     const full = toFilePath(p);
     await fs.mkdir(path.dirname(full), { recursive: true });
     if (document.data) {
@@ -102,21 +121,32 @@ export class SaveDocumentFileNode extends BaseNode {
 
 export class ListDocumentsNode extends BaseNode {
   static readonly nodeType = "nodetool.document.ListDocuments";
-  static readonly title = "List Documents";
-  static readonly description = "List document files in folder";
-  static readonly isStreamingOutput = true;
+            static readonly title = "List Documents";
+            static readonly description = "List documents in a directory.\n    files, list, directory";
+        static readonly metadataOutputTypes = {
+    document: "document"
+  };
+  
+            static readonly isStreamingOutput = true;
+  @prop({ type: "str", default: "~", title: "Folder", description: "Directory to scan" })
+  declare folder: any;
 
-  defaults() {
-    return { folder: ".", recursive: false };
-  }
+  @prop({ type: "str", default: "*", title: "Pattern", description: "File pattern to match (e.g. *.txt)" })
+  declare pattern: any;
+
+  @prop({ type: "bool", default: false, title: "Recursive", description: "Search subdirectories" })
+  declare recursive: any;
+
+
+
 
   async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     return {};
   }
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
-    const folder = String(inputs.folder ?? this._props.folder ?? ".");
-    const recursive = Boolean(inputs.recursive ?? this._props.recursive ?? false);
+    const folder = String(inputs.folder ?? this.folder ?? ".");
+    const recursive = Boolean(inputs.recursive ?? this.recursive ?? false);
     const allowed = new Set([".txt", ".md", ".markdown", ".json", ".html", ".pdf", ".docx"]);
     const visit = async function* (dir: string): AsyncGenerator<string> {
       const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -141,22 +171,88 @@ export class ListDocumentsNode extends BaseNode {
 
 export class SplitDocumentNode extends BaseNode {
   static readonly nodeType = "nodetool.document.SplitDocument";
-  static readonly title = "Split Document";
-  static readonly description = "Split document into text chunks";
-  static readonly isStreamingOutput = true;
+            static readonly title = "Split Document";
+            static readonly description = "Split text semantically.\n    chroma, embedding, collection, RAG, index, text, markdown, semantic";
+        static readonly metadataOutputTypes = {
+    text: "str",
+    source_id: "str",
+    start_index: "int"
+  };
+          static readonly recommendedModels = [
+    {
+      "id": "embeddinggemma",
+      "type": "embedding_model",
+      "name": "Embedding Gemma",
+      "repo_id": "embeddinggemma",
+      "description": "Embedding model for semantic splitting"
+    },
+    {
+      "id": "nomic-embed-text",
+      "type": "embedding_model",
+      "name": "Nomic Embed Text",
+      "repo_id": "nomic-embed-text",
+      "description": "Embedding model for semantic splitting"
+    },
+    {
+      "id": "mxbai-embed-large",
+      "type": "embedding_model",
+      "name": "MXBai Embed Large",
+      "repo_id": "mxbai-embed-large",
+      "description": "Embedding model for semantic splitting"
+    },
+    {
+      "id": "bge-m3",
+      "type": "embedding_model",
+      "name": "BGE M3",
+      "repo_id": "bge-m3",
+      "description": "Embedding model for semantic splitting"
+    },
+    {
+      "id": "all-minilm",
+      "type": "embedding_model",
+      "name": "All Minilm",
+      "repo_id": "all-minilm",
+      "description": "Embedding model for semantic splitting"
+    }
+  ];
+  
+            static readonly isStreamingOutput = true;
+  @prop({ type: "language_model", default: {
+  "type": "language_model",
+  "provider": "ollama",
+  "id": "embeddinggemma",
+  "name": "",
+  "path": null,
+  "supported_tasks": []
+}, title: "Embed Model", description: "Embedding model to use" })
+  declare embed_model: any;
 
-  defaults() {
-    return { document: {}, chunk_size: 1200, chunk_overlap: 100 };
-  }
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Document", description: "Document ID to associate with the text content" })
+  declare document: any;
+
+  @prop({ type: "int", default: 1, title: "Buffer Size", description: "Buffer size for semantic splitting", min: 1, max: 100 })
+  declare buffer_size: any;
+
+  @prop({ type: "int", default: 95, title: "Threshold", description: "Breakpoint percentile threshold for semantic splitting", min: 0, max: 100 })
+  declare threshold: any;
+
+
+
 
   async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     return {};
   }
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
-    const text = await readDocumentText(inputs.document ?? this._props.document);
-    const chunkSize = Number(inputs.chunk_size ?? this._props.chunk_size ?? 1200);
-    const overlap = Number(inputs.chunk_overlap ?? this._props.chunk_overlap ?? 100);
+    const text = await readDocumentText(inputs.document ?? this.document);
+    const chunkSize = Number(inputs.chunk_size ?? this.chunk_size ?? 1200);
+    const overlap = Number(inputs.chunk_overlap ?? this.chunk_overlap ?? 100);
     for (const chunk of splitByChunk(text, chunkSize, overlap)) {
       yield { chunk };
     }
@@ -165,23 +261,36 @@ export class SplitDocumentNode extends BaseNode {
 
 export class SplitHTMLNode extends BaseNode {
   static readonly nodeType = "nodetool.document.SplitHTML";
-  static readonly title = "Split HTML";
-  static readonly description = "Strip HTML tags and chunk text";
-  static readonly isStreamingOutput = true;
+            static readonly title = "Split HTML";
+            static readonly description = "Split HTML content into semantic chunks based on HTML tags.\n    html, text, semantic, tags, parsing";
+        static readonly metadataOutputTypes = {
+    text: "str",
+    source_id: "str",
+    start_index: "int"
+  };
+  
+            static readonly isStreamingOutput = true;
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Document", description: "Document ID to associate with the HTML content" })
+  declare document: any;
 
-  defaults() {
-    return { document: {}, chunk_size: 1200, chunk_overlap: 100 };
-  }
+
+
 
   async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     return {};
   }
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
-    const html = await readDocumentText(inputs.document ?? this._props.document);
+    const html = await readDocumentText(inputs.document ?? this.document);
     const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-    const chunkSize = Number(inputs.chunk_size ?? this._props.chunk_size ?? 1200);
-    const overlap = Number(inputs.chunk_overlap ?? this._props.chunk_overlap ?? 100);
+    const chunkSize = Number(inputs.chunk_size ?? this.chunk_size ?? 1200);
+    const overlap = Number(inputs.chunk_overlap ?? this.chunk_overlap ?? 100);
     for (const chunk of splitByChunk(text, chunkSize, overlap)) {
       yield { chunk };
     }
@@ -190,28 +299,47 @@ export class SplitHTMLNode extends BaseNode {
 
 export class SplitJSONNode extends BaseNode {
   static readonly nodeType = "nodetool.document.SplitJSON";
-  static readonly title = "Split JSON";
-  static readonly description = "Split JSON array/object into chunks";
-  static readonly isStreamingOutput = true;
+            static readonly title = "Split JSON";
+            static readonly description = "Split JSON content into semantic chunks.\n    json, parsing, semantic, structured";
+        static readonly metadataOutputTypes = {
+    text: "str",
+    source_id: "str",
+    start_index: "int"
+  };
+  
+            static readonly isStreamingOutput = true;
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Document", description: "Document ID to associate with the JSON content" })
+  declare document: any;
 
-  defaults() {
-    return { document: {}, chunk_size: 1200, chunk_overlap: 100 };
-  }
+  @prop({ type: "bool", default: true, title: "Include Metadata", description: "Whether to include metadata in nodes" })
+  declare include_metadata: any;
+
+  @prop({ type: "bool", default: true, title: "Include Prev Next Rel", description: "Whether to include prev/next relationships" })
+  declare include_prev_next_rel: any;
+
+
+
 
   async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     return {};
   }
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
-    const raw = await readDocumentText(inputs.document ?? this._props.document);
+    const raw = await readDocumentText(inputs.document ?? this.document);
     let rendered: string;
     try {
       rendered = JSON.stringify(JSON.parse(raw), null, 2);
     } catch {
       rendered = raw;
     }
-    const chunkSize = Number(inputs.chunk_size ?? this._props.chunk_size ?? 1200);
-    const overlap = Number(inputs.chunk_overlap ?? this._props.chunk_overlap ?? 100);
+    const chunkSize = Number(inputs.chunk_size ?? this.chunk_size ?? 1200);
+    const overlap = Number(inputs.chunk_overlap ?? this.chunk_overlap ?? 100);
     for (const chunk of splitByChunk(rendered, chunkSize, overlap)) {
       yield { chunk };
     }
@@ -220,22 +348,48 @@ export class SplitJSONNode extends BaseNode {
 
 export class SplitRecursivelyNode extends BaseNode {
   static readonly nodeType = "nodetool.document.SplitRecursively";
-  static readonly title = "Split Recursively";
-  static readonly description = "Split text using paragraph/sentence recursion";
-  static readonly isStreamingOutput = true;
+            static readonly title = "Split Recursively";
+            static readonly description = "Splits text recursively using LangChain's RecursiveCharacterTextSplitter.\n    text, split, chunks\n\n    Use cases:\n    - Splitting documents while preserving semantic relationships\n    - Creating chunks for language model processing\n    - Handling text in languages with/without word boundaries";
+        static readonly metadataOutputTypes = {
+    text: "str",
+    source_id: "str",
+    start_index: "int"
+  };
+  
+            static readonly isStreamingOutput = true;
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Document" })
+  declare document: any;
 
-  defaults() {
-    return { document: {}, chunk_size: 1200, chunk_overlap: 100 };
-  }
+  @prop({ type: "int", default: 1000, title: "Chunk Size", description: "Maximum size of each chunk in characters" })
+  declare chunk_size: any;
+
+  @prop({ type: "int", default: 200, title: "Chunk Overlap", description: "Number of characters to overlap between chunks" })
+  declare chunk_overlap: any;
+
+  @prop({ type: "list[str]", default: [
+  "\n\n",
+  "\n",
+  "."
+], title: "Separators", description: "List of separators to use for splitting, in order of preference" })
+  declare separators: any;
+
+
+
 
   async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     return {};
   }
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
-    const text = await readDocumentText(inputs.document ?? this._props.document);
-    const chunkSize = Number(inputs.chunk_size ?? this._props.chunk_size ?? 1200);
-    const overlap = Number(inputs.chunk_overlap ?? this._props.chunk_overlap ?? 100);
+    const text = await readDocumentText(inputs.document ?? this.document);
+    const chunkSize = Number(inputs.chunk_size ?? this.chunk_size ?? 1200);
+    const overlap = Number(inputs.chunk_overlap ?? this.chunk_overlap ?? 100);
     const paragraphs = text.split(/\n{2,}/g).map((p) => p.trim()).filter(Boolean);
     const normalized = paragraphs.join("\n\n");
     for (const chunk of splitByChunk(normalized, chunkSize, overlap)) {
@@ -246,25 +400,66 @@ export class SplitRecursivelyNode extends BaseNode {
 
 export class SplitMarkdownNode extends BaseNode {
   static readonly nodeType = "nodetool.document.SplitMarkdown";
-  static readonly title = "Split Markdown";
-  static readonly description = "Split markdown while preserving headings";
-  static readonly isStreamingOutput = true;
+            static readonly title = "Split Markdown";
+            static readonly description = "Splits markdown text by headers while preserving header hierarchy in metadata.\n    markdown, split, headers\n\n    Use cases:\n    - Splitting markdown documentation while preserving structure\n    - Processing markdown files for semantic search\n    - Creating context-aware chunks from markdown content";
+        static readonly metadataOutputTypes = {
+    text: "str",
+    source_id: "str",
+    start_index: "int"
+  };
+  
+            static readonly isStreamingOutput = true;
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Document" })
+  declare document: any;
 
-  defaults() {
-    return { document: {}, chunk_size: 1200, chunk_overlap: 100 };
-  }
+  @prop({ type: "list[tuple[str, str]]", default: [
+  [
+    "#",
+    "Header 1"
+  ],
+  [
+    "##",
+    "Header 2"
+  ],
+  [
+    "###",
+    "Header 3"
+  ]
+], title: "Headers To Split On", description: "List of tuples containing (header_symbol, header_name)" })
+  declare headers_to_split_on: any;
+
+  @prop({ type: "bool", default: true, title: "Strip Headers", description: "Whether to remove headers from the output content" })
+  declare strip_headers: any;
+
+  @prop({ type: "bool", default: false, title: "Return Each Line", description: "Whether to split into individual lines instead of header sections" })
+  declare return_each_line: any;
+
+  @prop({ type: "int", default: 1000, title: "Chunk Size", description: "Optional maximum chunk size for further splitting" })
+  declare chunk_size: any;
+
+  @prop({ type: "int", default: 30, title: "Chunk Overlap", description: "Overlap size when using chunk_size" })
+  declare chunk_overlap: any;
+
+
+
 
   async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     return {};
   }
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
-    const markdown = await readDocumentText(inputs.document ?? this._props.document);
+    const markdown = await readDocumentText(inputs.document ?? this.document);
     const chunks: string[] = [];
     let current = "";
     for (const line of markdown.split("\n")) {
       const next = current.length ? `${current}\n${line}` : line;
-      if (next.length > Number(inputs.chunk_size ?? this._props.chunk_size ?? 1200)) {
+      if (next.length > Number(inputs.chunk_size ?? this.chunk_size ?? 1200)) {
         if (current.trim()) chunks.push(current.trim());
         current = line;
       } else {

@@ -49,7 +49,7 @@ describe("CreateIndexFlatL2Node", () => {
 
   it("defaults() returns { dim: 768 }", () => {
     const node = new CreateIndexFlatL2Node();
-    expect(node.defaults()).toEqual({ dim: 768 });
+    expect(node.serialize()).toEqual({ dim: 768 });
   });
 
   it("process() creates an index ref with __faiss_index__ marker", async () => {
@@ -89,7 +89,7 @@ describe("CreateIndexFlatIPNode", () => {
 
   it("defaults() returns { dim: 768 }", () => {
     const node = new CreateIndexFlatIPNode();
-    expect(node.defaults()).toEqual({ dim: 768 });
+    expect(node.serialize()).toEqual({ dim: 768 });
   });
 
   it("process() creates an index ref with __faiss_index__ marker", async () => {
@@ -120,12 +120,12 @@ describe("CreateIndexIVFFlatNode", () => {
     expect(CreateIndexIVFFlatNode.nodeType).toBe(
       "vector.faiss.CreateIndexIVFFlat"
     );
-    expect(CreateIndexIVFFlatNode.title).toBe("Create Index IVF Flat");
+    expect(CreateIndexIVFFlatNode.title).toBe("Create Index IVFFlat");
   });
 
   it("defaults() returns { dim: 768, nlist: 1024, metric: 'L2' }", () => {
     const node = new CreateIndexIVFFlatNode();
-    expect(node.defaults()).toEqual({ dim: 768, nlist: 1024, metric: "L2" });
+    expect(node.serialize()).toEqual({ dim: 768, nlist: 1024, metric: "L2" });
   });
 
   it("process() creates an IVF index (native) or throws (no native)", async () => {
@@ -187,7 +187,7 @@ describe("TrainIndexNode", () => {
         index: null,
         vectors: { data: [1, 2, 3], shape: [1, 3] },
       })
-    ).rejects.toThrow(/not set/);
+    ).rejects.toThrow(/Invalid FAISS index/);
   });
 
   it("throws on empty vectors", async () => {
@@ -237,7 +237,7 @@ describe("AddVectorsNode", () => {
         index: null,
         vectors: [[1, 2]],
       })
-    ).rejects.toThrow(/not set/);
+    ).rejects.toThrow(/Invalid FAISS index/);
   });
 
   it("throws on empty vectors", async () => {
@@ -310,7 +310,7 @@ describe("AddWithIdsNode", () => {
         vectors: [[1, 2]],
         ids: [1],
       })
-    ).rejects.toThrow(/not set/);
+    ).rejects.toThrow(/Invalid FAISS index/);
   });
 
   it("throws on empty vectors", async () => {
@@ -508,7 +508,7 @@ describe("SearchNode", () => {
         query: [[1, 2, 3]],
         k: 1,
       })
-    ).rejects.toThrow(/not set/);
+    ).rejects.toThrow(/Invalid FAISS index/);
   });
 
   it("throws on empty query", async () => {

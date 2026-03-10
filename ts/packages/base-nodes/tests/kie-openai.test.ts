@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import { getNodeMetadata } from "@nodetool/node-sdk";
 import {
   EmbeddingNode,
   WebSearchNode,
@@ -36,6 +37,19 @@ function jsonResponse(body: unknown, status = 200): Response {
     arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
     blob: async () => new Blob([new Uint8Array([1, 2, 3])]),
   } as unknown as Response;
+}
+
+function metadataDefaults(NodeCls: any) {
+  const metadata = getNodeMetadata(NodeCls);
+  return Object.fromEntries(
+    metadata.properties
+      .filter((prop) => Object.prototype.hasOwnProperty.call(prop, "default"))
+      .map((prop) => [prop.name, prop.default])
+  );
+}
+
+function expectMetadataDefaults(NodeCls: any) {
+  expect(new NodeCls().serialize()).toEqual(metadataDefaults(NodeCls));
 }
 
 const secrets = { _secrets: { OPENAI_API_KEY: "test-key" } };
@@ -517,7 +531,7 @@ describe("TranscribeNode", () => {
 describe("Node defaults coverage", () => {
   it("EmbeddingNode defaults", () => {
     const node = new EmbeddingNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.input).toBe("");
     expect(d.model).toBe("text-embedding-3-small");
     expect(d.chunk_size).toBe(4096);
@@ -525,19 +539,19 @@ describe("Node defaults coverage", () => {
 
   it("WebSearchNode defaults", () => {
     const node = new WebSearchNode();
-    expect(node.defaults()).toEqual({ query: "" });
+    expect(node.serialize()).toEqual({ query: "" });
   });
 
   it("ModerationNode defaults", () => {
     const node = new ModerationNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.input).toBe("");
     expect(d.model).toBe("omni-moderation-latest");
   });
 
   it("CreateImageNode defaults", () => {
     const node = new CreateImageNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.prompt).toBe("");
     expect(d.model).toBe("gpt-image-1");
     expect(d.size).toBe("1024x1024");
@@ -547,14 +561,14 @@ describe("Node defaults coverage", () => {
 
   it("EditImageNode defaults", () => {
     const node = new EditImageNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.prompt).toBe("");
     expect(d.model).toBe("gpt-image-1");
   });
 
   it("TextToSpeechNode defaults", () => {
     const node = new TextToSpeechNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.model).toBe("tts-1");
     expect(d.voice).toBe("alloy");
     expect(d.speed).toBe(1.0);
@@ -562,12 +576,12 @@ describe("Node defaults coverage", () => {
 
   it("TranslateNode defaults", () => {
     const node = new TranslateNode();
-    expect(node.defaults().temperature).toBe(0.0);
+    expect(node.serialize().temperature).toBe(0.0);
   });
 
   it("TranscribeNode defaults", () => {
     const node = new TranscribeNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.model).toBe("whisper-1");
     expect(d.language).toBe("auto_detect");
     expect(d.timestamps).toBe(false);
@@ -593,13 +607,7 @@ describe("RealtimeAgentNode", () => {
   });
 
   it("returns correct defaults", () => {
-    const node = new RealtimeAgentNode();
-    const d = node.defaults();
-    expect(d.model).toBe("gpt-4o-mini-realtime-preview");
-    expect(d.system).toBe("");
-    expect(d.voice).toBe("alloy");
-    expect(d.speed).toBe(1.0);
-    expect(d.temperature).toBe(0.8);
+    expectMetadataDefaults(RealtimeAgentNode);
   });
 });
 
@@ -624,7 +632,7 @@ describe("RealtimeTranscriptionNode", () => {
 
   it("returns correct defaults", () => {
     const node = new RealtimeTranscriptionNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.system).toBe("");
     expect(d.temperature).toBe(0.8);
   });

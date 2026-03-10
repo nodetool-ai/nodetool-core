@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { NodeClass } from "@nodetool/node-sdk";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
@@ -42,22 +42,34 @@ function isRefSet(ref: unknown): boolean {
 
 export class GroundedSearchNode extends BaseNode {
   static readonly nodeType = "gemini.text.GroundedSearch";
-  static readonly title = "Grounded Search";
-  static readonly description =
-    "Search the web using Google's Gemini API with grounding capabilities. " +
-    "Returns structured results with source information.";
+            static readonly title = "Grounded Search";
+            static readonly description = "Search the web using Google's Gemini API with grounding capabilities.\n    google, search, grounded, web, gemini, ai\n\n    This node uses Google's Gemini API to perform web searches and return structured results\n    with source information. Requires a Gemini API key.\n\n    Use cases:\n    - Research current events and latest information\n    - Find reliable sources for fact-checking\n    - Gather web-based information with citations\n    - Get up-to-date information beyond the model's training data";
+        static readonly metadataOutputTypes = {
+    results: "list[str]",
+    sources: "list[source]"
+  };
+          static readonly requiredSettings = [
+  "GEMINI_API_KEY"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Query", description: "The search query to execute" })
+  declare query: any;
 
-  defaults() {
-    return {
-      query: "",
-      model: "gemini-2.0-flash",
-    };
-  }
+  @prop({ type: "enum", default: "gemini-2.0-flash", title: "Model", description: "The Gemini model to use for search", values: [
+  "gemini-2.5-pro",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash"
+] })
+  declare model: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const apiKey = getGeminiApiKey(inputs);
-    const query = String(inputs.query ?? this._props.query ?? "");
-    const model = String(inputs.model ?? this._props.model ?? "gemini-2.0-flash");
+    const query = String(inputs.query ?? this.query ?? "");
+    const model = String(inputs.model ?? this.model ?? "gemini-2.0-flash");
 
     if (!query) throw new Error("Search query is required");
 
@@ -128,22 +140,32 @@ export class GroundedSearchNode extends BaseNode {
 
 export class EmbeddingNode extends BaseNode {
   static readonly nodeType = "gemini.text.Embedding";
-  static readonly title = "Embedding";
-  static readonly description =
-    "Generate vector representations of text for semantic analysis using " +
-    "Google's Gemini API embedding models.";
+            static readonly title = "Embedding";
+            static readonly description = "Generate vector representations of text for semantic analysis using Google's Gemini API.\n    embeddings, similarity, search, clustering, classification, gemini\n\n    Uses Google's text embedding models to create dense vector representations of text.\n    These vectors capture semantic meaning, enabling:\n    - Semantic search\n    - Text clustering\n    - Document classification\n    - Recommendation systems\n    - Anomaly detection\n    - Measuring text similarity and diversity";
+        static readonly metadataOutputTypes = {
+    output: "np_array"
+  };
+          static readonly requiredSettings = [
+  "GEMINI_API_KEY"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Input", description: "The text to embed." })
+  declare input: any;
 
-  defaults() {
-    return {
-      input: "",
-      model: "text-embedding-004",
-    };
-  }
+  @prop({ type: "enum", default: "text-embedding-004", title: "Model", description: "The embedding model to use", values: [
+  "text-embedding-004",
+  "gemini-embedding-001"
+] })
+  declare model: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const apiKey = getGeminiApiKey(inputs);
-    const input = String(inputs.input ?? this._props.input ?? "");
-    const model = String(inputs.model ?? this._props.model ?? "text-embedding-004");
+    const input = String(inputs.input ?? this.input ?? "");
+    const model = String(inputs.model ?? this.model ?? "text-embedding-004");
 
     if (!input) throw new Error("Input text is required for embedding generation");
 
@@ -177,24 +199,46 @@ export class EmbeddingNode extends BaseNode {
 
 export class ImageGenerationNode extends BaseNode {
   static readonly nodeType = "gemini.image.ImageGeneration";
-  static readonly title = "Image Generation";
-  static readonly description =
-    "Generate an image using Google's Imagen or Gemini image-capable models " +
-    "via the Gemini API.";
+            static readonly title = "Image Generation";
+            static readonly description = "Generate an image using Google's Imagen model via the Gemini API.\n    google, image generation, ai, imagen\n\n    Use cases:\n    - Create images from text descriptions\n    - Generate assets for creative projects\n    - Explore AI-powered image synthesis";
+        static readonly metadataOutputTypes = {
+    output: "image"
+  };
+          static readonly requiredSettings = [
+  "GEMINI_API_KEY"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Prompt", description: "The text prompt describing the image to generate." })
+  declare prompt: any;
 
-  defaults() {
-    return {
-      prompt: "",
-      model: "imagen-3.0-generate-002",
-      image: { uri: "", data: null, asset_id: null },
-    };
-  }
+  @prop({ type: "enum", default: "imagen-3.0-generate-002", title: "Model", description: "The image generation model to use", values: [
+  "gemini-2.0-flash-preview-image-generation",
+  "gemini-2.5-flash-image-preview",
+  "gemini-3-pro-image-preview",
+  "imagen-3.0-generate-001",
+  "imagen-3.0-generate-002",
+  "imagen-4.0-generate-001"
+] })
+  declare model: any;
+
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "The image to use as a base for the generation." })
+  declare image: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const apiKey = getGeminiApiKey(inputs);
-    const prompt = String(inputs.prompt ?? this._props.prompt ?? "");
-    const model = String(inputs.model ?? this._props.model ?? "imagen-3.0-generate-002");
-    const image = (inputs.image ?? this._props.image ?? {}) as Record<string, unknown>;
+    const prompt = String(inputs.prompt ?? this.prompt ?? "");
+    const model = String(inputs.model ?? this.model ?? "imagen-3.0-generate-002");
+    const image = (inputs.image ?? this.image ?? {}) as Record<string, unknown>;
 
     if (!prompt) throw new Error("The input prompt cannot be empty.");
 
@@ -296,26 +340,43 @@ export class ImageGenerationNode extends BaseNode {
 
 export class TextToVideoGeminiNode extends BaseNode {
   static readonly nodeType = "gemini.video.TextToVideo";
-  static readonly title = "Text To Video";
-  static readonly description =
-    "Generate videos from text prompts using Google's Veo models. " +
-    "Supports 720p resolution at 24fps with 8-second duration and native audio generation.";
+            static readonly title = "Text To Video";
+            static readonly description = "Generate videos from text prompts using Google's Veo models.\n    google, video, generation, text-to-video, veo, ai\n\n    This node uses Google's Veo models to generate high-quality videos from text descriptions.\n    Supports 720p resolution at 24fps with 8-second duration and native audio generation.";
+        static readonly metadataOutputTypes = {
+    output: "video"
+  };
+          static readonly requiredSettings = [
+  "GEMINI_API_KEY"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Prompt", description: "The text prompt describing the video to generate" })
+  declare prompt: any;
 
-  defaults() {
-    return {
-      prompt: "",
-      model: "veo-3.1-generate-preview",
-      aspect_ratio: "16:9",
-      negative_prompt: "",
-    };
-  }
+  @prop({ type: "enum", default: "veo-3.1-generate-preview", title: "Model", description: "The Veo model to use for video generation", values: [
+  "veo-3.1-generate-preview",
+  "veo-2.0-generate-001"
+] })
+  declare model: any;
+
+  @prop({ type: "enum", default: "16:9", title: "Aspect Ratio", description: "The aspect ratio of the generated video", values: [
+  "16:9",
+  "9:16"
+] })
+  declare aspect_ratio: any;
+
+  @prop({ type: "str", default: "", title: "Negative Prompt", description: "Negative prompt to guide what to avoid in the video" })
+  declare negative_prompt: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const apiKey = getGeminiApiKey(inputs);
-    const prompt = String(inputs.prompt ?? this._props.prompt ?? "");
-    const model = String(inputs.model ?? this._props.model ?? "veo-3.1-generate-preview");
-    const aspectRatio = String(inputs.aspect_ratio ?? this._props.aspect_ratio ?? "16:9");
-    const negativePrompt = String(inputs.negative_prompt ?? this._props.negative_prompt ?? "");
+    const prompt = String(inputs.prompt ?? this.prompt ?? "");
+    const model = String(inputs.model ?? this.model ?? "veo-3.1-generate-preview");
+    const aspectRatio = String(inputs.aspect_ratio ?? this.aspect_ratio ?? "16:9");
+    const negativePrompt = String(inputs.negative_prompt ?? this.negative_prompt ?? "");
 
     if (!prompt) throw new Error("Video generation prompt is required");
 
@@ -349,28 +410,53 @@ export class TextToVideoGeminiNode extends BaseNode {
 
 export class ImageToVideoGeminiNode extends BaseNode {
   static readonly nodeType = "gemini.video.ImageToVideo";
-  static readonly title = "Image To Video";
-  static readonly description =
-    "Generate videos from images using Google's Veo models. " +
-    "Animate static images into dynamic videos.";
+            static readonly title = "Image To Video";
+            static readonly description = "Generate videos from images using Google's Veo models.\n    google, video, generation, image-to-video, veo, ai, animation\n\n    This node uses Google's Veo models to animate static images into dynamic videos.\n    Supports 720p resolution at 24fps with 8-second duration and native audio generation.";
+        static readonly metadataOutputTypes = {
+    output: "video"
+  };
+          static readonly requiredSettings = [
+  "GEMINI_API_KEY"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "The image to animate into a video" })
+  declare image: any;
 
-  defaults() {
-    return {
-      image: { uri: "", data: null, asset_id: null },
-      prompt: "",
-      model: "veo-3.1-generate-preview",
-      aspect_ratio: "16:9",
-      negative_prompt: "",
-    };
-  }
+  @prop({ type: "str", default: "", title: "Prompt", description: "Optional text prompt describing the desired animation" })
+  declare prompt: any;
+
+  @prop({ type: "enum", default: "veo-3.1-generate-preview", title: "Model", description: "The Veo model to use for video generation", values: [
+  "veo-3.1-generate-preview",
+  "veo-2.0-generate-001"
+] })
+  declare model: any;
+
+  @prop({ type: "enum", default: "16:9", title: "Aspect Ratio", description: "The aspect ratio of the generated video", values: [
+  "16:9",
+  "9:16"
+] })
+  declare aspect_ratio: any;
+
+  @prop({ type: "str", default: "", title: "Negative Prompt", description: "Negative prompt to guide what to avoid in the video" })
+  declare negative_prompt: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const apiKey = getGeminiApiKey(inputs);
-    const image = (inputs.image ?? this._props.image ?? {}) as Record<string, unknown>;
-    const prompt = String(inputs.prompt ?? this._props.prompt ?? "Animate this image");
-    const model = String(inputs.model ?? this._props.model ?? "veo-3.1-generate-preview");
-    const aspectRatio = String(inputs.aspect_ratio ?? this._props.aspect_ratio ?? "16:9");
-    const negativePrompt = String(inputs.negative_prompt ?? this._props.negative_prompt ?? "");
+    const image = (inputs.image ?? this.image ?? {}) as Record<string, unknown>;
+    const prompt = String(inputs.prompt ?? this.prompt ?? "Animate this image");
+    const model = String(inputs.model ?? this.model ?? "veo-3.1-generate-preview");
+    const aspectRatio = String(inputs.aspect_ratio ?? this.aspect_ratio ?? "16:9");
+    const negativePrompt = String(inputs.negative_prompt ?? this.negative_prompt ?? "");
 
     if (!isRefSet(image)) throw new Error("Input image is required");
 
@@ -461,26 +547,70 @@ function extractVideoFromResponse(data: Record<string, unknown>): string {
 
 export class TextToSpeechGeminiNode extends BaseNode {
   static readonly nodeType = "gemini.audio.TextToSpeech";
-  static readonly title = "Text To Speech";
-  static readonly description =
-    "Generate speech audio from text using Google's Gemini text-to-speech models. " +
-    "Supports multiple voices and speech styles.";
+            static readonly title = "Text To Speech";
+            static readonly description = "Generate speech audio from text using Google's Gemini text-to-speech models.\n    google, text-to-speech, tts, audio, speech, voice, ai\n\n    This node converts text input into natural-sounding speech audio using Google's\n    advanced text-to-speech models with support for multiple voices and speech styles.\n\n    Supported voices:\n    - achernar, achird, algenib, algieba, alnilam\n    - aoede, autonoe, callirrhoe, charon, despina\n    - enceladus, erinome, fenrir, gacrux, iapetus\n    - kore, laomedeia, leda, orus, puck\n    - pulcherrima, rasalgethi, sadachbia, sadaltager, schedar\n    - sulafat, umbriel, vindemiatrix, zephyr, zubenelgenubi\n\n    Use cases:\n    - Create voiceovers for videos and presentations\n    - Generate audio content for podcasts and audiobooks\n    - Add voice narration to applications\n    - Create accessibility features with speech output\n    - Generate multilingual audio content";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+          static readonly requiredSettings = [
+  "GEMINI_API_KEY"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Text", description: "The text to convert to speech." })
+  declare text: any;
 
-  defaults() {
-    return {
-      text: "",
-      model: "gemini-2.5-pro-preview-tts",
-      voice_name: "kore",
-      style_prompt: "",
-    };
-  }
+  @prop({ type: "enum", default: "gemini-2.5-pro-preview-tts", title: "Model", description: "The text-to-speech model to use", values: [
+  "gemini-2.5-pro-preview-tts"
+] })
+  declare model: any;
+
+  @prop({ type: "enum", default: "kore", title: "Voice Name", description: "The voice to use for speech generation", values: [
+  "achernar",
+  "achird",
+  "algenib",
+  "algieba",
+  "alnilam",
+  "aoede",
+  "autonoe",
+  "callirrhoe",
+  "charon",
+  "despina",
+  "enceladus",
+  "erinome",
+  "fenrir",
+  "gacrux",
+  "iapetus",
+  "kore",
+  "laomedeia",
+  "leda",
+  "orus",
+  "puck",
+  "pulcherrima",
+  "rasalgethi",
+  "sadachbia",
+  "sadaltager",
+  "schedar",
+  "sulafat",
+  "umbriel",
+  "vindemiatrix",
+  "zephyr",
+  "zubenelgenubi"
+] })
+  declare voice_name: any;
+
+  @prop({ type: "str", default: "", title: "Style Prompt", description: "Optional style prompt to control speech characteristics (e.g., 'Say cheerfully', 'Speak with excitement')" })
+  declare style_prompt: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const apiKey = getGeminiApiKey(inputs);
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const model = String(inputs.model ?? this._props.model ?? "gemini-2.5-pro-preview-tts");
-    const voiceName = String(inputs.voice_name ?? this._props.voice_name ?? "kore").toLowerCase();
-    const stylePrompt = String(inputs.style_prompt ?? this._props.style_prompt ?? "");
+    const text = String(inputs.text ?? this.text ?? "");
+    const model = String(inputs.model ?? this.model ?? "gemini-2.5-pro-preview-tts");
+    const voiceName = String(inputs.voice_name ?? this.voice_name ?? "kore").toLowerCase();
+    const stylePrompt = String(inputs.style_prompt ?? this.style_prompt ?? "");
 
     if (!text) throw new Error("The input text cannot be empty.");
 
@@ -551,27 +681,44 @@ export class TextToSpeechGeminiNode extends BaseNode {
 
 export class TranscribeGeminiNode extends BaseNode {
   static readonly nodeType = "gemini.audio.Transcribe";
-  static readonly title = "Transcribe";
-  static readonly description =
-    "Transcribe audio to text using Google's Gemini multimodal models. " +
-    "Supports various audio formats and provides accurate speech-to-text transcription.";
+            static readonly title = "Transcribe";
+            static readonly description = "Transcribe audio to text using Google's Gemini models.\n    google, transcription, speech-to-text, audio, whisper, ai\n\n    This node converts audio input into text using Google's multimodal Gemini models.\n    Supports various audio formats and provides accurate speech-to-text transcription.\n\n    Use cases:\n    - Convert recorded audio to text\n    - Transcribe podcasts and interviews\n    - Generate subtitles from audio tracks\n    - Create meeting notes from audio recordings\n    - Analyze speech content in audio files";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+          static readonly requiredSettings = [
+  "GEMINI_API_KEY"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to transcribe." })
+  declare audio: any;
 
-  defaults() {
-    return {
-      audio: { uri: "", data: null, asset_id: null },
-      model: "gemini-2.5-flash",
-      prompt:
-        "Transcribe the following audio accurately. Return only the transcription text without any additional commentary.",
-    };
-  }
+  @prop({ type: "enum", default: "gemini-2.5-flash", title: "Model", description: "The Gemini model to use for transcription", values: [
+  "gemini-2.5-flash",
+  "gemini-2.0-flash"
+] })
+  declare model: any;
+
+  @prop({ type: "str", default: "Transcribe the following audio accurately. Return only the transcription text without any additional commentary.", title: "Prompt", description: "Instructions for the transcription. You can customize this to request specific formatting or focus." })
+  declare prompt: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const apiKey = getGeminiApiKey(inputs);
-    const audio = (inputs.audio ?? this._props.audio ?? {}) as Record<string, unknown>;
-    const model = String(inputs.model ?? this._props.model ?? "gemini-2.5-flash");
+    const audio = (inputs.audio ?? this.audio ?? {}) as Record<string, unknown>;
+    const model = String(inputs.model ?? this.model ?? "gemini-2.5-flash");
     const prompt = String(
       inputs.prompt ??
-        this._props.prompt ??
+        this.prompt ??
         "Transcribe the following audio accurately. Return only the transcription text without any additional commentary."
     );
 

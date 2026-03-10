@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { NodeRegistry } from "../src/registry.js";
 import { BaseNode } from "../src/base-node.js";
+import { prop } from "../src/decorators.js";
 
 class NodeA extends BaseNode {
   static readonly nodeType = "test.NodeA";
@@ -15,9 +16,12 @@ class NodeB extends BaseNode {
   static readonly nodeType = "test.NodeB";
   static readonly title = "Node B";
   static readonly description = "";
-  defaults() { return { factor: 2 }; }
+
+  @prop({ type: "int", default: 2 })
+  declare factor: number;
+
   async process(inputs: Record<string, unknown>) {
-    return { result: (inputs.value as number) * (this._props.factor as number) };
+    return { result: (inputs.value as number) * this.factor };
   }
 }
 

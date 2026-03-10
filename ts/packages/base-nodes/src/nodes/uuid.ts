@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 
 type UUIDFormat = "standard" | "hex" | "urn" | "int" | "bytes_hex";
 
@@ -139,8 +139,13 @@ function uuidVariant(uuid: string): string {
 
 export class GenerateUUID4Node extends BaseNode {
   static readonly nodeType = "lib.uuid.GenerateUUID4";
-  static readonly title = "Generate UUID4";
-  static readonly description = "Generate a random UUID (version 4).";
+            static readonly title = "Generate UUID4";
+            static readonly description = "Generate a random UUID (version 4).\n    uuid, random, identifier, unique, guid\n\n    Use cases:\n    - Create unique identifiers for records\n    - Generate session IDs\n    - Produce random unique keys";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+          static readonly exposeAsTool = true;
+  
 
   async process(): Promise<Record<string, unknown>> {
     const bytes = Uint8Array.from(randomBytes(16));
@@ -152,8 +157,13 @@ export class GenerateUUID4Node extends BaseNode {
 
 export class GenerateUUID1Node extends BaseNode {
   static readonly nodeType = "lib.uuid.GenerateUUID1";
-  static readonly title = "Generate UUID1";
-  static readonly description = "Generate a time-based UUID (version 1).";
+            static readonly title = "Generate UUID1";
+            static readonly description = "Generate a time-based UUID (version 1).\n    uuid, time, identifier, unique, guid, timestamp\n\n    Use cases:\n    - Create sortable unique identifiers\n    - Generate time-ordered IDs\n    - Track creation timestamps in IDs";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+          static readonly exposeAsTool = true;
+  
 
   async process(): Promise<Record<string, unknown>> {
     return { output: generateUuid1() };
@@ -162,47 +172,71 @@ export class GenerateUUID1Node extends BaseNode {
 
 export class GenerateUUID3Node extends BaseNode {
   static readonly nodeType = "lib.uuid.GenerateUUID3";
-  static readonly title = "Generate UUID3";
-  static readonly description = "Generate a name-based UUID using MD5 (version 3).";
+            static readonly title = "Generate UUID3";
+            static readonly description = "Generate a name-based UUID using MD5 (version 3).\n    uuid, name, identifier, unique, guid, md5, deterministic\n\n    Use cases:\n    - Create deterministic IDs from names\n    - Generate consistent identifiers for the same input\n    - Map names to unique identifiers";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "dns", title: "Namespace", description: "Namespace (dns, url, oid, x500, or a UUID string)" })
+  declare namespace: any;
 
-  defaults() {
-    return { namespace: "dns", name: "" };
-  }
+  @prop({ type: "str", default: "", title: "Name", description: "Name to generate UUID from" })
+  declare name: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const namespace = String(inputs.namespace ?? this._props.namespace ?? "dns");
-    const name = String(inputs.name ?? this._props.name ?? "");
+    const namespace = String(inputs.namespace ?? this.namespace ?? "dns");
+    const name = String(inputs.name ?? this.name ?? "");
     return { output: generateNameBasedUuid(namespace, name, 3) };
   }
 }
 
 export class GenerateUUID5Node extends BaseNode {
   static readonly nodeType = "lib.uuid.GenerateUUID5";
-  static readonly title = "Generate UUID5";
-  static readonly description = "Generate a name-based UUID using SHA-1 (version 5).";
+            static readonly title = "Generate UUID5";
+            static readonly description = "Generate a name-based UUID using SHA-1 (version 5).\n    uuid, name, identifier, unique, guid, sha1, deterministic\n\n    Use cases:\n    - Create deterministic IDs from names (preferred over UUID3)\n    - Generate consistent identifiers for the same input\n    - Map names to unique identifiers with better collision resistance";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "dns", title: "Namespace", description: "Namespace (dns, url, oid, x500, or a UUID string)" })
+  declare namespace: any;
 
-  defaults() {
-    return { namespace: "dns", name: "" };
-  }
+  @prop({ type: "str", default: "", title: "Name", description: "Name to generate UUID from" })
+  declare name: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const namespace = String(inputs.namespace ?? this._props.namespace ?? "dns");
-    const name = String(inputs.name ?? this._props.name ?? "");
+    const namespace = String(inputs.namespace ?? this.namespace ?? "dns");
+    const name = String(inputs.name ?? this.name ?? "");
     return { output: generateNameBasedUuid(namespace, name, 5) };
   }
 }
 
 export class ParseUUIDNode extends BaseNode {
   static readonly nodeType = "lib.uuid.ParseUUID";
-  static readonly title = "Parse UUID";
-  static readonly description = "Parse and validate a UUID string.";
+            static readonly title = "Parse UUID";
+            static readonly description = "Parse and validate a UUID string.\n    uuid, parse, validate, check, identifier\n\n    Use cases:\n    - Validate UUID format\n    - Normalize UUID strings\n    - Extract UUID version information";
+        static readonly metadataOutputTypes = {
+    output: "dict"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Uuid String", description: "UUID string to parse" })
+  declare uuid_string: any;
 
-  defaults() {
-    return { uuid_string: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const uuidInput = String(inputs.uuid_string ?? this._props.uuid_string ?? "");
+    const uuidInput = String(inputs.uuid_string ?? this.uuid_string ?? "");
     try {
       const uuid = normalizeUuid(uuidInput);
       const hex = uuid.replaceAll("-", "");
@@ -230,16 +264,31 @@ export class ParseUUIDNode extends BaseNode {
 
 export class FormatUUIDNode extends BaseNode {
   static readonly nodeType = "lib.uuid.FormatUUID";
-  static readonly title = "Format UUID";
-  static readonly description = "Format a UUID string in different representations.";
+            static readonly title = "Format UUID";
+            static readonly description = "Format a UUID string in different representations.\n    uuid, format, convert, hex, urn, identifier\n\n    Use cases:\n    - Convert UUID to different formats\n    - Generate URN representations\n    - Format UUIDs for specific use cases";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Uuid String", description: "UUID string to format" })
+  declare uuid_string: any;
 
-  defaults() {
-    return { uuid_string: "", format: "standard" as UUIDFormat };
-  }
+  @prop({ type: "enum", default: "standard", title: "Format", description: "Output format (standard, hex, urn, int, bytes_hex)", values: [
+  "standard",
+  "hex",
+  "urn",
+  "int",
+  "bytes_hex"
+] })
+  declare format: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const uuidInput = String(inputs.uuid_string ?? this._props.uuid_string ?? "");
-    const format = String(inputs.format ?? this._props.format ?? "standard") as UUIDFormat;
+    const uuidInput = String(inputs.uuid_string ?? this.uuid_string ?? "");
+    const format = String(inputs.format ?? this.format ?? "standard") as UUIDFormat;
     const uuid = normalizeUuid(uuidInput);
     const hex = uuid.replaceAll("-", "");
 
@@ -254,15 +303,21 @@ export class FormatUUIDNode extends BaseNode {
 
 export class IsValidUUIDNode extends BaseNode {
   static readonly nodeType = "lib.uuid.IsValidUUID";
-  static readonly title = "Is Valid UUID";
-  static readonly description = "Check if a string is a valid UUID.";
+            static readonly title = "Is Valid UUID";
+            static readonly description = "Check if a string is a valid UUID.\n    uuid, validate, check, verify, identifier\n\n    Use cases:\n    - Validate user input\n    - Filter valid UUIDs from a dataset\n    - Conditional workflow based on UUID validity";
+        static readonly metadataOutputTypes = {
+    output: "bool"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Uuid String", description: "String to check" })
+  declare uuid_string: any;
 
-  defaults() {
-    return { uuid_string: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const uuidInput = String(inputs.uuid_string ?? this._props.uuid_string ?? "");
+    const uuidInput = String(inputs.uuid_string ?? this.uuid_string ?? "");
     try {
       normalizeUuid(uuidInput);
       return { output: true };

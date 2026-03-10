@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 
 function decodeEntities(value: string): string {
   return value
@@ -67,20 +67,30 @@ function feedMetaBlock(xml: string): string {
 
 export class FetchRSSFeedLibNode extends BaseNode {
   static readonly nodeType = "lib.rss.FetchRSSFeed";
-  static readonly title = "Fetch RSS Feed";
-  static readonly description = "Fetches and parses an RSS feed from a URL.";
-  static readonly isStreamingOutput = true;
+            static readonly title = "Fetch RSS Feed";
+            static readonly description = "Fetches and parses an RSS feed from a URL.\n    rss, feed, network\n\n    Use cases:\n    - Monitor news feeds\n    - Aggregate content from multiple sources\n    - Process blog updates";
+        static readonly metadataOutputTypes = {
+    title: "str",
+    link: "str",
+    published: "datetime",
+    summary: "str",
+    author: "str"
+  };
+          static readonly exposeAsTool = true;
+  
+            static readonly isStreamingOutput = true;
+  @prop({ type: "str", default: "", title: "Url", description: "URL of the RSS feed to fetch" })
+  declare url: any;
 
-  defaults() {
-    return { url: "" };
-  }
+
+
 
   async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     return {};
   }
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
-    const url = String(inputs.url ?? this._props.url ?? "");
+    const url = String(inputs.url ?? this.url ?? "");
     const res = await fetch(url);
     const xml = await res.text();
     for (const item of parseFeedItems(xml)) {
@@ -91,15 +101,20 @@ export class FetchRSSFeedLibNode extends BaseNode {
 
 export class ExtractFeedMetadataLibNode extends BaseNode {
   static readonly nodeType = "lib.rss.ExtractFeedMetadata";
-  static readonly title = "Extract Feed Metadata";
-  static readonly description = "Extracts metadata from an RSS feed.";
+            static readonly title = "Extract Feed Metadata";
+            static readonly description = "Extracts metadata from an RSS feed.\n    rss, metadata, feed\n\n    Use cases:\n    - Get feed information\n    - Validate feed details\n    - Extract feed metadata";
+        static readonly metadataOutputTypes = {
+    output: "dict"
+  };
+  
+  @prop({ type: "str", default: "", title: "Url", description: "URL of the RSS feed" })
+  declare url: any;
 
-  defaults() {
-    return { url: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const url = String(inputs.url ?? this._props.url ?? "");
+    const url = String(inputs.url ?? this.url ?? "");
     const res = await fetch(url);
     const xml = await res.text();
 

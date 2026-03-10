@@ -16,7 +16,7 @@ import {
   GriffinLimNode,
   DetectOnsetsNode,
   SegmentAudioByOnsetsNode,
-} from "../src/index.js";
+} from "../../src/index.js";
 
 // ── Test audio helper ─────────────────────────────────────────────
 

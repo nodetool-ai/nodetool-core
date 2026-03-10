@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 
 type FilterNumberType =
   | "greater_than"
@@ -11,26 +11,42 @@ type FilterNumberType =
 
 export class FilterNumberNode extends BaseNode {
   static readonly nodeType = "nodetool.numbers.FilterNumber";
-  static readonly title = "Filter Number";
-  static readonly description = "Filter streamed numbers by condition";
+            static readonly title = "Filter Number";
+            static readonly description = "Filters a stream of numbers based on various numerical conditions.\n    filter, numbers, numeric, stream\n    \n    Use cases:\n    - Filter numbers by comparison (greater than, less than, equal to)\n    - Filter even/odd numbers\n    - Filter positive/negative numbers";
+        static readonly metadataOutputTypes = {
+    output: "float"
+  };
+  
+          static readonly isStreamingOutput = true;
   static readonly syncMode = "on_any" as const;
 
   private _filterType: FilterNumberType = "greater_than";
   private _compareValue = 0;
+  @prop({ type: "float", default: 0, title: "Value", description: "Input number stream" })
+  declare value: any;
 
-  defaults() {
-    return {
-      value: 0,
-      filter_type: "greater_than" as FilterNumberType,
-      compare_value: 0,
-    };
-  }
+  @prop({ type: "enum", default: "greater_than", title: "Filter Type", description: "The type of filter to apply", values: [
+  "greater_than",
+  "less_than",
+  "equal_to",
+  "even",
+  "odd",
+  "positive",
+  "negative"
+] })
+  declare filter_type: any;
+
+  @prop({ type: "float", default: 0, title: "Compare Value", description: "The comparison value (for greater_than, less_than, equal_to)" })
+  declare compare_value: any;
+
+
+
 
   async initialize(): Promise<void> {
     this._filterType = String(
-      this._props.filter_type ?? "greater_than"
+      this.filter_type ?? "greater_than"
     ) as FilterNumberType;
-    this._compareValue = Number(this._props.compare_value ?? 0);
+    this._compareValue = Number(this.compare_value ?? 0);
   }
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -87,22 +103,37 @@ export class FilterNumberNode extends BaseNode {
 
 export class FilterNumberRangeNode extends BaseNode {
   static readonly nodeType = "nodetool.numbers.FilterNumberRange";
-  static readonly title = "Filter Number Range";
-  static readonly description = "Filter streamed numbers by numeric range";
+            static readonly title = "Filter Number Range";
+            static readonly description = "Filters a stream of numbers to find values within a specified range.\n    filter, numbers, range, between, stream\n\n    Use cases:\n    - Find numbers within a specific range\n    - Filter data points within bounds\n    - Implement range-based filtering";
+        static readonly metadataOutputTypes = {
+    output: "float"
+  };
+  
+          static readonly isStreamingOutput = true;
   static readonly syncMode = "on_any" as const;
 
   private _minValue = 0;
   private _maxValue = 0;
   private _inclusive = true;
+  @prop({ type: "float", default: 0, title: "Value", description: "Input number stream" })
+  declare value: any;
 
-  defaults() {
-    return { value: 0, min_value: 0, max_value: 0, inclusive: true };
-  }
+  @prop({ type: "float", default: 0, title: "Min Value", description: "Minimum value" })
+  declare min_value: any;
+
+  @prop({ type: "float", default: 0, title: "Max Value", description: "Maximum value" })
+  declare max_value: any;
+
+  @prop({ type: "bool", default: true, title: "Inclusive", description: "Inclusive bounds" })
+  declare inclusive: any;
+
+
+
 
   async initialize(): Promise<void> {
-    this._minValue = Number(this._props.min_value ?? 0);
-    this._maxValue = Number(this._props.max_value ?? 0);
-    this._inclusive = Boolean(this._props.inclusive ?? true);
+    this._minValue = Number(this.min_value ?? 0);
+    this._maxValue = Number(this.max_value ?? 0);
+    this._inclusive = Boolean(this.inclusive ?? true);
   }
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {

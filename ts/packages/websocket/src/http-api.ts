@@ -12,7 +12,7 @@ import {
   getGlobalAdapterResolver,
   setGlobalAdapterResolver,
 } from "@nodetool/models";
-import { loadPythonPackageMetadata, type NodeMetadata } from "@nodetool/node-sdk";
+import { loadPythonPackageMetadata, type NodeMetadata, NodeRegistry } from "@nodetool/node-sdk";
 import { handleModelsApiRequest } from "./models-api.js";
 import { handleOpenAIRequest, type OpenAIApiOptions } from "./openai-api.js";
 import { handleOAuthRequest } from "./oauth-api.js";
@@ -37,6 +37,8 @@ export interface HttpApiOptions {
   baseUrl?: string;
   openai?: OpenAIApiOptions;
   storage?: StorageHandlerOptions;
+  /** NodeRegistry to use for unified metadata. If not provided, Python metadata is used. */
+  registry?: NodeRegistry;
 }
 
 // Lazily created storage handler — recreated if options change
@@ -207,6 +209,14 @@ async function handleNodeMetadata(request: Request, options: HttpApiOptions): Pr
   if (request.method !== "GET") {
     return errorResponse(405, "Method not allowed");
   }
+
+  // If a registry is provided, use unified metadata from TS + Python
+  if (options.registry) {
+    const nodes = options.registry.listMetadata();
+    return jsonResponse(nodes.sort((a, b) => a.node_type.localeCompare(b.node_type)));
+  }
+
+  // Fallback: Python-only metadata
   const loaded = loadPythonPackageMetadata({
     roots: options.metadataRoots,
     maxDepth: options.metadataMaxDepth,

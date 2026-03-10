@@ -4,7 +4,7 @@
  */
 
 import { ChromaClient } from "chromadb";
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { NodeClass } from "@nodetool/node-sdk";
 
 // ---------------------------------------------------------------------------
@@ -50,21 +50,32 @@ async function getOllamaEmbedding(model: string, text: string): Promise<number[]
 
 export class CollectionNode extends BaseNode {
   static readonly nodeType = "vector.chroma.Collection";
-  static readonly title = "Collection";
-  static readonly description =
-    "Get or create a named ChromaDB vector database collection for storing embeddings. " +
-    "vector, embedding, collection, RAG, get, create, chroma";
+            static readonly title = "Collection";
+            static readonly description = "Get or create a named vector database collection for storing embeddings.\n    vector, embedding, collection, RAG, get, create, chroma";
+        static readonly metadataOutputTypes = {
+    output: "collection"
+  };
+  
+  @prop({ type: "str", default: "", title: "Name", description: "The name of the collection to create" })
+  declare name: any;
 
-  defaults() {
-    return {
-      name: "",
-      embedding_model: { repo_id: "" },
-    };
-  }
+  @prop({ type: "llama_model", default: {
+  "type": "llama_model",
+  "name": "",
+  "repo_id": "",
+  "modified_at": "",
+  "size": 0,
+  "digest": "",
+  "details": {}
+}, title: "Embedding Model", description: "Model to use for embedding, search for nomic-embed-text and download it" })
+  declare embedding_model: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const name = String(inputs.name ?? this._props.name ?? "");
-    const embeddingModel = (inputs.embedding_model ?? this._props.embedding_model ?? { repo_id: "" }) as {
+    const name = String(inputs.name ?? this.name ?? "");
+    const embeddingModel = (inputs.embedding_model ?? this.embedding_model ?? { repo_id: "" }) as {
       repo_id: string;
     };
 
@@ -88,19 +99,23 @@ export class CollectionNode extends BaseNode {
 
 export class CountNode extends BaseNode {
   static readonly nodeType = "vector.chroma.Count";
-  static readonly title = "Count";
-  static readonly description =
-    "Count the number of documents in a ChromaDB collection. " +
-    "vector, embedding, collection, RAG, chroma";
+            static readonly title = "Count";
+            static readonly description = "Count the number of documents in a collection.\n    vector, embedding, collection, RAG, chroma";
+        static readonly metadataOutputTypes = {
+    output: "int"
+  };
+  
+  @prop({ type: "collection", default: {
+  "type": "collection",
+  "name": ""
+}, title: "Collection", description: "The collection to count" })
+  declare collection: any;
 
-  defaults() {
-    return {
-      collection: { name: "" },
-    };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const collectionInput = (inputs.collection ?? this._props.collection ?? { name: "" }) as {
+    const collectionInput = (inputs.collection ?? this.collection ?? { name: "" }) as {
       name: string;
     };
     const name = collectionInput.name ?? "";
@@ -118,30 +133,40 @@ export class CountNode extends BaseNode {
 
 export class GetDocumentsNode extends BaseNode {
   static readonly nodeType = "vector.chroma.GetDocuments";
-  static readonly title = "Get Documents";
-  static readonly description =
-    "Get documents from a ChromaDB collection by IDs with optional pagination. " +
-    "vector, embedding, collection, RAG, retrieve, chroma";
+            static readonly title = "Get Documents";
+            static readonly description = "Get documents from a chroma collection.\n    vector, embedding, collection, RAG, retrieve, chroma";
+        static readonly metadataOutputTypes = {
+    output: "list[str]"
+  };
+  
+  @prop({ type: "collection", default: {
+  "type": "collection",
+  "name": ""
+}, title: "Collection", description: "The collection to get" })
+  declare collection: any;
 
-  defaults() {
-    return {
-      collection: { name: "" },
-      ids: [] as string[],
-      limit: 100,
-      offset: 0,
-    };
-  }
+  @prop({ type: "list[str]", default: [], title: "Ids", description: "The ids of the documents to get" })
+  declare ids: any;
+
+  @prop({ type: "int", default: 100, title: "Limit", description: "The limit of the documents to get" })
+  declare limit: any;
+
+  @prop({ type: "int", default: 0, title: "Offset", description: "The offset of the documents to get" })
+  declare offset: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const collectionInput = (inputs.collection ?? this._props.collection ?? { name: "" }) as {
+    const collectionInput = (inputs.collection ?? this.collection ?? { name: "" }) as {
       name: string;
     };
     const name = collectionInput.name ?? "";
     if (!name.trim()) throw new Error("Collection name cannot be empty");
 
-    const ids = (inputs.ids ?? this._props.ids ?? []) as string[];
-    const limit = Number(inputs.limit ?? this._props.limit ?? 100);
-    const offset = Number(inputs.offset ?? this._props.offset ?? 0);
+    const ids = (inputs.ids ?? this.ids ?? []) as string[];
+    const limit = Number(inputs.limit ?? this.limit ?? 100);
+    const offset = Number(inputs.offset ?? this.offset ?? 0);
 
     const collection = await getCollection(name);
     const result = await collection.get({
@@ -160,26 +185,32 @@ export class GetDocumentsNode extends BaseNode {
 
 export class PeekNode extends BaseNode {
   static readonly nodeType = "vector.chroma.Peek";
-  static readonly title = "Peek";
-  static readonly description =
-    "Peek at a sample of documents in a ChromaDB collection. " +
-    "vector, embedding, collection, RAG, preview, chroma";
+            static readonly title = "Peek";
+            static readonly description = "Peek at the documents in a collection.\n    vector, embedding, collection, RAG, preview, chroma";
+        static readonly metadataOutputTypes = {
+    output: "list[str]"
+  };
+  
+  @prop({ type: "collection", default: {
+  "type": "collection",
+  "name": ""
+}, title: "Collection", description: "The collection to peek" })
+  declare collection: any;
 
-  defaults() {
-    return {
-      collection: { name: "" },
-      limit: 100,
-    };
-  }
+  @prop({ type: "int", default: 100, title: "Limit", description: "The limit of the documents to peek" })
+  declare limit: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const collectionInput = (inputs.collection ?? this._props.collection ?? { name: "" }) as {
+    const collectionInput = (inputs.collection ?? this.collection ?? { name: "" }) as {
       name: string;
     };
     const name = collectionInput.name ?? "";
     if (!name.trim()) throw new Error("Collection name cannot be empty");
 
-    const limit = Number(inputs.limit ?? this._props.limit ?? 100);
+    const limit = Number(inputs.limit ?? this.limit ?? 100);
 
     const collection = await getCollection(name);
     const result = await collection.peek({ limit });
@@ -193,35 +224,44 @@ export class PeekNode extends BaseNode {
 
 export class IndexImageNode extends BaseNode {
   static readonly nodeType = "vector.chroma.IndexImage";
-  static readonly title = "Index Image";
-  static readonly description =
-    "Index an image asset into a ChromaDB collection. " +
-    "vector, embedding, collection, RAG, index, image, chroma";
+            static readonly title = "Index Image";
+            static readonly description = "Index a list of image assets or files.\n    vector, embedding, collection, RAG, index, image, batch, chroma";
+  
+  @prop({ type: "collection", default: {
+  "type": "collection",
+  "name": ""
+}, title: "Collection", description: "The collection to index" })
+  declare collection: any;
 
-  defaults() {
-    return {
-      collection: { name: "" },
-      image: {} as Record<string, unknown>,
-      index_id: "",
-      metadata: {} as Record<string, unknown>,
-      upsert: false,
-    };
-  }
+  @prop({ type: "image", default: [], title: "Image", description: "List of image assets to index" })
+  declare image: any;
+
+  @prop({ type: "str", default: "", title: "Index Id", description: "The ID to associate with the image, defaults to the URI of the image" })
+  declare index_id: any;
+
+  @prop({ type: "dict", default: {}, title: "Metadata", description: "The metadata to associate with the image" })
+  declare metadata: any;
+
+  @prop({ type: "bool", default: false, title: "Upsert", description: "Whether to upsert the images" })
+  declare upsert: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const collectionInput = (inputs.collection ?? this._props.collection ?? { name: "" }) as {
+    const collectionInput = (inputs.collection ?? this.collection ?? { name: "" }) as {
       name: string;
     };
     const name = collectionInput.name ?? "";
     if (!name.trim()) throw new Error("Collection name cannot be empty");
 
-    const image = (inputs.image ?? this._props.image ?? {}) as Record<string, unknown>;
-    const indexId = String(inputs.index_id ?? this._props.index_id ?? "");
-    const metadataRaw = (inputs.metadata ?? this._props.metadata ?? {}) as Record<
+    const image = (inputs.image ?? this.image ?? {}) as Record<string, unknown>;
+    const indexId = String(inputs.index_id ?? this.index_id ?? "");
+    const metadataRaw = (inputs.metadata ?? this.metadata ?? {}) as Record<
       string,
       unknown
     >;
-    const doUpsert = Boolean(inputs.upsert ?? this._props.upsert ?? false);
+    const doUpsert = Boolean(inputs.upsert ?? this.upsert ?? false);
 
     // Resolve document ID: prefer explicit index_id, then document_id field on image ref
     const resolvedId =
@@ -274,30 +314,44 @@ export class IndexImageNode extends BaseNode {
 
 export class IndexEmbeddingNode extends BaseNode {
   static readonly nodeType = "vector.chroma.IndexEmbedding";
-  static readonly title = "Index Embedding";
-  static readonly description =
-    "Index a single embedding vector (or batch) into a ChromaDB collection with optional metadata. " +
-    "vector, index, embedding, chroma, storage, RAG";
+            static readonly title = "Index Embedding";
+            static readonly description = "Index a single embedding vector into a Chroma collection with optional metadata. Creates a searchable entry that can be queried for similarity matching.\n    vector, index, embedding, chroma, storage, RAG";
+  
+  @prop({ type: "collection", default: {
+  "type": "collection",
+  "name": ""
+}, title: "Collection", description: "The collection to index" })
+  declare collection: any;
 
-  defaults() {
-    return {
-      collection: { name: "" },
-      embedding: {} as Record<string, unknown>,
-      index_id: "" as string | string[],
-      metadata: {} as Record<string, unknown> | Record<string, unknown>[],
-    };
-  }
+  @prop({ type: "np_array", default: {
+  "type": "np_array",
+  "value": null,
+  "dtype": "<i8",
+  "shape": [
+    1
+  ]
+}, title: "Embedding", description: "The embedding to index" })
+  declare embedding: any;
+
+  @prop({ type: "union[str, list[str]]", default: "", title: "Index Id", description: "The ID to associate with the embedding" })
+  declare index_id: any;
+
+  @prop({ type: "union[dict, list[dict]]", default: {}, title: "Metadata", description: "The metadata to associate with the embedding" })
+  declare metadata: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const collectionInput = (inputs.collection ?? this._props.collection ?? { name: "" }) as {
+    const collectionInput = (inputs.collection ?? this.collection ?? { name: "" }) as {
       name: string;
     };
     const name = collectionInput.name ?? "";
     if (!name.trim()) throw new Error("Collection name cannot be empty");
 
-    const embeddingRaw = inputs.embedding ?? this._props.embedding;
-    const indexId = inputs.index_id ?? this._props.index_id ?? "";
-    const metadataRaw = inputs.metadata ?? this._props.metadata ?? {};
+    const embeddingRaw = inputs.embedding ?? this.embedding;
+    const indexId = inputs.index_id ?? this.index_id ?? "";
+    const metadataRaw = inputs.metadata ?? this.metadata ?? {};
 
     // embeddingRaw may be a flat number[] (single embedding) or number[][] (batch)
     // or an NPArray-like object with a `data` field
@@ -394,32 +448,39 @@ function flattenMetadata(obj: Record<string, unknown>): Record<string, string | 
 
 export class IndexTextChunkNode extends BaseNode {
   static readonly nodeType = "vector.chroma.IndexTextChunk";
-  static readonly title = "Index Text Chunk";
-  static readonly description =
-    "Index a single text chunk with a document ID into a ChromaDB collection. " +
-    "vector, embedding, collection, RAG, index, text, chunk, chroma";
+            static readonly title = "Index Text Chunk";
+            static readonly description = "Index a single text chunk.\n    vector, embedding, collection, RAG, index, text, chunk, chroma";
+  
+  @prop({ type: "collection", default: {
+  "type": "collection",
+  "name": ""
+}, title: "Collection", description: "The collection to index" })
+  declare collection: any;
 
-  defaults() {
-    return {
-      collection: { name: "" },
-      document_id: "",
-      text: "",
-      metadata: {} as Record<string, unknown>,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Document Id", description: "The document ID to associate with the text chunk" })
+  declare document_id: any;
+
+  @prop({ type: "str", default: "", title: "Text", description: "The text to index" })
+  declare text: any;
+
+  @prop({ type: "dict", default: {}, title: "Metadata", description: "The metadata to associate with the text chunk" })
+  declare metadata: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const collectionInput = (inputs.collection ?? this._props.collection ?? { name: "" }) as {
+    const collectionInput = (inputs.collection ?? this.collection ?? { name: "" }) as {
       name: string;
     };
     const name = collectionInput.name ?? "";
     if (!name.trim()) throw new Error("Collection name cannot be empty");
 
-    const documentId = String(inputs.document_id ?? this._props.document_id ?? "");
+    const documentId = String(inputs.document_id ?? this.document_id ?? "");
     if (!documentId.trim()) throw new Error("The document ID cannot be empty");
 
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const metadataRaw = (inputs.metadata ?? this._props.metadata ?? {}) as Record<string, unknown>;
+    const text = String(inputs.text ?? this.text ?? "");
+    const metadataRaw = (inputs.metadata ?? this.metadata ?? {}) as Record<string, unknown>;
 
     const collection = await getCollection(name);
     await collection.add({
@@ -440,37 +501,53 @@ type AggregationMethod = "mean" | "max" | "min" | "sum";
 
 export class IndexAggregatedTextNode extends BaseNode {
   static readonly nodeType = "vector.chroma.IndexAggregatedText";
-  static readonly title = "Index Aggregated Text";
-  static readonly description =
-    "Index multiple text chunks with aggregated embeddings from Ollama into a ChromaDB collection. " +
-    "vector, embedding, collection, RAG, index, text, chunk, batch, ollama, chroma";
+            static readonly title = "Index Aggregated Text";
+            static readonly description = "Index multiple text chunks at once with aggregated embeddings from Ollama.\n    vector, embedding, collection, RAG, index, text, chunk, batch, ollama, chroma";
+  
+  @prop({ type: "collection", default: {
+  "type": "collection",
+  "name": ""
+}, title: "Collection", description: "The collection to index" })
+  declare collection: any;
 
-  defaults() {
-    return {
-      collection: { name: "" },
-      document: "",
-      document_id: "",
-      metadata: {} as Record<string, unknown>,
-      text_chunks: [] as (string | { text: string })[],
-      aggregation: "mean" as AggregationMethod,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Document", description: "The document to index" })
+  declare document: any;
+
+  @prop({ type: "str", default: "", title: "Document Id", description: "The document ID to associate with the text" })
+  declare document_id: any;
+
+  @prop({ type: "dict", default: {}, title: "Metadata", description: "The metadata to associate with the text" })
+  declare metadata: any;
+
+  @prop({ type: "list[union[text_chunk, str]]", default: [], title: "Text Chunks", description: "List of text chunks to index" })
+  declare text_chunks: any;
+
+  @prop({ type: "enum", default: "mean", title: "Aggregation", description: "The aggregation method to use for the embeddings.", values: [
+  "mean",
+  "max",
+  "min",
+  "sum"
+] })
+  declare aggregation: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const collectionInput = (inputs.collection ?? this._props.collection ?? { name: "" }) as {
+    const collectionInput = (inputs.collection ?? this.collection ?? { name: "" }) as {
       name: string;
     };
     const name = collectionInput.name ?? "";
     if (!name.trim()) throw new Error("Collection name cannot be empty");
 
-    const document = String(inputs.document ?? this._props.document ?? "");
-    const documentId = String(inputs.document_id ?? this._props.document_id ?? "");
-    const metadataRaw = (inputs.metadata ?? this._props.metadata ?? {}) as Record<string, unknown>;
-    const textChunksRaw = (inputs.text_chunks ?? this._props.text_chunks ?? []) as (
+    const document = String(inputs.document ?? this.document ?? "");
+    const documentId = String(inputs.document_id ?? this.document_id ?? "");
+    const metadataRaw = (inputs.metadata ?? this.metadata ?? {}) as Record<string, unknown>;
+    const textChunksRaw = (inputs.text_chunks ?? this.text_chunks ?? []) as (
       | string
       | { text: string }
     )[];
-    const aggregation = String(inputs.aggregation ?? this._props.aggregation ?? "mean") as AggregationMethod;
+    const aggregation = String(inputs.aggregation ?? this.aggregation ?? "mean") as AggregationMethod;
 
     if (!documentId.trim()) throw new Error("The document ID cannot be empty");
     if (!document.trim()) throw new Error("The document cannot be empty");
@@ -551,31 +628,38 @@ export class IndexAggregatedTextNode extends BaseNode {
 
 export class IndexStringNode extends BaseNode {
   static readonly nodeType = "vector.chroma.IndexString";
-  static readonly title = "Index String";
-  static readonly description =
-    "Index a string with a Document ID into a ChromaDB collection. " +
-    "vector, embedding, collection, RAG, index, text, string, chroma";
+            static readonly title = "Index String";
+            static readonly description = "Index a string with a Document ID to a collection.\n    vector, embedding, collection, RAG, index, text, string, chroma";
+  
+  @prop({ type: "collection", default: {
+  "type": "collection",
+  "name": ""
+}, title: "Collection", description: "The collection to index" })
+  declare collection: any;
 
-  defaults() {
-    return {
-      collection: { name: "" },
-      text: "",
-      document_id: "",
-      metadata: {} as Record<string, unknown>,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Text", description: "Text content to index" })
+  declare text: any;
+
+  @prop({ type: "str", default: "", title: "Document Id", description: "Document ID to associate with the text content" })
+  declare document_id: any;
+
+  @prop({ type: "dict", default: {}, title: "Metadata", description: "The metadata to associate with the text" })
+  declare metadata: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const collectionInput = (inputs.collection ?? this._props.collection ?? { name: "" }) as {
+    const collectionInput = (inputs.collection ?? this.collection ?? { name: "" }) as {
       name: string;
     };
     const name = collectionInput.name ?? "";
     if (!name.trim()) throw new Error("Collection name cannot be empty");
 
-    const documentId = String(inputs.document_id ?? this._props.document_id ?? "");
+    const documentId = String(inputs.document_id ?? this.document_id ?? "");
     if (!documentId.trim()) throw new Error("The document ID cannot be empty");
 
-    const text = String(inputs.text ?? this._props.text ?? "");
+    const text = String(inputs.text ?? this.text ?? "");
 
     const collection = await getCollection(name);
     await collection.add({
@@ -593,31 +677,48 @@ export class IndexStringNode extends BaseNode {
 
 export class QueryImageNode extends BaseNode {
   static readonly nodeType = "vector.chroma.QueryImage";
-  static readonly title = "Query Image";
-  static readonly description =
-    "Query a ChromaDB collection for similar images by URI. " +
-    "vector, RAG, query, image, search, similarity, chroma";
+            static readonly title = "Query Image";
+            static readonly description = "Query the index for similar images.\n    vector, RAG, query, image, search, similarity, chroma";
+        static readonly metadataOutputTypes = {
+    ids: "list[str]",
+    documents: "list[str]",
+    metadatas: "list[dict]",
+    distances: "list[float]"
+  };
+  
+  @prop({ type: "collection", default: {
+  "type": "collection",
+  "name": ""
+}, title: "Collection", description: "The collection to query" })
+  declare collection: any;
 
-  defaults() {
-    return {
-      collection: { name: "" },
-      image: {} as Record<string, unknown>,
-      n_results: 1,
-    };
-  }
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "The image to query" })
+  declare image: any;
+
+  @prop({ type: "int", default: 1, title: "N Results", description: "The number of results to return" })
+  declare n_results: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const collectionInput = (inputs.collection ?? this._props.collection ?? { name: "" }) as {
+    const collectionInput = (inputs.collection ?? this.collection ?? { name: "" }) as {
       name: string;
     };
     const name = collectionInput.name ?? "";
     if (!name.trim()) throw new Error("Collection name cannot be empty");
 
-    const image = (inputs.image ?? this._props.image ?? {}) as Record<string, unknown>;
+    const image = (inputs.image ?? this.image ?? {}) as Record<string, unknown>;
     const uri = String(image.uri ?? image.asset_id ?? "");
     if (!uri) throw new Error("Image is not connected (no uri or asset_id)");
 
-    const nResults = Number(inputs.n_results ?? this._props.n_results ?? 1);
+    const nResults = Number(inputs.n_results ?? this.n_results ?? 1);
 
     const collection = await getCollection(name);
     const result = await collection.query({
@@ -657,28 +758,39 @@ export class QueryImageNode extends BaseNode {
 
 export class QueryTextNode extends BaseNode {
   static readonly nodeType = "vector.chroma.QueryText";
-  static readonly title = "Query Text";
-  static readonly description =
-    "Query a ChromaDB collection for similar text. " +
-    "vector, RAG, query, text, search, similarity, chroma";
+            static readonly title = "Query Text";
+            static readonly description = "Query the index for similar text.\n    vector, RAG, query, text, search, similarity, chroma";
+        static readonly metadataOutputTypes = {
+    ids: "list[str]",
+    documents: "list[str]",
+    metadatas: "list[dict]",
+    distances: "list[float]"
+  };
+  
+  @prop({ type: "collection", default: {
+  "type": "collection",
+  "name": ""
+}, title: "Collection", description: "The collection to query" })
+  declare collection: any;
 
-  defaults() {
-    return {
-      collection: { name: "" },
-      text: "",
-      n_results: 1,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Text", description: "The text to query" })
+  declare text: any;
+
+  @prop({ type: "int", default: 1, title: "N Results", description: "The number of results to return" })
+  declare n_results: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const collectionInput = (inputs.collection ?? this._props.collection ?? { name: "" }) as {
+    const collectionInput = (inputs.collection ?? this.collection ?? { name: "" }) as {
       name: string;
     };
     const name = collectionInput.name ?? "";
     if (!name.trim()) throw new Error("Collection name cannot be empty");
 
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const nResults = Number(inputs.n_results ?? this._props.n_results ?? 1);
+    const text = String(inputs.text ?? this.text ?? "");
+    const nResults = Number(inputs.n_results ?? this.n_results ?? 1);
 
     const collection = await getCollection(name);
     const result = await collection.query({
@@ -718,18 +830,20 @@ export class QueryTextNode extends BaseNode {
 
 export class RemoveOverlapNode extends BaseNode {
   static readonly nodeType = "vector.chroma.RemoveOverlap";
-  static readonly title = "Remove Overlap";
-  static readonly description =
-    "Removes overlapping words between consecutive strings in a list. Splits text into words " +
-    "and matches word sequences for accurate overlap detection. " +
-    "vector, RAG, query, text, processing, overlap, deduplication";
+            static readonly title = "Remove Overlap";
+            static readonly description = "Removes overlapping words between consecutive strings in a list. Splits text into words and matches word sequences for more accurate overlap detection.\n    vector, RAG, query, text, processing, overlap, deduplication";
+        static readonly metadataOutputTypes = {
+    documents: "list[str]"
+  };
+  
+  @prop({ type: "list[str]", default: [], title: "Documents", description: "List of strings to process for overlap removal" })
+  declare documents: any;
 
-  defaults() {
-    return {
-      documents: [] as string[],
-      min_overlap_words: 2,
-    };
-  }
+  @prop({ type: "int", default: 2, title: "Min Overlap Words", description: "Minimum number of words that must overlap to be considered" })
+  declare min_overlap_words: any;
+
+
+
 
   private _splitIntoWords(text: string): string[] {
     return text.split(/\s+/).filter((w) => w.length > 0);
@@ -750,8 +864,8 @@ export class RemoveOverlapNode extends BaseNode {
   }
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const documents = (inputs.documents ?? this._props.documents ?? []) as string[];
-    const minOverlapWords = Number(inputs.min_overlap_words ?? this._props.min_overlap_words ?? 2);
+    const documents = (inputs.documents ?? this.documents ?? []) as string[];
+    const minOverlapWords = Number(inputs.min_overlap_words ?? this.min_overlap_words ?? 2);
 
     if (documents.length === 0) {
       return { output: { documents: [] } };
@@ -785,21 +899,36 @@ export class RemoveOverlapNode extends BaseNode {
 
 export class HybridSearchNode extends BaseNode {
   static readonly nodeType = "vector.chroma.HybridSearch";
-  static readonly title = "Hybrid Search";
-  static readonly description =
-    "Hybrid search combining semantic and keyword-based search for better retrieval. " +
-    "Uses reciprocal rank fusion to combine results from both methods. " +
-    "vector, RAG, query, semantic, text, similarity, chroma";
+            static readonly title = "Hybrid Search";
+            static readonly description = "Hybrid search combining semantic and keyword-based search for better retrieval. Uses reciprocal rank fusion to combine results from both methods.\n    vector, RAG, query, semantic, text, similarity, chroma";
+        static readonly metadataOutputTypes = {
+    ids: "list[str]",
+    documents: "list[str]",
+    metadatas: "list[dict]",
+    distances: "list[float]",
+    scores: "list[float]"
+  };
+  
+  @prop({ type: "collection", default: {
+  "type": "collection",
+  "name": ""
+}, title: "Collection", description: "The collection to query" })
+  declare collection: any;
 
-  defaults() {
-    return {
-      collection: { name: "" },
-      text: "",
-      n_results: 5,
-      k_constant: 60.0,
-      min_keyword_length: 3,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Text", description: "The text to query" })
+  declare text: any;
+
+  @prop({ type: "int", default: 5, title: "N Results", description: "The number of final results to return" })
+  declare n_results: any;
+
+  @prop({ type: "float", default: 60, title: "K Constant", description: "Constant for reciprocal rank fusion (default: 60.0)" })
+  declare k_constant: any;
+
+  @prop({ type: "int", default: 3, title: "Min Keyword Length", description: "Minimum length for keyword tokens" })
+  declare min_keyword_length: any;
+
+
+
 
   private _getKeywordQuery(text: string, minKeywordLength: number): Record<string, unknown> | null {
     const pattern = /[ ,.!?\-_=|]+/;
@@ -817,18 +946,18 @@ export class HybridSearchNode extends BaseNode {
   }
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const collectionInput = (inputs.collection ?? this._props.collection ?? { name: "" }) as {
+    const collectionInput = (inputs.collection ?? this.collection ?? { name: "" }) as {
       name: string;
     };
     const name = collectionInput.name ?? "";
     if (!name.trim()) throw new Error("Collection name cannot be empty");
 
-    const text = String(inputs.text ?? this._props.text ?? "");
+    const text = String(inputs.text ?? this.text ?? "");
     if (!text.trim()) throw new Error("Search text cannot be empty");
 
-    const nResults = Number(inputs.n_results ?? this._props.n_results ?? 5);
-    const kConstant = Number(inputs.k_constant ?? this._props.k_constant ?? 60.0);
-    const minKeywordLength = Number(inputs.min_keyword_length ?? this._props.min_keyword_length ?? 3);
+    const nResults = Number(inputs.n_results ?? this.n_results ?? 5);
+    const kConstant = Number(inputs.k_constant ?? this.k_constant ?? 60.0);
+    const minKeywordLength = Number(inputs.min_keyword_length ?? this.min_keyword_length ?? 3);
 
     const collection = await getCollection(name);
 

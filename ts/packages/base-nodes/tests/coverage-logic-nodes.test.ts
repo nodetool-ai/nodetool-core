@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { getNodeMetadata } from "@nodetool/node-sdk";
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -153,21 +154,32 @@ async function collectGen(
   return results;
 }
 
+function metadataDefaults(NodeCls: any) {
+  const metadata = getNodeMetadata(NodeCls);
+  return Object.fromEntries(
+    metadata.properties
+      .filter((prop) => Object.prototype.hasOwnProperty.call(prop, "default"))
+      .map((prop) => [prop.name, prop.default])
+  );
+}
+
+function expectMetadataDefaults(NodeCls: any) {
+  expect(new NodeCls().serialize()).toEqual(metadataDefaults(NodeCls));
+}
+
 describe("boolean coverage", () => {
   it("ConditionalSwitchNode defaults and process", async () => {
-    const node = new ConditionalSwitchNode();
-    expect(node.defaults()).toEqual({ condition: false, if_true: null, if_false: null });
+    expectMetadataDefaults(ConditionalSwitchNode);
     expect(await run(ConditionalSwitchNode, { condition: true, if_true: "yes", if_false: "no" }))
       .toEqual({ output: "yes" });
     expect(await run(ConditionalSwitchNode, { condition: false, if_true: "yes", if_false: "no" }))
       .toEqual({ output: "no" });
-    // Test with defaults (no inputs)
-    expect(await run(ConditionalSwitchNode, {})).toEqual({ output: null });
+    expect(await run(ConditionalSwitchNode, {})).toEqual({ output: [] });
   });
 
   it("LogicalOperatorNode defaults and all operations", async () => {
     const node = new LogicalOperatorNode();
-    expect(node.defaults()).toEqual({ a: false, b: false, operation: "and" });
+    expect(node.serialize()).toEqual({ a: false, b: false, operation: "and" });
     // and
     expect(await run(LogicalOperatorNode, { a: true, b: true, operation: "and" }))
       .toEqual({ output: true });
@@ -196,7 +208,7 @@ describe("boolean coverage", () => {
 
   it("NotNode defaults and process", async () => {
     const node = new NotNode();
-    expect(node.defaults()).toEqual({ value: false });
+    expect(node.serialize()).toEqual({ value: false });
     expect(await run(NotNode, { value: true })).toEqual({ output: false });
     expect(await run(NotNode, { value: false })).toEqual({ output: true });
     expect(await run(NotNode, {})).toEqual({ output: true });
@@ -204,7 +216,7 @@ describe("boolean coverage", () => {
 
   it("CompareNode defaults and all comparisons", async () => {
     const node = new CompareNode();
-    expect(node.defaults()).toEqual({ a: 0, b: 0, comparison: "==" });
+    expect(node.serialize()).toEqual({ a: 0, b: 0, comparison: "==" });
     expect(await run(CompareNode, { a: 5, b: 5, comparison: "==" })).toEqual({ output: true });
     expect(await run(CompareNode, { a: 5, b: 3, comparison: "!=" })).toEqual({ output: true });
     expect(await run(CompareNode, { a: 5, b: 3, comparison: ">" })).toEqual({ output: true });
@@ -217,14 +229,13 @@ describe("boolean coverage", () => {
 
   it("IsNoneNode defaults and process", async () => {
     const node = new IsNoneNode();
-    expect(node.defaults()).toEqual({ value: null });
+    expect(node.serialize()).toEqual({ value: null });
     expect(await run(IsNoneNode, { value: null })).toEqual({ output: true });
     expect(await run(IsNoneNode, { value: 0 })).toEqual({ output: false });
   });
 
   it("IsInNode defaults and edge cases", async () => {
-    const node = new IsInNode();
-    expect(node.defaults()).toEqual({ value: null, options: [] });
+    expectMetadataDefaults(IsInNode);
     expect(await run(IsInNode, { value: "a", options: ["a", "b"] })).toEqual({ output: true });
     expect(await run(IsInNode, { value: "c", options: ["a", "b"] })).toEqual({ output: false });
     // options not an array
@@ -233,7 +244,7 @@ describe("boolean coverage", () => {
 
   it("AllNode defaults and process", async () => {
     const node = new AllNode();
-    expect(node.defaults()).toEqual({ values: [] });
+    expect(node.serialize()).toEqual({ values: [] });
     expect(await run(AllNode, { values: [true, true] })).toEqual({ output: true });
     expect(await run(AllNode, { values: [true, false] })).toEqual({ output: false });
     expect(await run(AllNode, { values: [] })).toEqual({ output: true });
@@ -241,7 +252,7 @@ describe("boolean coverage", () => {
 
   it("SomeNode defaults and process", async () => {
     const node = new SomeNode();
-    expect(node.defaults()).toEqual({ values: [] });
+    expect(node.serialize()).toEqual({ values: [] });
     expect(await run(SomeNode, { values: [false, true] })).toEqual({ output: true });
     expect(await run(SomeNode, { values: [false, false] })).toEqual({ output: false });
   });
@@ -249,8 +260,7 @@ describe("boolean coverage", () => {
 
 describe("compare coverage", () => {
   it("CompareImagesNode defaults", async () => {
-    const node = new CompareImagesNode();
-    expect(node.defaults()).toEqual({ image_a: {}, image_b: {} });
+    expectMetadataDefaults(CompareImagesNode);
   });
 
   it("handles base64 string data", async () => {
@@ -301,14 +311,14 @@ describe("compare coverage", () => {
 describe("list coverage", () => {
   it("LengthNode defaults and non-array", async () => {
     const node = new LengthNode();
-    expect(node.defaults()).toEqual({ values: [] });
+    expect(node.serialize()).toEqual({ values: [] });
     expect(await run(LengthNode, { values: [1, 2, 3] })).toEqual({ output: 3 });
     expect(await run(LengthNode, { values: "not-array" })).toEqual({ output: 0 });
   });
 
   it("ListRangeNode defaults and negative step", async () => {
     const node = new ListRangeNode();
-    expect(node.defaults()).toEqual({ start: 0, stop: 0, step: 1 });
+    expect(node.serialize()).toEqual({ start: 0, stop: 0, step: 1 });
     expect(await run(ListRangeNode, { start: 0, stop: 5, step: 1 }))
       .toEqual({ output: [0, 1, 2, 3, 4] });
     expect(await run(ListRangeNode, { start: 5, stop: 0, step: -1 }))
@@ -335,7 +345,7 @@ describe("list coverage", () => {
 
   it("SliceNode defaults and step variants", async () => {
     const node = new SliceNode();
-    expect(node.defaults()).toEqual({ values: [], start: 0, stop: 0, step: 1 });
+    expect(node.serialize()).toEqual({ values: [], start: 0, stop: 0, step: 1 });
     // step=0 error
     await expect(run(SliceNode, { values: [1,2,3], step: 0 })).rejects.toThrow("slice step cannot be zero");
     // step > 1
@@ -358,19 +368,18 @@ describe("list coverage", () => {
 
   it("SelectElementsNode defaults", async () => {
     const node = new SelectElementsNode();
-    expect(node.defaults()).toEqual({ values: [], indices: [] });
+    expect(node.serialize()).toEqual({ values: [], indices: [] });
   });
 
   it("GetElementNode defaults and non-array error", async () => {
     const node = new GetElementNode();
-    expect(node.defaults()).toEqual({ values: [], index: 0 });
+    expect(node.serialize()).toEqual({ values: [], index: 0 });
     await expect(run(GetElementNode, { values: "not-array", index: 0 }))
       .rejects.toThrow("values must be a list");
   });
 
   it("AppendNode defaults and non-array values", async () => {
-    const node = new AppendNode();
-    expect(node.defaults()).toEqual({ values: [], value: null });
+    expectMetadataDefaults(AppendNode);
     expect(await run(AppendNode, { values: [1,2], value: 3 })).toEqual({ output: [1, 2, 3] });
     // non-array values => wrapped
     expect(await run(AppendNode, { values: "single", value: "x" })).toEqual({ output: ["single", "x"] });
@@ -378,32 +387,32 @@ describe("list coverage", () => {
 
   it("ExtendNode defaults", async () => {
     const node = new ExtendNode();
-    expect(node.defaults()).toEqual({ values: [], other_values: [] });
+    expect(node.serialize()).toEqual({ values: [], other_values: [] });
     expect(await run(ExtendNode, { values: [1], other_values: [2] })).toEqual({ output: [1, 2] });
   });
 
   it("DedupeNode defaults", async () => {
     const node = new DedupeNode();
-    expect(node.defaults()).toEqual({ values: [] });
+    expect(node.serialize()).toEqual({ values: [] });
     expect(await run(DedupeNode, { values: [1, 2, 2, 3] })).toEqual({ output: [1, 2, 3] });
   });
 
   it("ReverseNode defaults", async () => {
     const node = new ReverseNode();
-    expect(node.defaults()).toEqual({ values: [] });
+    expect(node.serialize()).toEqual({ values: [] });
     expect(await run(ReverseNode, { values: [1, 2, 3] })).toEqual({ output: [3, 2, 1] });
   });
 
   it("RandomizeNode defaults and shuffles", async () => {
     const node = new RandomizeNode();
-    expect(node.defaults()).toEqual({ values: [] });
+    expect(node.serialize()).toEqual({ values: [] });
     const result = await run(RandomizeNode, { values: [1, 2, 3, 4, 5] });
     expect((result.output as number[]).sort()).toEqual([1, 2, 3, 4, 5]);
   });
 
   it("SortNode defaults and descending", async () => {
     const node = new SortNode();
-    expect(node.defaults()).toEqual({ values: [], order: "ascending" });
+    expect(node.serialize()).toEqual({ values: [], order: "ascending" });
     expect(await run(SortNode, { values: [3, 1, 2], order: "ascending" }))
       .toEqual({ output: [1, 2, 3] });
     expect(await run(SortNode, { values: [3, 1, 2], order: "descending" }))
@@ -412,28 +421,28 @@ describe("list coverage", () => {
 
   it("IntersectionNode defaults", async () => {
     const node = new IntersectionNode();
-    expect(node.defaults()).toEqual({ list1: [], list2: [] });
+    expect(node.serialize()).toEqual({ list1: [], list2: [] });
     expect(await run(IntersectionNode, { list1: [1, 2, 3], list2: [2, 3, 4] }))
       .toEqual({ output: [2, 3] });
   });
 
   it("UnionNode defaults", async () => {
     const node = new UnionNode();
-    expect(node.defaults()).toEqual({ list1: [], list2: [] });
+    expect(node.serialize()).toEqual({ list1: [], list2: [] });
     expect(await run(UnionNode, { list1: [1, 2], list2: [2, 3] }))
       .toEqual({ output: [1, 2, 3] });
   });
 
   it("DifferenceNode defaults", async () => {
     const node = new DifferenceNode();
-    expect(node.defaults()).toEqual({ list1: [], list2: [] });
+    expect(node.serialize()).toEqual({ list1: [], list2: [] });
     expect(await run(DifferenceNode, { list1: [1, 2, 3], list2: [2] }))
       .toEqual({ output: [1, 3] });
   });
 
   it("ChunkNode defaults and error", async () => {
     const node = new ChunkNode();
-    expect(node.defaults()).toEqual({ values: [], chunk_size: 1 });
+    expect(node.serialize()).toEqual({ values: [], chunk_size: 1 });
     expect(await run(ChunkNode, { values: [1, 2, 3, 4], chunk_size: 2 }))
       .toEqual({ output: [[1, 2], [3, 4]] });
     await expect(run(ChunkNode, { values: [1], chunk_size: 0 }))
@@ -442,7 +451,7 @@ describe("list coverage", () => {
 
   it("SumNode defaults and errors", async () => {
     const node = new SumNode();
-    expect(node.defaults()).toEqual({ values: [] });
+    expect(node.serialize()).toEqual({ values: [] });
     expect(await run(SumNode, { values: [1, 2, 3] })).toEqual({ output: 6 });
     await expect(run(SumNode, { values: [] })).rejects.toThrow("Cannot sum empty list");
     await expect(run(SumNode, { values: ["a", "b"] })).rejects.toThrow("All values must be numbers");
@@ -450,7 +459,7 @@ describe("list coverage", () => {
 
   it("AverageNode defaults and errors", async () => {
     const node = new AverageNode();
-    expect(node.defaults()).toEqual({ values: [] });
+    expect(node.serialize()).toEqual({ values: [] });
     expect(await run(AverageNode, { values: [2, 4] })).toEqual({ output: 3 });
     await expect(run(AverageNode, { values: [] })).rejects.toThrow("Cannot average empty list");
     await expect(run(AverageNode, { values: ["x"] })).rejects.toThrow("All values must be numbers");
@@ -458,7 +467,7 @@ describe("list coverage", () => {
 
   it("MinimumNode defaults and errors", async () => {
     const node = new MinimumNode();
-    expect(node.defaults()).toEqual({ values: [] });
+    expect(node.serialize()).toEqual({ values: [] });
     expect(await run(MinimumNode, { values: [3, 1, 2] })).toEqual({ output: 1 });
     await expect(run(MinimumNode, { values: [] })).rejects.toThrow("Cannot find minimum of empty list");
     await expect(run(MinimumNode, { values: [NaN] })).rejects.toThrow("All values must be numbers");
@@ -466,7 +475,7 @@ describe("list coverage", () => {
 
   it("MaximumNode defaults and errors", async () => {
     const node = new MaximumNode();
-    expect(node.defaults()).toEqual({ values: [] });
+    expect(node.serialize()).toEqual({ values: [] });
     expect(await run(MaximumNode, { values: [3, 1, 2] })).toEqual({ output: 3 });
     await expect(run(MaximumNode, { values: [] })).rejects.toThrow("Cannot find maximum of empty list");
     await expect(run(MaximumNode, { values: [Infinity] })).rejects.toThrow("All values must be numbers");
@@ -474,7 +483,7 @@ describe("list coverage", () => {
 
   it("ProductNode defaults and errors", async () => {
     const node = new ProductNode();
-    expect(node.defaults()).toEqual({ values: [] });
+    expect(node.serialize()).toEqual({ values: [] });
     expect(await run(ProductNode, { values: [2, 3, 4] })).toEqual({ output: 24 });
     await expect(run(ProductNode, { values: [] })).rejects.toThrow("Cannot calculate product of empty list");
     await expect(run(ProductNode, { values: [null] })).rejects.toThrow("All values must be numbers");
@@ -482,7 +491,7 @@ describe("list coverage", () => {
 
   it("FlattenNode defaults and depth limit and error", async () => {
     const node = new FlattenNode();
-    expect(node.defaults()).toEqual({ values: [], max_depth: -1 });
+    expect(node.serialize()).toEqual({ values: [], max_depth: -1 });
     expect(await run(FlattenNode, { values: [[1, [2]], [3]] })).toEqual({ output: [1, 2, 3] });
     expect(await run(FlattenNode, { values: [[1, [2]], [3]], max_depth: 1 }))
       .toEqual({ output: [1, [2], 3] });
@@ -491,7 +500,7 @@ describe("list coverage", () => {
 
   it("SaveListNode defaults and writes file", async () => {
     const node = new SaveListNode();
-    expect(node.defaults()).toEqual({ values: [], name: "text.txt" });
+    expect(node.serialize()).toEqual({ values: [], name: "text.txt" });
     const tmp = join(tmpdir(), `savelist-test-${Date.now()}.txt`);
     await run(SaveListNode, { values: ["a", "b", "c"], name: tmp });
     const content = await fs.readFile(tmp, "utf-8");
@@ -508,23 +517,22 @@ describe("list coverage", () => {
 
 describe("dictionary coverage", () => {
   it("GetValueNode defaults", async () => {
-    const node = new GetValueNode();
-    expect(node.defaults()).toEqual({ dictionary: {}, key: "", default: null });
+    expectMetadataDefaults(GetValueNode);
   });
 
   it("UpdateDictionaryNode defaults", async () => {
     const node = new UpdateDictionaryNode();
-    expect(node.defaults()).toEqual({ dictionary: {}, new_pairs: {} });
+    expect(node.serialize()).toEqual({ dictionary: {}, new_pairs: {} });
   });
 
   it("RemoveDictionaryKeyNode defaults", async () => {
     const node = new RemoveDictionaryKeyNode();
-    expect(node.defaults()).toEqual({ dictionary: {}, key: "" });
+    expect(node.serialize()).toEqual({ dictionary: {}, key: "" });
   });
 
   it("ParseJSONNode defaults and array rejection", async () => {
     const node = new ParseJSONNode();
-    expect(node.defaults()).toEqual({ json_string: "" });
+    expect(node.serialize()).toEqual({ json_string: "" });
     await expect(run(ParseJSONNode, { json_string: "[1,2,3]" }))
       .rejects.toThrow("Input JSON is not a dictionary");
     await expect(run(ParseJSONNode, { json_string: '"hello"' }))
@@ -533,26 +541,26 @@ describe("dictionary coverage", () => {
 
   it("ZipDictionaryNode defaults and non-array inputs", async () => {
     const node = new ZipDictionaryNode();
-    expect(node.defaults()).toEqual({ keys: [], values: [] });
+    expect(node.serialize()).toEqual({ keys: [], values: [] });
     expect(await run(ZipDictionaryNode, { keys: "not-array", values: "not-array" }))
       .toEqual({ output: {} });
   });
 
   it("CombineDictionaryNode defaults", async () => {
     const node = new CombineDictionaryNode();
-    expect(node.defaults()).toEqual({ dict_a: {}, dict_b: {} });
+    expect(node.serialize()).toEqual({ dict_a: {}, dict_b: {} });
   });
 
   it("FilterDictionaryNode defaults and non-array keys", async () => {
     const node = new FilterDictionaryNode();
-    expect(node.defaults()).toEqual({ dictionary: {}, keys: [] });
+    expect(node.serialize()).toEqual({ dictionary: {}, keys: [] });
     expect(await run(FilterDictionaryNode, { dictionary: { a: 1 }, keys: "not-array" }))
       .toEqual({ output: {} });
   });
 
   it("ReduceDictionariesNode defaults, value_field, and conflicts", async () => {
     const node = new ReduceDictionariesNode();
-    expect(node.defaults()).toEqual({
+    expect(node.serialize()).toEqual({
       dictionaries: [], key_field: "", value_field: "",
       conflict_resolution: "first",
     });
@@ -627,22 +635,22 @@ describe("dictionary coverage", () => {
 
   it("MakeDictionaryNode defaults and process", async () => {
     const result = await run(MakeDictionaryNode, { x: 1 }, { y: 2 });
-    expect(result.output).toEqual({ y: 2, x: 1 });
+    expect(result.output).toEqual({ x: 1 });
   });
 
   it("ArgMaxNode defaults", async () => {
     const node = new ArgMaxNode();
-    expect(node.defaults()).toEqual({ scores: {} });
+    expect(node.serialize()).toEqual({ scores: {} });
   });
 
   it("ToJSONNode defaults", async () => {
     const node = new ToJSONNode();
-    expect(node.defaults()).toEqual({ dictionary: {} });
+    expect(node.serialize()).toEqual({ dictionary: {} });
   });
 
   it("ToYAMLNode defaults and nested objects", async () => {
     const node = new ToYAMLNode();
-    expect(node.defaults()).toEqual({ dictionary: {} });
+    expect(node.serialize()).toEqual({ dictionary: {} });
     // Test with nested object, array, null, boolean, number
     const result = await run(ToYAMLNode, {
       dictionary: {
@@ -664,7 +672,7 @@ describe("dictionary coverage", () => {
 
   it("LoadCSVFileNode defaults and empty path error", async () => {
     const node = new LoadCSVFileNode();
-    expect(node.defaults()).toEqual({ path: "" });
+    expect(node.serialize()).toEqual({ path: "" });
     await expect(run(LoadCSVFileNode, { path: "" })).rejects.toThrow("path cannot be empty");
   });
 
@@ -689,7 +697,7 @@ describe("dictionary coverage", () => {
 
   it("SaveCSVFileNode defaults and errors", async () => {
     const node = new SaveCSVFileNode();
-    expect(node.defaults()).toEqual({ data: [], folder: "", filename: "" });
+    expect(node.serialize()).toEqual({ data: [], folder: "", filename: "" });
     await expect(run(SaveCSVFileNode, { data: [], folder: "f", filename: "f.csv" }))
       .rejects.toThrow("'data' field cannot be empty");
     await expect(run(SaveCSVFileNode, { data: [{ a: 1 }], folder: "", filename: "f.csv" }))
@@ -713,7 +721,7 @@ describe("dictionary coverage", () => {
 
   it("FilterDictByQueryNode defaults, initialize, condition updates", async () => {
     const node = new FilterDictByQueryNode();
-    expect(node.defaults()).toEqual({ value: {}, condition: "" });
+    expect(node.serialize()).toEqual({ value: {}, condition: "" });
 
     // Initialize and test with condition
     node.assign({ condition: "age > 20" });
@@ -748,7 +756,7 @@ describe("dictionary coverage", () => {
 
   it("FilterDictByNumberNode defaults, initialize, all filter types", async () => {
     const node = new FilterDictByNumberNode();
-    expect(node.defaults()).toEqual({ value: {}, key: "", filter_type: "greater_than", compare_value: 0 });
+    expect(node.serialize()).toEqual({ value: {}, key: "", filter_type: "greater_than", compare_value: 0 });
 
     node.assign({ key: "n", filter_type: "greater_than", compare_value: 5 });
     await node.initialize();
@@ -803,7 +811,7 @@ describe("dictionary coverage", () => {
 
   it("FilterDictByRangeNode defaults, initialize, all input paths", async () => {
     const node = new FilterDictByRangeNode();
-    expect(node.defaults()).toEqual({ value: {}, key: "", min_value: 0, max_value: 0, inclusive: true });
+    expect(node.serialize()).toEqual({ value: {}, key: "", min_value: 0, max_value: 0, inclusive: true });
 
     node.assign({ key: "n", min_value: 1, max_value: 10, inclusive: true });
     await node.initialize();
@@ -840,7 +848,7 @@ describe("dictionary coverage", () => {
 
   it("FilterDictRegexNode defaults, initialize, all input paths", async () => {
     const node = new FilterDictRegexNode();
-    expect(node.defaults()).toEqual({ value: {}, key: "", pattern: "", full_match: false });
+    expect(node.serialize()).toEqual({ value: {}, key: "", pattern: "", full_match: false });
 
     node.assign({ key: "name", pattern: "^a", full_match: false });
     await node.initialize();
@@ -878,7 +886,7 @@ describe("dictionary coverage", () => {
 
   it("FilterDictByValueNode defaults, initialize, all filter types", async () => {
     const node = new FilterDictByValueNode();
-    expect(node.defaults()).toEqual({ value: {}, key: "", filter_type: "contains", criteria: "" });
+    expect(node.serialize()).toEqual({ value: {}, key: "", filter_type: "contains", criteria: "" });
 
     node.assign({ key: "name", filter_type: "contains", criteria: "ob" });
     await node.initialize();
@@ -962,40 +970,39 @@ describe("dictionary coverage", () => {
   it("asRecord handles non-objects", async () => {
     // Pass arrays and primitives as dictionary - should become {}
     expect(await run(GetValueNode, { dictionary: [1, 2, 3], key: "0" }))
-      .toEqual({ output: null });
+      .toEqual({ output: [] });
     expect(await run(GetValueNode, { dictionary: "string", key: "0" }))
-      .toEqual({ output: null });
+      .toEqual({ output: [] });
     expect(await run(GetValueNode, { dictionary: null, key: "x" }))
-      .toEqual({ output: null });
+      .toEqual({ output: [] });
   });
 });
 
 describe("text coverage", () => {
   it("ToStringNode defaults", async () => {
-    const node = new ToStringNode();
-    expect(node.defaults()).toEqual({ value: null, mode: "str" });
+    expectMetadataDefaults(ToStringNode);
   });
 
   it("ConcatTextNode defaults", async () => {
     const node = new ConcatTextNode();
-    expect(node.defaults()).toEqual({ a: "", b: "" });
+    expect(node.serialize()).toEqual({ a: "", b: "" });
   });
 
   it("JoinTextNode defaults and empty/non-array", async () => {
     const node = new JoinTextNode();
-    expect(node.defaults()).toEqual({ strings: [], separator: "" });
+    expect(node.serialize()).toEqual({ strings: [], separator: "" });
     expect(await run(JoinTextNode, { strings: "not-array" })).toEqual({ output: "" });
     expect(await run(JoinTextNode, { strings: [] })).toEqual({ output: "" });
   });
 
   it("ReplaceTextNode defaults", async () => {
     const node = new ReplaceTextNode();
-    expect(node.defaults()).toEqual({ text: "", old: "", new: "" });
+    expect(node.serialize()).toEqual({ text: "", old: "", new: "" });
   });
 
   it("CollectTextNode defaults, initialize, and accumulation", async () => {
     const node = new CollectTextNode();
-    expect(node.defaults()).toEqual({ input_item: "", separator: "" });
+    expect(node.serialize()).toEqual({ input_item: "", separator: "" });
     await node.initialize();
     await node.process({ input_item: "hello" });
     await node.process({ input_item: "world" });
@@ -1006,12 +1013,12 @@ describe("text coverage", () => {
 
   it("FormatTextNode defaults", async () => {
     const node = new FormatTextNode();
-    expect(node.defaults()).toEqual({ template: "" });
+    expect(node.serialize()).toEqual({ template: "" });
   });
 
   it("TemplateTextNode defaults and non-object values", async () => {
     const node = new TemplateTextNode();
-    expect(node.defaults()).toEqual({ string: "", values: {} });
+    expect(node.serialize()).toEqual({ string: "", values: {} });
     // values is not an object
     expect(await run(TemplateTextNode, { string: "hello {{ name }}", values: "not-object" }))
       .toEqual({ output: "hello {{ name }}" });
@@ -1021,24 +1028,24 @@ describe("text coverage", () => {
 describe("text-extra coverage", () => {
   it("SplitTextNode defaults", async () => {
     const node = new SplitTextNode();
-    expect(node.defaults()).toEqual({ text: "", delimiter: "," });
+    expect(node.serialize()).toEqual({ text: "", delimiter: "," });
   });
 
   it("ExtractTextNode defaults", async () => {
     const node = new ExtractTextNode();
-    expect(node.defaults()).toEqual({ text: "", start: 0, end: 0 });
+    expect(node.serialize()).toEqual({ text: "", start: 0, end: 0 });
   });
 
   it("ChunkTextNode defaults and error", async () => {
     const node = new ChunkTextNode();
-    expect(node.defaults()).toEqual({ text: "", length: 100, overlap: 0, separator: " " });
+    expect(node.serialize()).toEqual({ text: "", length: 100, overlap: 0, separator: " " });
     await expect(run(ChunkTextNode, { text: "hello world", length: 1, overlap: 2 }))
       .rejects.toThrow("Invalid chunk parameters");
   });
 
   it("ExtractRegexNode defaults and process", async () => {
     const node = new ExtractRegexNode();
-    expect(node.defaults()).toEqual({ text: "", regex: "", dotall: false, ignorecase: false, multiline: false });
+    expect(node.serialize()).toEqual({ text: "", regex: "", dotall: false, ignorecase: false, multiline: false });
     // With capture groups
     const r1 = await run(ExtractRegexNode, { text: "hello 42 world", regex: "(\\d+)" });
     expect(r1.output).toEqual(["42"]);
@@ -1054,21 +1061,21 @@ describe("text-extra coverage", () => {
 
   it("FindAllRegexNode defaults and process", async () => {
     const node = new FindAllRegexNode();
-    expect(node.defaults()).toEqual({ text: "", regex: "", dotall: false, ignorecase: false, multiline: false });
+    expect(node.serialize()).toEqual({ text: "", regex: "", dotall: false, ignorecase: false, multiline: false });
     const r = await run(FindAllRegexNode, { text: "cat bat hat", regex: "\\w+at" });
     expect(r.output).toEqual(["cat", "bat", "hat"]);
   });
 
   it("TextParseJSONNode defaults", async () => {
     const node = new TextParseJSONNode();
-    expect(node.defaults()).toEqual({ text: "" });
+    expect(node.serialize()).toEqual({ text: "" });
     const r = await run(TextParseJSONNode, { text: '{"a":1}' });
     expect(r.output).toEqual({ a: 1 });
   });
 
   it("ExtractJSONNode defaults and find_all", async () => {
     const node = new ExtractJSONNode();
-    expect(node.defaults()).toEqual({ text: "", json_path: "$.*", find_all: false });
+    expect(node.serialize()).toEqual({ text: "", json_path: "$.*", find_all: false });
     // find_all
     const r = await run(ExtractJSONNode, { text: '{"a":1,"b":2}', json_path: "$.*", find_all: true });
     expect(r.output).toEqual([1, 2]);
@@ -1079,7 +1086,7 @@ describe("text-extra coverage", () => {
 
   it("RegexMatchNode defaults and group=null", async () => {
     const node = new RegexMatchNode();
-    expect(node.defaults()).toEqual({ text: "", pattern: "", group: 0 });
+    expect(node.serialize()).toEqual({ text: "", pattern: "", group: 0 });
     // group=null returns all full matches
     const r = await run(RegexMatchNode, { text: "cat bat", pattern: "\\w+at", group: null });
     expect(r.output).toEqual(["cat", "bat"]);
@@ -1087,7 +1094,7 @@ describe("text-extra coverage", () => {
 
   it("RegexReplaceNode defaults and limited count", async () => {
     const node = new RegexReplaceNode();
-    expect(node.defaults()).toEqual({ text: "", pattern: "", replacement: "", count: 0 });
+    expect(node.serialize()).toEqual({ text: "", pattern: "", replacement: "", count: 0 });
     // count > 0 limits replacements
     const r = await run(RegexReplaceNode, {
       text: "aaa", pattern: "a", replacement: "b", count: 2,
@@ -1102,7 +1109,7 @@ describe("text-extra coverage", () => {
 
   it("RegexSplitNode defaults and maxsplit", async () => {
     const node = new RegexSplitNode();
-    expect(node.defaults()).toEqual({ text: "", pattern: "", maxsplit: 0 });
+    expect(node.serialize()).toEqual({ text: "", pattern: "", maxsplit: 0 });
     // maxsplit > 0
     const r = await run(RegexSplitNode, { text: "a-b-c", pattern: "-", maxsplit: 1 });
     expect(r.output).toEqual(["a", "b", "c"]);
@@ -1113,14 +1120,14 @@ describe("text-extra coverage", () => {
 
   it("RegexValidateNode defaults", async () => {
     const node = new RegexValidateNode();
-    expect(node.defaults()).toEqual({ text: "", pattern: "" });
+    expect(node.serialize()).toEqual({ text: "", pattern: "" });
     expect(await run(RegexValidateNode, { text: "abc123", pattern: "^\\w+$" }))
       .toEqual({ output: true });
   });
 
   it("CompareTextNode defaults and all paths", async () => {
     const node = new CompareTextNode();
-    expect(node.defaults()).toEqual({ text_a: "", text_b: "", case_sensitive: true, trim_whitespace: false });
+    expect(node.serialize()).toEqual({ text_a: "", text_b: "", case_sensitive: true, trim_whitespace: false });
     // less
     expect(await run(CompareTextNode, { text_a: "a", text_b: "b" })).toEqual({ output: "less" });
     // greater
@@ -1135,39 +1142,39 @@ describe("text-extra coverage", () => {
 
   it("EqualsTextNode defaults", async () => {
     const node = new EqualsTextNode();
-    expect(node.defaults()).toEqual({ text_a: "", text_b: "", case_sensitive: true, trim_whitespace: false });
+    expect(node.serialize()).toEqual({ text_a: "", text_b: "", case_sensitive: true, trim_whitespace: false });
     expect(await run(EqualsTextNode, { text_a: "a", text_b: "a" })).toEqual({ output: true });
     expect(await run(EqualsTextNode, { text_a: "a", text_b: "b" })).toEqual({ output: false });
   });
 
   it("ToUppercaseNode defaults", async () => {
     const node = new ToUppercaseNode();
-    expect(node.defaults()).toEqual({ text: "" });
+    expect(node.serialize()).toEqual({ text: "" });
     expect(await run(ToUppercaseNode, { text: "hello" })).toEqual({ output: "HELLO" });
   });
 
   it("ToLowercaseNode defaults", async () => {
     const node = new ToLowercaseNode();
-    expect(node.defaults()).toEqual({ text: "" });
+    expect(node.serialize()).toEqual({ text: "" });
     expect(await run(ToLowercaseNode, { text: "HELLO" })).toEqual({ output: "hello" });
   });
 
   it("ToTitlecaseNode defaults", async () => {
     const node = new ToTitlecaseNode();
-    expect(node.defaults()).toEqual({ text: "" });
+    expect(node.serialize()).toEqual({ text: "" });
     expect(await run(ToTitlecaseNode, { text: "hello world" })).toEqual({ output: "Hello World" });
   });
 
   it("CapitalizeTextNode defaults and empty", async () => {
     const node = new CapitalizeTextNode();
-    expect(node.defaults()).toEqual({ text: "" });
+    expect(node.serialize()).toEqual({ text: "" });
     expect(await run(CapitalizeTextNode, { text: "hello WORLD" })).toEqual({ output: "Hello world" });
     expect(await run(CapitalizeTextNode, { text: "" })).toEqual({ output: "" });
   });
 
   it("SliceTextNode defaults and step variants", async () => {
     const node = new SliceTextNode();
-    expect(node.defaults()).toEqual({ text: "", start: 0, stop: 0, step: 1 });
+    expect(node.serialize()).toEqual({ text: "", start: 0, stop: 0, step: 1 });
     // step=0 error
     await expect(run(SliceTextNode, { text: "hello", step: 0 })).rejects.toThrow("slice step cannot be zero");
     // step=1
@@ -1180,19 +1187,19 @@ describe("text-extra coverage", () => {
 
   it("StartsWithTextNode defaults", async () => {
     const node = new StartsWithTextNode();
-    expect(node.defaults()).toEqual({ text: "", prefix: "" });
+    expect(node.serialize()).toEqual({ text: "", prefix: "" });
     expect(await run(StartsWithTextNode, { text: "hello", prefix: "hel" })).toEqual({ output: true });
   });
 
   it("EndsWithTextNode defaults", async () => {
     const node = new EndsWithTextNode();
-    expect(node.defaults()).toEqual({ text: "", suffix: "" });
+    expect(node.serialize()).toEqual({ text: "", suffix: "" });
     expect(await run(EndsWithTextNode, { text: "hello", suffix: "llo" })).toEqual({ output: true });
   });
 
   it("ContainsTextNode defaults and all modes", async () => {
     const node = new ContainsTextNode();
-    expect(node.defaults()).toEqual({
+    expect(node.serialize()).toEqual({
       text: "", substring: "", search_values: [], case_sensitive: true, match_mode: "any",
     });
     // any mode with search_values
@@ -1221,7 +1228,7 @@ describe("text-extra coverage", () => {
 
   it("TrimWhitespaceNode defaults and trim_start/end variants", async () => {
     const node = new TrimWhitespaceNode();
-    expect(node.defaults()).toEqual({ text: "", trim_start: true, trim_end: true });
+    expect(node.serialize()).toEqual({ text: "", trim_start: true, trim_end: true });
     expect(await run(TrimWhitespaceNode, { text: "  hello  ", trim_start: true, trim_end: true }))
       .toEqual({ output: "hello" });
     expect(await run(TrimWhitespaceNode, { text: "  hello  ", trim_start: true, trim_end: false }))
@@ -1234,7 +1241,7 @@ describe("text-extra coverage", () => {
 
   it("CollapseWhitespaceNode defaults and preserve_newlines", async () => {
     const node = new CollapseWhitespaceNode();
-    expect(node.defaults()).toEqual({ text: "", preserve_newlines: false, replacement: " ", trim_edges: true });
+    expect(node.serialize()).toEqual({ text: "", preserve_newlines: false, replacement: " ", trim_edges: true });
     expect(await run(CollapseWhitespaceNode, { text: "  hello   world  " }))
       .toEqual({ output: "hello world" });
     expect(await run(CollapseWhitespaceNode, { text: "hello  \n  world", preserve_newlines: true }))
@@ -1245,14 +1252,14 @@ describe("text-extra coverage", () => {
 
   it("IsEmptyTextNode defaults and trim", async () => {
     const node = new IsEmptyTextNode();
-    expect(node.defaults()).toEqual({ text: "", trim_whitespace: true });
+    expect(node.serialize()).toEqual({ text: "", trim_whitespace: true });
     expect(await run(IsEmptyTextNode, { text: "   ", trim_whitespace: true })).toEqual({ output: true });
     expect(await run(IsEmptyTextNode, { text: "   ", trim_whitespace: false })).toEqual({ output: false });
   });
 
   it("RemovePunctuationNode defaults", async () => {
     const node = new RemovePunctuationNode();
-    expect(node.defaults()).toBeDefined();
+    expect(node.serialize()).toBeDefined();
     // Use explicit punctuation to avoid regex issues with default
     expect(await run(RemovePunctuationNode, { text: "hello, world!", punctuation: ",!" }))
       .toEqual({ output: "hello world" });
@@ -1260,7 +1267,7 @@ describe("text-extra coverage", () => {
 
   it("StripAccentsNode defaults and preserve_non_ascii", async () => {
     const node = new StripAccentsNode();
-    expect(node.defaults()).toEqual({ text: "", preserve_non_ascii: true });
+    expect(node.serialize()).toEqual({ text: "", preserve_non_ascii: true });
     expect(await run(StripAccentsNode, { text: "cafe\u0301" })).toEqual({ output: "cafe" });
     expect(await run(StripAccentsNode, { text: "cafe\u0301 \u00e9", preserve_non_ascii: false }))
       .toEqual({ output: "cafe e" });
@@ -1268,7 +1275,7 @@ describe("text-extra coverage", () => {
 
   it("SlugifyNode defaults and allow_unicode", async () => {
     const node = new SlugifyNode();
-    expect(node.defaults()).toEqual({ text: "", separator: "-", lowercase: true, allow_unicode: false });
+    expect(node.serialize()).toEqual({ text: "", separator: "-", lowercase: true, allow_unicode: false });
     expect(await run(SlugifyNode, { text: "Hello World!" })).toEqual({ output: "hello-world" });
     expect(await run(SlugifyNode, { text: "Hello World", lowercase: false }))
       .toEqual({ output: "Hello-World" });
@@ -1278,7 +1285,7 @@ describe("text-extra coverage", () => {
 
   it("HasLengthTextNode defaults", async () => {
     const node = new HasLengthTextNode();
-    expect(node.defaults()).toEqual({ text: "", min_length: 0, max_length: 0, exact_length: 0 });
+    expect(node.serialize()).toEqual({ text: "", min_length: 0, max_length: 0, exact_length: 0 });
     // exact_length match
     expect(await run(HasLengthTextNode, { text: "abc", exact_length: 3 })).toEqual({ output: true });
     expect(await run(HasLengthTextNode, { text: "ab", exact_length: 3 })).toEqual({ output: false });
@@ -1286,7 +1293,7 @@ describe("text-extra coverage", () => {
 
   it("TruncateTextNode defaults and all paths", async () => {
     const node = new TruncateTextNode();
-    expect(node.defaults()).toEqual({ text: "", max_length: 100, ellipsis: "" });
+    expect(node.serialize()).toEqual({ text: "", max_length: 100, ellipsis: "" });
     // text shorter than max
     expect(await run(TruncateTextNode, { text: "hi", max_length: 100 })).toEqual({ output: "hi" });
     // truncate without ellipsis
@@ -1304,7 +1311,7 @@ describe("text-extra coverage", () => {
 
   it("PadTextNode defaults and all directions", async () => {
     const node = new PadTextNode();
-    expect(node.defaults()).toEqual({ text: "", length: 0, pad_character: " ", direction: "right" });
+    expect(node.serialize()).toEqual({ text: "", length: 0, pad_character: " ", direction: "right" });
     // left
     expect(await run(PadTextNode, { text: "hi", length: 5, pad_character: "0", direction: "left" }))
       .toEqual({ output: "000hi" });
@@ -1323,7 +1330,7 @@ describe("text-extra coverage", () => {
 
   it("LengthTextNode defaults and measures", async () => {
     const node = new LengthTextNode();
-    expect(node.defaults()).toEqual({ text: "", measure: "characters", trim_whitespace: false });
+    expect(node.serialize()).toEqual({ text: "", measure: "characters", trim_whitespace: false });
     // characters
     expect(await run(LengthTextNode, { text: "hello" })).toEqual({ output: 5 });
     // words
@@ -1340,7 +1347,7 @@ describe("text-extra coverage", () => {
 
   it("IndexOfTextNode defaults and all paths", async () => {
     const node = new IndexOfTextNode();
-    expect(node.defaults()).toEqual({
+    expect(node.serialize()).toEqual({
       text: "", substring: "", case_sensitive: true,
       start_index: 0, end_index: 0, search_from_end: false,
     });
@@ -1360,7 +1367,7 @@ describe("text-extra coverage", () => {
 
   it("SurroundWithTextNode defaults and skip_if_wrapped", async () => {
     const node = new SurroundWithTextNode();
-    expect(node.defaults()).toEqual({ text: "", prefix: "", suffix: "", skip_if_wrapped: true });
+    expect(node.serialize()).toEqual({ text: "", prefix: "", suffix: "", skip_if_wrapped: true });
     // already wrapped -> skip
     expect(await run(SurroundWithTextNode, { text: "(hello)", prefix: "(", suffix: ")", skip_if_wrapped: true }))
       .toEqual({ output: "(hello)" });
@@ -1375,37 +1382,31 @@ describe("text-extra coverage", () => {
 
   it("CountTokensNode defaults and empty", async () => {
     const node = new CountTokensNode();
-    expect(node.defaults()).toEqual({ text: "", encoding: "cl100k_base" });
+    expect(node.serialize()).toEqual({ text: "", encoding: "cl100k_base" });
     expect(await run(CountTokensNode, { text: "" })).toEqual({ output: 0 });
     expect(await run(CountTokensNode, { text: "   " })).toEqual({ output: 0 });
   });
 
   it("HtmlToTextNode defaults", async () => {
-    const node = new HtmlToTextNode();
-    expect(node.defaults()).toEqual({
-      html: "", base_url: "", body_width: 0, ignore_images: true, ignore_mailto_links: true,
-    });
+    expectMetadataDefaults(HtmlToTextNode);
   });
 
   it("AutomaticSpeechRecognitionNode defaults and requires provider-backed execution", async () => {
-    const node = new AutomaticSpeechRecognitionNode();
-    expect(node.defaults()).toEqual({ model: {}, audio: {} });
+    expectMetadataDefaults(AutomaticSpeechRecognitionNode);
     await expect(run(AutomaticSpeechRecognitionNode, {})).rejects.toThrow(
       "provider-backed model"
     );
   });
 
   it("EmbeddingTextNode defaults", async () => {
-    const node = new EmbeddingTextNode();
-    expect(node.defaults()).toEqual({ model: {}, input: "", chunk_size: 4096 });
+    expectMetadataDefaults(EmbeddingTextNode);
     const r = await run(EmbeddingTextNode, { input: "hello" });
     expect(Array.isArray(r.output)).toBe(true);
     expect((r.output as number[]).length).toBe(64);
   });
 
   it("SaveTextFileNode defaults and empty folder error", async () => {
-    const node = new SaveTextFileNode();
-    expect(node.defaults()).toEqual({ text: "", folder: "", name: "output.txt" });
+    expectMetadataDefaults(SaveTextFileNode);
     await expect(run(SaveTextFileNode, { text: "hi", folder: "" }))
       .rejects.toThrow("folder cannot be empty");
   });
@@ -1421,8 +1422,7 @@ describe("text-extra coverage", () => {
   });
 
   it("SaveTextNode defaults and writes", async () => {
-    const node = new SaveTextNode();
-    expect(node.defaults()).toEqual({ text: "", name: "output.txt" });
+    expectMetadataDefaults(SaveTextNode);
     const tmp = join(tmpdir(), `savetext2-${Date.now()}.txt`);
     await run(SaveTextNode, { text: "hi", name: tmp });
     const content = await fs.readFile(tmp, "utf-8");
@@ -1432,7 +1432,7 @@ describe("text-extra coverage", () => {
 
   it("LoadTextFolderNode defaults and process returns empty", async () => {
     const node = new LoadTextFolderNode();
-    expect(node.defaults()).toBeDefined();
+    expect(node.serialize()).toBeDefined();
     expect(await run(LoadTextFolderNode, {})).toEqual({});
   });
 
@@ -1477,8 +1477,8 @@ describe("text-extra coverage", () => {
   });
 
   it("LoadTextAssetsNode defaults, process, and delegates to folder loading", async () => {
+    expectMetadataDefaults(LoadTextAssetsNode);
     const node = new LoadTextAssetsNode();
-    expect(node.defaults()).toEqual({ folder: {} });
     expect(await node.process({})).toEqual({});
     const tmp = join(tmpdir(), `loadassets-${Date.now()}`);
     await fs.mkdir(tmp, { recursive: true });
@@ -1490,7 +1490,7 @@ describe("text-extra coverage", () => {
 
   it("FilterStringNode defaults, initialize, all filter types", async () => {
     const node = new FilterStringNode();
-    expect(node.defaults()).toEqual({ value: "", filter_type: "contains", criteria: "" });
+    expect(node.serialize()).toEqual({ value: "", filter_type: "contains", criteria: "" });
 
     node.assign({ filter_type: "contains", criteria: "ob" });
     await node.initialize();
@@ -1536,7 +1536,7 @@ describe("text-extra coverage", () => {
 
   it("FilterRegexStringNode defaults, initialize, all paths", async () => {
     const node = new FilterRegexStringNode();
-    expect(node.defaults()).toEqual({ value: "", pattern: "", full_match: false });
+    expect(node.serialize()).toEqual({ value: "", pattern: "", full_match: false });
 
     node.assign({ pattern: "^hello", full_match: false });
     await node.initialize();

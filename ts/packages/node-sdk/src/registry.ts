@@ -7,6 +7,7 @@ import type {
   PythonMetadataLoadResult,
 } from "./metadata.js";
 import { loadPythonPackageMetadata } from "./metadata.js";
+import { getNodeMetadata } from "./node-metadata.js";
 
 export interface NodeRegistryOptions {
   metadataByType?: Map<string, NodeMetadata>;
@@ -42,11 +43,16 @@ export class NodeRegistry {
         `Cannot register node class without nodeType: ${nodeClass.name}`
       );
     }
-    const metadata = options.metadata ?? this._resolveLoadedMetadata(nodeClass.nodeType);
+    const loadedMetadata = this._resolveLoadedMetadata(nodeClass.nodeType);
+    const metadata = options.metadata ?? getNodeMetadata(nodeClass, {
+      pythonMetadata: loadedMetadata,
+      mergePythonBackfill: true,
+    });
+
     if (metadata) {
       this._registeredMetadataByType.set(nodeClass.nodeType, metadata);
     } else if (this._strictMetadata) {
-      throw new Error(`Missing Python metadata for node type: ${nodeClass.nodeType}`);
+      throw new Error(`Missing resolved metadata for node type: ${nodeClass.nodeType}`);
     }
     this._classes.set(nodeClass.nodeType, nodeClass);
   }
@@ -56,13 +62,9 @@ export class NodeRegistry {
     if (!NodeClass) {
       throw new Error(`Unknown node type: ${descriptor.type}`);
     }
-    const instance = new NodeClass();
-    const descriptorProps: Record<string, unknown> = {
-      ...(descriptor.properties as Record<string, unknown> | undefined),
-      __node_id: descriptor.id,
-      __node_name: descriptor.name ?? descriptor.type,
-    };
-    instance.assign(descriptorProps);
+    const instance = new NodeClass((descriptor.properties as Record<string, unknown> | undefined) ?? {});
+    instance.__node_id = descriptor.id;
+    instance.__node_name = descriptor.name ?? descriptor.type;
     return instance.toExecutor();
   }
 
@@ -88,9 +90,14 @@ export class NodeRegistry {
   }
 
   listMetadata(): NodeMetadata[] {
-    return this.list()
-      .map((nodeType) => this.getMetadata(nodeType))
-      .filter((md): md is NodeMetadata => md !== undefined);
+    const merged = new Map<string, NodeMetadata>();
+    for (const [nodeType, metadata] of this._loadedMetadataByType.entries()) {
+      merged.set(nodeType, metadata);
+    }
+    for (const [nodeType, metadata] of this._registeredMetadataByType.entries()) {
+      merged.set(nodeType, metadata);
+    }
+    return [...merged.values()];
   }
 
   listRegisteredNodeTypesWithoutMetadata(): string[] {
@@ -112,6 +119,12 @@ export class NodeRegistry {
       return this._loadedMetadataByType.get(nodeType.slice(0, -4));
     }
     return undefined;
+  }
+
+  clear(): void {
+    this._classes.clear();
+    this._loadedMetadataByType.clear();
+    this._registeredMetadataByType.clear();
   }
 
   static readonly global = new NodeRegistry();
@@ -155,7 +168,6 @@ export function createGraphNodeTypeResolver(
       const outputs = Object.fromEntries(
         (metadata.outputs ?? []).map((output) => [output.name, typeMetadataToString(output.type)]),
       );
-
       return {
         nodeType: metadata.node_type,
         propertyTypes,

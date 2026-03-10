@@ -1,21 +1,29 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { ProcessingContext } from "@nodetool/runtime";
 
 export class GetSecretLibNode extends BaseNode {
   static readonly nodeType = "lib.secret.GetSecret";
-  static readonly title = "Get Secret";
-  static readonly description = "Get a secret value from configuration.";
+            static readonly title = "Get Secret";
+            static readonly description = "Get a secret value from configuration.\n    secrets, credentials, configuration";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Name", description: "Secret key name" })
+  declare name: any;
 
-  defaults() {
-    return { name: "", default: "" };
-  }
+  @prop({ type: "str", default: "", title: "Default", description: "Default value if not found" })
+  declare default: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const name = String(inputs.name ?? this._props.name ?? "");
-    const defaultValue = String(inputs.default ?? this._props.default ?? "");
+    const name = String(inputs.name ?? this.name ?? "");
+    const defaultValue = String(inputs.default ?? this.default ?? "");
     if (!name) {
       return { output: defaultValue };
     }

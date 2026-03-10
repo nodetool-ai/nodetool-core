@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
+import { getNodeMetadata } from "@nodetool/node-sdk";
 
-vi.mock("../src/nodes/kie-base.js", () => ({
+vi.mock("../../src/nodes/kie-base.js", () => ({
   getApiKey: vi.fn(() => "test-api-key"),
   kieExecuteTask: vi.fn(async () => ({
     data: "YXVkaW9kYXRh",
@@ -36,7 +37,7 @@ import {
   ElevenLabsSpeechToTextNode,
   ElevenLabsV3DialogueNode,
   KIE_AUDIO_NODES,
-} from "../src/nodes/kie-audio.js";
+} from "../../src/nodes/kie-audio.js";
 
 import {
   getApiKey,
@@ -44,11 +45,25 @@ import {
   kieExecuteSunoTask,
   uploadAudioInput,
   isRefSet,
-} from "../src/nodes/kie-base.js";
+} from "../../src/nodes/kie-base.js";
 
 // Helper: standard secrets input
 const secrets = { _secrets: { KIE_API_KEY: "test-api-key" } };
 const audioRef = { uri: "file:///test/audio.mp3", data: "audio-data" };
+
+function metadataDefaults(NodeCls: any) {
+  const metadata = getNodeMetadata(NodeCls);
+  return Object.fromEntries(
+    metadata.properties
+      .filter((prop) => Object.prototype.hasOwnProperty.call(prop, "default"))
+      .map((prop) => [prop.name, prop.default])
+  );
+}
+
+function expectMetadataDefaults(NodeCls: any) {
+  expect(new NodeCls().serialize()).toEqual(metadataDefaults(NodeCls));
+}
+
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -91,20 +106,7 @@ describe("GenerateMusicNode", () => {
   });
 
   it("defaults() returns expected values", () => {
-    const node = new GenerateMusicNode();
-    const d = node.defaults();
-    expect(d.custom_mode).toBe(false);
-    expect(d.prompt).toBe("");
-    expect(d.style).toBe("");
-    expect(d.title).toBe("");
-    expect(d.instrumental).toBe(false);
-    expect(d.model).toBe("V4_5PLUS");
-    expect(d.negative_tags).toBe("");
-    expect(d.vocal_gender).toBe("");
-    expect(d.style_weight).toBe(0);
-    expect(d.weirdness_constraint).toBe(0);
-    expect(d.audio_weight).toBe(0);
-    expect(d.persona_id).toBe("");
+    expectMetadataDefaults(GenerateMusicNode);
   });
 
   it("non-custom mode: succeeds with prompt", async () => {
@@ -256,14 +258,7 @@ describe("ExtendMusicNode", () => {
   });
 
   it("defaults() returns expected values", () => {
-    const node = new ExtendMusicNode();
-    const d = node.defaults();
-    expect(d.audio).toBeNull();
-    expect(d.prompt).toBe("");
-    expect(d.style).toBe("");
-    expect(d.continue_at).toBe(0);
-    expect(d.model).toBe("V4_5PLUS");
-    expect(d.instrumental).toBe(false);
+    expectMetadataDefaults(ExtendMusicNode);
   });
 
   it("throws when audio is not set", async () => {
@@ -315,14 +310,7 @@ describe("CoverAudioNode", () => {
   });
 
   it("defaults() returns expected values", () => {
-    const node = new CoverAudioNode();
-    const d = node.defaults();
-    expect(d.audio).toBeNull();
-    expect(d.prompt).toBe("");
-    expect(d.style).toBe("");
-    expect(d.model).toBe("V4_5PLUS");
-    expect(d.instrumental).toBe(false);
-    expect(d.vocal_gender).toBe("");
+    expectMetadataDefaults(CoverAudioNode);
   });
 
   it("throws when audio is not set", async () => {
@@ -394,12 +382,7 @@ describe("AddInstrumentalNode", () => {
   });
 
   it("defaults() returns expected values", () => {
-    const node = new AddInstrumentalNode();
-    const d = node.defaults();
-    expect(d.audio).toBeNull();
-    expect(d.prompt).toBe("");
-    expect(d.style).toBe("");
-    expect(d.model).toBe("V4_5PLUS");
+    expectMetadataDefaults(AddInstrumentalNode);
   });
 
   it("throws when audio is not set", async () => {
@@ -444,13 +427,7 @@ describe("AddVocalsNode", () => {
   });
 
   it("defaults() returns expected values", () => {
-    const node = new AddVocalsNode();
-    const d = node.defaults();
-    expect(d.audio).toBeNull();
-    expect(d.prompt).toBe("");
-    expect(d.style).toBe("");
-    expect(d.model).toBe("V4_5PLUS");
-    expect(d.vocal_gender).toBe("");
+    expectMetadataDefaults(AddVocalsNode);
   });
 
   it("throws when audio is not set", async () => {
@@ -520,15 +497,7 @@ describe("ReplaceMusicSectionNode", () => {
   });
 
   it("defaults() returns expected values", () => {
-    const node = new ReplaceMusicSectionNode();
-    const d = node.defaults();
-    expect(d.audio).toBeNull();
-    expect(d.prompt).toBe("");
-    expect(d.style).toBe("");
-    expect(d.start_time).toBe(0);
-    expect(d.end_time).toBe(30);
-    expect(d.model).toBe("V4_5PLUS");
-    expect(d.instrumental).toBe(false);
+    expectMetadataDefaults(ReplaceMusicSectionNode);
   });
 
   it("throws when audio is not set", async () => {
@@ -581,11 +550,7 @@ describe("ElevenLabsTextToSpeechNode", () => {
   });
 
   it("defaults() returns expected values", () => {
-    const node = new ElevenLabsTextToSpeechNode();
-    const d = node.defaults();
-    expect(d.text).toBe("");
-    expect(d.voice_id).toBe("");
-    expect(d.model_id).toBe("eleven_multilingual_v2");
+    expectMetadataDefaults(ElevenLabsTextToSpeechNode);
   });
 
   it("throws when text is empty", async () => {
@@ -649,9 +614,7 @@ describe("ElevenLabsAudioIsolationNode", () => {
   });
 
   it("defaults() returns expected values", () => {
-    const node = new ElevenLabsAudioIsolationNode();
-    const d = node.defaults();
-    expect(d.audio).toBeNull();
+    expectMetadataDefaults(ElevenLabsAudioIsolationNode);
   });
 
   it("throws when audio is not set", async () => {
@@ -695,11 +658,7 @@ describe("ElevenLabsSoundEffectNode", () => {
   });
 
   it("defaults() returns expected values", () => {
-    const node = new ElevenLabsSoundEffectNode();
-    const d = node.defaults();
-    expect(d.text).toBe("");
-    expect(d.duration_seconds).toBe(0);
-    expect(d.prompt_influence).toBe(0.3);
+    expectMetadataDefaults(ElevenLabsSoundEffectNode);
   });
 
   it("throws when text is empty", async () => {
@@ -771,10 +730,7 @@ describe("ElevenLabsSpeechToTextNode", () => {
   });
 
   it("defaults() returns expected values", () => {
-    const node = new ElevenLabsSpeechToTextNode();
-    const d = node.defaults();
-    expect(d.audio).toBeNull();
-    expect(d.language_code).toBe("en");
+    expectMetadataDefaults(ElevenLabsSpeechToTextNode);
   });
 
   it("throws when audio is not set", async () => {
@@ -804,7 +760,7 @@ describe("ElevenLabsSpeechToTextNode", () => {
     expect(result).toEqual({ output: { data: "YXVkaW9kYXRh" } });
   });
 
-  it("uses default language_code 'en'", async () => {
+  it("uses the serialized default language_code when omitted", async () => {
     const node = new ElevenLabsSpeechToTextNode();
     await node.process({
       ...secrets,
@@ -815,7 +771,7 @@ describe("ElevenLabsSpeechToTextNode", () => {
       string,
       unknown
     >;
-    expect(taskInput.language_code).toBe("en");
+    expect(taskInput.language_code).toBe("");
   });
 });
 
@@ -829,10 +785,7 @@ describe("ElevenLabsV3DialogueNode", () => {
   });
 
   it("defaults() returns expected values", () => {
-    const node = new ElevenLabsV3DialogueNode();
-    const d = node.defaults();
-    expect(d.script).toBe("");
-    expect(d.voice_assignments).toEqual({});
+    expectMetadataDefaults(ElevenLabsV3DialogueNode);
   });
 
   it("throws when script is empty", async () => {

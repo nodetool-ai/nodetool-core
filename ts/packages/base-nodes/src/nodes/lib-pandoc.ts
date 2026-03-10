@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import { promises as fs } from "node:fs";
 import { spawn } from "node:child_process";
 
@@ -59,47 +59,115 @@ async function runCommand(cmd: string, args: string[], stdin: string, timeoutMs:
 }
 
 abstract class PandocBaseLibNode extends BaseNode {
-  defaults() {
-    return {
-      input_format: "markdown",
-      output_format: "plain",
-      extra_args: [] as string[],
-      timeout: 120,
-    };
-  }
-
   protected formats(inputs: Record<string, unknown>): { input: string; output: string } {
-    const input = String(inputs.input_format ?? this._props.input_format ?? "markdown").toLowerCase();
-    const output = String(inputs.output_format ?? this._props.output_format ?? "plain").toLowerCase();
+    const input = String(inputs.input_format ?? this.input_format ?? "markdown").toLowerCase();
+    const output = String(inputs.output_format ?? this.output_format ?? "plain").toLowerCase();
     return { input, output };
   }
 
   protected extraArgs(inputs: Record<string, unknown>): string[] {
-    const raw = inputs.extra_args ?? this._props.extra_args ?? [];
+    const raw = inputs.extra_args ?? this.extra_args ?? [];
     return Array.isArray(raw) ? raw.map(String) : [];
   }
 
   protected timeoutMs(inputs: Record<string, unknown>): number {
-    const sec = Number(inputs.timeout ?? this._props.timeout ?? 120);
+    const sec = Number(inputs.timeout ?? this.timeout ?? 120);
     return Math.max(1, Math.trunc(sec * 1000));
   }
 }
 
 export class ConvertTextPandocLibNode extends PandocBaseLibNode {
   static readonly nodeType = "lib.pandoc.ConvertText";
-  static readonly title = "Convert Text";
-  static readonly description = "Converts text content between different document formats using pandoc.";
+      static readonly title = "Convert Text";
+      static readonly description = "Converts text content between different document formats using pandoc.\n    convert, text, format, pandoc\n\n    Use cases:\n    - Convert text content between various formats (Markdown, HTML, LaTeX, etc.)\n    - Transform content without saving to disk\n    - Process text snippets in different formats";
+    static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  @prop({ type: "str", default: "", title: "Content", description: "Text content to convert" })
+  declare content: any;
 
-  defaults() {
-    return {
-      ...super.defaults(),
-      content: "",
-      output_format: "docx",
-    };
-  }
+  @prop({ type: "enum", default: "markdown", title: "Input Format", description: "Input format", values: [
+  "biblatex",
+  "bibtex",
+  "bits",
+  "commonmark",
+  "commonmark_x",
+  "creole",
+  "csljson",
+  "csv",
+  "djot",
+  "docbook",
+  "docx",
+  "dokuwiki",
+  "endnotexml",
+  "epub",
+  "fb2",
+  "gfm",
+  "haddock",
+  "html",
+  "ipynb",
+  "jats",
+  "jira",
+  "json",
+  "latex",
+  "man",
+  "markdown",
+  "markdown_github",
+  "markdown_mmd",
+  "markdown_phpextra",
+  "markdown_strict",
+  "mdoc",
+  "mediawiki",
+  "muse",
+  "native",
+  "odt",
+  "opml",
+  "org",
+  "ris",
+  "rst",
+  "rtf",
+  "t2t",
+  "textile",
+  "tikiwiki",
+  "tsv",
+  "twiki",
+  "typst",
+  "vimwiki"
+] })
+  declare input_format: any;
+
+  @prop({ type: "enum", default: "docx", title: "Output Format", description: "Output format", values: [
+  "asciidoc",
+  "asciidoctor",
+  "beamer",
+  "context",
+  "docbook4",
+  "docbook5",
+  "docx",
+  "epub2",
+  "epub3",
+  "pdf",
+  "plain",
+  "pptx",
+  "slideous",
+  "slidy",
+  "dzslides",
+  "revealjs",
+  "s5",
+  "tei",
+  "texinfo",
+  "zimwiki"
+] })
+  declare output_format: any;
+
+  @prop({ type: "list[str]", default: [], title: "Extra Args", description: "Additional pandoc arguments" })
+  declare extra_args: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const content = String(inputs.content ?? this._props.content ?? "");
+    const content = String(inputs.content ?? this.content ?? "");
     const { input, output } = this.formats(inputs);
     const args = ["-f", input, "-t", output, ...this.extraArgs(inputs)];
     const result = await runCommand("pandoc", args, content, this.timeoutMs(inputs));
@@ -112,19 +180,99 @@ export class ConvertTextPandocLibNode extends PandocBaseLibNode {
 
 export class ConvertFilePandocLibNode extends PandocBaseLibNode {
   static readonly nodeType = "lib.pandoc.ConvertFile";
-  static readonly title = "Convert File";
-  static readonly description = "Converts between different document formats using pandoc.";
+      static readonly title = "Convert File";
+      static readonly description = "Converts between different document formats using pandoc.\n    convert, document, format, pandoc\n\n    Use cases:\n    - Convert between various document formats (Markdown, HTML, LaTeX, etc.)\n    - Generate documentation in different formats\n    - Create publication-ready documents";
+    static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  @prop({ type: "file_path", default: {
+  "type": "file_path",
+  "path": ""
+}, title: "Input Path", description: "Path to the input file" })
+  declare input_path: any;
 
-  defaults() {
-    return {
-      ...super.defaults(),
-      input_path: { path: "" },
-      output_format: "pdf",
-    };
-  }
+  @prop({ type: "enum", default: "markdown", title: "Input Format", description: "Input format", values: [
+  "biblatex",
+  "bibtex",
+  "bits",
+  "commonmark",
+  "commonmark_x",
+  "creole",
+  "csljson",
+  "csv",
+  "djot",
+  "docbook",
+  "docx",
+  "dokuwiki",
+  "endnotexml",
+  "epub",
+  "fb2",
+  "gfm",
+  "haddock",
+  "html",
+  "ipynb",
+  "jats",
+  "jira",
+  "json",
+  "latex",
+  "man",
+  "markdown",
+  "markdown_github",
+  "markdown_mmd",
+  "markdown_phpextra",
+  "markdown_strict",
+  "mdoc",
+  "mediawiki",
+  "muse",
+  "native",
+  "odt",
+  "opml",
+  "org",
+  "ris",
+  "rst",
+  "rtf",
+  "t2t",
+  "textile",
+  "tikiwiki",
+  "tsv",
+  "twiki",
+  "typst",
+  "vimwiki"
+] })
+  declare input_format: any;
+
+  @prop({ type: "enum", default: "pdf", title: "Output Format", description: "Output format", values: [
+  "asciidoc",
+  "asciidoctor",
+  "beamer",
+  "context",
+  "docbook4",
+  "docbook5",
+  "docx",
+  "epub2",
+  "epub3",
+  "pdf",
+  "plain",
+  "pptx",
+  "slideous",
+  "slidy",
+  "dzslides",
+  "revealjs",
+  "s5",
+  "tei",
+  "texinfo",
+  "zimwiki"
+] })
+  declare output_format: any;
+
+  @prop({ type: "list[str]", default: [], title: "Extra Args", description: "Additional pandoc arguments" })
+  declare extra_args: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const inPath = pathFromInput(inputs.input_path ?? this._props.input_path);
+    const inPath = pathFromInput(inputs.input_path ?? this.input_path);
     if (!inPath) {
       throw new Error("Input path is not set");
     }

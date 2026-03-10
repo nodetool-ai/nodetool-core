@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { ProcessingContext } from "@nodetool/runtime";
 import { promises as fs } from "node:fs";
 import { extname, join } from "node:path";
@@ -45,51 +45,84 @@ function modelConfig(
 
 export class SplitTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.Split";
-  static readonly title = "Split Text";
-  static readonly description = "Split text by delimiter";
+            static readonly title = "Split Text";
+            static readonly description = "Separates text into a list of strings based on a specified delimiter.\n    text, split, tokenize";
+        static readonly metadataOutputTypes = {
+    output: "list[str]"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", delimiter: "," };
-  }
+  @prop({ type: "str", default: ",", title: "Delimiter" })
+  declare delimiter: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const delimiter = String(inputs.delimiter ?? this._props.delimiter ?? ",");
+    const text = String(inputs.text ?? this.text ?? "");
+    const delimiter = String(inputs.delimiter ?? this.delimiter ?? ",");
     return { output: text.split(delimiter) };
   }
 }
 
 export class ExtractTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.Extract";
-  static readonly title = "Extract Text";
-  static readonly description = "Extract substring by start/end";
+            static readonly title = "Extract Text";
+            static readonly description = "Extracts a substring from input text.\n    text, extract, substring";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", start: 0, end: 0 };
-  }
+  @prop({ type: "int", default: 0, title: "Start" })
+  declare start: any;
+
+  @prop({ type: "int", default: 0, title: "End" })
+  declare end: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const start = Number(inputs.start ?? this._props.start ?? 0);
-    const end = Number(inputs.end ?? this._props.end ?? 0);
+    const text = String(inputs.text ?? this.text ?? "");
+    const start = Number(inputs.start ?? this.start ?? 0);
+    const end = Number(inputs.end ?? this.end ?? 0);
     return { output: text.slice(start, end) };
   }
 }
 
 export class ChunkTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.Chunk";
-  static readonly title = "Split Text into Chunks";
-  static readonly description = "Split text into chunked windows";
+            static readonly title = "Split Text into Chunks";
+            static readonly description = "Splits text into chunks of specified word length.\n    text, chunk, split";
+        static readonly metadataOutputTypes = {
+    output: "list[str]"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", length: 100, overlap: 0, separator: " " };
-  }
+  @prop({ type: "int", default: 100, title: "Length", min: 1, max: 1000 })
+  declare length: any;
+
+  @prop({ type: "int", default: 0, title: "Overlap" })
+  declare overlap: any;
+
+  @prop({ type: "str", default: " ", title: "Separator" })
+  declare separator: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const length = Number(inputs.length ?? this._props.length ?? 100);
-    const overlap = Number(inputs.overlap ?? this._props.overlap ?? 0);
-    const separator = String(inputs.separator ?? this._props.separator ?? " ");
+    const text = String(inputs.text ?? this.text ?? "");
+    const length = Number(inputs.length ?? this.length ?? 100);
+    const overlap = Number(inputs.overlap ?? this.overlap ?? 0);
+    const separator = String(inputs.separator ?? this.separator ?? " ");
 
     const step = length - overlap;
     if (length < 1 || step <= 0) {
@@ -107,26 +140,37 @@ export class ChunkTextNode extends BaseNode {
 
 export class ExtractRegexNode extends BaseNode {
   static readonly nodeType = "nodetool.text.ExtractRegex";
-  static readonly title = "Extract Regex Groups";
-  static readonly description = "Extract capture groups from first regex match";
+            static readonly title = "Extract Regex Groups";
+            static readonly description = "Extracts substrings matching regex groups from text.\n    text, regex, extract\n\n    Use cases:\n    - Extracting structured data (e.g., dates, emails) from unstructured text\n    - Parsing specific patterns in log files or documents\n    - Isolating relevant information from complex text formats";
+        static readonly metadataOutputTypes = {
+    output: "list[str]"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return {
-      text: "",
-      regex: "",
-      dotall: false,
-      ignorecase: false,
-      multiline: false,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Regex" })
+  declare regex: any;
+
+  @prop({ type: "bool", default: false, title: "Dotall" })
+  declare dotall: any;
+
+  @prop({ type: "bool", default: false, title: "Ignorecase" })
+  declare ignorecase: any;
+
+  @prop({ type: "bool", default: false, title: "Multiline" })
+  declare multiline: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const pattern = String(inputs.regex ?? this._props.regex ?? "");
+    const text = String(inputs.text ?? this.text ?? "");
+    const pattern = String(inputs.regex ?? this.regex ?? "");
     const flags = flagsFromOpts({
-      dotall: inputs.dotall ?? this._props.dotall,
-      ignorecase: inputs.ignorecase ?? this._props.ignorecase,
-      multiline: inputs.multiline ?? this._props.multiline,
+      dotall: inputs.dotall ?? this.dotall,
+      ignorecase: inputs.ignorecase ?? this.ignorecase,
+      multiline: inputs.multiline ?? this.multiline,
     });
 
     const match = new RegExp(pattern, flags).exec(text);
@@ -139,26 +183,37 @@ export class ExtractRegexNode extends BaseNode {
 
 export class FindAllRegexNode extends BaseNode {
   static readonly nodeType = "nodetool.text.FindAllRegex";
-  static readonly title = "Find All Regex Matches";
-  static readonly description = "Find all regex matches in text";
+            static readonly title = "Find All Regex Matches";
+            static readonly description = "Finds all regex matches in text as separate substrings.\n    text, regex, find";
+        static readonly metadataOutputTypes = {
+    output: "list[str]"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return {
-      text: "",
-      regex: "",
-      dotall: false,
-      ignorecase: false,
-      multiline: false,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Regex" })
+  declare regex: any;
+
+  @prop({ type: "bool", default: false, title: "Dotall" })
+  declare dotall: any;
+
+  @prop({ type: "bool", default: false, title: "Ignorecase" })
+  declare ignorecase: any;
+
+  @prop({ type: "bool", default: false, title: "Multiline" })
+  declare multiline: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const pattern = String(inputs.regex ?? this._props.regex ?? "");
+    const text = String(inputs.text ?? this.text ?? "");
+    const pattern = String(inputs.regex ?? this.regex ?? "");
     const flags = `${flagsFromOpts({
-      dotall: inputs.dotall ?? this._props.dotall,
-      ignorecase: inputs.ignorecase ?? this._props.ignorecase,
-      multiline: inputs.multiline ?? this._props.multiline,
+      dotall: inputs.dotall ?? this.dotall,
+      ignorecase: inputs.ignorecase ?? this.ignorecase,
+      multiline: inputs.multiline ?? this.multiline,
     })}g`;
 
     const matches = [...text.matchAll(new RegExp(pattern, flags))].map((m) => m[0]);
@@ -168,15 +223,20 @@ export class FindAllRegexNode extends BaseNode {
 
 export class TextParseJSONNode extends BaseNode {
   static readonly nodeType = "nodetool.text.ParseJSON";
-  static readonly title = "Parse JSON String";
-  static readonly description = "Parse JSON string to object";
+            static readonly title = "Parse JSON String";
+            static readonly description = "Parses a JSON string into a Python object.\n    json, parse, convert";
+        static readonly metadataOutputTypes = {
+    output: "any"
+  };
+  
+  @prop({ type: "str", default: "", title: "JSON string" })
+  declare text: any;
 
-  defaults() {
-    return { text: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
+    const text = String(inputs.text ?? this.text ?? "");
     return { output: JSON.parse(text) };
   }
 }
@@ -224,17 +284,28 @@ function jsonPathFind(path: string, root: unknown): unknown[] {
 
 export class ExtractJSONNode extends BaseNode {
   static readonly nodeType = "nodetool.text.ExtractJSON";
-  static readonly title = "Extract JSON";
-  static readonly description = "Extract JSON values using basic JSONPath";
+            static readonly title = "Extract JSON";
+            static readonly description = "Extracts data from JSON using JSONPath expressions.\n    json, extract, jsonpath";
+        static readonly metadataOutputTypes = {
+    output: "any"
+  };
+  
+  @prop({ type: "str", default: "", title: "JSON Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", json_path: "$.*", find_all: false };
-  }
+  @prop({ type: "str", default: "$.*", title: "JSONPath Expression" })
+  declare json_path: any;
+
+  @prop({ type: "bool", default: false, title: "Find All" })
+  declare find_all: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const jsonPath = String(inputs.json_path ?? this._props.json_path ?? "$.*");
-    const findAll = Boolean(inputs.find_all ?? this._props.find_all ?? false);
+    const text = String(inputs.text ?? this.text ?? "");
+    const jsonPath = String(inputs.json_path ?? this.json_path ?? "$.*");
+    const findAll = Boolean(inputs.find_all ?? this.find_all ?? false);
 
     const parsed = JSON.parse(text) as unknown;
     const matches = jsonPathFind(jsonPath, parsed);
@@ -250,17 +321,28 @@ export class ExtractJSONNode extends BaseNode {
 
 export class RegexMatchNode extends BaseNode {
   static readonly nodeType = "nodetool.text.RegexMatch";
-  static readonly title = "Find Regex Matches";
-  static readonly description = "Find regex matches and return selected group";
+            static readonly title = "Find Regex Matches";
+            static readonly description = "Find all matches of a regex pattern in text.\n    regex, search, pattern, match\n\n    Use cases:\n    - Extract specific patterns from text\n    - Validate text against patterns\n    - Find all occurrences of a pattern";
+        static readonly metadataOutputTypes = {
+    output: "list[str]"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text", description: "Text to search in" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", pattern: "", group: 0 };
-  }
+  @prop({ type: "str", default: "", title: "Pattern", description: "Regular expression pattern" })
+  declare pattern: any;
+
+  @prop({ type: "int", default: 0, title: "Group", description: "Capture group to extract (0 for full match)" })
+  declare group: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const pattern = String(inputs.pattern ?? this._props.pattern ?? "");
-    const group = inputs.group ?? this._props.group;
+    const text = String(inputs.text ?? this.text ?? "");
+    const pattern = String(inputs.pattern ?? this.pattern ?? "");
+    const group = inputs.group ?? this.group;
 
     if (group === null || group === undefined) {
       return { output: [...text.matchAll(new RegExp(pattern, "g"))].map((m) => m[0]) };
@@ -274,18 +356,32 @@ export class RegexMatchNode extends BaseNode {
 
 export class RegexReplaceNode extends BaseNode {
   static readonly nodeType = "nodetool.text.RegexReplace";
-  static readonly title = "Replace with Regex";
-  static readonly description = "Regex text replacement";
+            static readonly title = "Replace with Regex";
+            static readonly description = "Replace text matching a regex pattern.\n    regex, replace, substitute\n\n    Use cases:\n    - Clean or standardize text\n    - Remove unwanted patterns\n    - Transform text formats";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text", description: "Text to perform replacements on" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", pattern: "", replacement: "", count: 0 };
-  }
+  @prop({ type: "str", default: "", title: "Pattern", description: "Regular expression pattern" })
+  declare pattern: any;
+
+  @prop({ type: "str", default: "", title: "Replacement", description: "Replacement text" })
+  declare replacement: any;
+
+  @prop({ type: "int", default: 0, title: "Count", description: "Maximum replacements (0 for unlimited)" })
+  declare count: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    let text = String(inputs.text ?? this._props.text ?? "");
-    const pattern = String(inputs.pattern ?? this._props.pattern ?? "");
-    const replacement = String(inputs.replacement ?? this._props.replacement ?? "");
-    const count = Number(inputs.count ?? this._props.count ?? 0);
+    let text = String(inputs.text ?? this.text ?? "");
+    const pattern = String(inputs.pattern ?? this.pattern ?? "");
+    const replacement = String(inputs.replacement ?? this.replacement ?? "");
+    const count = Number(inputs.count ?? this.count ?? 0);
 
     if (count <= 0) {
       return { output: text.replace(new RegExp(pattern, "g"), replacement) };
@@ -306,17 +402,28 @@ export class RegexReplaceNode extends BaseNode {
 
 export class RegexSplitNode extends BaseNode {
   static readonly nodeType = "nodetool.text.RegexSplit";
-  static readonly title = "Split with Regex";
-  static readonly description = "Split text by regex pattern";
+            static readonly title = "Split with Regex";
+            static readonly description = "Split text using a regex pattern as delimiter.\n    regex, split, tokenize\n\n    Use cases:\n    - Parse structured text\n    - Extract fields from formatted strings\n    - Tokenize text";
+        static readonly metadataOutputTypes = {
+    output: "list[str]"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text", description: "Text to split" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", pattern: "", maxsplit: 0 };
-  }
+  @prop({ type: "str", default: "", title: "Pattern", description: "Regular expression pattern to split on" })
+  declare pattern: any;
+
+  @prop({ type: "int", default: 0, title: "Maxsplit", description: "Maximum number of splits (0 for unlimited)" })
+  declare maxsplit: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const pattern = String(inputs.pattern ?? this._props.pattern ?? "");
-    const maxsplit = Number(inputs.maxsplit ?? this._props.maxsplit ?? 0);
+    const text = String(inputs.text ?? this.text ?? "");
+    const pattern = String(inputs.pattern ?? this.pattern ?? "");
+    const maxsplit = Number(inputs.maxsplit ?? this.maxsplit ?? 0);
 
     const split = text.split(new RegExp(pattern));
     if (maxsplit <= 0) {
@@ -328,37 +435,59 @@ export class RegexSplitNode extends BaseNode {
 
 export class RegexValidateNode extends BaseNode {
   static readonly nodeType = "nodetool.text.RegexValidate";
-  static readonly title = "Validate with Regex";
-  static readonly description = "Validate text against regex pattern";
+            static readonly title = "Validate with Regex";
+            static readonly description = "Check if text matches a regex pattern.\n    regex, validate, check\n\n    Use cases:\n    - Validate input formats (email, phone, etc)\n    - Check text structure\n    - Filter text based on patterns";
+        static readonly metadataOutputTypes = {
+    output: "bool"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text", description: "Text to validate" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", pattern: "" };
-  }
+  @prop({ type: "str", default: "", title: "Pattern", description: "Regular expression pattern" })
+  declare pattern: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const pattern = String(inputs.pattern ?? this._props.pattern ?? "");
+    const text = String(inputs.text ?? this.text ?? "");
+    const pattern = String(inputs.pattern ?? this.pattern ?? "");
     return { output: new RegExp(pattern).test(text) };
   }
 }
 
 export class CompareTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.Compare";
-  static readonly title = "Compare Text";
-  static readonly description = "Compare two texts lexically";
+            static readonly title = "Compare Text";
+            static readonly description = "Compares two text values and reports ordering.\n    text, compare, equality, sort, equals, =\n\n    Use cases:\n    - Checking if two strings are identical before branching\n    - Determining lexical order for sorting or deduplication\n    - Normalizing casing/spacing before compares";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "First Text" })
+  declare text_a: any;
 
-  defaults() {
-    return { text_a: "", text_b: "", case_sensitive: true, trim_whitespace: false };
-  }
+  @prop({ type: "str", default: "", title: "Second Text" })
+  declare text_b: any;
+
+  @prop({ type: "bool", default: true, title: "Case Sensitive", description: "Compare without lowercasing" })
+  declare case_sensitive: any;
+
+  @prop({ type: "bool", default: false, title: "Trim Whitespace", description: "Strip leading/trailing whitespace before comparing" })
+  declare trim_whitespace: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const textA = String(inputs.text_a ?? this._props.text_a ?? "");
-    const textB = String(inputs.text_b ?? this._props.text_b ?? "");
+    const textA = String(inputs.text_a ?? this.text_a ?? "");
+    const textB = String(inputs.text_b ?? this.text_b ?? "");
     const caseSensitive = Boolean(
-      inputs.case_sensitive ?? this._props.case_sensitive ?? true
+      inputs.case_sensitive ?? this.case_sensitive ?? true
     );
     const trimWhitespace = Boolean(
-      inputs.trim_whitespace ?? this._props.trim_whitespace ?? false
+      inputs.trim_whitespace ?? this.trim_whitespace ?? false
     );
 
     const normalize = (value: string) => {
@@ -381,17 +510,30 @@ export class CompareTextNode extends BaseNode {
 
 export class EqualsTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.Equals";
-  static readonly title = "Equals";
-  static readonly description = "Check text equality";
+            static readonly title = "Equals";
+            static readonly description = "Checks if two text inputs are equal.\n    text, compare, equals, match, =";
+        static readonly metadataOutputTypes = {
+    output: "bool"
+  };
+  
+  @prop({ type: "str", default: "", title: "First Text" })
+  declare text_a: any;
 
-  defaults() {
-    return { text_a: "", text_b: "", case_sensitive: true, trim_whitespace: false };
-  }
+  @prop({ type: "str", default: "", title: "Second Text" })
+  declare text_b: any;
+
+  @prop({ type: "bool", default: true, title: "Case Sensitive", description: "Disable lowercasing before compare" })
+  declare case_sensitive: any;
+
+  @prop({ type: "bool", default: false, title: "Trim Whitespace", description: "Strip leading/trailing whitespace prior to comparison" })
+  declare trim_whitespace: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     const cmp = new CompareTextNode();
-    cmp.assign(this.defaults());
-    cmp.assign(this._props);
+    cmp.assign(this.serialize());
     const result = await cmp.process(inputs);
     return { output: result.output === "equal" };
   }
@@ -399,57 +541,77 @@ export class EqualsTextNode extends BaseNode {
 
 export class ToUppercaseNode extends BaseNode {
   static readonly nodeType = "nodetool.text.ToUppercase";
-  static readonly title = "To Uppercase";
-  static readonly description = "Convert text to uppercase";
+            static readonly title = "To Uppercase";
+            static readonly description = "Converts text to uppercase.\n    text, transform, uppercase, format";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return { output: String(inputs.text ?? this._props.text ?? "").toUpperCase() };
+    return { output: String(inputs.text ?? this.text ?? "").toUpperCase() };
   }
 }
 
 export class ToLowercaseNode extends BaseNode {
   static readonly nodeType = "nodetool.text.ToLowercase";
-  static readonly title = "To Lowercase";
-  static readonly description = "Convert text to lowercase";
+            static readonly title = "To Lowercase";
+            static readonly description = "Converts text to lowercase.\n    text, transform, lowercase, format";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return { output: String(inputs.text ?? this._props.text ?? "").toLowerCase() };
+    return { output: String(inputs.text ?? this.text ?? "").toLowerCase() };
   }
 }
 
 export class ToTitlecaseNode extends BaseNode {
   static readonly nodeType = "nodetool.text.ToTitlecase";
-  static readonly title = "To Title Case";
-  static readonly description = "Convert text to title case";
+            static readonly title = "To Title Case";
+            static readonly description = "Converts text to title case.\n    text, transform, titlecase, format\n\n    Use cases:\n    - Cleaning user provided titles before display\n    - Normalizing headings in generated documents\n    - Making list entries easier to scan";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return { output: toTitleCase(String(inputs.text ?? this._props.text ?? "")) };
+    return { output: toTitleCase(String(inputs.text ?? this.text ?? "")) };
   }
 }
 
 export class CapitalizeTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.CapitalizeText";
-  static readonly title = "Capitalize Text";
-  static readonly description = "Capitalize first character";
+            static readonly title = "Capitalize Text";
+            static readonly description = "Capitalizes only the first character.\n    text, transform, capitalize, format\n\n    Use cases:\n    - Formatting short labels or sentences\n    - Cleaning up LLM output before UI rendering\n    - Quickly fixing lowercase starts after concatenation";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
+    const text = String(inputs.text ?? this.text ?? "");
     if (!text) {
       return { output: "" };
     }
@@ -459,18 +621,32 @@ export class CapitalizeTextNode extends BaseNode {
 
 export class SliceTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.Slice";
-  static readonly title = "Slice Text";
-  static readonly description = "Slice text by start/stop/step";
+            static readonly title = "Slice Text";
+            static readonly description = "Slices text using Python's slice notation (start:stop:step).\n    text, slice, substring\n\n    Use cases:\n    - Extracting specific portions of text with flexible indexing\n    - Reversing text using negative step\n    - Taking every nth character with step parameter\n\n    Examples:\n    - start=0, stop=5: first 5 characters\n    - start=-5: last 5 characters\n    - step=2: every second character\n    - step=-1: reverse the text";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", start: 0, stop: 0, step: 1 };
-  }
+  @prop({ type: "int", default: 0, title: "Start Index" })
+  declare start: any;
+
+  @prop({ type: "int", default: 0, title: "Stop Index" })
+  declare stop: any;
+
+  @prop({ type: "int", default: 1, title: "Step" })
+  declare step: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const start = Number(inputs.start ?? this._props.start ?? 0);
-    const stop = Number(inputs.stop ?? this._props.stop ?? 0);
-    const step = Number(inputs.step ?? this._props.step ?? 1);
+    const text = String(inputs.text ?? this.text ?? "");
+    const start = Number(inputs.start ?? this.start ?? 0);
+    const stop = Number(inputs.stop ?? this.stop ?? 0);
+    const step = Number(inputs.step ?? this.step ?? 1);
 
     if (step === 0) {
       throw new Error("slice step cannot be zero");
@@ -504,63 +680,94 @@ export class SliceTextNode extends BaseNode {
 
 export class StartsWithTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.StartsWith";
-  static readonly title = "Starts With";
-  static readonly description = "Check if text starts with prefix";
+            static readonly title = "Starts With";
+            static readonly description = "Checks if text starts with a specified prefix.\n    text, check, prefix, compare, validate, substring, string\n\n    Use cases:\n    - Validating string prefixes\n    - Filtering text based on starting content\n    - Checking file name patterns";
+        static readonly metadataOutputTypes = {
+    output: "bool"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", prefix: "" };
-  }
+  @prop({ type: "str", default: "", title: "Prefix" })
+  declare prefix: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const prefix = String(inputs.prefix ?? this._props.prefix ?? "");
+    const text = String(inputs.text ?? this.text ?? "");
+    const prefix = String(inputs.prefix ?? this.prefix ?? "");
     return { output: text.startsWith(prefix) };
   }
 }
 
 export class EndsWithTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.EndsWith";
-  static readonly title = "Ends With";
-  static readonly description = "Check if text ends with suffix";
+            static readonly title = "Ends With";
+            static readonly description = "Checks if text ends with a specified suffix.\n    text, check, suffix, compare, validate, substring, string\n\n    Use cases:\n    - Validating file extensions\n    - Checking string endings\n    - Filtering text based on ending content";
+        static readonly metadataOutputTypes = {
+    output: "bool"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", suffix: "" };
-  }
+  @prop({ type: "str", default: "", title: "Suffix" })
+  declare suffix: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const suffix = String(inputs.suffix ?? this._props.suffix ?? "");
+    const text = String(inputs.text ?? this.text ?? "");
+    const suffix = String(inputs.suffix ?? this.suffix ?? "");
     return { output: text.endsWith(suffix) };
   }
 }
 
 export class ContainsTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.Contains";
-  static readonly title = "Contains Text";
-  static readonly description = "Check substring membership with any/all/none";
+            static readonly title = "Contains Text";
+            static readonly description = "Checks if text contains a specified substring.\n    text, compare, validate, substring, string";
+        static readonly metadataOutputTypes = {
+    output: "bool"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return {
-      text: "",
-      substring: "",
-      search_values: [] as string[],
-      case_sensitive: true,
-      match_mode: "any",
-    };
-  }
+  @prop({ type: "str", default: "", title: "Substring" })
+  declare substring: any;
+
+  @prop({ type: "list[str]", default: [], title: "Search Values", description: "Optional list of additional substrings to check" })
+  declare search_values: any;
+
+  @prop({ type: "bool", default: true, title: "Case Sensitive" })
+  declare case_sensitive: any;
+
+  @prop({ type: "enum", default: "any", title: "Match Mode", description: "ANY requires one match, ALL needs every value, NONE ensures none", values: [
+  "any",
+  "all",
+  "none"
+] })
+  declare match_mode: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const substring = String(inputs.substring ?? this._props.substring ?? "");
-    const searchValues = Array.isArray(inputs.search_values ?? this._props.search_values)
-      ? ((inputs.search_values ?? this._props.search_values) as unknown[]).map((v) =>
+    const text = String(inputs.text ?? this.text ?? "");
+    const substring = String(inputs.substring ?? this.substring ?? "");
+    const searchValues = Array.isArray(inputs.search_values ?? this.search_values)
+      ? ((inputs.search_values ?? this.search_values) as unknown[]).map((v) =>
           String(v)
         )
       : [];
     const caseSensitive = Boolean(
-      inputs.case_sensitive ?? this._props.case_sensitive ?? true
+      inputs.case_sensitive ?? this.case_sensitive ?? true
     );
-    const matchMode = String(inputs.match_mode ?? this._props.match_mode ?? "any");
+    const matchMode = String(inputs.match_mode ?? this.match_mode ?? "any");
 
     const targets = searchValues.length > 0 ? searchValues : substring ? [substring] : [];
     if (targets.length === 0) {
@@ -582,17 +789,28 @@ export class ContainsTextNode extends BaseNode {
 
 export class TrimWhitespaceNode extends BaseNode {
   static readonly nodeType = "nodetool.text.TrimWhitespace";
-  static readonly title = "Trim Whitespace";
-  static readonly description = "Trim whitespace from text edges";
+            static readonly title = "Trim Whitespace";
+            static readonly description = "Trims whitespace from the start and/or end of text.\n    text, whitespace, clean, remove";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", trim_start: true, trim_end: true };
-  }
+  @prop({ type: "bool", default: true, title: "Trim Start" })
+  declare trim_start: any;
+
+  @prop({ type: "bool", default: true, title: "Trim End" })
+  declare trim_end: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const trimStart = Boolean(inputs.trim_start ?? this._props.trim_start ?? true);
-    const trimEnd = Boolean(inputs.trim_end ?? this._props.trim_end ?? true);
+    const text = String(inputs.text ?? this.text ?? "");
+    const trimStart = Boolean(inputs.trim_start ?? this.trim_start ?? true);
+    const trimEnd = Boolean(inputs.trim_end ?? this.trim_end ?? true);
 
     if (trimStart && trimEnd) {
       return { output: text.trim() };
@@ -609,25 +827,34 @@ export class TrimWhitespaceNode extends BaseNode {
 
 export class CollapseWhitespaceNode extends BaseNode {
   static readonly nodeType = "nodetool.text.CollapseWhitespace";
-  static readonly title = "Collapse Whitespace";
-  static readonly description = "Collapse whitespace runs";
+            static readonly title = "Collapse Whitespace";
+            static readonly description = "Collapses consecutive whitespace into single separators.\n    text, whitespace, normalize, clean, remove";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return {
-      text: "",
-      preserve_newlines: false,
-      replacement: " ",
-      trim_edges: true,
-    };
-  }
+  @prop({ type: "bool", default: false, title: "Preserve Newlines", description: "Keep newline characters instead of replacing them" })
+  declare preserve_newlines: any;
+
+  @prop({ type: "str", default: " ", title: "Replacement", description: "String used to replace whitespace runs" })
+  declare replacement: any;
+
+  @prop({ type: "bool", default: true, title: "Trim Edges", description: "Strip whitespace before collapsing" })
+  declare trim_edges: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
+    const text = String(inputs.text ?? this.text ?? "");
     const preserveNewlines = Boolean(
-      inputs.preserve_newlines ?? this._props.preserve_newlines ?? false
+      inputs.preserve_newlines ?? this.preserve_newlines ?? false
     );
-    const replacement = String(inputs.replacement ?? this._props.replacement ?? " ");
-    const trimEdges = Boolean(inputs.trim_edges ?? this._props.trim_edges ?? true);
+    const replacement = String(inputs.replacement ?? this.replacement ?? " ");
+    const trimEdges = Boolean(inputs.trim_edges ?? this.trim_edges ?? true);
 
     const value = trimEdges ? text.trim() : text;
     if (preserveNewlines) {
@@ -639,17 +866,25 @@ export class CollapseWhitespaceNode extends BaseNode {
 
 export class IsEmptyTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.IsEmpty";
-  static readonly title = "Is Empty";
-  static readonly description = "Check whether text is empty";
+            static readonly title = "Is Empty";
+            static readonly description = "Checks if text is empty or contains only whitespace.\n    text, check, empty, compare, validate, whitespace, string";
+        static readonly metadataOutputTypes = {
+    output: "bool"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", trim_whitespace: true };
-  }
+  @prop({ type: "bool", default: true, title: "Trim Whitespace" })
+  declare trim_whitespace: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
+    const text = String(inputs.text ?? this.text ?? "");
     const trimWhitespace = Boolean(
-      inputs.trim_whitespace ?? this._props.trim_whitespace ?? true
+      inputs.trim_whitespace ?? this.trim_whitespace ?? true
     );
     return { output: (trimWhitespace ? text.trim() : text).length === 0 };
   }
@@ -657,22 +892,29 @@ export class IsEmptyTextNode extends BaseNode {
 
 export class RemovePunctuationNode extends BaseNode {
   static readonly nodeType = "nodetool.text.RemovePunctuation";
-  static readonly title = "Remove Punctuation";
-  static readonly description = "Remove configured punctuation characters";
+            static readonly title = "Remove Punctuation";
+            static readonly description = "Removes punctuation characters from text.\n    text, cleanup, punctuation, normalize";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return {
-      text: "",
-      replacement: "",
-      punctuation: `!"#$%&'()*+,\\-./:;<=>?@[\\]^_{|}~`,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Replacement", description: "String to insert where punctuation was removed" })
+  declare replacement: any;
+
+  @prop({ type: "str", default: "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~", title: "Punctuation Characters", description: "Characters that should be removed or replaced" })
+  declare punctuation: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const replacement = String(inputs.replacement ?? this._props.replacement ?? "");
+    const text = String(inputs.text ?? this.text ?? "");
+    const replacement = String(inputs.replacement ?? this.replacement ?? "");
     const punctuation = String(
-      inputs.punctuation ?? this._props.punctuation ?? `!"#$%&'()*+,\\-./:;<=>?@[\\]^_{|}~`
+      inputs.punctuation ?? this.punctuation ?? `!"#$%&'()*+,\\-./:;<=>?@[\\]^_{|}~`
     );
 
     const escaped = punctuation.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -682,17 +924,25 @@ export class RemovePunctuationNode extends BaseNode {
 
 export class StripAccentsNode extends BaseNode {
   static readonly nodeType = "nodetool.text.StripAccents";
-  static readonly title = "Strip Accents";
-  static readonly description = "Remove accent marks from text";
+            static readonly title = "Strip Accents";
+            static readonly description = "Removes accent marks while keeping base characters.\n    text, cleanup, accents, normalize";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", preserve_non_ascii: true };
-  }
+  @prop({ type: "bool", default: true, title: "Preserve Non-ASCII", description: "Keep non-ASCII characters that are not accents" })
+  declare preserve_non_ascii: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
+    const text = String(inputs.text ?? this.text ?? "");
     const preserveNonAscii = Boolean(
-      inputs.preserve_non_ascii ?? this._props.preserve_non_ascii ?? true
+      inputs.preserve_non_ascii ?? this.preserve_non_ascii ?? true
     );
 
     const normalized = text.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
@@ -706,19 +956,33 @@ export class StripAccentsNode extends BaseNode {
 
 export class SlugifyNode extends BaseNode {
   static readonly nodeType = "nodetool.text.Slugify";
-  static readonly title = "Slugify";
-  static readonly description = "Convert text to URL-safe slug";
+            static readonly title = "Slugify";
+            static readonly description = "Converts text into a slug suitable for URLs or IDs.\n    text, slug, normalize, id";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", separator: "-", lowercase: true, allow_unicode: false };
-  }
+  @prop({ type: "str", default: "-", title: "Separator" })
+  declare separator: any;
+
+  @prop({ type: "bool", default: true, title: "Lowercase" })
+  declare lowercase: any;
+
+  @prop({ type: "bool", default: false, title: "Allow Unicode", description: "Keep unicode letters instead of converting to ASCII" })
+  declare allow_unicode: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const separator = String(inputs.separator ?? this._props.separator ?? "-");
-    const lowercase = Boolean(inputs.lowercase ?? this._props.lowercase ?? true);
+    const text = String(inputs.text ?? this.text ?? "");
+    const separator = String(inputs.separator ?? this.separator ?? "-");
+    const lowercase = Boolean(inputs.lowercase ?? this.lowercase ?? true);
     const allowUnicode = Boolean(
-      inputs.allow_unicode ?? this._props.allow_unicode ?? false
+      inputs.allow_unicode ?? this.allow_unicode ?? false
     );
 
     let value = text.normalize("NFKD");
@@ -737,18 +1001,32 @@ export class SlugifyNode extends BaseNode {
 
 export class HasLengthTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.HasLength";
-  static readonly title = "Check Length";
-  static readonly description = "Check text length constraints";
+            static readonly title = "Check Length";
+            static readonly description = "Checks if text length meets specified conditions.\n    text, check, length, compare, validate, whitespace, string";
+        static readonly metadataOutputTypes = {
+    output: "bool"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", min_length: 0, max_length: 0, exact_length: 0 };
-  }
+  @prop({ type: "int", default: 0, title: "Minimum Length" })
+  declare min_length: any;
+
+  @prop({ type: "int", default: 0, title: "Maximum Length" })
+  declare max_length: any;
+
+  @prop({ type: "int", default: 0, title: "Exact Length" })
+  declare exact_length: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const minLength = Number(inputs.min_length ?? this._props.min_length ?? 0);
-    const maxLength = Number(inputs.max_length ?? this._props.max_length ?? 0);
-    const exactLength = Number(inputs.exact_length ?? this._props.exact_length ?? 0);
+    const text = String(inputs.text ?? this.text ?? "");
+    const minLength = Number(inputs.min_length ?? this.min_length ?? 0);
+    const maxLength = Number(inputs.max_length ?? this.max_length ?? 0);
+    const exactLength = Number(inputs.exact_length ?? this.exact_length ?? 0);
 
     const length = text.length;
 
@@ -767,17 +1045,28 @@ export class HasLengthTextNode extends BaseNode {
 
 export class TruncateTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.TruncateText";
-  static readonly title = "Truncate Text";
-  static readonly description = "Truncate text to max length";
+            static readonly title = "Truncate Text";
+            static readonly description = "Truncates text to a maximum length.\n    text, truncate, length, clip";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", max_length: 100, ellipsis: "" };
-  }
+  @prop({ type: "int", default: 100, title: "Max Length", min: 0 })
+  declare max_length: any;
+
+  @prop({ type: "str", default: "", title: "Ellipsis", description: "Optional suffix appended when truncation occurs" })
+  declare ellipsis: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const maxLength = Number(inputs.max_length ?? this._props.max_length ?? 100);
-    const ellipsis = String(inputs.ellipsis ?? this._props.ellipsis ?? "");
+    const text = String(inputs.text ?? this.text ?? "");
+    const maxLength = Number(inputs.max_length ?? this.max_length ?? 100);
+    const ellipsis = String(inputs.ellipsis ?? this.ellipsis ?? "");
 
     if (maxLength <= 0) {
       return { output: ellipsis || "" };
@@ -795,18 +1084,36 @@ export class TruncateTextNode extends BaseNode {
 
 export class PadTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.PadText";
-  static readonly title = "Pad Text";
-  static readonly description = "Pad text to target length";
+            static readonly title = "Pad Text";
+            static readonly description = "Pads text to a target length.\n    text, pad, length, format";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", length: 0, pad_character: " ", direction: "right" };
-  }
+  @prop({ type: "int", default: 0, title: "Target Length", min: 0 })
+  declare length: any;
+
+  @prop({ type: "str", default: " ", title: "Pad Character", description: "Single character to use for padding" })
+  declare pad_character: any;
+
+  @prop({ type: "enum", default: "right", title: "Direction", description: "Where padding should be applied", values: [
+  "left",
+  "right",
+  "both"
+] })
+  declare direction: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const length = Number(inputs.length ?? this._props.length ?? 0);
-    const padCharacter = String(inputs.pad_character ?? this._props.pad_character ?? " ");
-    const direction = String(inputs.direction ?? this._props.direction ?? "right");
+    const text = String(inputs.text ?? this.text ?? "");
+    const length = Number(inputs.length ?? this.length ?? 0);
+    const padCharacter = String(inputs.pad_character ?? this.pad_character ?? " ");
+    const direction = String(inputs.direction ?? this.direction ?? "right");
 
     if (padCharacter.length !== 1) {
       throw new Error("pad_character must be a single character");
@@ -830,18 +1137,33 @@ export class PadTextNode extends BaseNode {
 
 export class LengthTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.Length";
-  static readonly title = "Measure Length";
-  static readonly description = "Measure text as chars/words/lines";
+            static readonly title = "Measure Length";
+            static readonly description = "Measures text length as characters, words, or lines.\n    text, analyze, length, count";
+        static readonly metadataOutputTypes = {
+    output: "int"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", measure: "characters", trim_whitespace: false };
-  }
+  @prop({ type: "enum", default: "characters", title: "Measure", description: "Choose whether to count characters, words, or lines", values: [
+  "characters",
+  "words",
+  "lines"
+] })
+  declare measure: any;
+
+  @prop({ type: "bool", default: false, title: "Trim Whitespace", description: "Strip whitespace before counting" })
+  declare trim_whitespace: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const measure = String(inputs.measure ?? this._props.measure ?? "characters");
+    const text = String(inputs.text ?? this.text ?? "");
+    const measure = String(inputs.measure ?? this.measure ?? "characters");
     const trimWhitespace = Boolean(
-      inputs.trim_whitespace ?? this._props.trim_whitespace ?? false
+      inputs.trim_whitespace ?? this.trim_whitespace ?? false
     );
 
     const value = trimWhitespace ? text.trim() : text;
@@ -865,30 +1187,43 @@ export class LengthTextNode extends BaseNode {
 
 export class IndexOfTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.IndexOf";
-  static readonly title = "Index Of";
-  static readonly description = "Find substring index in text";
+            static readonly title = "Index Of";
+            static readonly description = "Finds the position of a substring in text.\n    text, search, find, substring";
+        static readonly metadataOutputTypes = {
+    output: "int"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return {
-      text: "",
-      substring: "",
-      case_sensitive: true,
-      start_index: 0,
-      end_index: 0,
-      search_from_end: false,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Substring" })
+  declare substring: any;
+
+  @prop({ type: "bool", default: true, title: "Case Sensitive" })
+  declare case_sensitive: any;
+
+  @prop({ type: "int", default: 0, title: "Start Index", description: "Index to begin the search from", min: 0 })
+  declare start_index: any;
+
+  @prop({ type: "int", default: 0, title: "End Index", description: "Optional exclusive end index for the search" })
+  declare end_index: any;
+
+  @prop({ type: "bool", default: false, title: "Search From End", description: "Use the last occurrence instead of the first" })
+  declare search_from_end: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    let haystack = String(inputs.text ?? this._props.text ?? "");
-    let needle = String(inputs.substring ?? this._props.substring ?? "");
+    let haystack = String(inputs.text ?? this.text ?? "");
+    let needle = String(inputs.substring ?? this.substring ?? "");
     const caseSensitive = Boolean(
-      inputs.case_sensitive ?? this._props.case_sensitive ?? true
+      inputs.case_sensitive ?? this.case_sensitive ?? true
     );
-    const startIndex = Number(inputs.start_index ?? this._props.start_index ?? 0);
-    const endIndex = Number(inputs.end_index ?? this._props.end_index ?? 0);
+    const startIndex = Number(inputs.start_index ?? this.start_index ?? 0);
+    const endIndex = Number(inputs.end_index ?? this.end_index ?? 0);
     const searchFromEnd = Boolean(
-      inputs.search_from_end ?? this._props.search_from_end ?? false
+      inputs.search_from_end ?? this.search_from_end ?? false
     );
 
     if (!caseSensitive) {
@@ -909,19 +1244,33 @@ export class IndexOfTextNode extends BaseNode {
 
 export class SurroundWithTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.SurroundWith";
-  static readonly title = "Surround With";
-  static readonly description = "Wrap text with prefix and suffix";
+            static readonly title = "Surround With";
+            static readonly description = "Wraps text with the provided prefix and suffix.\n    text, format, surround, decorate";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", prefix: "", suffix: "", skip_if_wrapped: true };
-  }
+  @prop({ type: "str", default: "", title: "Prefix" })
+  declare prefix: any;
+
+  @prop({ type: "str", default: "", title: "Suffix" })
+  declare suffix: any;
+
+  @prop({ type: "bool", default: true, title: "Skip If Already Wrapped", description: "Do not add duplicates if the text is already wrapped" })
+  declare skip_if_wrapped: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const prefix = String(inputs.prefix ?? this._props.prefix ?? "");
-    const suffix = String(inputs.suffix ?? this._props.suffix ?? "");
+    const text = String(inputs.text ?? this.text ?? "");
+    const prefix = String(inputs.prefix ?? this.prefix ?? "");
+    const suffix = String(inputs.suffix ?? this.suffix ?? "");
     const skipIfWrapped = Boolean(
-      inputs.skip_if_wrapped ?? this._props.skip_if_wrapped ?? true
+      inputs.skip_if_wrapped ?? this.skip_if_wrapped ?? true
     );
 
     if (skipIfWrapped && text.startsWith(prefix) && text.endsWith(suffix)) {
@@ -933,16 +1282,27 @@ export class SurroundWithTextNode extends BaseNode {
 
 export class CountTokensNode extends BaseNode {
   static readonly nodeType = "nodetool.text.CountTokens";
-  static readonly title = "Count Tokens";
-  static readonly description =
-    "Approximate token count (whitespace and punctuation split)";
+            static readonly title = "Count Tokens";
+            static readonly description = "Counts the number of tokens in text using tiktoken.\n    text, tokens, count, encoding";
+        static readonly metadataOutputTypes = {
+    output: "int"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", encoding: "cl100k_base" };
-  }
+  @prop({ type: "enum", default: "cl100k_base", title: "Encoding", description: "The tiktoken encoding to use for token counting", values: [
+  "cl100k_base",
+  "p50k_base",
+  "r50k_base"
+] })
+  declare encoding: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
+    const text = String(inputs.text ?? this.text ?? "");
     if (!text.trim()) {
       return { output: 0 };
     }
@@ -953,21 +1313,32 @@ export class CountTokensNode extends BaseNode {
 
 export class HtmlToTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.HtmlToText";
-  static readonly title = "HTML to Text";
-  static readonly description = "Convert simple HTML to plain text";
+            static readonly title = "HTML to Text";
+            static readonly description = "Converts HTML content to plain text using html2text.\n    html, convert, text, parse, extract";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "HTML", description: "HTML content to convert" })
+  declare html: any;
 
-  defaults() {
-    return {
-      html: "",
-      base_url: "",
-      body_width: 0,
-      ignore_images: true,
-      ignore_mailto_links: true,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Base URL", description: "Base URL for resolving relative links" })
+  declare base_url: any;
+
+  @prop({ type: "int", default: 1000, title: "Body Width", description: "Width for text wrapping" })
+  declare body_width: any;
+
+  @prop({ type: "bool", default: true, title: "Ignore Images", description: "Whether to ignore image tags" })
+  declare ignore_images: any;
+
+  @prop({ type: "bool", default: true, title: "Ignore Mailto Links", description: "Whether to ignore mailto links" })
+  declare ignore_mailto_links: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const html = String(inputs.html ?? this._props.html ?? "");
+    const html = String(inputs.html ?? this.html ?? "");
     const text = html
       .replace(/<script[\s\S]*?<\/script>/gi, "")
       .replace(/<style[\s\S]*?<\/style>/gi, "")
@@ -997,19 +1368,40 @@ function seededEmbedding(input: string, dims: number = 64): number[] {
 
 export class AutomaticSpeechRecognitionNode extends BaseNode {
   static readonly nodeType = "nodetool.text.AutomaticSpeechRecognition";
-  static readonly title = "Automatic Speech Recognition";
-  static readonly description = "TS placeholder for ASR provider-backed node";
+            static readonly title = "Automatic Speech Recognition";
+            static readonly description = "Transcribe audio to text using automatic speech recognition models.\n    audio, speech, recognition, transcription, ASR, whisper";
+        static readonly metadataOutputTypes = {
+    text: "str"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "asr_model", default: {
+  "type": "asr_model",
+  "provider": "fal_ai",
+  "id": "openai/whisper-large-v3",
+  "name": "",
+  "path": null
+}, title: "Model" })
+  declare model: any;
 
-  defaults() {
-    return { model: {}, audio: {} };
-  }
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio to transcribe" })
+  declare audio: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const { providerId, modelId } = modelConfig(inputs, this._props);
-    const audio = (inputs.audio ?? this._props.audio ?? {}) as Record<string, unknown>;
+    const { providerId, modelId } = modelConfig(inputs, this.serialize());
+    const audio = (inputs.audio ?? this.audio ?? {}) as Record<string, unknown>;
     let bytes = new Uint8Array();
     if (typeof audio.data === "string") {
       bytes = Uint8Array.from(Buffer.from(audio.data, "base64"));
@@ -1032,9 +1424,9 @@ export class AutomaticSpeechRecognitionNode extends BaseNode {
         model: modelId,
         params: {
           audio: bytes,
-          language: inputs.language ?? this._props.language,
-          prompt: inputs.prompt ?? this._props.prompt,
-          temperature: inputs.temperature ?? this._props.temperature,
+          language: inputs.language ?? this.language,
+          prompt: inputs.prompt ?? this.prompt,
+          temperature: inputs.temperature ?? this.temperature,
         },
       })) as string;
       return { text, output: text };
@@ -1048,32 +1440,65 @@ export class AutomaticSpeechRecognitionNode extends BaseNode {
 
 export class EmbeddingTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.Embedding";
-  static readonly title = "Embedding";
-  static readonly description = "Deterministic local text embedding fallback";
+            static readonly title = "Embedding";
+            static readonly description = "Generate vector representations of text using any supported embedding provider.\n    Automatically routes to the appropriate backend (OpenAI, Gemini, Mistral).\n    embeddings, similarity, search, clustering, classification, vectors, semantic\n\n    Uses embedding models to create dense vector representations of text.\n    These vectors capture semantic meaning, enabling:\n    - Semantic search\n    - Text clustering\n    - Document classification\n    - Recommendation systems\n    - Anomaly detection\n    - Measuring text similarity and diversity";
+        static readonly metadataOutputTypes = {
+    output: "np_array"
+  };
+          static readonly basicFields = [
+  "model",
+  "input"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "embedding_model", default: {
+  "type": "embedding_model",
+  "provider": "openai",
+  "id": "text-embedding-3-small",
+  "name": "Text Embedding 3 Small",
+  "dimensions": 0
+}, title: "Model", description: "The embedding model to use" })
+  declare model: any;
 
-  defaults() {
-    return { model: {}, input: "", chunk_size: 4096 };
-  }
+  @prop({ type: "str", default: "", title: "Input", description: "The text to embed" })
+  declare input: any;
+
+  @prop({ type: "int", default: 4096, title: "Chunk Size", description: "Size of text chunks for embedding (used when input exceeds model limits)", min: 1, max: 8192 })
+  declare chunk_size: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.input ?? this._props.input ?? "");
+    const text = String(inputs.input ?? this.input ?? "");
     return { output: seededEmbedding(text) };
   }
 }
 
 export class SaveTextFileNode extends BaseNode {
   static readonly nodeType = "nodetool.text.SaveTextFile";
-  static readonly title = "Save Text File";
-  static readonly description = "Save text to filesystem path";
+            static readonly title = "Save Text File";
+            static readonly description = "Saves input text to a file in the assets folder.\n    text, save, file";
+        static readonly metadataOutputTypes = {
+    output: "text"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", folder: "", name: "output.txt" };
-  }
+  @prop({ type: "str", default: "", title: "Folder", description: "Path to the output folder." })
+  declare folder: any;
+
+  @prop({ type: "str", default: "%Y-%m-%d-%H-%M-%S.txt", title: "Name", description: "\n        Name of the output file.\n        You can use time and date variables to create unique names:\n        %Y - Year\n        %m - Month\n        %d - Day\n        %H - Hour\n        %M - Minute\n        %S - Second\n        " })
+  declare name: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const folder = String(inputs.folder ?? this._props.folder ?? "");
-    const name = String(inputs.name ?? this._props.name ?? "output.txt");
+    const text = String(inputs.text ?? this.text ?? "");
+    const folder = String(inputs.folder ?? this.folder ?? "");
+    const name = String(inputs.name ?? this.name ?? "output.txt");
     if (!folder) {
       throw new Error("folder cannot be empty");
     }
@@ -1086,16 +1511,33 @@ export class SaveTextFileNode extends BaseNode {
 
 export class SaveTextNode extends BaseNode {
   static readonly nodeType = "nodetool.text.SaveText";
-  static readonly title = "Save Text";
-  static readonly description = "Save text to local file (TS fallback)";
+            static readonly title = "Save Text";
+            static readonly description = "Saves input text to a file in the assets folder.\n    text, save, file\n\n    Use cases:\n    - Persisting processed text results\n    - Creating text files for downstream nodes or external use\n    - Archiving text data within the workflow";
+        static readonly metadataOutputTypes = {
+    output: "text"
+  };
+  
+  @prop({ type: "str", default: "", title: "Text" })
+  declare text: any;
 
-  defaults() {
-    return { text: "", name: "output.txt" };
-  }
+  @prop({ type: "folder", default: {
+  "type": "folder",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Folder", description: "Name of the output folder." })
+  declare folder: any;
+
+  @prop({ type: "str", default: "%Y-%m-%d-%H-%M-%S.txt", title: "Name", description: "\n        Name of the output file.\n        You can use time and date variables to create unique names:\n        %Y - Year\n        %m - Month\n        %d - Day\n        %H - Hour\n        %M - Minute\n        %S - Second\n        " })
+  declare name: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const name = String(inputs.name ?? this._props.name ?? "output.txt");
+    const text = String(inputs.text ?? this.text ?? "");
+    const name = String(inputs.name ?? this.name ?? "output.txt");
     await fs.writeFile(name, text, "utf-8");
     return { output: { uri: name, data: text } };
   }
@@ -1103,17 +1545,36 @@ export class SaveTextNode extends BaseNode {
 
 export class LoadTextFolderNode extends BaseNode {
   static readonly nodeType = "nodetool.text.LoadTextFolder";
-  static readonly title = "Load Text Folder";
-  static readonly description = "Load text files from folder path";
+            static readonly title = "Load Text Folder";
+            static readonly description = "Load all text files from a folder, optionally including subfolders.\n    text, load, folder, files";
+        static readonly metadataOutputTypes = {
+    text: "str",
+    path: "str"
+  };
+  
+          static readonly isStreamingOutput = true;
+  @prop({ type: "str", default: "", title: "Folder", description: "Folder to scan for text files" })
+  declare folder: any;
 
-  defaults() {
-    return {
-      folder: "",
-      include_subdirectories: false,
-      extensions: [".txt", ".csv", ".json", ".xml", ".md", ".html", ".pdf"],
-      pattern: "",
-    };
-  }
+  @prop({ type: "bool", default: false, title: "Include Subdirectories", description: "Include text files in subfolders" })
+  declare include_subdirectories: any;
+
+  @prop({ type: "list[str]", default: [
+  ".txt",
+  ".csv",
+  ".json",
+  ".xml",
+  ".md",
+  ".html",
+  ".pdf"
+], title: "Extensions", description: "Text file extensions to include" })
+  declare extensions: any;
+
+  @prop({ type: "str", default: "", title: "Pattern", description: "Pattern to match text files" })
+  declare pattern: any;
+
+
+
 
   async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     return {};
@@ -1122,12 +1583,12 @@ export class LoadTextFolderNode extends BaseNode {
   async *genProcess(
     inputs: Record<string, unknown>
   ): AsyncGenerator<Record<string, unknown>> {
-    const folder = String(inputs.folder ?? this._props.folder ?? "");
+    const folder = String(inputs.folder ?? this.folder ?? "");
     const includeSubdirs = Boolean(
-      inputs.include_subdirectories ?? this._props.include_subdirectories ?? false
+      inputs.include_subdirectories ?? this.include_subdirectories ?? false
     );
-    const extensions = Array.isArray(inputs.extensions ?? this._props.extensions)
-      ? ((inputs.extensions ?? this._props.extensions) as unknown[]).map((v) =>
+    const extensions = Array.isArray(inputs.extensions ?? this.extensions)
+      ? ((inputs.extensions ?? this.extensions) as unknown[]).map((v) =>
           String(v).toLowerCase()
         )
       : [".txt"];
@@ -1162,21 +1623,32 @@ export class LoadTextFolderNode extends BaseNode {
 
 export class LoadTextAssetsNode extends BaseNode {
   static readonly nodeType = "nodetool.text.LoadTextAssets";
-  static readonly title = "Load Text Assets";
-  static readonly description =
-    "TS placeholder for asset-backed text loading node";
-  static readonly isStreamingOutput = true;
+            static readonly title = "Load Text Assets";
+            static readonly description = "Load text files from an asset folder.\n    load, text, file, import";
+        static readonly metadataOutputTypes = {
+    text: "text",
+    name: "str"
+  };
+  
+            static readonly isStreamingOutput = true;
+  @prop({ type: "folder", default: {
+  "type": "folder",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Folder", description: "The asset folder to load the text files from." })
+  declare folder: any;
 
-  defaults() {
-    return { folder: {} };
-  }
+
+
 
   async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     return {};
   }
 
   async *genProcess(inputs: Record<string, unknown> = {}): AsyncGenerator<Record<string, unknown>> {
-    const folder = folderPath(inputs.folder ?? this._props.folder ?? "");
+    const folder = folderPath(inputs.folder ?? this.folder ?? "");
     if (!folder) {
       throw new Error("folder cannot be empty");
     }
@@ -1199,20 +1671,39 @@ type FilterStringType =
 
 export class FilterStringNode extends BaseNode {
   static readonly nodeType = "nodetool.text.FilterString";
-  static readonly title = "Filter String";
-  static readonly description = "Stream-filter strings by criteria";
+            static readonly title = "Filter String";
+            static readonly description = "Filters a stream of strings based on various criteria.\n    filter, strings, text, stream";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+          static readonly isStreamingOutput = true;
   static readonly syncMode = "on_any" as const;
 
   private _filterType: FilterStringType = "contains";
   private _criteria = "";
+  @prop({ type: "str", default: "", title: "Value", description: "Input string stream" })
+  declare value: any;
 
-  defaults() {
-    return { value: "", filter_type: "contains", criteria: "" };
-  }
+  @prop({ type: "enum", default: "contains", title: "Filter Type", description: "The type of filter to apply", values: [
+  "contains",
+  "starts_with",
+  "ends_with",
+  "length_greater",
+  "length_less",
+  "exact_length"
+] })
+  declare filter_type: any;
+
+  @prop({ type: "str", default: "", title: "Criteria", description: "The filtering criteria (text to match or length as string)" })
+  declare criteria: any;
+
+
+
 
   async initialize(): Promise<void> {
-    this._filterType = String(this._props.filter_type ?? "contains") as FilterStringType;
-    this._criteria = String(this._props.criteria ?? "");
+    this._filterType = String(this.filter_type ?? "contains") as FilterStringType;
+    this._criteria = String(this.criteria ?? "");
   }
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -1270,20 +1761,32 @@ export class FilterStringNode extends BaseNode {
 
 export class FilterRegexStringNode extends BaseNode {
   static readonly nodeType = "nodetool.text.FilterRegexString";
-  static readonly title = "Filter Regex String";
-  static readonly description = "Stream-filter strings by regex";
+            static readonly title = "Filter Regex String";
+            static readonly description = "Filters a stream of strings using regular expressions.\n    filter, regex, pattern, text, stream";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+          static readonly isStreamingOutput = true;
   static readonly syncMode = "on_any" as const;
 
   private _pattern = "";
   private _fullMatch = false;
+  @prop({ type: "str", default: "", title: "Value", description: "Input string stream" })
+  declare value: any;
 
-  defaults() {
-    return { value: "", pattern: "", full_match: false };
-  }
+  @prop({ type: "str", default: "", title: "Pattern", description: "The regular expression pattern to match against." })
+  declare pattern: any;
+
+  @prop({ type: "bool", default: false, title: "Full Match", description: "Whether to match the entire string or find pattern anywhere in string" })
+  declare full_match: any;
+
+
+
 
   async initialize(): Promise<void> {
-    this._pattern = String(this._props.pattern ?? "");
-    this._fullMatch = Boolean(this._props.full_match ?? false);
+    this._pattern = String(this.pattern ?? "");
+    this._fullMatch = Boolean(this.full_match ?? false);
   }
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {

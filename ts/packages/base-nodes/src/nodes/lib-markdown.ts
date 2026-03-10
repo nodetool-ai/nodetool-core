@@ -1,17 +1,26 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 
 export class ExtractLinksMarkdownLibNode extends BaseNode {
   static readonly nodeType = "lib.markdown.ExtractLinks";
-  static readonly title = "Extract Links";
-  static readonly description = "Extracts all links from markdown text.";
+            static readonly title = "Extract Links";
+            static readonly description = "Extracts all links from markdown text.\n    markdown, links, extraction\n\n    Use cases:\n    - Extract references and citations from academic documents\n    - Build link graphs from markdown documentation\n    - Analyze external resources referenced in markdown files";
+        static readonly metadataOutputTypes = {
+    output: "list[dict[str, str]]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Markdown", description: "The markdown text to analyze" })
+  declare markdown: any;
 
-  defaults() {
-    return { markdown: "", include_titles: true };
-  }
+  @prop({ type: "bool", default: true, title: "Include Titles", description: "Whether to include link titles in output" })
+  declare include_titles: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const markdown = String(inputs.markdown ?? this._props.markdown ?? "");
-    const includeTitles = Boolean(inputs.include_titles ?? this._props.include_titles ?? true);
+    const markdown = String(inputs.markdown ?? this.markdown ?? "");
+    const includeTitles = Boolean(inputs.include_titles ?? this.include_titles ?? true);
     const links: Array<Record<string, string>> = [];
     const pattern = /\[([^\]]+)\]\(([^)]+)\)|<([^>]+)>/g;
     for (const match of markdown.matchAll(pattern)) {
@@ -27,16 +36,25 @@ export class ExtractLinksMarkdownLibNode extends BaseNode {
 
 export class ExtractHeadersMarkdownLibNode extends BaseNode {
   static readonly nodeType = "lib.markdown.ExtractHeaders";
-  static readonly title = "Extract Headers";
-  static readonly description = "Extracts headers and creates a document structure/outline.";
+            static readonly title = "Extract Headers";
+            static readonly description = "Extracts headers and creates a document structure/outline.\n    markdown, headers, structure\n\n    Use cases:\n    - Generate table of contents\n    - Analyze document structure\n    - Extract main topics from documents";
+        static readonly metadataOutputTypes = {
+    output: "list[dict[str, any]]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Markdown", description: "The markdown text to analyze" })
+  declare markdown: any;
 
-  defaults() {
-    return { markdown: "", max_level: 6 };
-  }
+  @prop({ type: "int", default: 6, title: "Max Level", description: "Maximum header level to extract (1-6)", min: 1, max: 6 })
+  declare max_level: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const markdown = String(inputs.markdown ?? this._props.markdown ?? "");
-    const maxLevel = Number(inputs.max_level ?? this._props.max_level ?? 6);
+    const markdown = String(inputs.markdown ?? this.markdown ?? "");
+    const maxLevel = Number(inputs.max_level ?? this.max_level ?? 6);
     const headers: Array<Record<string, unknown>> = [];
     for (const line of markdown.split("\n")) {
       const m = line.match(/^(#{1,6})\s+(.+)$/);
@@ -52,15 +70,21 @@ export class ExtractHeadersMarkdownLibNode extends BaseNode {
 
 export class ExtractBulletListsMarkdownLibNode extends BaseNode {
   static readonly nodeType = "lib.markdown.ExtractBulletLists";
-  static readonly title = "Extract Bullet Lists";
-  static readonly description = "Extracts bulleted lists from markdown.";
+            static readonly title = "Extract Bullet Lists";
+            static readonly description = "Extracts bulleted lists from markdown.\n    markdown, lists, bullets, extraction\n\n    Use cases:\n    - Extract unordered list items\n    - Analyze bullet point structures\n    - Convert bullet lists to structured data";
+        static readonly metadataOutputTypes = {
+    output: "list[dict[str, any]]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Markdown", description: "The markdown text to analyze" })
+  declare markdown: any;
 
-  defaults() {
-    return { markdown: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const markdown = String(inputs.markdown ?? this._props.markdown ?? "");
+    const markdown = String(inputs.markdown ?? this.markdown ?? "");
     const lists: Array<Array<Record<string, string>>> = [];
     let current: Array<Record<string, string>> = [];
 
@@ -80,15 +104,21 @@ export class ExtractBulletListsMarkdownLibNode extends BaseNode {
 
 export class ExtractNumberedListsMarkdownLibNode extends BaseNode {
   static readonly nodeType = "lib.markdown.ExtractNumberedLists";
-  static readonly title = "Extract Numbered Lists";
-  static readonly description = "Extracts numbered lists from markdown.";
+            static readonly title = "Extract Numbered Lists";
+            static readonly description = "Extracts numbered lists from markdown.\n    markdown, lists, numbered, extraction\n\n    Use cases:\n    - Extract ordered list items\n    - Analyze enumerated structures\n    - Convert numbered lists to structured data";
+        static readonly metadataOutputTypes = {
+    output: "list[str]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Markdown", description: "The markdown text to analyze" })
+  declare markdown: any;
 
-  defaults() {
-    return { markdown: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const markdown = String(inputs.markdown ?? this._props.markdown ?? "");
+    const markdown = String(inputs.markdown ?? this.markdown ?? "");
     const lists: string[][] = [];
     let current: string[] = [];
 
@@ -108,15 +138,20 @@ export class ExtractNumberedListsMarkdownLibNode extends BaseNode {
 
 export class ExtractCodeBlocksMarkdownLibNode extends BaseNode {
   static readonly nodeType = "lib.markdown.ExtractCodeBlocks";
-  static readonly title = "Extract Code Blocks";
-  static readonly description = "Extracts code blocks and their languages from markdown.";
+            static readonly title = "Extract Code Blocks";
+            static readonly description = "Extracts code blocks and their languages from markdown.\n    markdown, code, extraction\n\n    Use cases:\n    - Extract code samples for analysis\n    - Collect programming examples\n    - Analyze code snippets in documentation";
+        static readonly metadataOutputTypes = {
+    output: "list[dict[str, str]]"
+  };
+  
+  @prop({ type: "str", default: "", title: "Markdown", description: "The markdown text to analyze" })
+  declare markdown: any;
 
-  defaults() {
-    return { markdown: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const markdown = String(inputs.markdown ?? this._props.markdown ?? "");
+    const markdown = String(inputs.markdown ?? this.markdown ?? "");
     const blocks: Array<Record<string, string>> = [];
     const pattern = /```(\w*)\n([\s\S]*?)\n```/g;
     for (const match of markdown.matchAll(pattern)) {
@@ -128,15 +163,21 @@ export class ExtractCodeBlocksMarkdownLibNode extends BaseNode {
 
 export class ExtractTablesMarkdownLibNode extends BaseNode {
   static readonly nodeType = "lib.markdown.ExtractTables";
-  static readonly title = "Extract Tables";
-  static readonly description = "Extracts tables from markdown and converts them to structured data.";
+            static readonly title = "Extract Tables";
+            static readonly description = "Extracts tables from markdown and converts them to structured data.\n    markdown, tables, data\n\n    Use cases:\n    - Extract tabular data from markdown\n    - Convert markdown tables to structured formats\n    - Analyze tabulated information";
+        static readonly metadataOutputTypes = {
+    output: "dataframe"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "", title: "Markdown", description: "The markdown text to analyze" })
+  declare markdown: any;
 
-  defaults() {
-    return { markdown: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const markdown = String(inputs.markdown ?? this._props.markdown ?? "");
+    const markdown = String(inputs.markdown ?? this.markdown ?? "");
     const lines = markdown.split("\n");
     const currentTable: string[][] = [];
 

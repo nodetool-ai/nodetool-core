@@ -52,7 +52,7 @@ describe("Multiply", () => {
 
   it("returns correct defaults", () => {
     const node = new Multiply();
-    expect(node.defaults()).toEqual({ a: 1, b: 1 });
+    expect(node.serialize()).toEqual({ a: 1, b: 1 });
   });
 });
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   registerBaseNodes,
   LIB_PILLOW_NODES,
-} from "../src/index.js";
+} from "../../src/index.js";
 import { NodeRegistry } from "@nodetool/node-sdk";
 
 describe("native lib.pillow via sharp", () => {

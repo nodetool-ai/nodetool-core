@@ -17,7 +17,7 @@ import {
   PinkNoiseLibNode,
   FM_SynthesisLibNode,
   EnvelopeLibNode,
-} from "../src/index.js";
+} from "../../src/index.js";
 
 // ── Helper: create a minimal WAV audio ref ──────────────────────────
 function makeAudioRef(

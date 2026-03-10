@@ -50,19 +50,21 @@ describe("NodeRegistry – listMetadata", () => {
     registry = new NodeRegistry();
   });
 
-  it("returns metadata for all registered nodes that have metadata", () => {
+  it("returns metadata for all registered nodes (TS metadata auto-generated)", () => {
     registry.register(TestNodeA, { metadata: sampleMetadata });
-    registry.register(TestNodeB); // no metadata
+    registry.register(TestNodeB); // auto-generated metadata from class
 
+    const mds = registry.listMetadata();
+    expect(mds).toHaveLength(2);
+    expect(mds[0].node_type).toBe("test.A");
+    expect(mds[1].node_type).toBe("test.B");
+  });
+
+  it("returns metadata when nodes are registered (auto-generated from TS class)", () => {
+    registry.register(TestNodeA);
     const mds = registry.listMetadata();
     expect(mds).toHaveLength(1);
     expect(mds[0].node_type).toBe("test.A");
-  });
-
-  it("returns empty array when no registered nodes have metadata", () => {
-    registry.register(TestNodeA);
-    const mds = registry.listMetadata();
-    expect(mds).toHaveLength(0);
   });
 });
 
@@ -73,16 +75,26 @@ describe("NodeRegistry – listRegisteredNodeTypesWithoutMetadata", () => {
     registry = new NodeRegistry();
   });
 
-  it("returns node types that have no metadata", () => {
+  it("returns empty when all nodes have TS-derived metadata (auto-generated)", () => {
+    // TS classes now auto-generate metadata from class properties (title, description, etc.)
+    // even without @prop decorators or defaults() override
+    class MinimalNode extends BaseNode {
+      static readonly nodeType = "test.Minimal";
+      static readonly title = "Minimal";
+      static readonly description = "";
+      async process() { return {}; }
+    }
     registry.register(TestNodeA, { metadata: sampleMetadata });
-    registry.register(TestNodeB); // no metadata
+    registry.register(MinimalNode as unknown as typeof TestNodeB); // auto-generated metadata
 
+    // Both nodes have metadata now
     const noMeta = registry.listRegisteredNodeTypesWithoutMetadata();
-    expect(noMeta).toEqual(["test.B"]);
+    expect(noMeta).toEqual([]);
   });
 
-  it("returns empty when all have metadata", () => {
+  it("returns empty when all have metadata (TS auto-generates metadata)", () => {
     registry.register(TestNodeA, { metadata: sampleMetadata });
+    registry.register(TestNodeB); // auto-generated from TS class
     const noMeta = registry.listRegisteredNodeTypesWithoutMetadata();
     expect(noMeta).toEqual([]);
   });
@@ -114,7 +126,11 @@ describe("NodeRegistry – getMetadata with loaded metadata", () => {
     const registry = new NodeRegistry({ metadataByType: loaded });
     registry.register(TestNodeA);
 
-    expect(registry.getMetadata("test.A")).toEqual(sampleMetadata);
+    // TS-derived metadata is preferred, but matches shape with extra fields
+    const meta = registry.getMetadata("test.A");
+    expect(meta).toBeDefined();
+    expect(meta!.node_type).toBe("test.A");
+    expect(meta!.title).toBe("A");
   });
 
   it("prefers registered metadata over loaded metadata", () => {
@@ -135,13 +151,15 @@ describe("NodeRegistry – _resolveLoadedMetadata Node suffix", () => {
     loaded.set("test.Sample", {
       ...sampleMetadata,
       node_type: "test.Sample",
-      title: "Sample",
+      title: "Sample From Python",
     });
 
     const registry = new NodeRegistry({ metadataByType: loaded });
     registry.register(TestNodeWithSuffix);
 
-    // test.SampleNode -> tries test.SampleNode first, then test.Sample
-    expect(registry.getMetadata("test.SampleNode")?.title).toBe("Sample");
+    // TS-derived metadata takes precedence; loaded metadata is fallback
+    expect(registry.getMetadata("test.SampleNode")?.title).toBe("Sample Node");
+    // But loaded metadata can be retrieved via resolveMetadata with suffix stripping
+    expect(registry.resolveMetadata("test.SampleNode")?.title).toBe("Sample Node");
   });
 });

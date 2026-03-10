@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 
 type DocumentRefLike = {
   uri?: string;
@@ -41,15 +41,20 @@ function resolvePageRange(
 
 export class GetPageCountPdfPlumberNode extends BaseNode {
   static readonly nodeType = "lib.pdfplumber.GetPageCount";
-  static readonly title = "Get Page Count";
-  static readonly description = "Get the total number of pages in a PDF file.";
+            static readonly title = "Get Page Count";
+            static readonly description = "Get the total number of pages in a PDF file.\n    pdf, pages, count\n\n    Use cases:\n    - Check document length\n    - Plan batch processing";
+        static readonly metadataOutputTypes = {
+    output: "int"
+  };
+  
+  @prop({ type: "document", default: "", title: "Pdf", description: "The PDF file to analyze" })
+  declare pdf: any;
 
-  defaults() {
-    return { pdf: {} };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const pdf = (inputs.pdf ?? this._props.pdf ?? {}) as DocumentRefLike;
+    const pdf = (inputs.pdf ?? this.pdf ?? {}) as DocumentRefLike;
     const doc = await loadPdfDocument(pdf);
     const count = doc.numPages;
     void doc.destroy();
@@ -59,17 +64,34 @@ export class GetPageCountPdfPlumberNode extends BaseNode {
 
 export class ExtractTextPdfPlumberNode extends BaseNode {
   static readonly nodeType = "lib.pdfplumber.ExtractText";
-  static readonly title = "Extract Text";
-  static readonly description = "Extract text content from a PDF file.";
+            static readonly title = "Extract Text";
+            static readonly description = "Extract text content from a PDF file.\n    pdf, text, extract\n\n    Use cases:\n    - Convert PDF documents to plain text\n    - Extract content for analysis\n    - Enable text search in PDF documents";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Pdf", description: "The PDF file to extract text from" })
+  declare pdf: any;
 
-  defaults() {
-    return { pdf: {}, start_page: 0, end_page: 4 };
-  }
+  @prop({ type: "int", default: 0, title: "Start Page", description: "The start page to extract. 0-based indexing" })
+  declare start_page: any;
+
+  @prop({ type: "int", default: 4, title: "End Page", description: "The end page to extract. -1 for all pages" })
+  declare end_page: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const pdf = (inputs.pdf ?? this._props.pdf ?? {}) as DocumentRefLike;
-    const startPage = Number(inputs.start_page ?? this._props.start_page ?? 0);
-    const endPage = Number(inputs.end_page ?? this._props.end_page ?? 4);
+    const pdf = (inputs.pdf ?? this.pdf ?? {}) as DocumentRefLike;
+    const startPage = Number(inputs.start_page ?? this.start_page ?? 0);
+    const endPage = Number(inputs.end_page ?? this.end_page ?? 4);
 
     const doc = await loadPdfDocument(pdf);
     const [start, end] = resolvePageRange(startPage, endPage, doc.numPages);
@@ -91,18 +113,28 @@ export class ExtractTextPdfPlumberNode extends BaseNode {
 
 export class ExtractPageMetadataPdfPlumberNode extends BaseNode {
   static readonly nodeType = "lib.pdfplumber.ExtractPageMetadata";
-  static readonly title = "Extract Page Metadata";
-  static readonly description =
-    "Extract metadata from PDF pages like dimensions, rotation, etc.";
+            static readonly title = "Extract Page Metadata";
+            static readonly description = "Extract metadata from PDF pages like dimensions, rotation, etc.\n    pdf, metadata, pages\n\n    Use cases:\n    - Analyze page layouts\n    - Get page dimensions\n    - Check page orientations";
+        static readonly metadataOutputTypes = {
+    output: "list[dict]"
+  };
+  
+  @prop({ type: "document", default: "", title: "Pdf", description: "The PDF file to analyze" })
+  declare pdf: any;
 
-  defaults() {
-    return { pdf: {}, start_page: 0, end_page: 4 };
-  }
+  @prop({ type: "int", default: 0, title: "Start Page", description: "The start page to extract. 0-based indexing" })
+  declare start_page: any;
+
+  @prop({ type: "int", default: 4, title: "End Page", description: "The end page to extract. -1 for all pages" })
+  declare end_page: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const pdf = (inputs.pdf ?? this._props.pdf ?? {}) as DocumentRefLike;
-    const startPage = Number(inputs.start_page ?? this._props.start_page ?? 0);
-    const endPage = Number(inputs.end_page ?? this._props.end_page ?? 4);
+    const pdf = (inputs.pdf ?? this.pdf ?? {}) as DocumentRefLike;
+    const startPage = Number(inputs.start_page ?? this.start_page ?? 0);
+    const endPage = Number(inputs.end_page ?? this.end_page ?? 4);
 
     const doc = await loadPdfDocument(pdf);
     const [start, end] = resolvePageRange(startPage, endPage, doc.numPages);
@@ -127,18 +159,49 @@ export class ExtractPageMetadataPdfPlumberNode extends BaseNode {
 
 export class ExtractTablesPdfPlumberNode extends BaseNode {
   static readonly nodeType = "lib.pdfplumber.ExtractTables";
-  static readonly title = "Extract Tables";
-  static readonly description =
-    "Extract tables from a PDF file. Best-effort table extraction from text layout.";
+            static readonly title = "Extract Tables";
+            static readonly description = "Extract tables from a PDF file into dataframes.\n    pdf, tables, dataframe, extract\n\n    Use cases:\n    - Extract tabular data from PDF documents\n    - Convert PDF tables to structured data formats\n    - Process PDF tables for analysis\n    - Import PDF reports into data analysis pipelines";
+        static readonly metadataOutputTypes = {
+    output: "list[dataframe]"
+  };
+  
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Pdf", description: "The PDF document to extract tables from" })
+  declare pdf: any;
 
-  defaults() {
-    return { pdf: {}, start_page: 0, end_page: 4 };
-  }
+  @prop({ type: "int", default: 0, title: "Start Page", description: "First page to extract tables from (0-based, None for first page)" })
+  declare start_page: any;
+
+  @prop({ type: "int", default: 4, title: "End Page", description: "Last page to extract tables from (0-based, None for last page)" })
+  declare end_page: any;
+
+  @prop({ type: "dict", default: {
+  "vertical_strategy": "text",
+  "horizontal_strategy": "text",
+  "snap_tolerance": 3,
+  "join_tolerance": 3,
+  "edge_min_length": 3,
+  "min_words_vertical": 3,
+  "min_words_horizontal": 1,
+  "text_keep_blank_chars": false,
+  "text_tolerance": 3,
+  "text_x_tolerance": 3,
+  "text_y_tolerance": 3
+}, title: "Table Settings", description: "Settings for table extraction algorithm" })
+  declare table_settings: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const pdf = (inputs.pdf ?? this._props.pdf ?? {}) as DocumentRefLike;
-    const startPage = Number(inputs.start_page ?? this._props.start_page ?? 0);
-    const endPage = Number(inputs.end_page ?? this._props.end_page ?? 4);
+    const pdf = (inputs.pdf ?? this.pdf ?? {}) as DocumentRefLike;
+    const startPage = Number(inputs.start_page ?? this.start_page ?? 0);
+    const endPage = Number(inputs.end_page ?? this.end_page ?? 4);
 
     const doc = await loadPdfDocument(pdf);
     const [start, end] = resolvePageRange(startPage, endPage, doc.numPages);
@@ -195,13 +258,23 @@ export class ExtractTablesPdfPlumberNode extends BaseNode {
 
 export class ExtractImagesPdfPlumberNode extends BaseNode {
   static readonly nodeType = "lib.pdfplumber.ExtractImages";
-  static readonly title = "Extract Images";
-  static readonly description =
-    "Extract images from a PDF file. Note: pdfjs-dist has limited image extraction support; returns empty list for most PDFs.";
+            static readonly title = "Extract Images";
+            static readonly description = "Extract images from a PDF file.\n    pdf, image, extract\n\n    Use cases:\n    - Extract embedded images from PDF documents\n    - Save PDF images as separate files\n    - Process PDF images for analysis";
+        static readonly metadataOutputTypes = {
+    output: "list[image]"
+  };
+  
+  @prop({ type: "document", default: "", title: "Pdf", description: "The PDF file to extract images from" })
+  declare pdf: any;
 
-  defaults() {
-    return { pdf: {}, start_page: 0, end_page: 4 };
-  }
+  @prop({ type: "int", default: 0, title: "Start Page", description: "The start page to extract" })
+  declare start_page: any;
+
+  @prop({ type: "int", default: 4, title: "End Page", description: "The end page to extract" })
+  declare end_page: any;
+
+
+
 
   async process(
     _inputs: Record<string, unknown>
@@ -216,18 +289,35 @@ export class ExtractImagesPdfPlumberNode extends BaseNode {
 
 export class ExtractTextPyMuPdfNode extends BaseNode {
   static readonly nodeType = "lib.pymupdf.ExtractText";
-  static readonly title = "Extract Text";
-  static readonly description =
-    "Extract plain text from a PDF document using PyMuPDF.";
+            static readonly title = "Extract Text";
+            static readonly description = "Extract plain text from a PDF document using PyMuPDF.\n    pdf, text, extract\n\n    Use cases:\n    - Extract raw text content from PDFs\n    - Convert PDF documents to plain text\n    - Prepare text for further processing";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Pdf", description: "The PDF document to extract text from" })
+  declare pdf: any;
 
-  defaults() {
-    return { pdf: {}, start_page: 0, end_page: -1 };
-  }
+  @prop({ type: "int", default: 0, title: "Start Page", description: "First page to extract (0-based index)" })
+  declare start_page: any;
+
+  @prop({ type: "int", default: -1, title: "End Page", description: "Last page to extract (-1 for last page)" })
+  declare end_page: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const pdf = (inputs.pdf ?? this._props.pdf ?? {}) as DocumentRefLike;
-    const startPage = Number(inputs.start_page ?? this._props.start_page ?? 0);
-    const endPage = Number(inputs.end_page ?? this._props.end_page ?? -1);
+    const pdf = (inputs.pdf ?? this.pdf ?? {}) as DocumentRefLike;
+    const startPage = Number(inputs.start_page ?? this.start_page ?? 0);
+    const endPage = Number(inputs.end_page ?? this.end_page ?? -1);
 
     const doc = await loadPdfDocument(pdf);
     const [start, end] = resolvePageRange(startPage, endPage, doc.numPages);
@@ -256,18 +346,35 @@ export class ExtractTextPyMuPdfNode extends BaseNode {
 
 export class ExtractMarkdownPyMuPdfNode extends BaseNode {
   static readonly nodeType = "lib.pymupdf.ExtractMarkdown";
-  static readonly title = "Extract Markdown";
-  static readonly description =
-    "Convert PDF to Markdown format with basic formatting from font sizes.";
+            static readonly title = "Extract Markdown";
+            static readonly description = "Convert PDF to Markdown format using pymupdf4llm.\n    pdf, markdown, convert\n\n    Use cases:\n    - Convert PDF documents to markdown format\n    - Preserve document structure in markdown\n    - Create editable markdown from PDFs";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Pdf", description: "The PDF document to convert to markdown" })
+  declare pdf: any;
 
-  defaults() {
-    return { pdf: {}, start_page: 0, end_page: -1 };
-  }
+  @prop({ type: "int", default: 0, title: "Start Page", description: "First page to extract (0-based index)" })
+  declare start_page: any;
+
+  @prop({ type: "int", default: -1, title: "End Page", description: "Last page to extract (-1 for last page)" })
+  declare end_page: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const pdf = (inputs.pdf ?? this._props.pdf ?? {}) as DocumentRefLike;
-    const startPage = Number(inputs.start_page ?? this._props.start_page ?? 0);
-    const endPage = Number(inputs.end_page ?? this._props.end_page ?? -1);
+    const pdf = (inputs.pdf ?? this.pdf ?? {}) as DocumentRefLike;
+    const startPage = Number(inputs.start_page ?? this.start_page ?? 0);
+    const endPage = Number(inputs.end_page ?? this.end_page ?? -1);
 
     const doc = await loadPdfDocument(pdf);
     const [start, end] = resolvePageRange(startPage, endPage, doc.numPages);
@@ -339,18 +446,35 @@ export class ExtractMarkdownPyMuPdfNode extends BaseNode {
 
 export class ExtractTextBlocksPyMuPdfNode extends BaseNode {
   static readonly nodeType = "lib.pymupdf.ExtractTextBlocks";
-  static readonly title = "Extract Text Blocks";
-  static readonly description =
-    "Extract text blocks with their bounding boxes from a PDF.";
+            static readonly title = "Extract Text Blocks";
+            static readonly description = "Extract text blocks with their bounding boxes from a PDF.\n    pdf, text, blocks, layout\n\n    Use cases:\n    - Analyze text layout and structure\n    - Extract text while preserving block-level formatting\n    - Get text position information";
+        static readonly metadataOutputTypes = {
+    output: "list[dict]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Pdf", description: "The PDF document to extract text blocks from" })
+  declare pdf: any;
 
-  defaults() {
-    return { pdf: {}, start_page: 0, end_page: -1 };
-  }
+  @prop({ type: "int", default: 0, title: "Start Page", description: "First page to extract (0-based index)" })
+  declare start_page: any;
+
+  @prop({ type: "int", default: -1, title: "End Page", description: "Last page to extract (-1 for last page)" })
+  declare end_page: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const pdf = (inputs.pdf ?? this._props.pdf ?? {}) as DocumentRefLike;
-    const startPage = Number(inputs.start_page ?? this._props.start_page ?? 0);
-    const endPage = Number(inputs.end_page ?? this._props.end_page ?? -1);
+    const pdf = (inputs.pdf ?? this.pdf ?? {}) as DocumentRefLike;
+    const startPage = Number(inputs.start_page ?? this.start_page ?? 0);
+    const endPage = Number(inputs.end_page ?? this.end_page ?? -1);
 
     const doc = await loadPdfDocument(pdf);
     const [start, end] = resolvePageRange(startPage, endPage, doc.numPages);
@@ -426,18 +550,35 @@ export class ExtractTextBlocksPyMuPdfNode extends BaseNode {
 
 export class ExtractTextWithStylePyMuPdfNode extends BaseNode {
   static readonly nodeType = "lib.pymupdf.ExtractTextWithStyle";
-  static readonly title = "Extract Text With Style";
-  static readonly description =
-    "Extract text with style information (font, size, color) from a PDF.";
+            static readonly title = "Extract Text With Style";
+            static readonly description = "Extract text with style information (font, size, color) from a PDF.\n    pdf, text, style, formatting\n\n    Use cases:\n    - Preserve text formatting during extraction\n    - Analyze document styling\n    - Extract text with font information";
+        static readonly metadataOutputTypes = {
+    output: "list[dict]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Pdf", description: "The PDF document to extract styled text from" })
+  declare pdf: any;
 
-  defaults() {
-    return { pdf: {}, start_page: 0, end_page: -1 };
-  }
+  @prop({ type: "int", default: 0, title: "Start Page", description: "First page to extract (0-based index)" })
+  declare start_page: any;
+
+  @prop({ type: "int", default: -1, title: "End Page", description: "Last page to extract (-1 for last page)" })
+  declare end_page: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const pdf = (inputs.pdf ?? this._props.pdf ?? {}) as DocumentRefLike;
-    const startPage = Number(inputs.start_page ?? this._props.start_page ?? 0);
-    const endPage = Number(inputs.end_page ?? this._props.end_page ?? -1);
+    const pdf = (inputs.pdf ?? this.pdf ?? {}) as DocumentRefLike;
+    const startPage = Number(inputs.start_page ?? this.start_page ?? 0);
+    const endPage = Number(inputs.end_page ?? this.end_page ?? -1);
 
     const doc = await loadPdfDocument(pdf);
     const [start, end] = resolvePageRange(startPage, endPage, doc.numPages);
@@ -476,18 +617,35 @@ export class ExtractTextWithStylePyMuPdfNode extends BaseNode {
 
 export class ExtractTablesPyMuPdfNode extends BaseNode {
   static readonly nodeType = "lib.pymupdf.ExtractTables";
-  static readonly title = "Extract Tables";
-  static readonly description =
-    "Extract tables from a PDF document. Best-effort text-layout based extraction.";
+            static readonly title = "Extract Tables";
+            static readonly description = "Extract tables from a PDF document using PyMuPDF.\n    pdf, tables, extract, structured\n\n    Use cases:\n    - Extract tabular data from PDFs\n    - Convert PDF tables to structured formats\n    - Analyze table layouts and content";
+        static readonly metadataOutputTypes = {
+    output: "list[dict]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Pdf", description: "The PDF document to extract tables from" })
+  declare pdf: any;
 
-  defaults() {
-    return { pdf: {}, start_page: 0, end_page: -1 };
-  }
+  @prop({ type: "int", default: 0, title: "Start Page", description: "First page to extract (0-based index)" })
+  declare start_page: any;
+
+  @prop({ type: "int", default: -1, title: "End Page", description: "Last page to extract (-1 for last page)" })
+  declare end_page: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const pdf = (inputs.pdf ?? this._props.pdf ?? {}) as DocumentRefLike;
-    const startPage = Number(inputs.start_page ?? this._props.start_page ?? 0);
-    const endPage = Number(inputs.end_page ?? this._props.end_page ?? -1);
+    const pdf = (inputs.pdf ?? this.pdf ?? {}) as DocumentRefLike;
+    const startPage = Number(inputs.start_page ?? this.start_page ?? 0);
+    const endPage = Number(inputs.end_page ?? this.end_page ?? -1);
 
     const doc = await loadPdfDocument(pdf);
     const [start, end] = resolvePageRange(startPage, endPage, doc.numPages);

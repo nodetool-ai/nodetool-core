@@ -25,6 +25,7 @@ export interface PropertyMetadata {
   description?: string | null;
   min?: number | null;
   max?: number | null;
+  values?: Array<string | number> | null;
   json_schema_extra?: Record<string, unknown> | null;
   required?: boolean;
 }

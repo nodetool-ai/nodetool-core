@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
@@ -73,33 +73,48 @@ function bytesFromUnknown(value: unknown): Uint8Array {
 
 export class GetWorkspaceDirNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.GetWorkspaceDir";
-  static readonly title = "Get Workspace Dir";
-  static readonly description = "Return workspace directory path";
+            static readonly title = "Get Workspace Dir";
+            static readonly description = "Get the current workspace directory path.\n    workspace, directory, path";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return { output: workspaceDirFrom(inputs, this._props) };
+    return { output: workspaceDirFrom(inputs, this.serialize()) };
   }
 }
 
 export class ListWorkspaceFilesNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.ListWorkspaceFiles";
-  static readonly title = "List Workspace Files";
-  static readonly description = "List workspace files matching wildcard pattern";
-  static readonly isStreamingOutput = true;
+            static readonly title = "List Workspace Files";
+            static readonly description = "List files in the workspace directory matching a pattern.\n    workspace, files, list, directory";
+        static readonly metadataOutputTypes = {
+    file: "str"
+  };
+  
+            static readonly isStreamingOutput = true;
+  @prop({ type: "str", default: ".", title: "Path", description: "Relative path within workspace (use . for workspace root)" })
+  declare path: any;
 
-  defaults() {
-    return { path: ".", pattern: "*", recursive: false };
-  }
+  @prop({ type: "str", default: "*", title: "Pattern", description: "File pattern to match (e.g. *.txt, *.json)" })
+  declare pattern: any;
+
+  @prop({ type: "bool", default: false, title: "Recursive", description: "Search subdirectories recursively" })
+  declare recursive: any;
+
+
+
 
   async process(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
     return {};
   }
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
-    const workspace = workspaceDirFrom(inputs, this._props);
-    const relative = String(inputs.path ?? this._props.path ?? ".");
-    const pattern = String(inputs.pattern ?? this._props.pattern ?? "*");
-    const recursive = Boolean(inputs.recursive ?? this._props.recursive ?? false);
+    const workspace = workspaceDirFrom(inputs, this.serialize());
+    const relative = String(inputs.path ?? this.path ?? ".");
+    const pattern = String(inputs.pattern ?? this.pattern ?? "*");
+    const recursive = Boolean(inputs.recursive ?? this.recursive ?? false);
     const root = ensureWorkspacePath(workspace, relative);
     const regex = wildcardToRegExp(pattern);
     const all = await walk(root, recursive);
@@ -113,17 +128,25 @@ export class ListWorkspaceFilesNode extends BaseNode {
 
 export class ReadTextFileNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.ReadTextFile";
-  static readonly title = "Read Text File";
-  static readonly description = "Read text file from workspace";
+            static readonly title = "Read Text File";
+            static readonly description = "Read a text file from the workspace.\n    workspace, file, read, text";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Path", description: "Relative path to file within workspace" })
+  declare path: any;
 
-  defaults() {
-    return { path: "", encoding: "utf-8" };
-  }
+  @prop({ type: "str", default: "utf-8", title: "Encoding", description: "Text encoding (utf-8, ascii, etc.)" })
+  declare encoding: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const workspace = workspaceDirFrom(inputs, this._props);
-    const relative = String(inputs.path ?? this._props.path ?? "");
-    const encoding = String(inputs.encoding ?? this._props.encoding ?? "utf-8") as BufferEncoding;
+    const workspace = workspaceDirFrom(inputs, this.serialize());
+    const relative = String(inputs.path ?? this.path ?? "");
+    const encoding = String(inputs.encoding ?? this.encoding ?? "utf-8") as BufferEncoding;
     const full = ensureWorkspacePath(workspace, relative);
     const text = await fs.readFile(full, { encoding });
     return { output: text };
@@ -132,19 +155,33 @@ export class ReadTextFileNode extends BaseNode {
 
 export class WriteTextFileNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.WriteTextFile";
-  static readonly title = "Write Text File";
-  static readonly description = "Write text file in workspace";
+            static readonly title = "Write Text File";
+            static readonly description = "Write text to a file in the workspace.\n    workspace, file, write, text, save";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Path", description: "Relative path to file within workspace" })
+  declare path: any;
 
-  defaults() {
-    return { path: "", content: "", encoding: "utf-8", append: false };
-  }
+  @prop({ type: "str", default: "", title: "Content", description: "Text content to write" })
+  declare content: any;
+
+  @prop({ type: "str", default: "utf-8", title: "Encoding", description: "Text encoding (utf-8, ascii, etc.)" })
+  declare encoding: any;
+
+  @prop({ type: "bool", default: false, title: "Append", description: "Append to file instead of overwriting" })
+  declare append: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const workspace = workspaceDirFrom(inputs, this._props);
-    const relative = String(inputs.path ?? this._props.path ?? "");
-    const content = String(inputs.content ?? this._props.content ?? "");
-    const append = Boolean(inputs.append ?? this._props.append ?? false);
-    const encoding = String(inputs.encoding ?? this._props.encoding ?? "utf-8") as BufferEncoding;
+    const workspace = workspaceDirFrom(inputs, this.serialize());
+    const relative = String(inputs.path ?? this.path ?? "");
+    const content = String(inputs.content ?? this.content ?? "");
+    const append = Boolean(inputs.append ?? this.append ?? false);
+    const encoding = String(inputs.encoding ?? this.encoding ?? "utf-8") as BufferEncoding;
     const full = ensureWorkspacePath(workspace, relative);
     await fs.mkdir(path.dirname(full), { recursive: true });
     if (append) {
@@ -158,16 +195,21 @@ export class WriteTextFileNode extends BaseNode {
 
 export class ReadBinaryFileNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.ReadBinaryFile";
-  static readonly title = "Read Binary File";
-  static readonly description = "Read binary file from workspace as base64";
+            static readonly title = "Read Binary File";
+            static readonly description = "Read a binary file from the workspace as base64-encoded string.\n    workspace, file, read, binary";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Path", description: "Relative path to file within workspace" })
+  declare path: any;
 
-  defaults() {
-    return { path: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const workspace = workspaceDirFrom(inputs, this._props);
-    const relative = String(inputs.path ?? this._props.path ?? "");
+    const workspace = workspaceDirFrom(inputs, this.serialize());
+    const relative = String(inputs.path ?? this.path ?? "");
     const full = ensureWorkspacePath(workspace, relative);
     const data = await fs.readFile(full);
     return { output: Buffer.from(data).toString("base64") };
@@ -176,17 +218,25 @@ export class ReadBinaryFileNode extends BaseNode {
 
 export class WriteBinaryFileNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.WriteBinaryFile";
-  static readonly title = "Write Binary File";
-  static readonly description = "Write base64 binary file in workspace";
+            static readonly title = "Write Binary File";
+            static readonly description = "Write binary data (base64-encoded) to a file in the workspace.\n    workspace, file, write, binary, save";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Path", description: "Relative path to file within workspace" })
+  declare path: any;
 
-  defaults() {
-    return { path: "", content: "" };
-  }
+  @prop({ type: "str", default: "", title: "Content", description: "Base64-encoded binary content to write" })
+  declare content: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const workspace = workspaceDirFrom(inputs, this._props);
-    const relative = String(inputs.path ?? this._props.path ?? "");
-    const content = String(inputs.content ?? this._props.content ?? "");
+    const workspace = workspaceDirFrom(inputs, this.serialize());
+    const relative = String(inputs.path ?? this.path ?? "");
+    const content = String(inputs.content ?? this.content ?? "");
     const full = ensureWorkspacePath(workspace, relative);
     await fs.mkdir(path.dirname(full), { recursive: true });
     await fs.writeFile(full, Buffer.from(content, "base64"));
@@ -196,17 +246,25 @@ export class WriteBinaryFileNode extends BaseNode {
 
 export class DeleteWorkspaceFileNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.DeleteWorkspaceFile";
-  static readonly title = "Delete Workspace File";
-  static readonly description = "Delete workspace path";
+            static readonly title = "Delete Workspace File";
+            static readonly description = "Delete a file or directory from the workspace.\n    workspace, file, delete, remove";
+        static readonly metadataOutputTypes = {
+    output: "none"
+  };
+  
+  @prop({ type: "str", default: "", title: "Path", description: "Relative path to file or directory within workspace" })
+  declare path: any;
 
-  defaults() {
-    return { path: "", recursive: false };
-  }
+  @prop({ type: "bool", default: false, title: "Recursive", description: "Delete directories recursively" })
+  declare recursive: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const workspace = workspaceDirFrom(inputs, this._props);
-    const relative = String(inputs.path ?? this._props.path ?? "");
-    const recursive = Boolean(inputs.recursive ?? this._props.recursive ?? false);
+    const workspace = workspaceDirFrom(inputs, this.serialize());
+    const relative = String(inputs.path ?? this.path ?? "");
+    const recursive = Boolean(inputs.recursive ?? this.recursive ?? false);
     const full = ensureWorkspacePath(workspace, relative);
     const stat = await fs.stat(full);
     if (stat.isDirectory()) {
@@ -223,16 +281,21 @@ export class DeleteWorkspaceFileNode extends BaseNode {
 
 export class CreateWorkspaceDirectoryNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.CreateWorkspaceDirectory";
-  static readonly title = "Create Workspace Directory";
-  static readonly description = "Create workspace directory";
+            static readonly title = "Create Workspace Directory";
+            static readonly description = "Create a directory in the workspace.\n    workspace, directory, create, folder";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Path", description: "Relative path to directory within workspace" })
+  declare path: any;
 
-  defaults() {
-    return { path: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const workspace = workspaceDirFrom(inputs, this._props);
-    const relative = String(inputs.path ?? this._props.path ?? "");
+    const workspace = workspaceDirFrom(inputs, this.serialize());
+    const relative = String(inputs.path ?? this.path ?? "");
     const full = ensureWorkspacePath(workspace, relative);
     await fs.mkdir(full, { recursive: true });
     return { output: relative };
@@ -241,16 +304,21 @@ export class CreateWorkspaceDirectoryNode extends BaseNode {
 
 export class WorkspaceFileExistsNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.WorkspaceFileExists";
-  static readonly title = "Workspace File Exists";
-  static readonly description = "Check workspace path existence";
+            static readonly title = "Workspace File Exists";
+            static readonly description = "Check if a file or directory exists in the workspace.\n    workspace, file, exists, check";
+        static readonly metadataOutputTypes = {
+    output: "bool"
+  };
+  
+  @prop({ type: "str", default: "", title: "Path", description: "Relative path within workspace to check" })
+  declare path: any;
 
-  defaults() {
-    return { path: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const workspace = workspaceDirFrom(inputs, this._props);
-    const relative = String(inputs.path ?? this._props.path ?? "");
+    const workspace = workspaceDirFrom(inputs, this.serialize());
+    const relative = String(inputs.path ?? this.path ?? "");
     const full = ensureWorkspacePath(workspace, relative);
     try {
       await fs.access(full);
@@ -263,16 +331,21 @@ export class WorkspaceFileExistsNode extends BaseNode {
 
 export class GetWorkspaceFileInfoNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.GetWorkspaceFileInfo";
-  static readonly title = "Get Workspace File Info";
-  static readonly description = "Get workspace file metadata";
+            static readonly title = "Get Workspace File Info";
+            static readonly description = "Get information about a file in the workspace.\n    workspace, file, info, metadata";
+        static readonly metadataOutputTypes = {
+    output: "dict"
+  };
+  
+  @prop({ type: "str", default: "", title: "Path", description: "Relative path to file within workspace" })
+  declare path: any;
 
-  defaults() {
-    return { path: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const workspace = workspaceDirFrom(inputs, this._props);
-    const relative = String(inputs.path ?? this._props.path ?? "");
+    const workspace = workspaceDirFrom(inputs, this.serialize());
+    const relative = String(inputs.path ?? this.path ?? "");
     const full = ensureWorkspacePath(workspace, relative);
     const stats = await fs.stat(full);
     return {
@@ -292,17 +365,25 @@ export class GetWorkspaceFileInfoNode extends BaseNode {
 
 export class CopyWorkspaceFileNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.CopyWorkspaceFile";
-  static readonly title = "Copy Workspace File";
-  static readonly description = "Copy file or directory in workspace";
+            static readonly title = "Copy Workspace File";
+            static readonly description = "Copy a file within the workspace.\n    workspace, file, copy, duplicate";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Source", description: "Relative source path within workspace" })
+  declare source: any;
 
-  defaults() {
-    return { source: "", destination: "" };
-  }
+  @prop({ type: "str", default: "", title: "Destination", description: "Relative destination path within workspace" })
+  declare destination: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const workspace = workspaceDirFrom(inputs, this._props);
-    const source = ensureWorkspacePath(workspace, String(inputs.source ?? this._props.source ?? ""));
-    const destRelative = String(inputs.destination ?? this._props.destination ?? "");
+    const workspace = workspaceDirFrom(inputs, this.serialize());
+    const source = ensureWorkspacePath(workspace, String(inputs.source ?? this.source ?? ""));
+    const destRelative = String(inputs.destination ?? this.destination ?? "");
     const destination = ensureWorkspacePath(workspace, destRelative);
     await fs.mkdir(path.dirname(destination), { recursive: true });
     await fs.cp(source, destination, { recursive: true });
@@ -312,17 +393,25 @@ export class CopyWorkspaceFileNode extends BaseNode {
 
 export class MoveWorkspaceFileNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.MoveWorkspaceFile";
-  static readonly title = "Move Workspace File";
-  static readonly description = "Move or rename file in workspace";
+            static readonly title = "Move Workspace File";
+            static readonly description = "Move or rename a file within the workspace.\n    workspace, file, move, rename";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "str", default: "", title: "Source", description: "Relative source path within workspace" })
+  declare source: any;
 
-  defaults() {
-    return { source: "", destination: "" };
-  }
+  @prop({ type: "str", default: "", title: "Destination", description: "Relative destination path within workspace" })
+  declare destination: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const workspace = workspaceDirFrom(inputs, this._props);
-    const source = ensureWorkspacePath(workspace, String(inputs.source ?? this._props.source ?? ""));
-    const destRelative = String(inputs.destination ?? this._props.destination ?? "");
+    const workspace = workspaceDirFrom(inputs, this.serialize());
+    const source = ensureWorkspacePath(workspace, String(inputs.source ?? this.source ?? ""));
+    const destRelative = String(inputs.destination ?? this.destination ?? "");
     const destination = ensureWorkspacePath(workspace, destRelative);
     await fs.mkdir(path.dirname(destination), { recursive: true });
     await fs.rename(source, destination);
@@ -332,16 +421,21 @@ export class MoveWorkspaceFileNode extends BaseNode {
 
 export class GetWorkspaceFileSizeNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.GetWorkspaceFileSize";
-  static readonly title = "Get Workspace File Size";
-  static readonly description = "Get workspace file size in bytes";
+            static readonly title = "Get Workspace File Size";
+            static readonly description = "Get file size in bytes for a workspace file.\n    workspace, file, size, bytes";
+        static readonly metadataOutputTypes = {
+    output: "int"
+  };
+  
+  @prop({ type: "str", default: "", title: "Path", description: "Relative path to file within workspace" })
+  declare path: any;
 
-  defaults() {
-    return { path: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const workspace = workspaceDirFrom(inputs, this._props);
-    const relative = String(inputs.path ?? this._props.path ?? "");
+    const workspace = workspaceDirFrom(inputs, this.serialize());
+    const relative = String(inputs.path ?? this.path ?? "");
     const full = ensureWorkspacePath(workspace, relative);
     const stats = await fs.stat(full);
     if (!stats.isFile()) {
@@ -353,16 +447,21 @@ export class GetWorkspaceFileSizeNode extends BaseNode {
 
 export class IsWorkspaceFileNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.IsWorkspaceFile";
-  static readonly title = "Is Workspace File";
-  static readonly description = "Check workspace path is file";
+            static readonly title = "Is Workspace File";
+            static readonly description = "Check if a path in the workspace is a file.\n    workspace, file, check, type";
+        static readonly metadataOutputTypes = {
+    output: "bool"
+  };
+  
+  @prop({ type: "str", default: "", title: "Path", description: "Relative path within workspace to check" })
+  declare path: any;
 
-  defaults() {
-    return { path: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const workspace = workspaceDirFrom(inputs, this._props);
-    const relative = String(inputs.path ?? this._props.path ?? "");
+    const workspace = workspaceDirFrom(inputs, this.serialize());
+    const relative = String(inputs.path ?? this.path ?? "");
     const full = ensureWorkspacePath(workspace, relative);
     try {
       const stats = await fs.stat(full);
@@ -375,16 +474,21 @@ export class IsWorkspaceFileNode extends BaseNode {
 
 export class IsWorkspaceDirectoryNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.IsWorkspaceDirectory";
-  static readonly title = "Is Workspace Directory";
-  static readonly description = "Check workspace path is directory";
+            static readonly title = "Is Workspace Directory";
+            static readonly description = "Check if a path in the workspace is a directory.\n    workspace, directory, check, type";
+        static readonly metadataOutputTypes = {
+    output: "bool"
+  };
+  
+  @prop({ type: "str", default: "", title: "Path", description: "Relative path within workspace to check" })
+  declare path: any;
 
-  defaults() {
-    return { path: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const workspace = workspaceDirFrom(inputs, this._props);
-    const relative = String(inputs.path ?? this._props.path ?? "");
+    const workspace = workspaceDirFrom(inputs, this.serialize());
+    const relative = String(inputs.path ?? this.path ?? "");
     const full = ensureWorkspacePath(workspace, relative);
     try {
       const stats = await fs.stat(full);
@@ -397,17 +501,22 @@ export class IsWorkspaceDirectoryNode extends BaseNode {
 
 export class JoinWorkspacePathsNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.JoinWorkspacePaths";
-  static readonly title = "Join Workspace Paths";
-  static readonly description = "Join relative workspace path components";
+            static readonly title = "Join Workspace Paths";
+            static readonly description = "Join path components relative to workspace.\n    workspace, path, join, combine";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+  
+  @prop({ type: "list[str]", default: [], title: "Paths", description: "Path components to join (relative to workspace)" })
+  declare paths: any;
 
-  defaults() {
-    return { paths: [] };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const workspace = workspaceDirFrom(inputs, this._props);
-    const parts = Array.isArray(inputs.paths ?? this._props.paths)
-      ? (inputs.paths ?? this._props.paths) as unknown[]
+    const workspace = workspaceDirFrom(inputs, this.serialize());
+    const parts = Array.isArray(inputs.paths ?? this.paths)
+      ? (inputs.paths ?? this.paths) as unknown[]
       : [];
     if (parts.length === 0) {
       throw new Error("paths cannot be empty");
@@ -420,19 +529,39 @@ export class JoinWorkspacePathsNode extends BaseNode {
 
 export class SaveImageFileNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.SaveImageFile";
-  static readonly title = "Save Image File";
-  static readonly description = "Save image bytes to workspace";
+            static readonly title = "Save Image File";
+            static readonly description = "Save an image to a file in the workspace.\n    workspace, image, save, file, output";
+        static readonly metadataOutputTypes = {
+    output: "image"
+  };
+  
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "The image to save" })
+  declare image: any;
 
-  defaults() {
-    return { image: {}, folder: ".", filename: "image.png", overwrite: false };
-  }
+  @prop({ type: "str", default: ".", title: "Folder", description: "Relative folder path within workspace (use . for workspace root)" })
+  declare folder: any;
+
+  @prop({ type: "str", default: "image.png", title: "Filename", description: "\n        The name of the image file.\n        You can use time and date variables to create unique names:\n        %Y - Year\n        %m - Month\n        %d - Day\n        %H - Hour\n        %M - Minute\n        %S - Second\n        " })
+  declare filename: any;
+
+  @prop({ type: "bool", default: false, title: "Overwrite", description: "Overwrite the file if it already exists, otherwise file will be renamed" })
+  declare overwrite: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const workspace = workspaceDirFrom(inputs, this._props);
-    const image = (inputs.image ?? this._props.image ?? {}) as Record<string, unknown>;
-    const folder = String(inputs.folder ?? this._props.folder ?? ".");
-    const filename = formatTimestampedName(String(inputs.filename ?? this._props.filename ?? "image.png"));
-    const overwrite = Boolean(inputs.overwrite ?? this._props.overwrite ?? false);
+    const workspace = workspaceDirFrom(inputs, this.serialize());
+    const image = (inputs.image ?? this.image ?? {}) as Record<string, unknown>;
+    const folder = String(inputs.folder ?? this.folder ?? ".");
+    const filename = formatTimestampedName(String(inputs.filename ?? this.filename ?? "image.png"));
+    const overwrite = Boolean(inputs.overwrite ?? this.overwrite ?? false);
 
     let relative = path.join(folder, filename);
     let full = ensureWorkspacePath(workspace, relative);
@@ -468,19 +597,41 @@ export class SaveImageFileNode extends BaseNode {
 
 export class SaveVideoFileNode extends BaseNode {
   static readonly nodeType = "nodetool.workspace.SaveVideoFile";
-  static readonly title = "Save Video File";
-  static readonly description = "Save video bytes to workspace";
+            static readonly title = "Save Video File";
+            static readonly description = "Save a video file to the workspace.\n    workspace, video, save, file, output\n\n    The filename can include time and date variables:\n    %Y - Year, %m - Month, %d - Day\n    %H - Hour, %M - Minute, %S - Second";
+        static readonly metadataOutputTypes = {
+    output: "video"
+  };
+  
+  @prop({ type: "video", default: {
+  "type": "video",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null,
+  "duration": null,
+  "format": null
+}, title: "Video", description: "The video to save" })
+  declare video: any;
 
-  defaults() {
-    return { video: {}, folder: ".", filename: "video.mp4", overwrite: false };
-  }
+  @prop({ type: "str", default: ".", title: "Folder", description: "Relative folder path within workspace (use . for workspace root)" })
+  declare folder: any;
+
+  @prop({ type: "str", default: "video.mp4", title: "Filename", description: "\n        Name of the file to save.\n        You can use time and date variables to create unique names:\n        %Y - Year\n        %m - Month\n        %d - Day\n        %H - Hour\n        %M - Minute\n        %S - Second\n        " })
+  declare filename: any;
+
+  @prop({ type: "bool", default: false, title: "Overwrite", description: "Overwrite the file if it already exists, otherwise file will be renamed" })
+  declare overwrite: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const workspace = workspaceDirFrom(inputs, this._props);
-    const video = (inputs.video ?? this._props.video ?? {}) as Record<string, unknown>;
-    const folder = String(inputs.folder ?? this._props.folder ?? ".");
-    const filename = formatTimestampedName(String(inputs.filename ?? this._props.filename ?? "video.mp4"));
-    const overwrite = Boolean(inputs.overwrite ?? this._props.overwrite ?? false);
+    const workspace = workspaceDirFrom(inputs, this.serialize());
+    const video = (inputs.video ?? this.video ?? {}) as Record<string, unknown>;
+    const folder = String(inputs.folder ?? this.folder ?? ".");
+    const filename = formatTimestampedName(String(inputs.filename ?? this.filename ?? "video.mp4"));
+    const overwrite = Boolean(inputs.overwrite ?? this.overwrite ?? false);
 
     let relative = path.join(folder, filename);
     let full = ensureWorkspacePath(workspace, relative);

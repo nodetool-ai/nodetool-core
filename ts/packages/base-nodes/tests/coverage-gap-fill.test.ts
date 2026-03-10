@@ -341,18 +341,18 @@ describe("lib-audio-dsp gaps", () => {
   });
 
   it("defaults() returns expected shape for all nodes", () => {
-    expect(new AmplitudeToDBNode().defaults()).toHaveProperty("tensor");
-    expect(new DBToAmplitudeNode().defaults()).toHaveProperty("tensor");
-    expect(new DBToPowerNode().defaults()).toHaveProperty("tensor");
-    expect(new PowerToDBNode().defaults()).toHaveProperty("tensor");
-    expect(new PlotSpectrogramNode().defaults()).toHaveProperty("fmax");
-    expect(new GainNode_().defaults()).toHaveProperty("gain_db");
-    expect(new DelayNode_().defaults()).toHaveProperty("delay_seconds");
-    expect(new HighPassFilterNode().defaults()).toHaveProperty("cutoff_frequency_hz");
-    expect(new LowPassFilterNode().defaults()).toHaveProperty("cutoff_frequency_hz");
-    expect(new HighShelfFilterNode().defaults()).toHaveProperty("gain_db");
-    expect(new LowShelfFilterNode().defaults()).toHaveProperty("gain_db");
-    expect(new PeakFilterNode().defaults()).toHaveProperty("q_factor");
+    expect(new AmplitudeToDBNode().serialize()).toHaveProperty("tensor");
+    expect(new DBToAmplitudeNode().serialize()).toHaveProperty("tensor");
+    expect(new DBToPowerNode().serialize()).toHaveProperty("tensor");
+    expect(new PowerToDBNode().serialize()).toHaveProperty("tensor");
+    expect(new PlotSpectrogramNode().serialize()).toHaveProperty("fmax");
+    expect(new GainNode_().serialize()).toHaveProperty("gain_db");
+    expect(new DelayNode_().serialize()).toHaveProperty("delay_seconds");
+    expect(new HighPassFilterNode().serialize()).toHaveProperty("cutoff_frequency_hz");
+    expect(new LowPassFilterNode().serialize()).toHaveProperty("cutoff_frequency_hz");
+    expect(new HighShelfFilterNode().serialize()).toHaveProperty("gain_db");
+    expect(new LowShelfFilterNode().serialize()).toHaveProperty("gain_db");
+    expect(new PeakFilterNode().serialize()).toHaveProperty("q_factor");
   });
 });
 
@@ -392,24 +392,24 @@ describe("lib-synthesis gaps", () => {
   });
 
   it("Oscillator defaults() returns expected shape", () => {
-    expect(new OscillatorLibNode().defaults()).toHaveProperty("waveform");
-    expect(new OscillatorLibNode().defaults()).toHaveProperty("pitch_envelope_amount");
+    expect(new OscillatorLibNode().serialize()).toHaveProperty("waveform");
+    expect(new OscillatorLibNode().serialize()).toHaveProperty("pitch_envelope_amount");
   });
 
   it("WhiteNoise defaults()", () => {
-    expect(new WhiteNoiseLibNode().defaults()).toHaveProperty("amplitude");
+    expect(new WhiteNoiseLibNode().serialize()).toHaveProperty("amplitude");
   });
 
   it("PinkNoise defaults()", () => {
-    expect(new PinkNoiseLibNode().defaults()).toHaveProperty("amplitude");
+    expect(new PinkNoiseLibNode().serialize()).toHaveProperty("amplitude");
   });
 
   it("FM_Synthesis defaults()", () => {
-    expect(new FM_SynthesisLibNode().defaults()).toHaveProperty("carrier_freq");
+    expect(new FM_SynthesisLibNode().serialize()).toHaveProperty("carrier_freq");
   });
 
   it("Envelope defaults()", () => {
-    expect(new EnvelopeLibNode().defaults()).toHaveProperty("attack");
+    expect(new EnvelopeLibNode().serialize()).toHaveProperty("attack");
   });
 
   it("Envelope non-RIFF data passes through", async () => {
@@ -887,44 +887,44 @@ describe("lib-numpy gaps", () => {
   });
 
   it("defaults for all numpy nodes", () => {
-    expect(new AddArrayNode().defaults()).toHaveProperty("a");
-    expect(new SubtractArrayNode().defaults()).toHaveProperty("a");
-    expect(new MultiplyArrayNode().defaults()).toHaveProperty("a");
-    expect(new DivideArrayNode().defaults()).toHaveProperty("a");
-    expect(new ModulusArrayNode().defaults()).toHaveProperty("a");
-    expect(new AbsArrayNode().defaults()).toHaveProperty("values");
-    expect(new SineArrayNode().defaults()).toHaveProperty("angle_rad");
-    expect(new CosineArrayNode().defaults()).toHaveProperty("angle_rad");
-    expect(new ExpArrayNode().defaults()).toHaveProperty("values");
-    expect(new LogArrayNode().defaults()).toHaveProperty("values");
-    expect(new SqrtArrayNode().defaults()).toHaveProperty("values");
-    expect(new PowerArrayNode().defaults()).toHaveProperty("base");
-    expect(new SumArrayNode().defaults()).toHaveProperty("values");
-    expect(new MeanArrayNode().defaults()).toHaveProperty("values");
-    expect(new MinArrayNode().defaults()).toHaveProperty("values");
-    expect(new MaxArrayNode().defaults()).toHaveProperty("values");
-    expect(new ArgMinArrayNode().defaults()).toHaveProperty("values");
-    expect(new ArgMaxArrayNode().defaults()).toHaveProperty("values");
-    expect(new SliceArrayNode().defaults()).toHaveProperty("start");
-    expect(new IndexArrayNode().defaults()).toHaveProperty("indices");
-    expect(new TransposeArrayNode().defaults()).toHaveProperty("values");
-    expect(new MatMulNode().defaults()).toHaveProperty("a");
-    expect(new StackNode().defaults()).toHaveProperty("arrays");
-    expect(new SplitArrayNode().defaults()).toHaveProperty("num_splits");
-    expect(new Reshape1DNode().defaults()).toHaveProperty("num_elements");
-    expect(new Reshape2DNode().defaults()).toHaveProperty("num_rows");
-    expect(new Reshape3DNode().defaults()).toHaveProperty("num_depths");
-    expect(new Reshape4DNode().defaults()).toHaveProperty("num_channels");
-    expect(new ListToArrayNode().defaults()).toHaveProperty("values");
-    expect(new ArrayToListNode().defaults()).toHaveProperty("values");
-    expect(new ScalarToArrayNode().defaults()).toHaveProperty("value");
-    expect(new ArrayToScalarNode().defaults()).toHaveProperty("values");
-    expect(new NumpyConvertToImageNode().defaults()).toHaveProperty("values");
-    expect(new NumpyConvertToAudioNode().defaults()).toHaveProperty("sample_rate");
-    expect(new ConvertToArrayNumpyNode().defaults()).toHaveProperty("image");
-    expect(new SaveArrayNode().defaults()).toHaveProperty("name");
-    expect(new BinaryOperationNode().defaults()).toHaveProperty("a");
-    expect(new PlotArrayNode().defaults()).toHaveProperty("plot_type");
+    expect(new AddArrayNode().serialize()).toHaveProperty("a");
+    expect(new SubtractArrayNode().serialize()).toHaveProperty("a");
+    expect(new MultiplyArrayNode().serialize()).toHaveProperty("a");
+    expect(new DivideArrayNode().serialize()).toHaveProperty("a");
+    expect(new ModulusArrayNode().serialize()).toHaveProperty("a");
+    expect(new AbsArrayNode().serialize()).toHaveProperty("values");
+    expect(new SineArrayNode().serialize()).toHaveProperty("angle_rad");
+    expect(new CosineArrayNode().serialize()).toHaveProperty("angle_rad");
+    expect(new ExpArrayNode().serialize()).toHaveProperty("values");
+    expect(new LogArrayNode().serialize()).toHaveProperty("values");
+    expect(new SqrtArrayNode().serialize()).toHaveProperty("values");
+    expect(new PowerArrayNode().serialize()).toHaveProperty("base");
+    expect(new SumArrayNode().serialize()).toHaveProperty("values");
+    expect(new MeanArrayNode().serialize()).toHaveProperty("values");
+    expect(new MinArrayNode().serialize()).toHaveProperty("values");
+    expect(new MaxArrayNode().serialize()).toHaveProperty("values");
+    expect(new ArgMinArrayNode().serialize()).toHaveProperty("values");
+    expect(new ArgMaxArrayNode().serialize()).toHaveProperty("values");
+    expect(new SliceArrayNode().serialize()).toHaveProperty("start");
+    expect(new IndexArrayNode().serialize()).toHaveProperty("indices");
+    expect(new TransposeArrayNode().serialize()).toHaveProperty("values");
+    expect(new MatMulNode().serialize()).toHaveProperty("a");
+    expect(new StackNode().serialize()).toHaveProperty("arrays");
+    expect(new SplitArrayNode().serialize()).toHaveProperty("num_splits");
+    expect(new Reshape1DNode().serialize()).toHaveProperty("num_elements");
+    expect(new Reshape2DNode().serialize()).toHaveProperty("num_rows");
+    expect(new Reshape3DNode().serialize()).toHaveProperty("num_depths");
+    expect(new Reshape4DNode().serialize()).toHaveProperty("num_channels");
+    expect(new ListToArrayNode().serialize()).toHaveProperty("values");
+    expect(new ArrayToListNode().serialize()).toHaveProperty("values");
+    expect(new ScalarToArrayNode().serialize()).toHaveProperty("value");
+    expect(new ArrayToScalarNode().serialize()).toHaveProperty("values");
+    expect(new NumpyConvertToImageNode().serialize()).toHaveProperty("values");
+    expect(new NumpyConvertToAudioNode().serialize()).toHaveProperty("sample_rate");
+    expect(new ConvertToArrayNumpyNode().serialize()).toHaveProperty("image");
+    expect(new SaveArrayNode().serialize()).toHaveProperty("name");
+    expect(new BinaryOperationNode().serialize()).toHaveProperty("a");
+    expect(new PlotArrayNode().serialize()).toHaveProperty("plot_type");
   });
 });
 
@@ -1013,16 +1013,16 @@ startxref
   });
 
   it("defaults for all pdf nodes", () => {
-    expect(new GetPageCountPdfPlumberNode().defaults()).toHaveProperty("pdf");
-    expect(new ExtractTextPdfPlumberNode().defaults()).toHaveProperty("start_page");
-    expect(new ExtractPageMetadataPdfPlumberNode().defaults()).toHaveProperty("start_page");
-    expect(new ExtractTablesPdfPlumberNode().defaults()).toHaveProperty("start_page");
-    expect(new ExtractImagesPdfPlumberNode().defaults()).toHaveProperty("start_page");
-    expect(new ExtractTextPyMuPdfNode().defaults()).toHaveProperty("start_page");
-    expect(new ExtractMarkdownPyMuPdfNode().defaults()).toHaveProperty("start_page");
-    expect(new ExtractTextBlocksPyMuPdfNode().defaults()).toHaveProperty("start_page");
-    expect(new ExtractTextWithStylePyMuPdfNode().defaults()).toHaveProperty("start_page");
-    expect(new ExtractTablesPyMuPdfNode().defaults()).toHaveProperty("start_page");
+    expect(new GetPageCountPdfPlumberNode().serialize()).toHaveProperty("pdf");
+    expect(new ExtractTextPdfPlumberNode().serialize()).toHaveProperty("start_page");
+    expect(new ExtractPageMetadataPdfPlumberNode().serialize()).toHaveProperty("start_page");
+    expect(new ExtractTablesPdfPlumberNode().serialize()).toHaveProperty("start_page");
+    expect(new ExtractImagesPdfPlumberNode().serialize()).toHaveProperty("start_page");
+    expect(new ExtractTextPyMuPdfNode().serialize()).toHaveProperty("start_page");
+    expect(new ExtractMarkdownPyMuPdfNode().serialize()).toHaveProperty("start_page");
+    expect(new ExtractTextBlocksPyMuPdfNode().serialize()).toHaveProperty("start_page");
+    expect(new ExtractTextWithStylePyMuPdfNode().serialize()).toHaveProperty("start_page");
+    expect(new ExtractTablesPyMuPdfNode().serialize()).toHaveProperty("start_page");
   });
 });
 
@@ -1191,13 +1191,13 @@ describe("lib-sqlite gaps", () => {
   });
 
   it("defaults for all sqlite nodes", () => {
-    expect(new CreateTableLibNode().defaults()).toHaveProperty("database_name");
-    expect(new SqliteInsertLibNode().defaults()).toHaveProperty("data");
-    expect(new QueryLibNode().defaults()).toHaveProperty("where");
-    expect(new SqliteUpdateLibNode().defaults()).toHaveProperty("where");
-    expect(new SqliteDeleteLibNode().defaults()).toHaveProperty("where");
-    expect(new ExecuteSQLLibNode().defaults()).toHaveProperty("sql");
-    expect(new GetDatabasePathLibNode().defaults()).toHaveProperty("database_name");
+    expect(new CreateTableLibNode().serialize()).toHaveProperty("database_name");
+    expect(new SqliteInsertLibNode().serialize()).toHaveProperty("data");
+    expect(new QueryLibNode().serialize()).toHaveProperty("where");
+    expect(new SqliteUpdateLibNode().serialize()).toHaveProperty("where");
+    expect(new SqliteDeleteLibNode().serialize()).toHaveProperty("where");
+    expect(new ExecuteSQLLibNode().serialize()).toHaveProperty("sql");
+    expect(new GetDatabasePathLibNode().serialize()).toHaveProperty("database_name");
   });
 });
 
@@ -1298,12 +1298,12 @@ describe("lib-excel gaps", () => {
   });
 
   it("defaults for all excel nodes", () => {
-    expect(new CreateWorkbookLibNode().defaults()).toHaveProperty("sheet_name");
-    expect(new ExcelToDataFrameLibNode().defaults()).toHaveProperty("has_header");
-    expect(new DataFrameToExcelLibNode().defaults()).toHaveProperty("include_header");
-    expect(new FormatCellsLibNode().defaults()).toHaveProperty("bold");
-    expect(new AutoFitColumnsLibNode().defaults()).toHaveProperty("sheet_name");
-    expect(new SaveWorkbookLibNode().defaults()).toHaveProperty("filename");
+    expect(new CreateWorkbookLibNode().serialize()).toHaveProperty("sheet_name");
+    expect(new ExcelToDataFrameLibNode().serialize()).toHaveProperty("has_header");
+    expect(new DataFrameToExcelLibNode().serialize()).toHaveProperty("include_header");
+    expect(new FormatCellsLibNode().serialize()).toHaveProperty("bold");
+    expect(new AutoFitColumnsLibNode().serialize()).toHaveProperty("sheet_name");
+    expect(new SaveWorkbookLibNode().serialize()).toHaveProperty("filename");
   });
 });
 
@@ -1418,15 +1418,15 @@ describe("lib-docx gaps", () => {
   });
 
   it("defaults for all docx nodes", () => {
-    expect(new CreateDocumentLibNode().defaults()).toBeDefined();
-    expect(new LoadWordDocumentLibNode().defaults()).toHaveProperty("path");
-    expect(new AddHeadingLibNode().defaults()).toHaveProperty("text");
-    expect(new AddParagraphLibNode().defaults()).toHaveProperty("alignment");
-    expect(new AddTableLibNode().defaults()).toHaveProperty("data");
-    expect(new AddImageLibNode().defaults()).toHaveProperty("width");
-    expect(new AddPageBreakLibNode().defaults()).toHaveProperty("document");
-    expect(new SetDocumentPropertiesLibNode().defaults()).toHaveProperty("title");
-    expect(new SaveDocumentLibNode().defaults()).toHaveProperty("filename");
+    expect(new CreateDocumentLibNode().serialize()).toBeDefined();
+    expect(new LoadWordDocumentLibNode().serialize()).toHaveProperty("path");
+    expect(new AddHeadingLibNode().serialize()).toHaveProperty("text");
+    expect(new AddParagraphLibNode().serialize()).toHaveProperty("alignment");
+    expect(new AddTableLibNode().serialize()).toHaveProperty("data");
+    expect(new AddImageLibNode().serialize()).toHaveProperty("width");
+    expect(new AddPageBreakLibNode().serialize()).toHaveProperty("document");
+    expect(new SetDocumentPropertiesLibNode().serialize()).toHaveProperty("title");
+    expect(new SaveDocumentLibNode().serialize()).toHaveProperty("filename");
   });
 });
 
@@ -1513,14 +1513,14 @@ describe("lib-beautifulsoup gaps", () => {
   });
 
   it("defaults for all bs nodes", () => {
-    expect(new BaseUrlLibNode().defaults()).toHaveProperty("url");
-    expect(new ExtractLinksLibNode().defaults()).toHaveProperty("html");
-    expect(new ExtractImagesLibNode().defaults()).toHaveProperty("base_url");
-    expect(new ExtractAudioLibNode().defaults()).toHaveProperty("html");
-    expect(new ExtractVideosLibNode().defaults()).toHaveProperty("html");
-    expect(new ExtractMetadataLibNode().defaults()).toHaveProperty("html");
-    expect(new HTMLToTextLibNode().defaults()).toHaveProperty("preserve_linebreaks");
-    expect(new WebsiteContentExtractorLibNode().defaults()).toHaveProperty("html_content");
+    expect(new BaseUrlLibNode().serialize()).toHaveProperty("url");
+    expect(new ExtractLinksLibNode().serialize()).toHaveProperty("html");
+    expect(new ExtractImagesLibNode().serialize()).toHaveProperty("base_url");
+    expect(new ExtractAudioLibNode().serialize()).toHaveProperty("html");
+    expect(new ExtractVideosLibNode().serialize()).toHaveProperty("html");
+    expect(new ExtractMetadataLibNode().serialize()).toHaveProperty("html");
+    expect(new HTMLToTextLibNode().serialize()).toHaveProperty("preserve_linebreaks");
+    expect(new WebsiteContentExtractorLibNode().serialize()).toHaveProperty("html_content");
   });
 });
 
@@ -1571,7 +1571,7 @@ describe("lib-seaborn gaps", () => {
   });
 
   it("ChartRenderer defaults()", () => {
-    expect(new ChartRendererLibNode().defaults()).toHaveProperty("width");
+    expect(new ChartRendererLibNode().serialize()).toHaveProperty("width");
   });
 });
 
@@ -1687,15 +1687,15 @@ describe("lib-pedalboard-extra gaps", () => {
   });
 
   it("defaults for all pedalboard nodes", () => {
-    expect(new BitcrushNode().defaults()).toHaveProperty("bit_depth");
-    expect(new CompressNode().defaults()).toHaveProperty("threshold");
-    expect(new DistortionNode().defaults()).toHaveProperty("drive_db");
-    expect(new LimiterNode().defaults()).toHaveProperty("threshold_db");
-    expect(new ReverbNode().defaults()).toHaveProperty("room_scale");
-    expect(new PitchShiftNode().defaults()).toHaveProperty("semitones");
-    expect(new TimeStretchNode().defaults()).toHaveProperty("rate");
-    expect(new NoiseGateNode().defaults()).toHaveProperty("threshold_db");
-    expect(new PhaserNode().defaults()).toHaveProperty("rate_hz");
+    expect(new BitcrushNode().serialize()).toHaveProperty("bit_depth");
+    expect(new CompressNode().serialize()).toHaveProperty("threshold");
+    expect(new DistortionNode().serialize()).toHaveProperty("drive_db");
+    expect(new LimiterNode().serialize()).toHaveProperty("threshold_db");
+    expect(new ReverbNode().serialize()).toHaveProperty("room_scale");
+    expect(new PitchShiftNode().serialize()).toHaveProperty("semitones");
+    expect(new TimeStretchNode().serialize()).toHaveProperty("rate");
+    expect(new NoiseGateNode().serialize()).toHaveProperty("threshold_db");
+    expect(new PhaserNode().serialize()).toHaveProperty("rate_hz");
   });
 });
 
@@ -1834,16 +1834,16 @@ describe("lib-librosa-spectral gaps", () => {
   });
 
   it("defaults for all spectral nodes", () => {
-    expect(new STFTNode().defaults()).toHaveProperty("n_fft");
-    expect(new MelSpectrogramNode().defaults()).toHaveProperty("n_mels");
-    expect(new MFCCNode().defaults()).toHaveProperty("n_mfcc");
-    expect(new ChromaSTFTNode().defaults()).toHaveProperty("n_fft");
-    expect(new SpectralCentroidNode().defaults()).toHaveProperty("n_fft");
-    expect(new SpectralContrastNode().defaults()).toHaveProperty("n_fft");
-    expect(new GriffinLimNode().defaults()).toHaveProperty("n_iter");
-    expect(new DetectOnsetsNode().defaults()).toHaveProperty("hop_length");
-    expect(new SegmentAudioByOnsetsNode().defaults()).toHaveProperty("min_segment_length");
-    expect(new SaveAudioSegmentsNode().defaults()).toHaveProperty("name_prefix");
+    expect(new STFTNode().serialize()).toHaveProperty("n_fft");
+    expect(new MelSpectrogramNode().serialize()).toHaveProperty("n_mels");
+    expect(new MFCCNode().serialize()).toHaveProperty("n_mfcc");
+    expect(new ChromaSTFTNode().serialize()).toHaveProperty("n_fft");
+    expect(new SpectralCentroidNode().serialize()).toHaveProperty("n_fft");
+    expect(new SpectralContrastNode().serialize()).toHaveProperty("n_fft");
+    expect(new GriffinLimNode().serialize()).toHaveProperty("n_iter");
+    expect(new DetectOnsetsNode().serialize()).toHaveProperty("hop_length");
+    expect(new SegmentAudioByOnsetsNode().serialize()).toHaveProperty("min_segment_length");
+    expect(new SaveAudioSegmentsNode().serialize()).toHaveProperty("name_prefix");
   });
 });
 
@@ -2220,7 +2220,7 @@ describe("data.ts gaps", () => {
 
   it("FilterNone filters null", async () => {
     const res = await new FilterNoneNode().process({ value: null });
-    expect(res.output).toBeUndefined();
+    expect(res.output).toEqual([]);
   });
 
   it("asRows handles data wrapper", async () => {
@@ -2231,34 +2231,34 @@ describe("data.ts gaps", () => {
   });
 
   it("defaults for data nodes", () => {
-    expect(new SchemaNode().defaults()).toHaveProperty("columns");
-    expect(new FilterDataframeNode().defaults()).toHaveProperty("condition");
-    expect(new SliceDataframeNode().defaults()).toHaveProperty("start_index");
-    expect(new SaveDataframeNode().defaults()).toHaveProperty("name");
-    expect(new ImportCSVNode().defaults()).toHaveProperty("csv_data");
-    expect(new LoadCSVURLNode().defaults()).toHaveProperty("url");
-    expect(new LoadCSVFileDataNode().defaults()).toHaveProperty("file_path");
-    expect(new FromListNode().defaults()).toHaveProperty("values");
-    expect(new JSONToDataframeNode().defaults()).toHaveProperty("text");
-    expect(new ToListNode().defaults()).toHaveProperty("dataframe");
-    expect(new SelectColumnNode().defaults()).toHaveProperty("columns");
-    expect(new ExtractColumnNode().defaults()).toHaveProperty("column_name");
-    expect(new AddColumnNode().defaults()).toHaveProperty("column_name");
-    expect(new MergeDataframeNode().defaults()).toHaveProperty("dataframe_a");
-    expect(new AppendDataframeNode().defaults()).toHaveProperty("dataframe_a");
-    expect(new JoinDataframeNode().defaults()).toHaveProperty("join_on");
-    expect(new RowIteratorNode().defaults()).toHaveProperty("dataframe");
-    expect(new FindRowNode().defaults()).toHaveProperty("condition");
-    expect(new SortByColumnNode().defaults()).toHaveProperty("column");
-    expect(new DropDuplicatesNode().defaults()).toHaveProperty("df");
-    expect(new DropNANode().defaults()).toHaveProperty("df");
-    expect(new ForEachRowNode().defaults()).toHaveProperty("dataframe");
-    expect(new AggregateNode().defaults()).toHaveProperty("aggregation");
-    expect(new PivotNode().defaults()).toHaveProperty("aggfunc");
-    expect(new RenameNode().defaults()).toHaveProperty("rename_map");
-    expect(new FillNANode().defaults()).toHaveProperty("method");
-    expect(new SaveCSVDataframeFileNode().defaults()).toHaveProperty("filename");
-    expect(new FilterNoneNode().defaults()).toHaveProperty("value");
+    expect(new SchemaNode().serialize()).toHaveProperty("columns");
+    expect(new FilterDataframeNode().serialize()).toHaveProperty("condition");
+    expect(new SliceDataframeNode().serialize()).toHaveProperty("start_index");
+    expect(new SaveDataframeNode().serialize()).toHaveProperty("name");
+    expect(new ImportCSVNode().serialize()).toHaveProperty("csv_data");
+    expect(new LoadCSVURLNode().serialize()).toHaveProperty("url");
+    expect(new LoadCSVFileDataNode().serialize()).toHaveProperty("file_path");
+    expect(new FromListNode().serialize()).toHaveProperty("values");
+    expect(new JSONToDataframeNode().serialize()).toHaveProperty("text");
+    expect(new ToListNode().serialize()).toHaveProperty("dataframe");
+    expect(new SelectColumnNode().serialize()).toHaveProperty("columns");
+    expect(new ExtractColumnNode().serialize()).toHaveProperty("column_name");
+    expect(new AddColumnNode().serialize()).toHaveProperty("column_name");
+    expect(new MergeDataframeNode().serialize()).toHaveProperty("dataframe_a");
+    expect(new AppendDataframeNode().serialize()).toHaveProperty("dataframe_a");
+    expect(new JoinDataframeNode().serialize()).toHaveProperty("join_on");
+    expect(new RowIteratorNode().serialize()).toHaveProperty("dataframe");
+    expect(new FindRowNode().serialize()).toHaveProperty("condition");
+    expect(new SortByColumnNode().serialize()).toHaveProperty("column");
+    expect(new DropDuplicatesNode().serialize()).toHaveProperty("df");
+    expect(new DropNANode().serialize()).toHaveProperty("df");
+    expect(new ForEachRowNode().serialize()).toHaveProperty("dataframe");
+    expect(new AggregateNode().serialize()).toHaveProperty("aggregation");
+    expect(new PivotNode().serialize()).toHaveProperty("aggfunc");
+    expect(new RenameNode().serialize()).toHaveProperty("rename_map");
+    expect(new FillNANode().serialize()).toHaveProperty("method");
+    expect(new SaveCSVDataframeFileNode().serialize()).toHaveProperty("filename");
+    expect(new FilterNoneNode().serialize()).toHaveProperty("value");
   });
 });
 
@@ -2386,14 +2386,14 @@ describe("document.ts gaps", () => {
   });
 
   it("defaults for document nodes", () => {
-    expect(new LoadDocumentFileNode().defaults()).toHaveProperty("path");
-    expect(new SaveDocumentFileNode().defaults()).toHaveProperty("document");
-    expect(new ListDocumentsNode().defaults()).toHaveProperty("recursive");
-    expect(new SplitDocumentNode().defaults()).toHaveProperty("chunk_size");
-    expect(new SplitHTMLNode().defaults()).toHaveProperty("chunk_size");
-    expect(new SplitJSONNode().defaults()).toHaveProperty("chunk_size");
-    expect(new SplitRecursivelyNode().defaults()).toHaveProperty("chunk_size");
-    expect(new SplitMarkdownNode().defaults()).toHaveProperty("chunk_size");
+    expect(new LoadDocumentFileNode().serialize()).toHaveProperty("path");
+    expect(new SaveDocumentFileNode().serialize()).toHaveProperty("document");
+    expect(new ListDocumentsNode().serialize()).toHaveProperty("recursive");
+    expect(new SplitDocumentNode().serialize()).toHaveProperty("buffer_size");
+    expect(new SplitHTMLNode().serialize()).toHaveProperty("document");
+    expect(new SplitJSONNode().serialize()).toHaveProperty("include_metadata");
+    expect(new SplitRecursivelyNode().serialize()).toHaveProperty("chunk_size");
+    expect(new SplitMarkdownNode().serialize()).toHaveProperty("chunk_size");
   });
 });
 
@@ -2452,30 +2452,30 @@ describe("code.ts gaps", () => {
   });
 
   it("defaults for ScriptExecNode subclasses", () => {
-    expect(new ExecutePythonNode().defaults()).toHaveProperty("script");
-    expect(new ExecuteJavaScriptNode().defaults()).toHaveProperty("script");
-    expect(new ExecuteBashNode().defaults()).toHaveProperty("timeout_ms");
-    expect(new ExecuteRubyNode().defaults()).toHaveProperty("script");
-    expect(new ExecuteLuaNode().defaults()).toHaveProperty("script");
+    expect(new ExecutePythonNode().serialize()).toHaveProperty("code");
+    expect(new ExecuteJavaScriptNode().serialize()).toHaveProperty("code");
+    expect(new ExecuteBashNode().serialize()).toHaveProperty("code");
+    expect(new ExecuteRubyNode().serialize()).toHaveProperty("code");
+    expect(new ExecuteLuaNode().serialize()).toHaveProperty("code");
   });
 
   it("defaults for ExecuteCommandNode", () => {
-    expect(new ExecuteCommandNode().defaults()).toHaveProperty("command");
+    expect(new ExecuteCommandNode().serialize()).toHaveProperty("command");
   });
 
   it("defaults for RunCommandNode subclasses", () => {
-    expect(new RunPythonCommandNode().defaults()).toHaveProperty("command");
-    expect(new RunJavaScriptCommandNode().defaults()).toHaveProperty("command");
-    expect(new RunBashCommandNode().defaults()).toHaveProperty("command");
-    expect(new RunRubyCommandNode().defaults()).toHaveProperty("command");
-    expect(new RunLuaCommandNode().defaults()).toHaveProperty("command");
-    expect(new RunLuaCommandDockerNode().defaults()).toHaveProperty("command");
-    expect(new RunShellCommandNode().defaults()).toHaveProperty("command");
-    expect(new RunPythonCommandDockerNode().defaults()).toHaveProperty("command");
-    expect(new RunJavaScriptCommandDockerNode().defaults()).toHaveProperty("command");
-    expect(new RunBashCommandDockerNode().defaults()).toHaveProperty("command");
-    expect(new RunRubyCommandDockerNode().defaults()).toHaveProperty("command");
-    expect(new RunShellCommandDockerNode().defaults()).toHaveProperty("command");
+    expect(new RunPythonCommandNode().serialize()).toHaveProperty("command");
+    expect(new RunJavaScriptCommandNode().serialize()).toHaveProperty("command");
+    expect(new RunBashCommandNode().serialize()).toHaveProperty("command");
+    expect(new RunRubyCommandNode().serialize()).toHaveProperty("command");
+    expect(new RunLuaCommandNode().serialize()).toHaveProperty("command");
+    expect(new RunLuaCommandDockerNode().serialize()).toHaveProperty("command");
+    expect(new RunShellCommandNode().serialize()).toHaveProperty("command");
+    expect(new RunPythonCommandDockerNode().serialize()).toHaveProperty("command");
+    expect(new RunJavaScriptCommandDockerNode().serialize()).toHaveProperty("command");
+    expect(new RunBashCommandDockerNode().serialize()).toHaveProperty("command");
+    expect(new RunRubyCommandDockerNode().serialize()).toHaveProperty("command");
+    expect(new RunShellCommandDockerNode().serialize()).toHaveProperty("command");
   });
 });
 
@@ -2610,11 +2610,11 @@ describe("uuid.ts gaps", () => {
   });
 
   it("defaults for uuid nodes", () => {
-    expect(new GenerateUUID3Node().defaults()).toHaveProperty("namespace");
-    expect(new GenerateUUID5Node().defaults()).toHaveProperty("namespace");
-    expect(new ParseUUIDNode().defaults()).toHaveProperty("uuid_string");
-    expect(new FormatUUIDNode().defaults()).toHaveProperty("format");
-    expect(new IsValidUUIDNode().defaults()).toHaveProperty("uuid_string");
+    expect(new GenerateUUID3Node().serialize()).toHaveProperty("namespace");
+    expect(new GenerateUUID5Node().serialize()).toHaveProperty("namespace");
+    expect(new ParseUUIDNode().serialize()).toHaveProperty("uuid_string");
+    expect(new FormatUUIDNode().serialize()).toHaveProperty("format");
+    expect(new IsValidUUIDNode().serialize()).toHaveProperty("uuid_string");
   });
 
   it("ParseUUID v1 returns version 1 and variant info", async () => {

@@ -1,14 +1,30 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { ProcessingContext } from "@nodetool/runtime";
 
 export class OutputNode extends BaseNode {
   static readonly nodeType = "nodetool.output.Output";
-  static readonly title = "Output";
-  static readonly description = "Generic output sink node";
+            static readonly title = "Output";
+            static readonly description = "Generic output node for any type.\n    output, result, sink, return";
+        static readonly metadataOutputTypes = {
+    output: "any"
+  };
+          static readonly basicFields = [
+  "name",
+  "value"
+];
+  
+          static readonly isStreamingOutput = true;
+  @prop({ type: "str", default: "", title: "Name", description: "The parameter name for the workflow." })
+  declare name: any;
 
-  defaults() {
-    return { value: null };
-  }
+  @prop({ type: "any", default: null, title: "Value", description: "The value of the output." })
+  declare value: any;
+
+  @prop({ type: "str", default: "", title: "Description", description: "The description of the output for the workflow." })
+  declare description: any;
+
+
+
 
   private inferOutputType(value: unknown): string {
     if (value === null || value === undefined) return "any";
@@ -27,11 +43,11 @@ export class OutputNode extends BaseNode {
 
   private emitOutputUpdate(value: unknown, context?: ProcessingContext): void {
     if (!context || typeof context.emit !== "function") return;
-    const nodeId = String(this._props.__node_id ?? this._props.name ?? this._props.__node_name ?? "");
-    const nodeName = String(this._props.__node_name ?? this._props.name ?? nodeId);
+    const nodeId = String(this.__node_id ?? this.name ?? this.__node_name ?? "");
+    const nodeName = String(this.__node_name ?? this.name ?? nodeId);
     const outputName =
-      typeof this._props.name === "string" && this._props.name.trim().length > 0
-        ? this._props.name
+      typeof this.name === "string" && this.name.trim().length > 0
+        ? this.name
         : "output";
     context.emit({
       type: "output_update",
@@ -45,7 +61,7 @@ export class OutputNode extends BaseNode {
   }
 
   async process(inputs: Record<string, unknown>, context?: ProcessingContext): Promise<Record<string, unknown>> {
-    let value: unknown = this._props.value ?? null;
+    let value: unknown = this.value ?? null;
     if ("value" in inputs) {
       value = inputs.value;
     } else if ("input_value" in inputs) {
@@ -67,10 +83,13 @@ export class PreviewNode extends BaseNode {
   static readonly nodeType = "nodetool.workflows.base_node.Preview";
   static readonly title = "Preview";
   static readonly description = "Preview values inside the workflow graph";
+  @prop({ type: "any", default: null })
+  declare value: any;
 
-  defaults() {
-    return { value: null, name: "" };
-  }
+  @prop({ type: "str", default: "" })
+  declare name: any;
+
+
 
   private async normalize(value: unknown, context?: ProcessingContext): Promise<unknown> {
     if (!context || typeof context.normalizeOutputValue !== "function") return value;
@@ -79,7 +98,7 @@ export class PreviewNode extends BaseNode {
 
   private emitPreview(value: unknown, context?: ProcessingContext): void {
     if (!context || typeof context.emit !== "function") return;
-    const nodeId = String(this._props.__node_id ?? this._props.name ?? this._props.__node_name ?? "");
+    const nodeId = String(this.__node_id ?? this.name ?? this.__node_name ?? "");
     context.emit({
       type: "preview_update",
       node_id: nodeId,
@@ -94,7 +113,7 @@ export class PreviewNode extends BaseNode {
     } else {
       const keys = Object.keys(inputs);
       if (keys.length === 1) value = inputs[keys[0]];
-      else value = this._props.value ?? null;
+      else value = this.value ?? null;
     }
 
     const normalized = await this.normalize(value, context);

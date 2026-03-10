@@ -1085,7 +1085,7 @@ describe("lib-grid coverage", () => {
   it("SliceImageGrid with null/undefined data returns error", async () => {
     await expect(
       new SliceImageGridLibNode().process({ image: null })
-    ).rejects.toThrow("Image input is required");
+    ).rejects.toThrow("ImageRef must include data or uri.");
   });
 
   it("SliceImageGrid with Uint8Array data", async () => {
@@ -1114,7 +1114,7 @@ describe("lib-http castValue coverage", () => {
     // castValue catch at lines 48-49 requires toString/valueOf to throw,
     // which is not possible with normal inputs. We verify the function loads.
     const node = new GetRequestLibNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d).toHaveProperty("url");
   });
 });

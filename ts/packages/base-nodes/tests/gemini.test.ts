@@ -34,7 +34,7 @@ describe("GroundedSearchNode", () => {
 
   it("returns expected defaults", () => {
     const node = new GroundedSearchNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.query).toBe("");
     expect(d.model).toBe("gemini-2.0-flash");
   });
@@ -165,7 +165,7 @@ describe("EmbeddingNode (Gemini)", () => {
 
   it("returns expected defaults", () => {
     const node = new EmbeddingNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.input).toBe("");
     expect(d.model).toBe("text-embedding-004");
   });
@@ -220,7 +220,7 @@ describe("ImageGenerationNode", () => {
 
   it("returns expected defaults", () => {
     const node = new ImageGenerationNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.prompt).toBe("");
     expect(d.model).toBe("imagen-3.0-generate-002");
   });
@@ -313,7 +313,7 @@ describe("TextToVideoGeminiNode", () => {
 
   it("returns expected defaults", () => {
     const node = new TextToVideoGeminiNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.prompt).toBe("");
     expect(d.model).toBe("veo-3.1-generate-preview");
     expect(d.aspect_ratio).toBe("16:9");
@@ -403,7 +403,7 @@ describe("ImageToVideoGeminiNode", () => {
 
   it("returns expected defaults", () => {
     const node = new ImageToVideoGeminiNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.prompt).toBe("");
     expect(d.model).toBe("veo-3.1-generate-preview");
   });
@@ -458,7 +458,7 @@ describe("TextToSpeechGeminiNode", () => {
 
   it("returns expected defaults", () => {
     const node = new TextToSpeechGeminiNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.text).toBe("");
     expect(d.model).toBe("gemini-2.5-pro-preview-tts");
     expect(d.voice_name).toBe("kore");
@@ -544,7 +544,7 @@ describe("TranscribeGeminiNode", () => {
 
   it("returns expected defaults", () => {
     const node = new TranscribeGeminiNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.model).toBe("gemini-2.5-flash");
   });
 

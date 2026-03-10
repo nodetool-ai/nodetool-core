@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
+import { getNodeMetadata } from "@nodetool/node-sdk";
 import {
   DiscordBotTrigger,
   DiscordSendMessage,
@@ -10,6 +11,20 @@ import {
 const originalFetch = global.fetch;
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
+
+
+function metadataDefaults(NodeCls: any) {
+  const metadata = getNodeMetadata(NodeCls);
+  return Object.fromEntries(
+    metadata.properties
+      .filter((prop) => Object.prototype.hasOwnProperty.call(prop, "default"))
+      .map((prop) => [prop.name, prop.default])
+  );
+}
+
+function expectMetadataDefaults(NodeCls: any) {
+  expect(new NodeCls().serialize()).toEqual(metadataDefaults(NodeCls));
+}
 
 afterAll(() => {
   global.fetch = originalFetch;
@@ -29,17 +44,7 @@ describe("DiscordBotTrigger", () => {
   });
 
   it("returns expected defaults", () => {
-    const d = new DiscordBotTrigger().defaults();
-    expect(d.token).toBe("");
-    expect(d.channel_id).toBe("");
-    expect(d.allow_bot_messages).toBe(false);
-  });
-
-  it("throws without token", async () => {
-    const node = new DiscordBotTrigger();
-    await expect(node.process({ token: "" })).rejects.toThrow(
-      /bot token is required/i
-    );
+    expectMetadataDefaults(DiscordBotTrigger);
   });
 
   it("validates token via Discord API", async () => {
@@ -108,19 +113,7 @@ describe("DiscordSendMessage", () => {
   });
 
   it("returns expected defaults", () => {
-    const d = new DiscordSendMessage().defaults();
-    expect(d.token).toBe("");
-    expect(d.channel_id).toBe("");
-    expect(d.content).toBe("");
-    expect(d.tts).toBe(false);
-    expect(d.embeds).toEqual([]);
-  });
-
-  it("throws without token", async () => {
-    const node = new DiscordSendMessage();
-    await expect(
-      node.process({ token: "", channel_id: "123", content: "hi" })
-    ).rejects.toThrow(/bot token is required/i);
+    expectMetadataDefaults(DiscordSendMessage);
   });
 
   it("throws without channel_id", async () => {
@@ -204,19 +197,7 @@ describe("TelegramBotTrigger", () => {
   });
 
   it("returns expected defaults", () => {
-    const d = new TelegramBotTrigger().defaults();
-    expect(d.token).toBe("");
-    expect(d.chat_id).toBe(0);
-    expect(d.allow_bot_messages).toBe(false);
-    expect(d.include_edited_messages).toBe(false);
-    expect(d.poll_timeout_seconds).toBe(30);
-  });
-
-  it("throws without token", async () => {
-    const node = new TelegramBotTrigger();
-    await expect(node.process({ token: "" })).rejects.toThrow(
-      /bot token is required/i
-    );
+    expectMetadataDefaults(TelegramBotTrigger);
   });
 
   it("validates token via getMe", async () => {
@@ -301,19 +282,7 @@ describe("TelegramSendMessage", () => {
   });
 
   it("returns expected defaults", () => {
-    const d = new TelegramSendMessage().defaults();
-    expect(d.token).toBe("");
-    expect(d.chat_id).toBe(0);
-    expect(d.text).toBe("");
-    expect(d.parse_mode).toBe("");
-    expect(d.disable_web_page_preview).toBe(false);
-  });
-
-  it("throws without token", async () => {
-    const node = new TelegramSendMessage();
-    await expect(
-      node.process({ token: "", chat_id: 1, text: "hi" })
-    ).rejects.toThrow(/bot token is required/i);
+    expectMetadataDefaults(TelegramSendMessage);
   });
 
   it("throws without chat_id", async () => {

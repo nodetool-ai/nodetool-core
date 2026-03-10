@@ -1,33 +1,86 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { NodeClass } from "@nodetool/node-sdk";
 
 export class ChartRendererLibNode extends BaseNode {
   static readonly nodeType = "lib.seaborn.ChartRenderer";
-  static readonly title = "Chart Renderer";
-  static readonly description =
-    "Node responsible for rendering chart configurations into image format using seaborn.";
+            static readonly title = "Chart Renderer";
+            static readonly description = "Node responsible for rendering chart configurations into image format using seaborn.\n    chart, seaborn, plot, visualization, data";
+        static readonly metadataOutputTypes = {
+    output: "image"
+  };
+  
+  @prop({ type: "chart_config", default: {
+  "type": "chart_config",
+  "title": "",
+  "x_label": "",
+  "y_label": "",
+  "legend": true,
+  "data": {
+    "type": "chart_data",
+    "series": [],
+    "row": null,
+    "col": null,
+    "col_wrap": null
+  },
+  "height": null,
+  "aspect": null,
+  "x_lim": null,
+  "y_lim": null,
+  "x_scale": null,
+  "y_scale": null,
+  "legend_position": "auto",
+  "palette": null,
+  "hue_order": null,
+  "hue_norm": null,
+  "sizes": null,
+  "size_order": null,
+  "size_norm": null,
+  "marginal_kws": null,
+  "joint_kws": null,
+  "diag_kind": null,
+  "corner": false,
+  "center": null,
+  "vmin": null,
+  "vmax": null,
+  "cmap": null,
+  "annot": false,
+  "fmt": ".2g",
+  "square": false
+}, title: "Chart Config", description: "The chart configuration to render." })
+  declare chart_config: any;
 
-  defaults() {
-    return {
-      chart_config: {
-        title: "",
-        x_label: "",
-        y_label: "",
-        data: { series: [] },
-      },
-      width: 640,
-      height: 480,
-      data: { columns: [], data: [] },
-    };
-  }
+  @prop({ type: "int", default: 640, title: "Width", description: "The width of the chart in pixels.", min: 0, max: 10000 })
+  declare width: any;
+
+  @prop({ type: "int", default: 480, title: "Height", description: "The height of the chart in pixels.", min: 0, max: 10000 })
+  declare height: any;
+
+  @prop({ type: "dataframe", default: {
+  "type": "dataframe",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null,
+  "columns": null
+}, title: "Data", description: "The data to visualize as a pandas DataFrame." })
+  declare data: any;
+
+  @prop({ type: "bool", default: true, title: "Despine", description: "Whether to remove top and right spines." })
+  declare despine: any;
+
+  @prop({ type: "bool", default: true, title: "Trim Margins", description: "Whether to use tight layout for margins." })
+  declare trim_margins: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    const config = (inputs.chart_config ?? this._props.chart_config ?? {}) as Record<string, unknown>;
-    const width = Number(inputs.width ?? this._props.width ?? 640);
-    const height = Number(inputs.height ?? this._props.height ?? 480);
-    const dataRef = (inputs.data ?? this._props.data ?? {}) as Record<string, unknown>;
+    const config = (inputs.chart_config ?? this.chart_config ?? {}) as Record<string, unknown>;
+    const width = Number(inputs.width ?? this.width ?? 640);
+    const height = Number(inputs.height ?? this.height ?? 480);
+    const dataRef = (inputs.data ?? this.data ?? {}) as Record<string, unknown>;
 
     const columns = (dataRef.columns ?? []) as Array<Record<string, unknown>>;
     const rows = (dataRef.data ?? []) as unknown[][];

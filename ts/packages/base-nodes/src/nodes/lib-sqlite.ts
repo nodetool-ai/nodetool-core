@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { NodeClass } from "@nodetool/node-sdk";
 import type { ProcessingContext } from "@nodetool/runtime";
 import { join } from "node:path";
@@ -54,28 +54,45 @@ function tryParseJsonValues(row: Record<string, unknown>): Record<string, unknow
 
 export class CreateTableLibNode extends BaseNode {
   static readonly nodeType = "lib.sqlite.CreateTable";
-  static readonly title = "Create Table";
-  static readonly description = "Create a new SQLite table with specified columns.";
+            static readonly title = "Create Table";
+            static readonly description = "Create a new SQLite table with specified columns.\n    sqlite, database, table, create, schema\n\n    Use cases:\n    - Initialize database schema for flashcards\n    - Set up tables for persistent storage\n    - Create memory structures for agents";
+        static readonly metadataOutputTypes = {
+    database_name: "str",
+    table_name: "str",
+    columns: "record_type"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "memory.db", title: "Database Name", description: "Name of the SQLite database file" })
+  declare database_name: any;
 
-  defaults() {
-    return {
-      database_name: "memory.db",
-      table_name: "flashcards",
-      columns: { type: "record_type", columns: [] },
-      add_primary_key: true,
-      if_not_exists: true,
-    };
-  }
+  @prop({ type: "str", default: "flashcards", title: "Table Name", description: "Name of the table to create" })
+  declare table_name: any;
+
+  @prop({ type: "record_type", default: {
+  "type": "record_type",
+  "columns": []
+}, title: "Columns", description: "Column definitions" })
+  declare columns: any;
+
+  @prop({ type: "bool", default: true, title: "Add Primary Key", description: "Automatically make first integer column PRIMARY KEY AUTOINCREMENT" })
+  declare add_primary_key: any;
+
+  @prop({ type: "bool", default: true, title: "If Not Exists", description: "Only create table if it doesn't exist" })
+  declare if_not_exists: any;
+
+
+
 
   async process(inputs: Record<string, unknown>, context?: ProcessingContext): Promise<Record<string, unknown>> {
-    const databaseName = String(inputs.database_name ?? this._props.database_name ?? "memory.db");
-    const tableName = String(inputs.table_name ?? this._props.table_name ?? "flashcards");
-    const columnsInput = (inputs.columns ?? this._props.columns ?? { columns: [] }) as {
+    const databaseName = String(inputs.database_name ?? this.database_name ?? "memory.db");
+    const tableName = String(inputs.table_name ?? this.table_name ?? "flashcards");
+    const columnsInput = (inputs.columns ?? this.columns ?? { columns: [] }) as {
       columns?: Array<{ name: string; data_type: string }>;
     };
     const columns = columnsInput.columns ?? [];
-    const addPrimaryKey = inputs.add_primary_key ?? this._props.add_primary_key ?? true;
-    const ifNotExists = inputs.if_not_exists ?? this._props.if_not_exists ?? true;
+    const addPrimaryKey = inputs.add_primary_key ?? this.add_primary_key ?? true;
+    const ifNotExists = inputs.if_not_exists ?? this.if_not_exists ?? true;
 
     const dbPath = resolveDbPath(context, databaseName);
     const db = new Database(dbPath);
@@ -118,21 +135,31 @@ export class CreateTableLibNode extends BaseNode {
 
 export class InsertLibNode extends BaseNode {
   static readonly nodeType = "lib.sqlite.Insert";
-  static readonly title = "Insert";
-  static readonly description = "Insert a record into a SQLite table.";
+            static readonly title = "Insert";
+            static readonly description = "Insert a record into a SQLite table.\n    sqlite, database, insert, add, record\n\n    Use cases:\n    - Add new flashcards to database\n    - Store agent observations\n    - Persist workflow results";
+        static readonly metadataOutputTypes = {
+    output: "dict[str, any]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "memory.db", title: "Database Name", description: "Name of the SQLite database file" })
+  declare database_name: any;
 
-  defaults() {
-    return {
-      database_name: "memory.db",
-      table_name: "flashcards",
-      data: { content: "example" },
-    };
-  }
+  @prop({ type: "str", default: "flashcards", title: "Table Name", description: "Name of the table to insert into" })
+  declare table_name: any;
+
+  @prop({ type: "dict[str, any]", default: {
+  "content": "example"
+}, title: "Data", description: "Data to insert as dict (column: value)" })
+  declare data: any;
+
+
+
 
   async process(inputs: Record<string, unknown>, context?: ProcessingContext): Promise<Record<string, unknown>> {
-    const databaseName = String(inputs.database_name ?? this._props.database_name ?? "memory.db");
-    const tableName = String(inputs.table_name ?? this._props.table_name ?? "flashcards");
-    const data = (inputs.data ?? this._props.data ?? {}) as Record<string, unknown>;
+    const databaseName = String(inputs.database_name ?? this.database_name ?? "memory.db");
+    const tableName = String(inputs.table_name ?? this.table_name ?? "flashcards");
+    const data = (inputs.data ?? this.data ?? {}) as Record<string, unknown>;
 
     const dbPath = resolveDbPath(context, databaseName);
     const db = new Database(dbPath);
@@ -160,30 +187,47 @@ export class InsertLibNode extends BaseNode {
 
 export class QueryLibNode extends BaseNode {
   static readonly nodeType = "lib.sqlite.Query";
-  static readonly title = "Query";
-  static readonly description = "Query records from a SQLite table.";
+            static readonly title = "Query";
+            static readonly description = "Query records from a SQLite table.\n    sqlite, database, query, select, search, retrieve\n\n    Use cases:\n    - Retrieve flashcards for review\n    - Search agent memory\n    - Fetch stored data";
+        static readonly metadataOutputTypes = {
+    output: "list[dict[str, any]]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "memory.db", title: "Database Name", description: "Name of the SQLite database file" })
+  declare database_name: any;
 
-  defaults() {
-    return {
-      database_name: "memory.db",
-      table_name: "flashcards",
-      where: "",
-      columns: { type: "record_type", columns: [] },
-      order_by: "",
-      limit: 0,
-    };
-  }
+  @prop({ type: "str", default: "flashcards", title: "Table Name", description: "Name of the table to query" })
+  declare table_name: any;
+
+  @prop({ type: "str", default: "", title: "Where", description: "WHERE clause (without 'WHERE' keyword), e.g., 'id = 1'" })
+  declare where: any;
+
+  @prop({ type: "record_type", default: {
+  "type": "record_type",
+  "columns": []
+}, title: "Columns", description: "Columns to select" })
+  declare columns: any;
+
+  @prop({ type: "str", default: "", title: "Order By", description: "ORDER BY clause (without 'ORDER BY' keyword)" })
+  declare order_by: any;
+
+  @prop({ type: "int", default: 0, title: "Limit", description: "Maximum number of rows to return (0 = no limit)" })
+  declare limit: any;
+
+
+
 
   async process(inputs: Record<string, unknown>, context?: ProcessingContext): Promise<Record<string, unknown>> {
-    const databaseName = String(inputs.database_name ?? this._props.database_name ?? "memory.db");
-    const tableName = String(inputs.table_name ?? this._props.table_name ?? "flashcards");
-    const where = String(inputs.where ?? this._props.where ?? "");
-    const columnsInput = (inputs.columns ?? this._props.columns ?? { columns: [] }) as {
+    const databaseName = String(inputs.database_name ?? this.database_name ?? "memory.db");
+    const tableName = String(inputs.table_name ?? this.table_name ?? "flashcards");
+    const where = String(inputs.where ?? this.where ?? "");
+    const columnsInput = (inputs.columns ?? this.columns ?? { columns: [] }) as {
       columns?: Array<{ name: string }>;
     };
     const cols = columnsInput.columns ?? [];
-    const orderBy = String(inputs.order_by ?? this._props.order_by ?? "");
-    const limit = Number(inputs.limit ?? this._props.limit ?? 0);
+    const orderBy = String(inputs.order_by ?? this.order_by ?? "");
+    const limit = Number(inputs.limit ?? this.limit ?? 0);
 
     const dbPath = resolveDbPath(context, databaseName);
 
@@ -222,23 +266,35 @@ export class QueryLibNode extends BaseNode {
 
 export class UpdateLibNode extends BaseNode {
   static readonly nodeType = "lib.sqlite.Update";
-  static readonly title = "Update";
-  static readonly description = "Update records in a SQLite table.";
+            static readonly title = "Update";
+            static readonly description = "Update records in a SQLite table.\n    sqlite, database, update, modify, change\n\n    Use cases:\n    - Update flashcard content\n    - Modify stored records\n    - Change agent memory";
+        static readonly metadataOutputTypes = {
+    output: "dict[str, any]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "memory.db", title: "Database Name", description: "Name of the SQLite database file" })
+  declare database_name: any;
 
-  defaults() {
-    return {
-      database_name: "memory.db",
-      table_name: "flashcards",
-      data: { content: "updated" },
-      where: "",
-    };
-  }
+  @prop({ type: "str", default: "flashcards", title: "Table Name", description: "Name of the table to update" })
+  declare table_name: any;
+
+  @prop({ type: "dict[str, any]", default: {
+  "content": "updated"
+}, title: "Data", description: "Data to update as dict (column: new_value)" })
+  declare data: any;
+
+  @prop({ type: "str", default: "", title: "Where", description: "WHERE clause (without 'WHERE' keyword), e.g., 'id = 1'" })
+  declare where: any;
+
+
+
 
   async process(inputs: Record<string, unknown>, context?: ProcessingContext): Promise<Record<string, unknown>> {
-    const databaseName = String(inputs.database_name ?? this._props.database_name ?? "memory.db");
-    const tableName = String(inputs.table_name ?? this._props.table_name ?? "flashcards");
-    const data = (inputs.data ?? this._props.data ?? {}) as Record<string, unknown>;
-    const where = String(inputs.where ?? this._props.where ?? "");
+    const databaseName = String(inputs.database_name ?? this.database_name ?? "memory.db");
+    const tableName = String(inputs.table_name ?? this.table_name ?? "flashcards");
+    const data = (inputs.data ?? this.data ?? {}) as Record<string, unknown>;
+    const where = String(inputs.where ?? this.where ?? "");
 
     const dbPath = resolveDbPath(context, databaseName);
     const db = new Database(dbPath);
@@ -268,21 +324,29 @@ export class UpdateLibNode extends BaseNode {
 
 export class DeleteLibNode extends BaseNode {
   static readonly nodeType = "lib.sqlite.Delete";
-  static readonly title = "Delete";
-  static readonly description = "Delete records from a SQLite table.";
+            static readonly title = "Delete";
+            static readonly description = "Delete records from a SQLite table.\n    sqlite, database, delete, remove, drop\n\n    Use cases:\n    - Remove flashcards\n    - Delete agent memory\n    - Clean up old data";
+        static readonly metadataOutputTypes = {
+    output: "dict[str, any]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "memory.db", title: "Database Name", description: "Name of the SQLite database file" })
+  declare database_name: any;
 
-  defaults() {
-    return {
-      database_name: "memory.db",
-      table_name: "flashcards",
-      where: "",
-    };
-  }
+  @prop({ type: "str", default: "flashcards", title: "Table Name", description: "Name of the table to delete from" })
+  declare table_name: any;
+
+  @prop({ type: "str", default: "", title: "Where", description: "WHERE clause (without 'WHERE' keyword), e.g., 'id = 1'. REQUIRED for safety." })
+  declare where: any;
+
+
+
 
   async process(inputs: Record<string, unknown>, context?: ProcessingContext): Promise<Record<string, unknown>> {
-    const databaseName = String(inputs.database_name ?? this._props.database_name ?? "memory.db");
-    const tableName = String(inputs.table_name ?? this._props.table_name ?? "flashcards");
-    const where = String(inputs.where ?? this._props.where ?? "");
+    const databaseName = String(inputs.database_name ?? this.database_name ?? "memory.db");
+    const tableName = String(inputs.table_name ?? this.table_name ?? "flashcards");
+    const where = String(inputs.where ?? this.where ?? "");
 
     if (!where) {
       throw new Error("WHERE clause is required for DELETE operations to prevent accidental data loss");
@@ -309,21 +373,29 @@ export class DeleteLibNode extends BaseNode {
 
 export class ExecuteSQLLibNode extends BaseNode {
   static readonly nodeType = "lib.sqlite.ExecuteSQL";
-  static readonly title = "Execute SQL";
-  static readonly description = "Execute arbitrary SQL statements for advanced operations.";
+            static readonly title = "Execute SQL";
+            static readonly description = "Execute arbitrary SQL statements for advanced operations.\n    sqlite, database, sql, execute, custom\n\n    Use cases:\n    - Complex queries with joins\n    - Aggregate functions (COUNT, SUM, AVG)\n    - Custom SQL operations";
+        static readonly metadataOutputTypes = {
+    output: "dict[str, any]"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "memory.db", title: "Database Name", description: "Name of the SQLite database file" })
+  declare database_name: any;
 
-  defaults() {
-    return {
-      database_name: "memory.db",
-      sql: "SELECT * FROM flashcards",
-      parameters: [] as unknown[],
-    };
-  }
+  @prop({ type: "str", default: "SELECT * FROM flashcards", title: "Sql", description: "SQL statement to execute" })
+  declare sql: any;
+
+  @prop({ type: "list[any]", default: [], title: "Parameters", description: "Parameters for parameterized queries (use ? in SQL)" })
+  declare parameters: any;
+
+
+
 
   async process(inputs: Record<string, unknown>, context?: ProcessingContext): Promise<Record<string, unknown>> {
-    const databaseName = String(inputs.database_name ?? this._props.database_name ?? "memory.db");
-    const sqlStr = String(inputs.sql ?? this._props.sql ?? "");
-    const parameters = (inputs.parameters ?? this._props.parameters ?? []) as unknown[];
+    const databaseName = String(inputs.database_name ?? this.database_name ?? "memory.db");
+    const sqlStr = String(inputs.sql ?? this.sql ?? "");
+    const parameters = (inputs.parameters ?? this.parameters ?? []) as unknown[];
 
     const dbPath = resolveDbPath(context, databaseName);
     const db = new Database(dbPath);
@@ -356,15 +428,21 @@ export class ExecuteSQLLibNode extends BaseNode {
 
 export class GetDatabasePathLibNode extends BaseNode {
   static readonly nodeType = "lib.sqlite.GetDatabasePath";
-  static readonly title = "Get Database Path";
-  static readonly description = "Get the full path to a SQLite database file.";
+            static readonly title = "Get Database Path";
+            static readonly description = "Get the full path to a SQLite database file.\n    sqlite, database, path, location\n\n    Use cases:\n    - Reference database location\n    - Verify database exists\n    - Pass path to external tools";
+        static readonly metadataOutputTypes = {
+    output: "str"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "str", default: "memory.db", title: "Database Name", description: "Name of the SQLite database file" })
+  declare database_name: any;
 
-  defaults() {
-    return { database_name: "memory.db" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>, context?: ProcessingContext): Promise<Record<string, unknown>> {
-    const databaseName = String(inputs.database_name ?? this._props.database_name ?? "memory.db");
+    const databaseName = String(inputs.database_name ?? this.database_name ?? "memory.db");
     const dbPath = resolveDbPath(context, databaseName);
     return { output: dbPath };
   }

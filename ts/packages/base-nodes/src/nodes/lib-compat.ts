@@ -132,7 +132,7 @@ function createLibCompatNode(descriptor: LibCompatDescriptor): NodeClass {
       inputs: Record<string, unknown>,
       _context?: ProcessingContext
     ): Promise<Record<string, unknown>> {
-      const props = { ...this._props, ...inputs };
+      const props = { ...this.serialize(), ...inputs };
       delete (props as Record<string, unknown>).__node_id;
       delete (props as Record<string, unknown>).__node_name;
       const result = await runPythonBridge(descriptor.nodeType, props);

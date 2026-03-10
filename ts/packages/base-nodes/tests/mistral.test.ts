@@ -33,11 +33,11 @@ describe("ChatComplete", () => {
 
   it("has correct metadata", () => {
     expect(ChatComplete.nodeType).toBe("mistral.text.ChatComplete");
-    expect(ChatComplete.title).toBe("Mistral Chat");
+    expect(ChatComplete.title).toBe("Chat Complete");
   });
 
   it("returns expected defaults", () => {
-    const d = new ChatComplete().defaults();
+    const d = new ChatComplete().serialize();
     expect(d.model).toBe("mistral-small-latest");
     expect(d.prompt).toBe("");
     expect(d.temperature).toBe(0.7);
@@ -118,11 +118,11 @@ describe("CodeComplete", () => {
 
   it("has correct metadata", () => {
     expect(CodeComplete.nodeType).toBe("mistral.text.CodeComplete");
-    expect(CodeComplete.title).toBe("Mistral Code");
+    expect(CodeComplete.title).toBe("Code Complete");
   });
 
   it("returns expected defaults", () => {
-    const d = new CodeComplete().defaults();
+    const d = new CodeComplete().serialize();
     expect(d.prompt).toBe("");
     expect(d.suffix).toBe("");
     expect(d.temperature).toBe(0.0);
@@ -169,11 +169,11 @@ describe("Embedding (Mistral)", () => {
 
   it("has correct metadata", () => {
     expect(Embedding.nodeType).toBe("mistral.embeddings.Embedding");
-    expect(Embedding.title).toBe("Mistral Embedding");
+    expect(Embedding.title).toBe("Embedding");
   });
 
   it("returns expected defaults", () => {
-    const d = new Embedding().defaults();
+    const d = new Embedding().serialize();
     expect(d.input).toBe("");
     expect(d.model).toBe("mistral-embed");
     expect(d.chunk_size).toBe(4096);
@@ -240,11 +240,11 @@ describe("ImageToText (Mistral)", () => {
 
   it("has correct metadata", () => {
     expect(ImageToText.nodeType).toBe("mistral.vision.ImageToText");
-    expect(ImageToText.title).toBe("Mistral Image to Text");
+    expect(ImageToText.title).toBe("Image To Text");
   });
 
   it("returns expected defaults", () => {
-    const d = new ImageToText().defaults();
+    const d = new ImageToText().serialize();
     expect(d.model).toBe("pixtral-large-latest");
     expect(d.temperature).toBe(0.3);
   });
@@ -299,11 +299,11 @@ describe("OCR (Mistral)", () => {
 
   it("has correct metadata", () => {
     expect(OCR.nodeType).toBe("mistral.vision.OCR");
-    expect(OCR.title).toBe("Mistral OCR");
+    expect(OCR.title).toBe("OCR");
   });
 
   it("returns expected defaults", () => {
-    const d = new OCR().defaults();
+    const d = new OCR().serialize();
     expect(d.model).toBe("pixtral-large-latest");
   });
 

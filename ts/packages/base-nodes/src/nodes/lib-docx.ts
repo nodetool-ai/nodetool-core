@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import {
   Document,
   Packer,
@@ -75,12 +75,12 @@ const HEADING_MAP: Record<number, (typeof HeadingLevel)[keyof typeof HeadingLeve
 
 export class CreateDocumentLibNode extends BaseNode {
   static readonly nodeType = "lib.docx.CreateDocument";
-  static readonly title = "Create Document";
-  static readonly description = "Creates a new Word document";
-
-  defaults() {
-    return {};
-  }
+            static readonly title = "Create Document";
+            static readonly description = "Creates a new Word document\n    document, docx, file, create";
+        static readonly metadataOutputTypes = {
+    output: "document"
+  };
+  
 
   async process(): Promise<Record<string, unknown>> {
     return { output: { elements: [], properties: {} } as DocState };
@@ -89,15 +89,20 @@ export class CreateDocumentLibNode extends BaseNode {
 
 export class LoadWordDocumentLibNode extends BaseNode {
   static readonly nodeType = "lib.docx.LoadWordDocument";
-  static readonly title = "Load Word Document";
-  static readonly description = "Loads a Word document from disk";
+            static readonly title = "Load Word Document";
+            static readonly description = "Loads a Word document from disk\n    document, docx, file, load, input";
+        static readonly metadataOutputTypes = {
+    output: "document"
+  };
+  
+  @prop({ type: "str", default: "", title: "Path", description: "Path to the document to load" })
+  declare path: any;
 
-  defaults() {
-    return { path: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const filePath = String(inputs.path ?? this._props.path ?? "");
+    const filePath = String(inputs.path ?? this.path ?? "");
     if (!filePath.trim()) throw new Error("path cannot be empty");
     const expanded = expandUser(filePath);
     const result = await mammoth.extractRawText({ path: expanded });
@@ -107,17 +112,34 @@ export class LoadWordDocumentLibNode extends BaseNode {
 
 export class AddHeadingLibNode extends BaseNode {
   static readonly nodeType = "lib.docx.AddHeading";
-  static readonly title = "Add Heading";
-  static readonly description = "Adds a heading to the document";
+            static readonly title = "Add Heading";
+            static readonly description = "Adds a heading to the document\n    document, docx, heading, format";
+        static readonly metadataOutputTypes = {
+    output: "document"
+  };
+  
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Document", description: "The document to add the heading to" })
+  declare document: any;
 
-  defaults() {
-    return { document: { elements: [] }, text: "", level: 1 };
-  }
+  @prop({ type: "str", default: "", title: "Text", description: "The heading text" })
+  declare text: any;
+
+  @prop({ type: "int", default: 1, title: "Level", description: "Heading level (1-9)", min: 1, max: 9 })
+  declare level: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const doc = getDocState(inputs.document ?? this._props.document);
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const level = Number(inputs.level ?? this._props.level ?? 1);
+    const doc = getDocState(inputs.document ?? this.document);
+    const text = String(inputs.text ?? this.text ?? "");
+    const level = Number(inputs.level ?? this.level ?? 1);
     const newDoc: DocState = {
       ...doc,
       elements: [...doc.elements, { type: "heading", text, level }],
@@ -128,27 +150,51 @@ export class AddHeadingLibNode extends BaseNode {
 
 export class AddParagraphLibNode extends BaseNode {
   static readonly nodeType = "lib.docx.AddParagraph";
-  static readonly title = "Add Paragraph";
-  static readonly description = "Adds a paragraph of text to the document";
+            static readonly title = "Add Paragraph";
+            static readonly description = "Adds a paragraph of text to the document\n    document, docx, text, format";
+        static readonly metadataOutputTypes = {
+    output: "document"
+  };
+  
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Document", description: "The document to add the paragraph to" })
+  declare document: any;
 
-  defaults() {
-    return {
-      document: { elements: [] },
-      text: "",
-      alignment: "LEFT",
-      bold: false,
-      italic: false,
-      font_size: 12,
-    };
-  }
+  @prop({ type: "str", default: "", title: "Text", description: "The paragraph text" })
+  declare text: any;
+
+  @prop({ type: "enum", default: "LEFT", title: "Alignment", description: "Text alignment", values: [
+  "LEFT",
+  "CENTER",
+  "RIGHT",
+  "JUSTIFY"
+] })
+  declare alignment: any;
+
+  @prop({ type: "bool", default: false, title: "Bold", description: "Make text bold" })
+  declare bold: any;
+
+  @prop({ type: "bool", default: false, title: "Italic", description: "Make text italic" })
+  declare italic: any;
+
+  @prop({ type: "int", default: 12, title: "Font Size", description: "Font size in points" })
+  declare font_size: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const doc = getDocState(inputs.document ?? this._props.document);
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const alignment = String(inputs.alignment ?? this._props.alignment ?? "LEFT");
-    const bold = Boolean(inputs.bold ?? this._props.bold ?? false);
-    const italic = Boolean(inputs.italic ?? this._props.italic ?? false);
-    const fontSize = Number(inputs.font_size ?? this._props.font_size ?? 12);
+    const doc = getDocState(inputs.document ?? this.document);
+    const text = String(inputs.text ?? this.text ?? "");
+    const alignment = String(inputs.alignment ?? this.alignment ?? "LEFT");
+    const bold = Boolean(inputs.bold ?? this.bold ?? false);
+    const italic = Boolean(inputs.italic ?? this.italic ?? false);
+    const fontSize = Number(inputs.font_size ?? this.font_size ?? 12);
     const newDoc: DocState = {
       ...doc,
       elements: [
@@ -162,16 +208,37 @@ export class AddParagraphLibNode extends BaseNode {
 
 export class AddTableLibNode extends BaseNode {
   static readonly nodeType = "lib.docx.AddTable";
-  static readonly title = "Add Table";
-  static readonly description = "Adds a table to the document";
+            static readonly title = "Add Table";
+            static readonly description = "Adds a table to the document\n    document, docx, table, format";
+        static readonly metadataOutputTypes = {
+    output: "document"
+  };
+  
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Document", description: "The document to add the table to" })
+  declare document: any;
 
-  defaults() {
-    return { document: { elements: [] }, data: { rows: [], columns: [] } };
-  }
+  @prop({ type: "dataframe", default: {
+  "type": "dataframe",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null,
+  "columns": null
+}, title: "Data", description: "The data to add to the table" })
+  declare data: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const doc = getDocState(inputs.document ?? this._props.document);
-    const dataInput = inputs.data ?? this._props.data ?? {};
+    const doc = getDocState(inputs.document ?? this.document);
+    const dataInput = inputs.data ?? this.data ?? {};
     // Accept DataframeRef-like { data: string[][], columns: string[] } or { rows: Row[] }
     let tableData: string[][] = [];
     if (dataInput && typeof dataInput === "object") {
@@ -194,18 +261,44 @@ export class AddTableLibNode extends BaseNode {
 
 export class AddImageLibNode extends BaseNode {
   static readonly nodeType = "lib.docx.AddImage";
-  static readonly title = "Add Image";
-  static readonly description = "Adds an image to the document";
+            static readonly title = "Add Image";
+            static readonly description = "Adds an image to the document\n    document, docx, image, format";
+        static readonly metadataOutputTypes = {
+    output: "document"
+  };
+  
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Document", description: "The document to add the image to" })
+  declare document: any;
 
-  defaults() {
-    return { document: { elements: [] }, image: {}, width: 0, height: 0 };
-  }
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "The image to add" })
+  declare image: any;
+
+  @prop({ type: "float", default: 0, title: "Width", description: "Image width in inches" })
+  declare width: any;
+
+  @prop({ type: "float", default: 0, title: "Height", description: "Image height in inches" })
+  declare height: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const doc = getDocState(inputs.document ?? this._props.document);
-    const imageInput = inputs.image ?? this._props.image ?? {};
-    const width = Number(inputs.width ?? this._props.width ?? 0);
-    const height = Number(inputs.height ?? this._props.height ?? 0);
+    const doc = getDocState(inputs.document ?? this.document);
+    const imageInput = inputs.image ?? this.image ?? {};
+    const width = Number(inputs.width ?? this.width ?? 0);
+    const height = Number(inputs.height ?? this.height ?? 0);
 
     // Read image data from path or uri
     let imageData: Buffer;
@@ -234,15 +327,26 @@ export class AddImageLibNode extends BaseNode {
 
 export class AddPageBreakLibNode extends BaseNode {
   static readonly nodeType = "lib.docx.AddPageBreak";
-  static readonly title = "Add Page Break";
-  static readonly description = "Adds a page break to the document";
+            static readonly title = "Add Page Break";
+            static readonly description = "Adds a page break to the document\n    document, docx, format, layout";
+        static readonly metadataOutputTypes = {
+    output: "document"
+  };
+  
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Document", description: "The document to add the page break to" })
+  declare document: any;
 
-  defaults() {
-    return { document: { elements: [] } };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const doc = getDocState(inputs.document ?? this._props.document);
+    const doc = getDocState(inputs.document ?? this.document);
     const newDoc: DocState = {
       ...doc,
       elements: [...doc.elements, { type: "page_break" }],
@@ -253,19 +357,42 @@ export class AddPageBreakLibNode extends BaseNode {
 
 export class SetDocumentPropertiesLibNode extends BaseNode {
   static readonly nodeType = "lib.docx.SetDocumentProperties";
-  static readonly title = "Set Document Properties";
-  static readonly description = "Sets document metadata properties";
+            static readonly title = "Set Document Properties";
+            static readonly description = "Sets document metadata properties\n    document, docx, metadata, properties";
+        static readonly metadataOutputTypes = {
+    output: "document"
+  };
+  
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Document", description: "The document to modify" })
+  declare document: any;
 
-  defaults() {
-    return { document: { elements: [] }, title: "", author: "", subject: "", keywords: "" };
-  }
+  @prop({ type: "str", default: "", title: "Title", description: "Document title" })
+  declare title: any;
+
+  @prop({ type: "str", default: "", title: "Author", description: "Document author" })
+  declare author: any;
+
+  @prop({ type: "str", default: "", title: "Subject", description: "Document subject" })
+  declare subject: any;
+
+  @prop({ type: "str", default: "", title: "Keywords", description: "Document keywords" })
+  declare keywords: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const doc = getDocState(inputs.document ?? this._props.document);
-    const title = String(inputs.title ?? this._props.title ?? "");
-    const author = String(inputs.author ?? this._props.author ?? "");
-    const subject = String(inputs.subject ?? this._props.subject ?? "");
-    const keywords = String(inputs.keywords ?? this._props.keywords ?? "");
+    const doc = getDocState(inputs.document ?? this.document);
+    const title = String(inputs.title ?? this.title ?? "");
+    const author = String(inputs.author ?? this.author ?? "");
+    const subject = String(inputs.subject ?? this.subject ?? "");
+    const keywords = String(inputs.keywords ?? this.keywords ?? "");
 
     const newDoc: DocState = {
       ...doc,
@@ -283,23 +410,40 @@ export class SetDocumentPropertiesLibNode extends BaseNode {
 
 export class SaveDocumentLibNode extends BaseNode {
   static readonly nodeType = "lib.docx.SaveDocument";
-  static readonly title = "Save Document";
-  static readonly description = "Writes the document to a file";
+            static readonly title = "Save Document";
+            static readonly description = "Writes the document to a file\n    document, docx, file, save, output";
+  
+  @prop({ type: "document", default: {
+  "type": "document",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Document", description: "The document to write" })
+  declare document: any;
 
-  defaults() {
-    return { document: { elements: [] }, path: { path: "" }, filename: "" };
-  }
+  @prop({ type: "file_path", default: {
+  "type": "file_path",
+  "path": ""
+}, title: "Path", description: "The folder to write the document to." })
+  declare path: any;
+
+  @prop({ type: "str", default: "", title: "Filename", description: "\n        The filename to write the document to.\n        You can use time and date variables to create unique names:\n        %Y - Year\n        %m - Month\n        %d - Day\n        %H - Hour\n        %M - Minute\n        %S - Second\n        " })
+  declare filename: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const doc = getDocState(inputs.document ?? this._props.document);
-    const pathInput = inputs.path ?? this._props.path;
+    const doc = getDocState(inputs.document ?? this.document);
+    const pathInput = inputs.path ?? this.path;
     const folderPath =
       typeof pathInput === "string"
         ? pathInput
         : (pathInput as { path?: string })?.path ?? "";
     if (!folderPath) throw new Error("Path is not set");
 
-    const filenameTemplate = String(inputs.filename ?? this._props.filename ?? "");
+    const filenameTemplate = String(inputs.filename ?? this.filename ?? "");
     const filename = formatDate(filenameTemplate);
     const fullPath = expandUser(path.join(folderPath, filename));
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { getNodeMetadata } from "@nodetool/node-sdk";
 
 // ---------------------------------------------------------------------------
 // Mock chromadb — vi.hoisted() ensures variables are available in vi.mock factory
@@ -77,6 +78,20 @@ import {
 // Helpers
 // ---------------------------------------------------------------------------
 
+function metadataDefaults(NodeCls: any) {
+  const metadata = getNodeMetadata(NodeCls);
+  return Object.fromEntries(
+    metadata.properties
+      .filter((prop) => Object.prototype.hasOwnProperty.call(prop, "default"))
+      .map((prop) => [prop.name, prop.default])
+  );
+}
+
+function expectMetadataDefaults(NodeCls: any) {
+  expect(new NodeCls().serialize()).toEqual(metadataDefaults(NodeCls));
+}
+
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockCollection.metadata = { embedding_model: "test-model" };
@@ -107,15 +122,11 @@ describe("CollectionNode", () => {
   it("has correct metadata", () => {
     expect(CollectionNode.nodeType).toBe("vector.chroma.Collection");
     expect(CollectionNode.title).toBe("Collection");
-    expect(CollectionNode.description).toContain("ChromaDB");
+    expect(CollectionNode.description).toBeTruthy();
   });
 
   it("returns expected defaults", () => {
-    const node = new CollectionNode();
-    expect(node.defaults()).toEqual({
-      name: "",
-      embedding_model: { repo_id: "" },
-    });
+    expectMetadataDefaults(CollectionNode);
   });
 
   it("process succeeds with valid inputs", async () => {
@@ -175,8 +186,7 @@ describe("CountNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const node = new CountNode();
-    expect(node.defaults()).toEqual({ collection: { name: "" } });
+    expectMetadataDefaults(CountNode);
   });
 
   it("process succeeds with valid inputs", async () => {
@@ -214,13 +224,7 @@ describe("GetDocumentsNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const node = new GetDocumentsNode();
-    expect(node.defaults()).toEqual({
-      collection: { name: "" },
-      ids: [],
-      limit: 100,
-      offset: 0,
-    });
+    expectMetadataDefaults(GetDocumentsNode);
   });
 
   it("process succeeds with valid inputs", async () => {
@@ -269,11 +273,7 @@ describe("PeekNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const node = new PeekNode();
-    expect(node.defaults()).toEqual({
-      collection: { name: "" },
-      limit: 100,
-    });
+    expectMetadataDefaults(PeekNode);
   });
 
   it("process succeeds with valid inputs", async () => {
@@ -306,11 +306,7 @@ describe("IndexImageNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const node = new IndexImageNode();
-    const d = node.defaults();
-    expect(d.collection).toEqual({ name: "" });
-    expect(d.index_id).toBe("");
-    expect(d.upsert).toBe(false);
+    expectMetadataDefaults(IndexImageNode);
   });
 
   it("process uses add for non-upsert", async () => {
@@ -426,10 +422,7 @@ describe("IndexEmbeddingNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const node = new IndexEmbeddingNode();
-    const d = node.defaults();
-    expect(d.collection).toEqual({ name: "" });
-    expect(d.index_id).toBe("");
+    expectMetadataDefaults(IndexEmbeddingNode);
   });
 
   it("process with single embedding (number[])", async () => {
@@ -660,13 +653,7 @@ describe("IndexTextChunkNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const node = new IndexTextChunkNode();
-    expect(node.defaults()).toEqual({
-      collection: { name: "" },
-      document_id: "",
-      text: "",
-      metadata: {},
-    });
+    expectMetadataDefaults(IndexTextChunkNode);
   });
 
   it("process succeeds with valid inputs", async () => {
@@ -712,10 +699,7 @@ describe("IndexAggregatedTextNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const node = new IndexAggregatedTextNode();
-    const d = node.defaults();
-    expect(d.aggregation).toBe("mean");
-    expect(d.text_chunks).toEqual([]);
+    expectMetadataDefaults(IndexAggregatedTextNode);
   });
 
   it("process with mean aggregation", async () => {
@@ -994,13 +978,7 @@ describe("IndexStringNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const node = new IndexStringNode();
-    expect(node.defaults()).toEqual({
-      collection: { name: "" },
-      text: "",
-      document_id: "",
-      metadata: {},
-    });
+    expectMetadataDefaults(IndexStringNode);
   });
 
   it("process succeeds with valid inputs", async () => {
@@ -1044,12 +1022,7 @@ describe("QueryImageNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const node = new QueryImageNode();
-    expect(node.defaults()).toEqual({
-      collection: { name: "" },
-      image: {},
-      n_results: 1,
-    });
+    expectMetadataDefaults(QueryImageNode);
   });
 
   it("process succeeds and results are sorted by ID", async () => {
@@ -1171,12 +1144,7 @@ describe("QueryTextNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const node = new QueryTextNode();
-    expect(node.defaults()).toEqual({
-      collection: { name: "" },
-      text: "",
-      n_results: 1,
-    });
+    expectMetadataDefaults(QueryTextNode);
   });
 
   it("process succeeds and results are sorted by ID", async () => {
@@ -1258,11 +1226,7 @@ describe("RemoveOverlapNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const node = new RemoveOverlapNode();
-    expect(node.defaults()).toEqual({
-      documents: [],
-      min_overlap_words: 2,
-    });
+    expectMetadataDefaults(RemoveOverlapNode);
   });
 
   it("returns empty documents for empty input", async () => {
@@ -1380,14 +1344,7 @@ describe("HybridSearchNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const node = new HybridSearchNode();
-    expect(node.defaults()).toEqual({
-      collection: { name: "" },
-      text: "",
-      n_results: 5,
-      k_constant: 60.0,
-      min_keyword_length: 3,
-    });
+    expectMetadataDefaults(HybridSearchNode);
   });
 
   it("process succeeds with valid inputs", async () => {

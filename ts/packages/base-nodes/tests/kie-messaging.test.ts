@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import { getNodeMetadata } from "@nodetool/node-sdk";
 import {
   DiscordBotTrigger,
   DiscordSendMessage,
@@ -26,6 +27,20 @@ function jsonResponse(body: unknown, status = 200): Response {
     text: async () => JSON.stringify(body),
   } as unknown as Response;
 }
+
+function metadataDefaults(NodeCls: any) {
+  const metadata = getNodeMetadata(NodeCls);
+  return Object.fromEntries(
+    metadata.properties
+      .filter((prop) => Object.prototype.hasOwnProperty.call(prop, "default"))
+      .map((prop) => [prop.name, prop.default])
+  );
+}
+
+function expectMetadataDefaults(NodeCls: any) {
+  expect(new NodeCls().serialize()).toEqual(metadataDefaults(NodeCls));
+}
+
 
 // ── DiscordBotTrigger ──────────────────────────────────────────────────────
 
@@ -325,43 +340,18 @@ describe("TelegramSendMessage", () => {
 
 describe("Node defaults coverage", () => {
   it("DiscordBotTrigger defaults", () => {
-    const node = new DiscordBotTrigger();
-    const d = node.defaults();
-    expect(d.token).toBe("");
-    expect(d.channel_id).toBe("");
-    expect(d.allow_bot_messages).toBe(false);
+    expectMetadataDefaults(DiscordBotTrigger);
   });
 
   it("DiscordSendMessage defaults", () => {
-    const node = new DiscordSendMessage();
-    const d = node.defaults();
-    expect(d.token).toBe("");
-    expect(d.channel_id).toBe("");
-    expect(d.content).toBe("");
-    expect(d.tts).toBe(false);
-    expect(d.embeds).toEqual([]);
+    expectMetadataDefaults(DiscordSendMessage);
   });
 
   it("TelegramBotTrigger defaults", () => {
-    const node = new TelegramBotTrigger();
-    const d = node.defaults();
-    expect(d.token).toBe("");
-    expect(d.chat_id).toBe(0);
-    expect(d.allow_bot_messages).toBe(false);
-    expect(d.include_edited_messages).toBe(false);
-    expect(d.poll_timeout_seconds).toBe(30);
-    expect(d.poll_interval_seconds).toBe(0.2);
+    expectMetadataDefaults(TelegramBotTrigger);
   });
 
   it("TelegramSendMessage defaults", () => {
-    const node = new TelegramSendMessage();
-    const d = node.defaults();
-    expect(d.token).toBe("");
-    expect(d.chat_id).toBe(0);
-    expect(d.text).toBe("");
-    expect(d.parse_mode).toBe("");
-    expect(d.disable_web_page_preview).toBe(false);
-    expect(d.disable_notification).toBe(false);
-    expect(d.reply_to_message_id).toBe(0);
+    expectMetadataDefaults(TelegramSendMessage);
   });
 });

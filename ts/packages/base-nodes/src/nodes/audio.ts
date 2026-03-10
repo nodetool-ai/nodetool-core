@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { ProcessingContext } from "@nodetool/runtime";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -140,20 +140,32 @@ function buildWavFromSamples(original: Uint8Array, samples: Int16Array, headerSi
 
 export class LoadAudioAssetsNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.LoadAudioAssets";
-  static readonly title = "Load Audio Assets";
-  static readonly description = "Load audio files from folder";
-  static readonly isStreamingOutput = true;
+            static readonly title = "Load Audio Assets";
+            static readonly description = "Load audio files from an asset folder.\n    load, audio, file, import";
+        static readonly metadataOutputTypes = {
+    audio: "audio",
+    name: "str"
+  };
+  
+            static readonly isStreamingOutput = true;
+  @prop({ type: "folder", default: {
+  "type": "folder",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Folder", description: "The asset folder to load the audio files from." })
+  declare folder: any;
 
-  defaults() {
-    return { folder: "." };
-  }
+
+
 
   async process(): Promise<Record<string, unknown>> {
     return {};
   }
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
-    const folder = String(inputs.folder ?? this._props.folder ?? ".");
+    const folder = String(inputs.folder ?? this.folder ?? ".");
     const entries = await fs.readdir(folder, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isFile()) continue;
@@ -171,15 +183,20 @@ export class LoadAudioAssetsNode extends BaseNode {
 
 export class LoadAudioFileNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.LoadAudioFile";
-  static readonly title = "Load Audio File";
-  static readonly description = "Load audio from local file";
+            static readonly title = "Load Audio File";
+            static readonly description = "Read an audio file from disk.\n    audio, input, load, file";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "str", default: "", title: "Path", description: "Path to the audio file to read" })
+  declare path: any;
 
-  defaults() {
-    return { path: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const p = uriToPath(String(inputs.path ?? this._props.path ?? ""));
+    const p = uriToPath(String(inputs.path ?? this.path ?? ""));
     const data = new Uint8Array(await fs.readFile(p));
     return { output: audioRefFromBytes(data, `file://${p}`) };
   }
@@ -187,13 +204,32 @@ export class LoadAudioFileNode extends BaseNode {
 
 export class LoadAudioFolderNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.LoadAudioFolder";
-  static readonly title = "Load Audio Folder";
-  static readonly description = "Alias for streaming audio folder load";
-  static readonly isStreamingOutput = true;
+            static readonly title = "Load Audio Folder";
+            static readonly description = "Load all audio files from a folder, optionally including subfolders.\n    audio, load, folder, files";
+        static readonly metadataOutputTypes = {
+    audio: "audio",
+    path: "str"
+  };
+  
+            static readonly isStreamingOutput = true;
+  @prop({ type: "str", default: "", title: "Folder", description: "Folder to scan for audio files" })
+  declare folder: any;
 
-  defaults() {
-    return { folder: "." };
-  }
+  @prop({ type: "bool", default: false, title: "Include Subdirectories", description: "Include audio in subfolders" })
+  declare include_subdirectories: any;
+
+  @prop({ type: "list[str]", default: [
+  ".mp3",
+  ".wav",
+  ".flac",
+  ".ogg",
+  ".m4a",
+  ".aac"
+], title: "Extensions", description: "Audio file extensions to include" })
+  declare extensions: any;
+
+
+
 
   async process(): Promise<Record<string, unknown>> {
     return {};
@@ -201,7 +237,7 @@ export class LoadAudioFolderNode extends BaseNode {
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
     const loader = new LoadAudioAssetsNode();
-    loader.assign({ folder: inputs.folder ?? this._props.folder ?? "." });
+    loader.assign({ folder: inputs.folder ?? this.folder ?? "." });
     for await (const item of loader.genProcess({})) {
       yield item;
     }
@@ -210,17 +246,41 @@ export class LoadAudioFolderNode extends BaseNode {
 
 export class SaveAudioNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.SaveAudio";
-  static readonly title = "Save Audio";
-  static readonly description = "Save audio data to folder with generated name";
+            static readonly title = "Save Audio Asset";
+            static readonly description = "Save an audio file to a specified asset folder.\n    audio, folder, name";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio" })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, folder: ".", name: "audio_%Y%m%d_%H%M%S.wav" };
-  }
+  @prop({ type: "folder", default: {
+  "type": "folder",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Folder", description: "The asset folder to save the audio file to. " })
+  declare folder: any;
+
+  @prop({ type: "str", default: "%Y-%m-%d-%H-%M-%S.opus", title: "Name", description: "\n        The name of the audio file.\n        You can use time and date variables to create unique names:\n        %Y - Year\n        %m - Month\n        %d - Day\n        %H - Hour\n        %M - Minute\n        %S - Second\n        " })
+  declare name: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audio = inputs.audio ?? this._props.audio;
-    const folder = String(inputs.folder ?? this._props.folder ?? ".");
-    const name = dateName(String(inputs.name ?? this._props.name ?? "audio.wav"));
+    const audio = inputs.audio ?? this.audio;
+    const folder = String(inputs.folder ?? this.folder ?? ".");
+    const name = dateName(String(inputs.name ?? this.name ?? "audio.wav"));
     const full = path.resolve(folder, name);
     await fs.mkdir(path.dirname(full), { recursive: true });
     await fs.writeFile(full, audioBytes(audio));
@@ -230,16 +290,43 @@ export class SaveAudioNode extends BaseNode {
 
 export class SaveAudioFileNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.SaveAudioFile";
-  static readonly title = "Save Audio File";
-  static readonly description = "Save audio data to file path";
+            static readonly title = "Save Audio File";
+            static readonly description = "Write an audio file to disk.\n    audio, output, save, file\n\n    The filename can include time and date variables:\n    %Y - Year, %m - Month, %d - Day\n    %H - Hour, %M - Minute, %S - Second\n\n    Supported formats: mp3, wav, ogg, flac, aac, m4a";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio to save" })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, path: "" };
-  }
+  @prop({ type: "str", default: "", title: "Folder", description: "Folder where the file will be saved" })
+  declare folder: any;
+
+  @prop({ type: "str", default: "", title: "Filename", description: "\n        Name of the file to save.\n        You can use time and date variables to create unique names:\n        %Y - Year\n        %m - Month\n        %d - Day\n        %H - Hour\n        %M - Minute\n        %S - Second\n        " })
+  declare filename: any;
+
+  @prop({ type: "dict[str, str]", default: {
+  ".mp3": "mp3",
+  ".wav": "wav",
+  ".ogg": "ogg",
+  ".flac": "flac",
+  ".aac": "adts",
+  ".m4a": "ipod"
+}, title: "Format Map" })
+  declare FORMAT_MAP: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audio = inputs.audio ?? this._props.audio;
-    const p = uriToPath(String(inputs.path ?? this._props.path ?? ""));
+    const audio = inputs.audio ?? this.audio;
+    const p = uriToPath(String(inputs.path ?? this.path ?? ""));
     await fs.mkdir(path.dirname(p), { recursive: true });
     await fs.writeFile(p, audioBytes(audio));
     return { output: p };
@@ -248,15 +335,27 @@ export class SaveAudioFileNode extends BaseNode {
 
 export class NormalizeAudioNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.Normalize";
-  static readonly title = "Normalize";
-  static readonly description = "Return normalized audio (placeholder passthrough)";
+            static readonly title = "Normalize";
+            static readonly description = "Normalizes the volume of an audio file.\n    audio, fix, dynamics, volume";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to normalize." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {} };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audio = inputs.audio ?? this._props.audio;
+    const audio = inputs.audio ?? this.audio;
     const bytes = await audioBytesAsync(audio);
     const wav = parseWavPcm16(bytes);
     if (!wav || wav.samples.length === 0) {
@@ -278,16 +377,37 @@ export class NormalizeAudioNode extends BaseNode {
 
 export class OverlayAudioNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.OverlayAudio";
-  static readonly title = "Overlay Audio";
-  static readonly description = "Overlay audio by byte-wise max mix";
+            static readonly title = "Overlay Audio";
+            static readonly description = "Overlays two audio files together.\n    audio, edit, transform";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "A", description: "The first audio file." })
+  declare a: any;
 
-  defaults() {
-    return { audio_a: {}, audio_b: {} };
-  }
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "B", description: "The second audio file." })
+  declare b: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const a = audioBytes(inputs.audio_a ?? this._props.audio_a);
-    const b = audioBytes(inputs.audio_b ?? this._props.audio_b);
+    const a = audioBytes(inputs.audio_a ?? this.audio_a);
+    const b = audioBytes(inputs.audio_b ?? this.audio_b);
     const len = Math.max(a.length, b.length);
     const out = new Uint8Array(len);
     for (let i = 0; i < len; i += 1) {
@@ -299,15 +419,42 @@ export class OverlayAudioNode extends BaseNode {
 
 export class RemoveSilenceNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.RemoveSilence";
-  static readonly title = "Remove Silence";
-  static readonly description = "Remove zero bytes";
+            static readonly title = "Remove Silence";
+            static readonly description = "Removes or shortens silence in an audio file with smooth transitions.\n    audio, edit, clean";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to process." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {} };
-  }
+  @prop({ type: "int", default: 200, title: "Min Length", description: "Minimum length of silence to be processed (in milliseconds).", min: 0, max: 10000 })
+  declare min_length: any;
+
+  @prop({ type: "int", default: -40, title: "Threshold", description: "Silence threshold in dB (relative to full scale). Higher values detect more silence.", min: -60, max: 0 })
+  declare threshold: any;
+
+  @prop({ type: "float", default: 1, title: "Reduction Factor", description: "Factor to reduce silent parts (0.0 to 1.0). 0.0 keeps silence as is, 1.0 removes it completely.", min: 0, max: 1 })
+  declare reduction_factor: any;
+
+  @prop({ type: "int", default: 10, title: "Crossfade", description: "Duration of crossfade in milliseconds to apply between segments for smooth transitions.", min: 0, max: 50 })
+  declare crossfade: any;
+
+  @prop({ type: "int", default: 100, title: "Min Silence Between Parts", description: "Minimum silence duration in milliseconds to maintain between non-silent segments", min: 0, max: 500 })
+  declare min_silence_between_parts: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const data = audioBytes(inputs.audio ?? this._props.audio);
+    const data = audioBytes(inputs.audio ?? this.audio);
     const filtered = data.filter((v) => v !== 0);
     return { output: audioRefFromBytes(filtered) };
   }
@@ -315,17 +462,35 @@ export class RemoveSilenceNode extends BaseNode {
 
 export class SliceAudioNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.SliceAudio";
-  static readonly title = "Slice Audio";
-  static readonly description = "Slice by byte range";
+            static readonly title = "Slice Audio";
+            static readonly description = "Extracts a section of an audio file.\n    audio, edit, trim";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, start: 0, end: -1 };
-  }
+  @prop({ type: "float", default: 0, title: "Start", description: "The start time in seconds.", min: 0 })
+  declare start: any;
+
+  @prop({ type: "float", default: 1, title: "End", description: "The end time in seconds.", min: 0 })
+  declare end: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const data = audioBytes(inputs.audio ?? this._props.audio);
-    const start = Number(inputs.start ?? this._props.start ?? 0);
-    let end = Number(inputs.end ?? this._props.end ?? -1);
+    const data = audioBytes(inputs.audio ?? this.audio);
+    const start = Number(inputs.start ?? this.start ?? 0);
+    let end = Number(inputs.end ?? this.end ?? -1);
     if (end < 0) end = data.length;
     return { output: audioRefFromBytes(data.slice(start, end)) };
   }
@@ -333,15 +498,27 @@ export class SliceAudioNode extends BaseNode {
 
 export class MonoToStereoNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.MonoToStereo";
-  static readonly title = "Mono To Stereo";
-  static readonly description = "Duplicate bytes as stereo pairs";
+            static readonly title = "Mono To Stereo";
+            static readonly description = "Converts a mono audio signal to stereo.\n    audio, convert, channels";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The mono audio file to convert." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {} };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const mono = audioBytes(inputs.audio ?? this._props.audio);
+    const mono = audioBytes(inputs.audio ?? this.audio);
     const out = new Uint8Array(mono.length * 2);
     for (let i = 0; i < mono.length; i += 1) {
       out[i * 2] = mono[i];
@@ -353,15 +530,30 @@ export class MonoToStereoNode extends BaseNode {
 
 export class StereoToMonoNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.StereoToMono";
-  static readonly title = "Stereo To Mono";
-  static readonly description = "Take left channel from stereo pairs";
+            static readonly title = "Stereo To Mono";
+            static readonly description = "Converts a stereo audio signal to mono.\n    audio, convert, channels";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The stereo audio file to convert." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {} };
-  }
+  @prop({ type: "str", default: "average", title: "Method", description: "Method to use for conversion: 'average', 'left', or 'right'." })
+  declare method: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const stereo = audioBytes(inputs.audio ?? this._props.audio);
+    const stereo = audioBytes(inputs.audio ?? this.audio);
     const out = new Uint8Array(Math.ceil(stereo.length / 2));
     for (let i = 0, j = 0; i < stereo.length; i += 2, j += 1) {
       out[j] = stereo[i];
@@ -372,31 +564,58 @@ export class StereoToMonoNode extends BaseNode {
 
 export class ReverseAudioNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.Reverse";
-  static readonly title = "Reverse";
-  static readonly description = "Reverse audio bytes";
+            static readonly title = "Reverse";
+            static readonly description = "Reverses an audio file.\n    audio, edit, transform";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to reverse." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {} };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const data = audioBytes(inputs.audio ?? this._props.audio);
+    const data = audioBytes(inputs.audio ?? this.audio);
     return { output: audioRefFromBytes(new Uint8Array([...data].reverse())) };
   }
 }
 
 export class FadeInAudioNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.FadeIn";
-  static readonly title = "Fade In";
-  static readonly description = "Simple linear fade-in over first bytes";
+            static readonly title = "Fade In";
+            static readonly description = "Applies a fade-in effect to the beginning of an audio file.\n    audio, edit, transition";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to apply fade-in to." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, duration: 1024 };
-  }
+  @prop({ type: "float", default: 1, title: "Duration", description: "Duration of the fade-in effect in seconds.", min: 0 })
+  declare duration: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const data = new Uint8Array(audioBytes(inputs.audio ?? this._props.audio));
-    const duration = Math.max(1, Number(inputs.duration ?? this._props.duration ?? 1024));
+    const data = new Uint8Array(audioBytes(inputs.audio ?? this.audio));
+    const duration = Math.max(1, Number(inputs.duration ?? this.duration ?? 1024));
     for (let i = 0; i < Math.min(duration, data.length); i += 1) {
       data[i] = Math.floor(data[i] * (i / duration));
     }
@@ -406,16 +625,31 @@ export class FadeInAudioNode extends BaseNode {
 
 export class FadeOutAudioNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.FadeOut";
-  static readonly title = "Fade Out";
-  static readonly description = "Simple linear fade-out over last bytes";
+            static readonly title = "Fade Out";
+            static readonly description = "Applies a fade-out effect to the end of an audio file.\n    audio, edit, transition";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to apply fade-out to." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, duration: 1024 };
-  }
+  @prop({ type: "float", default: 1, title: "Duration", description: "Duration of the fade-out effect in seconds.", min: 0 })
+  declare duration: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const data = new Uint8Array(audioBytes(inputs.audio ?? this._props.audio));
-    const duration = Math.max(1, Number(inputs.duration ?? this._props.duration ?? 1024));
+    const data = new Uint8Array(audioBytes(inputs.audio ?? this.audio));
+    const duration = Math.max(1, Number(inputs.duration ?? this.duration ?? 1024));
     const start = Math.max(0, data.length - duration);
     for (let i = start; i < data.length; i += 1) {
       const factor = (data.length - i) / Math.max(1, data.length - start);
@@ -427,32 +661,109 @@ export class FadeOutAudioNode extends BaseNode {
 
 export class RepeatAudioNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.Repeat";
-  static readonly title = "Repeat";
-  static readonly description = "Repeat audio bytes";
+            static readonly title = "Repeat";
+            static readonly description = "Loops an audio file a specified number of times.\n    audio, edit, repeat";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to loop." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, count: 2 };
-  }
+  @prop({ type: "int", default: 2, title: "Loops", description: "Number of times to loop the audio. Minimum 1 (plays once), maximum 100.", min: 1, max: 100 })
+  declare loops: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const data = audioBytes(inputs.audio ?? this._props.audio);
-    const count = Math.max(1, Number(inputs.count ?? this._props.count ?? 2));
+    const data = audioBytes(inputs.audio ?? this.audio);
+    const count = Math.max(1, Number(inputs.count ?? this.count ?? 2));
     return { output: audioRefFromBytes(concatBytes(Array.from({ length: count }, () => data))) };
   }
 }
 
 export class AudioMixerNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.AudioMixer";
-  static readonly title = "Audio Mixer";
-  static readonly description = "Mix list of audio refs by averaging bytes";
+            static readonly title = "Audio Mixer";
+            static readonly description = "Mix up to 5 audio tracks together with individual volume controls.\n    audio, mix, volume, combine, blend, layer, add, overlay";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Track1", description: "First audio track to mix." })
+  declare track1: any;
 
-  defaults() {
-    return { audios: [] };
-  }
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Track2", description: "Second audio track to mix." })
+  declare track2: any;
+
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Track3", description: "Third audio track to mix." })
+  declare track3: any;
+
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Track4", description: "Fourth audio track to mix." })
+  declare track4: any;
+
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Track5", description: "Fifth audio track to mix." })
+  declare track5: any;
+
+  @prop({ type: "float", default: 1, title: "Volume1", description: "Volume for track 1. 1.0 is original volume.", min: 0, max: 2 })
+  declare volume1: any;
+
+  @prop({ type: "float", default: 1, title: "Volume2", description: "Volume for track 2. 1.0 is original volume.", min: 0, max: 2 })
+  declare volume2: any;
+
+  @prop({ type: "float", default: 1, title: "Volume3", description: "Volume for track 3. 1.0 is original volume.", min: 0, max: 2 })
+  declare volume3: any;
+
+  @prop({ type: "float", default: 1, title: "Volume4", description: "Volume for track 4. 1.0 is original volume.", min: 0, max: 2 })
+  declare volume4: any;
+
+  @prop({ type: "float", default: 1, title: "Volume5", description: "Volume for track 5. 1.0 is original volume.", min: 0, max: 2 })
+  declare volume5: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audios = Array.isArray(inputs.audios ?? this._props.audios)
-      ? (inputs.audios ?? this._props.audios) as unknown[]
+    const audios = Array.isArray(inputs.audios ?? this.audios)
+      ? (inputs.audios ?? this.audios) as unknown[]
       : [];
     const all = audios.map((a) => audioBytes(a));
     if (all.length === 0) return { output: audioRefFromBytes(new Uint8Array()) };
@@ -469,31 +780,62 @@ export class AudioMixerNode extends BaseNode {
 
 export class AudioToNumpyNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.AudioToNumpy";
-  static readonly title = "Audio To Numpy";
-  static readonly description = "Convert audio bytes to number list";
+            static readonly title = "Audio To Numpy";
+            static readonly description = "Convert audio to numpy array for processing.\n    audio, numpy, convert, array";
+        static readonly metadataOutputTypes = {
+    array: "np_array",
+    sample_rate: "int",
+    channels: "int"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio to convert to numpy." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {} };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const data = audioBytes(inputs.audio ?? this._props.audio);
+    const data = audioBytes(inputs.audio ?? this.audio);
     return { output: Array.from(data) };
   }
 }
 
 export class NumpyToAudioNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.NumpyToAudio";
-  static readonly title = "Numpy To Audio";
-  static readonly description = "Convert number list to audio bytes";
+            static readonly title = "Numpy To Audio";
+            static readonly description = "Convert numpy array to audio.\n    audio, numpy, convert";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "np_array", default: {
+  "type": "np_array",
+  "value": null,
+  "dtype": "<i8",
+  "shape": [
+    1
+  ]
+}, title: "Array", description: "The numpy array to convert to audio." })
+  declare array: any;
 
-  defaults() {
-    return { values: [] };
-  }
+  @prop({ type: "int", default: 44100, title: "Sample Rate", description: "Sample rate in Hz." })
+  declare sample_rate: any;
+
+  @prop({ type: "int", default: 1, title: "Channels", description: "Number of audio channels (1 or 2)." })
+  declare channels: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const values = Array.isArray(inputs.values ?? this._props.values)
-      ? (inputs.values ?? this._props.values) as unknown[]
+    const values = Array.isArray(inputs.values ?? this.values)
+      ? (inputs.values ?? this.values) as unknown[]
       : [];
     const bytes = new Uint8Array(values.map((v) => Number(v) & 0xff));
     return { output: audioRefFromBytes(bytes) };
@@ -502,78 +844,139 @@ export class NumpyToAudioNode extends BaseNode {
 
 export class TrimAudioNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.Trim";
-  static readonly title = "Trim";
-  static readonly description = "Trim bytes from start and end";
+            static readonly title = "Trim";
+            static readonly description = "Trim an audio file to a specified duration.\n    audio, trim, cut";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to trim." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {}, start: 0, end: 0 };
-  }
+  @prop({ type: "float", default: 0, title: "Start", description: "The start time of the trimmed audio in seconds.", min: 0 })
+  declare start: any;
+
+  @prop({ type: "float", default: 0, title: "End", description: "The end time of the trimmed audio in seconds.", min: 0 })
+  declare end: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const data = audioBytes(inputs.audio ?? this._props.audio);
-    const start = Math.max(0, Number(inputs.start ?? this._props.start ?? 0));
-    const end = Math.max(0, Number(inputs.end ?? this._props.end ?? 0));
+    const data = audioBytes(inputs.audio ?? this.audio);
+    const start = Math.max(0, Number(inputs.start ?? this.start ?? 0));
+    const end = Math.max(0, Number(inputs.end ?? this.end ?? 0));
     return { output: audioRefFromBytes(data.slice(start, Math.max(start, data.length - end))) };
   }
 }
 
 export class ConvertToArrayNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.ConvertToArray";
-  static readonly title = "Convert To Array";
-  static readonly description = "Wrap audio in list";
+            static readonly title = "Convert To Array";
+            static readonly description = "Converts an audio file to a Array for further processing.\n    audio, conversion, tensor";
+        static readonly metadataOutputTypes = {
+    output: "np_array"
+  };
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Audio", description: "The audio file to convert to a tensor." })
+  declare audio: any;
 
-  defaults() {
-    return { audio: {} };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return { output: [inputs.audio ?? this._props.audio ?? {}] };
+    return { output: [inputs.audio ?? this.audio ?? {}] };
   }
 }
 
 export class CreateSilenceNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.CreateSilence";
-  static readonly title = "Create Silence";
-  static readonly description = "Create silent audio byte buffer";
+            static readonly title = "Create Silence";
+            static readonly description = "Creates a silent audio file with a specified duration.\n    audio, silence, empty";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+  
+  @prop({ type: "float", default: 1, title: "Duration", description: "The duration of the silence in seconds.", min: 0 })
+  declare duration: any;
 
-  defaults() {
-    return { length: 16000 };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const length = Math.max(0, Number(inputs.length ?? this._props.length ?? 16000));
+    const length = Math.max(0, Number(inputs.length ?? this.length ?? 16000));
     return { output: audioRefFromBytes(new Uint8Array(length)) };
   }
 }
 
 export class ConcatAudioNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.Concat";
-  static readonly title = "Concat";
-  static readonly description = "Concatenate two audio refs";
+            static readonly title = "Concat";
+            static readonly description = "Concatenates two audio files together.\n    audio, edit, join, +";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "A", description: "The first audio file." })
+  declare a: any;
 
-  defaults() {
-    return { audio_a: {}, audio_b: {} };
-  }
+  @prop({ type: "audio", default: {
+  "type": "audio",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "B", description: "The second audio file." })
+  declare b: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const a = audioBytes(inputs.audio_a ?? this._props.audio_a);
-    const b = audioBytes(inputs.audio_b ?? this._props.audio_b);
+    const a = audioBytes(inputs.audio_a ?? this.audio_a);
+    const b = audioBytes(inputs.audio_b ?? this.audio_b);
     return { output: audioRefFromBytes(concatBytes([a, b])) };
   }
 }
 
 export class ConcatAudioListNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.ConcatList";
-  static readonly title = "Concat List";
-  static readonly description = "Concatenate list of audio refs";
+            static readonly title = "Concat List";
+            static readonly description = "Concatenates multiple audio files together in sequence.\n    audio, edit, join, multiple, +";
+        static readonly metadataOutputTypes = {
+    output: "audio"
+  };
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "list[audio]", default: [], title: "Audio Files", description: "List of audio files to concatenate in sequence." })
+  declare audio_files: any;
 
-  defaults() {
-    return { audios: [] };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const audios = Array.isArray(inputs.audios ?? this._props.audios)
-      ? (inputs.audios ?? this._props.audios) as unknown[]
+    const audios = Array.isArray(inputs.audios ?? this.audios)
+      ? (inputs.audios ?? this.audios) as unknown[]
       : [];
     const merged = concatBytes(audios.map((a) => audioBytes(a)));
     return { output: audioRefFromBytes(merged) };
@@ -582,19 +985,54 @@ export class ConcatAudioListNode extends BaseNode {
 
 export class TextToSpeechNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.TextToSpeech";
-  static readonly title = "Text To Speech";
-  static readonly description = "Convert text to placeholder audio bytes";
+            static readonly title = "Text To Speech";
+            static readonly description = "Generate speech audio from text using any supported TTS provider. Automatically routes to the appropriate backend (OpenAI, HuggingFace, MLX).\n    audio, generation, AI, text-to-speech, tts, voice";
+        static readonly metadataOutputTypes = {
+    audio: "audio",
+    chunk: "chunk"
+  };
+          static readonly basicFields = [
+  "model",
+  "text",
+  "voice",
+  "speed"
+];
+          static readonly exposeAsTool = true;
+  
+          static readonly isStreamingOutput = true;
+  @prop({ type: "tts_model", default: {
+  "type": "tts_model",
+  "provider": "openai",
+  "id": "tts-1",
+  "name": "TTS 1",
+  "path": null,
+  "voices": [
+    "alloy",
+    "echo",
+    "fable",
+    "onyx",
+    "nova",
+    "shimmer"
+  ],
+  "selected_voice": ""
+}, title: "Model", description: "The text-to-speech model to use" })
+  declare model: any;
 
-  defaults() {
-    return { text: "", model: null, voice: "", speed: 1 };
-  }
+  @prop({ type: "str", default: "Hello! This is a text-to-speech demonstration.", title: "Text", description: "Text to convert to speech" })
+  declare text: any;
+
+  @prop({ type: "float", default: 1, title: "Speed", description: "Speech speed multiplier (0.25 to 4.0)", min: 0.25, max: 4 })
+  declare speed: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const text = String(inputs.text ?? this._props.text ?? "");
-    const { providerId, modelId } = getModelConfig(inputs, this._props);
+    const text = String(inputs.text ?? this.text ?? "");
+    const { providerId, modelId } = getModelConfig(inputs, this.serialize());
     if (hasProviderSupport(context, providerId, modelId)) {
       const chunks: Uint8Array[] = [];
       for await (const item of context.streamProviderPrediction({
@@ -603,8 +1041,8 @@ export class TextToSpeechNode extends BaseNode {
         model: modelId,
         params: {
           text,
-          voice: inputs.voice ?? this._props.voice,
-          speed: inputs.speed ?? this._props.speed,
+          voice: inputs.voice ?? this.voice,
+          speed: inputs.speed ?? this.speed,
         },
       })) {
         const piece = item as { samples?: Int16Array };
@@ -624,15 +1062,33 @@ export class TextToSpeechNode extends BaseNode {
 
 export class ChunkToAudioNode extends BaseNode {
   static readonly nodeType = "nodetool.audio.ChunkToAudio";
-  static readonly title = "Chunk To Audio";
-  static readonly description = "Convert chunk/image-like data to audio ref";
+            static readonly title = "Chunk To Audio";
+            static readonly description = "Aggregates audio chunks from an input stream into AudioRef objects.\n    audio, stream, chunk, aggregate, collect, batch";
+        static readonly metadataOutputTypes = {
+    audio: "audio"
+  };
+  
+  @prop({ type: "chunk", default: {
+  "type": "chunk",
+  "node_id": null,
+  "thread_id": null,
+  "workflow_id": null,
+  "content_type": "text",
+  "content": "",
+  "content_metadata": {},
+  "done": false,
+  "thinking": false
+}, title: "Chunk", description: "Stream of audio chunks" })
+  declare chunk: any;
 
-  defaults() {
-    return { chunk: null };
-  }
+  @prop({ type: "int", default: 50, title: "Batch Size", description: "Number of chunks to aggregate per output" })
+  declare batch_size: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const chunk = inputs.chunk ?? this._props.chunk ?? {};
+    const chunk = inputs.chunk ?? this.chunk ?? {};
     if (chunk && typeof chunk === "object") {
       const image = chunk as ImageLike;
       if (image.data || image.uri) {

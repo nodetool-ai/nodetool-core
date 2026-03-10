@@ -38,7 +38,7 @@ describe("EmbeddingNode (OpenAI)", () => {
   });
 
   it("returns expected defaults", () => {
-    const d = new EmbeddingNode().defaults();
+    const d = new EmbeddingNode().serialize();
     expect(d.input).toBe("");
     expect(d.model).toBe("text-embedding-3-small");
     expect(d.chunk_size).toBe(4096);
@@ -108,7 +108,7 @@ describe("WebSearchNode (OpenAI)", () => {
   });
 
   it("returns expected defaults", () => {
-    const d = new WebSearchNode().defaults();
+    const d = new WebSearchNode().serialize();
     expect(d.query).toBe("");
   });
 
@@ -152,7 +152,7 @@ describe("ModerationNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const d = new ModerationNode().defaults();
+    const d = new ModerationNode().serialize();
     expect(d.input).toBe("");
     expect(d.model).toBe("omni-moderation-latest");
   });
@@ -218,7 +218,7 @@ describe("CreateImageNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const d = new CreateImageNode().defaults();
+    const d = new CreateImageNode().serialize();
     expect(d.prompt).toBe("");
     expect(d.model).toBe("gpt-image-1");
     expect(d.size).toBe("1024x1024");
@@ -283,7 +283,7 @@ describe("EditImageNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const d = new EditImageNode().defaults();
+    const d = new EditImageNode().serialize();
     expect(d.prompt).toBe("");
     expect(d.model).toBe("gpt-image-1");
   });
@@ -342,11 +342,11 @@ describe("TextToSpeechNode", () => {
 
   it("has correct metadata", () => {
     expect(TextToSpeechNode.nodeType).toBe("openai.audio.TextToSpeech");
-    expect(TextToSpeechNode.title).toBe("Text to Speech");
+    expect(TextToSpeechNode.title).toBe("Text To Speech");
   });
 
   it("returns expected defaults", () => {
-    const d = new TextToSpeechNode().defaults();
+    const d = new TextToSpeechNode().serialize();
     expect(d.model).toBe("tts-1");
     expect(d.voice).toBe("alloy");
     expect(d.speed).toBe(1.0);
@@ -424,7 +424,7 @@ describe("TranscribeNode", () => {
   });
 
   it("returns expected defaults", () => {
-    const d = new TranscribeNode().defaults();
+    const d = new TranscribeNode().serialize();
     expect(d.model).toBe("whisper-1");
     expect(d.language).toBe("auto_detect");
     expect(d.timestamps).toBe(false);

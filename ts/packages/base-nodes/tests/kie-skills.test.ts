@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import { getNodeMetadata } from "@nodetool/node-sdk";
 import {
   ShellAgentSkillNode,
   BrowserSkillNode,
@@ -44,6 +45,19 @@ afterEach(() => {
   delete process.env.OLLAMA_API_URL;
 });
 
+function metadataDefaults(NodeCls: any) {
+  const metadata = getNodeMetadata(NodeCls);
+  return Object.fromEntries(
+    metadata.properties
+      .filter((prop) => Object.prototype.hasOwnProperty.call(prop, "default"))
+      .map((prop) => [prop.name, prop.default])
+  );
+}
+
+function expectMetadataDefaults(NodeCls: any) {
+  expect(new NodeCls().serialize()).toEqual(metadataDefaults(NodeCls));
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return {
     ok: status >= 200 && status < 300,
@@ -63,24 +77,19 @@ describe("SKILLS_NODES export", () => {
 
 describe("Skill node defaults", () => {
   it("ShellAgentSkillNode base defaults", () => {
-    const node = new ShellAgentSkillNode();
-    const d = node.defaults();
-    expect(d.model).toEqual({ provider: "", id: "" });
-    expect(d.prompt).toBe("");
-    expect(d.timeout_seconds).toBe(180);
-    expect(d.max_output_chars).toBe(200000);
+    expectMetadataDefaults(ShellAgentSkillNode);
   });
 
   it("BrowserSkillNode overrides timeout and max_output_chars", () => {
     const node = new BrowserSkillNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.timeout_seconds).toBe(150);
     expect(d.max_output_chars).toBe(180000);
   });
 
   it("SQLiteSkillNode has db_path and allow_mutation", () => {
     const node = new SQLiteSkillNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.timeout_seconds).toBe(120);
     expect(d.db_path).toBe("memory.db");
     expect(d.allow_mutation).toBe(false);
@@ -88,99 +97,145 @@ describe("Skill node defaults", () => {
 
   it("SupabaseSkillNode has timeout 120", () => {
     const node = new SupabaseSkillNode();
-    expect(node.defaults().timeout_seconds).toBe(120);
+    expect(node.serialize().timeout_seconds).toBe(120);
   });
 
   it("DocumentSkillNode defaults", () => {
     const node = new DocumentSkillNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.timeout_seconds).toBe(120);
     expect(d.max_output_chars).toBe(150000);
   });
 
   it("DocxSkillNode defaults", () => {
     const node = new DocxSkillNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.timeout_seconds).toBe(300);
     expect(d.max_output_chars).toBe(220000);
   });
 
   it("EmailSkillNode base defaults", () => {
     const node = new EmailSkillNode();
-    expect(node.defaults().timeout_seconds).toBe(180);
+    expect(node.serialize().timeout_seconds).toBe(180);
   });
 
   it("FfmpegSkillNode has audio and video", () => {
     const node = new FfmpegSkillNode();
-    const d = node.defaults();
-    expect(d.audio).toEqual({ type: "audio", uri: "", asset_id: null, data: null });
-    expect(d.video).toEqual({ type: "video", uri: "", asset_id: null, data: null });
+    const d = node.serialize();
+    expect(d.audio).toEqual({
+      type: "audio",
+      uri: "",
+      asset_id: null,
+      data: null,
+      metadata: null,
+    });
+    expect(d.video).toEqual({
+      type: "video",
+      uri: "",
+      asset_id: null,
+      data: null,
+      metadata: null,
+      duration: null,
+      format: null,
+    });
   });
 
   it("FilesystemSkillNode base defaults", () => {
     const node = new FilesystemSkillNode();
-    expect(node.defaults().timeout_seconds).toBe(180);
+    expect(node.serialize().timeout_seconds).toBe(180);
   });
 
   it("GitSkillNode base defaults", () => {
     const node = new GitSkillNode();
-    expect(node.defaults().timeout_seconds).toBe(180);
+    expect(node.serialize().timeout_seconds).toBe(180);
   });
 
   it("HtmlSkillNode has max_output_chars 180000", () => {
     const node = new HtmlSkillNode();
-    expect(node.defaults().max_output_chars).toBe(180000);
+    expect(node.serialize().max_output_chars).toBe(180000);
   });
 
   it("HttpApiSkillNode base defaults", () => {
     const node = new HttpApiSkillNode();
-    expect(node.defaults().timeout_seconds).toBe(180);
+    expect(node.serialize().timeout_seconds).toBe(180);
   });
 
   it("ImageSkillNode has image, timeout, max_output_chars", () => {
     const node = new ImageSkillNode();
-    const d = node.defaults();
-    expect(d.image).toEqual({ type: "image", uri: "", asset_id: null, data: null });
+    const d = node.serialize();
+    expect(d.image).toEqual({
+      type: "image",
+      uri: "",
+      asset_id: null,
+      data: null,
+      metadata: null,
+    });
     expect(d.timeout_seconds).toBe(90);
     expect(d.max_output_chars).toBe(120000);
   });
 
   it("MediaSkillNode has audio and video", () => {
     const node = new MediaSkillNode();
-    const d = node.defaults();
-    expect(d.audio).toEqual({ type: "audio", uri: "", asset_id: null, data: null });
-    expect(d.video).toEqual({ type: "video", uri: "", asset_id: null, data: null });
+    const d = node.serialize();
+    expect(d.audio).toEqual({
+      type: "audio",
+      uri: "",
+      asset_id: null,
+      data: null,
+      metadata: null,
+    });
+    expect(d.video).toEqual({
+      type: "video",
+      uri: "",
+      asset_id: null,
+      data: null,
+      metadata: null,
+      duration: null,
+      format: null,
+    });
   });
 
   it("PdfLibSkillNode has document and custom timeout", () => {
     const node = new PdfLibSkillNode();
-    const d = node.defaults();
-    expect(d.document).toEqual({ type: "document", uri: "", asset_id: null, data: null });
+    const d = node.serialize();
+    expect(d.document).toEqual({
+      type: "document",
+      uri: "",
+      asset_id: null,
+      data: null,
+      metadata: null,
+    });
     expect(d.timeout_seconds).toBe(300);
     expect(d.max_output_chars).toBe(220000);
   });
 
   it("PptxSkillNode has document and custom timeout", () => {
     const node = new PptxSkillNode();
-    const d = node.defaults();
-    expect(d.document).toEqual({ type: "document", uri: "", asset_id: null, data: null });
+    const d = node.serialize();
+    expect(d.document).toEqual({
+      type: "document",
+      uri: "",
+      asset_id: null,
+      data: null,
+      metadata: null,
+    });
     expect(d.timeout_seconds).toBe(300);
     expect(d.max_output_chars).toBe(220000);
   });
 
   it("SpreadsheetSkillNode base defaults", () => {
     const node = new SpreadsheetSkillNode();
-    expect(node.defaults().timeout_seconds).toBe(180);
+    expect(node.serialize().timeout_seconds).toBe(180);
   });
 
   it("VectorStoreSkillNode base defaults", () => {
     const node = new VectorStoreSkillNode();
-    expect(node.defaults().timeout_seconds).toBe(180);
+    expect(node.serialize().timeout_seconds).toBe(180);
   });
 
   it("YtDlpDownloaderSkillNode has url, output_dir, custom timeout", () => {
     const node = new YtDlpDownloaderSkillNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.url).toBe("");
     expect(d.output_dir).toBe("downloads/yt-dlp");
     expect(d.timeout_seconds).toBe(300);

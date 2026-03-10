@@ -43,11 +43,11 @@ const skillClasses = [
   { cls: HttpApiSkillNode, type: "skills.httpapi.HttpApiSkill", title: "HTTP API Skill" },
   { cls: ImageSkillNode, type: "skills.image.ImageSkill", title: "Image Skill" },
   { cls: MediaSkillNode, type: "skills.media.MediaSkill", title: "Media Skill" },
-  { cls: PdfLibSkillNode, type: "skills.pdf_lib.PdfLibSkill", title: "PDF Skill" },
+  { cls: PdfLibSkillNode, type: "skills.pdf_lib.PdfLibSkill", title: "PDF-lib Skill" },
   { cls: PptxSkillNode, type: "skills.pptx.PptxSkill", title: "PPTX Skill" },
   { cls: SpreadsheetSkillNode, type: "skills.spreadsheet.SpreadsheetSkill", title: "Spreadsheet Skill" },
   { cls: VectorStoreSkillNode, type: "skills.vectorstore.VectorStoreSkill", title: "Vector Store Skill" },
-  { cls: YtDlpDownloaderSkillNode, type: "skills.ytdlp.YtDlpDownloaderSkill", title: "YouTube Downloader Skill" },
+  { cls: YtDlpDownloaderSkillNode, type: "skills.ytdlp.YtDlpDownloaderSkill", title: "yt-dlp Downloader Skill" },
 ];
 
 describe.each(skillClasses)("$title", ({ cls, type, title }) => {
@@ -61,7 +61,7 @@ describe.each(skillClasses)("$title", ({ cls, type, title }) => {
 
   it("has defaults with model and prompt", () => {
     const node = new (cls as any)();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d).toHaveProperty("model");
     expect(d).toHaveProperty("prompt");
     expect(d).toHaveProperty("timeout_seconds");
@@ -77,33 +77,33 @@ describe.each(skillClasses)("$title", ({ cls, type, title }) => {
 describe("Skill-specific defaults", () => {
   it("BrowserSkillNode has timeout_seconds 150", () => {
     const node = new BrowserSkillNode();
-    expect(node.defaults().timeout_seconds).toBe(150);
+    expect(node.serialize().timeout_seconds).toBe(150);
   });
 
   it("SQLiteSkillNode has db_path", () => {
     const node = new SQLiteSkillNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.db_path).toBe("memory.db");
     expect(d.allow_mutation).toBe(false);
   });
 
   it("FfmpegSkillNode has audio/video refs", () => {
     const node = new FfmpegSkillNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.audio).toHaveProperty("type", "audio");
     expect(d.video).toHaveProperty("type", "video");
   });
 
   it("ImageSkillNode has image ref and timeout 90", () => {
     const node = new ImageSkillNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.image).toHaveProperty("type", "image");
     expect(d.timeout_seconds).toBe(90);
   });
 
   it("YtDlpDownloaderSkillNode has url and output_dir", () => {
     const node = new YtDlpDownloaderSkillNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.url).toBe("");
     expect(d.output_dir).toBe("downloads/yt-dlp");
     expect(d.timeout_seconds).toBe(300);
@@ -111,17 +111,17 @@ describe("Skill-specific defaults", () => {
 
   it("PdfLibSkillNode has document ref", () => {
     const node = new PdfLibSkillNode();
-    const d = node.defaults();
+    const d = node.serialize();
     expect(d.document).toHaveProperty("type", "document");
   });
 
   it("DocxSkillNode has timeout 300", () => {
     const node = new DocxSkillNode();
-    expect(node.defaults().timeout_seconds).toBe(300);
+    expect(node.serialize().timeout_seconds).toBe(300);
   });
 
   it("HtmlSkillNode has max_output_chars 180000", () => {
     const node = new HtmlSkillNode();
-    expect(node.defaults().max_output_chars).toBe(180000);
+    expect(node.serialize().max_output_chars).toBe(180000);
   });
 });

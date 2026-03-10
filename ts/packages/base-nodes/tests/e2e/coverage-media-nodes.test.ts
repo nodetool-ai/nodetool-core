@@ -57,7 +57,6 @@ import {
   ConcatVideoNode,
   TrimVideoNode,
   ResizeVideoNode,
-  ResizeVideoAliasNode,
   RotateVideoNode,
   SetSpeedVideoNode,
   OverlayVideoNode,
@@ -90,7 +89,7 @@ import {
   MergeMeshesNode,
   TextTo3DNode,
   ImageTo3DNode,
-} from "../src/index.js";
+} from "../../src/index.js";
 
 // --------------- helpers ---------------
 
@@ -380,31 +379,84 @@ describe("audio nodes — full coverage", () => {
   });
 
   it("defaults() methods return expected structures", () => {
-    expect(new LoadAudioFileNode().defaults()).toEqual({ path: "" });
-    expect(new LoadAudioFolderNode().defaults()).toEqual({ folder: "." });
-    expect(new LoadAudioAssetsNode().defaults()).toEqual({ folder: "." });
-    expect(new SaveAudioNode().defaults()).toEqual({ audio: {}, folder: ".", name: "audio_%Y%m%d_%H%M%S.wav" });
-    expect(new SaveAudioFileNode().defaults()).toEqual({ audio: {}, path: "" });
-    expect(new NormalizeAudioNode().defaults()).toEqual({ audio: {} });
-    expect(new OverlayAudioNode().defaults()).toEqual({ audio_a: {}, audio_b: {} });
-    expect(new RemoveSilenceNode().defaults()).toEqual({ audio: {} });
-    expect(new SliceAudioNode().defaults()).toEqual({ audio: {}, start: 0, end: -1 });
-    expect(new MonoToStereoNode().defaults()).toEqual({ audio: {} });
-    expect(new StereoToMonoNode().defaults()).toEqual({ audio: {} });
-    expect(new ReverseAudioNode().defaults()).toEqual({ audio: {} });
-    expect(new FadeInAudioNode().defaults()).toEqual({ audio: {}, duration: 1024 });
-    expect(new FadeOutAudioNode().defaults()).toEqual({ audio: {}, duration: 1024 });
-    expect(new RepeatAudioNode().defaults()).toEqual({ audio: {}, count: 2 });
-    expect(new AudioMixerNode().defaults()).toEqual({ audios: [] });
-    expect(new AudioToNumpyNode().defaults()).toEqual({ audio: {} });
-    expect(new NumpyToAudioNode().defaults()).toEqual({ values: [] });
-    expect(new TrimAudioNode().defaults()).toEqual({ audio: {}, start: 0, end: 0 });
-    expect(new ConvertToArrayNode().defaults()).toEqual({ audio: {} });
-    expect(new CreateSilenceNode().defaults()).toEqual({ length: 16000 });
-    expect(new ConcatAudioNode().defaults()).toEqual({ audio_a: {}, audio_b: {} });
-    expect(new ConcatAudioListNode().defaults()).toEqual({ audios: [] });
-    expect(new TextToSpeechNode().defaults()).toEqual({ text: "", model: null, voice: "", speed: 1 });
-    expect(new ChunkToAudioNode().defaults()).toEqual({ chunk: null });
+    expect(new LoadAudioFileNode().serialize()).toEqual({ path: "" });
+    expect(new LoadAudioFolderNode().serialize()).toEqual({
+      folder: "",
+      include_subdirectories: false,
+      extensions: [".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac"],
+    });
+    expect(new LoadAudioAssetsNode().serialize()).toMatchObject({ folder: { type: "folder", uri: "" } });
+    expect(new SaveAudioNode().serialize()).toMatchObject({
+      audio: { type: "audio", uri: "" },
+      folder: { type: "folder", uri: "" },
+      name: "%Y-%m-%d-%H-%M-%S.opus",
+    });
+    expect(new SaveAudioFileNode().serialize()).toMatchObject({
+      audio: { type: "audio", uri: "" },
+      folder: "",
+      filename: "",
+    });
+    expect(new NormalizeAudioNode().serialize()).toMatchObject({ audio: { type: "audio", uri: "" } });
+    expect(new OverlayAudioNode().serialize()).toMatchObject({
+      a: { type: "audio", uri: "" },
+      b: { type: "audio", uri: "" },
+    });
+    expect(new RemoveSilenceNode().serialize()).toMatchObject({
+      audio: { type: "audio", uri: "" },
+      min_length: 200,
+      threshold: -40,
+      reduction_factor: 1,
+      crossfade: 10,
+      min_silence_between_parts: 100,
+    });
+    expect(new SliceAudioNode().serialize()).toMatchObject({
+      audio: { type: "audio", uri: "" },
+      start: 0,
+      end: 1,
+    });
+    expect(new MonoToStereoNode().serialize()).toMatchObject({ audio: { type: "audio", uri: "" } });
+    expect(new StereoToMonoNode().serialize()).toMatchObject({
+      audio: { type: "audio", uri: "" },
+      method: "average",
+    });
+    expect(new ReverseAudioNode().serialize()).toMatchObject({ audio: { type: "audio", uri: "" } });
+    expect(new FadeInAudioNode().serialize()).toMatchObject({ audio: { type: "audio", uri: "" }, duration: 1 });
+    expect(new FadeOutAudioNode().serialize()).toMatchObject({ audio: { type: "audio", uri: "" }, duration: 1 });
+    expect(new RepeatAudioNode().serialize()).toMatchObject({ audio: { type: "audio", uri: "" }, loops: 2 });
+    expect(new AudioMixerNode().serialize()).toMatchObject({
+      track1: { type: "audio", uri: "" },
+      track2: { type: "audio", uri: "" },
+      track3: { type: "audio", uri: "" },
+      track4: { type: "audio", uri: "" },
+      track5: { type: "audio", uri: "" },
+      volume1: 1,
+      volume2: 1,
+      volume3: 1,
+      volume4: 1,
+      volume5: 1,
+    });
+    expect(new AudioToNumpyNode().serialize()).toMatchObject({ audio: { type: "audio", uri: "" } });
+    expect(new NumpyToAudioNode().serialize()).toMatchObject({
+      array: { type: "np_array", shape: [1] },
+      sample_rate: 44100,
+      channels: 1,
+    });
+    expect(new TrimAudioNode().serialize()).toMatchObject({ audio: { type: "audio", uri: "" }, start: 0, end: 0 });
+    expect(new ConvertToArrayNode().serialize()).toMatchObject({ audio: { type: "audio", uri: "" } });
+    expect(new CreateSilenceNode().serialize()).toEqual({ duration: 1 });
+    expect(new ConcatAudioNode().serialize()).toMatchObject({
+      a: { type: "audio", uri: "" },
+      b: { type: "audio", uri: "" },
+    });
+    expect(new ConcatAudioListNode().serialize()).toEqual({ audio_files: [] });
+    expect(new TextToSpeechNode().serialize()).toMatchObject({
+      text: "Hello! This is a text-to-speech demonstration.",
+      speed: 1,
+    });
+    expect(new ChunkToAudioNode().serialize()).toMatchObject({
+      chunk: { type: "chunk", content: "", content_type: "text" },
+      batch_size: 50,
+    });
   });
 
   it("audioBytes returns empty for ref without data", async () => {
@@ -622,7 +674,7 @@ describe("image nodes — full coverage", () => {
   });
 
   it("CropNode returns transform metadata", async () => {
-    const result = await new CropNode().process({ image: imageRef(), width: 50, height: 50 });
+    const result = await new CropNode().process({ image: imageRef(), right: 50, bottom: 50 });
     const output = result.output as Record<string, unknown>;
     expect(output.width).toBe(50);
   });
@@ -654,27 +706,43 @@ describe("image nodes — full coverage", () => {
   });
 
   it("defaults() methods return expected structures", () => {
-    expect(new LoadImageFileNode().defaults()).toEqual({ path: "" });
-    expect(new LoadImageFolderNode().defaults()).toEqual({ folder: "." });
-    expect(new SaveImageFileImageNode().defaults()).toEqual({ image: {}, path: "" });
-    expect(new LoadImageAssetsNode().defaults()).toEqual({ folder: "." });
-    expect(new SaveImageNode().defaults()).toEqual({ image: {}, folder: ".", name: "image_%Y%m%d_%H%M%S.png" });
-    expect(new GetMetadataNode().defaults()).toEqual({ image: {} });
-    expect(new BatchToListNode().defaults()).toEqual({ batch: [] });
-    expect(new ImagesToListNode().defaults()).toEqual({ image_a: null, image_b: null, images: [] });
-    expect(new PasteNode().defaults()).toEqual({
-      image: {},
-      width: null,
-      height: null,
-      paste: {},
+    expect(new LoadImageFileNode().serialize()).toEqual({ path: "" });
+    expect(new LoadImageFolderNode().serialize()).toEqual({
+      folder: "",
+      include_subdirectories: false,
+      extensions: [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".tiff"],
+      pattern: "",
+    });
+    expect(new SaveImageFileImageNode().serialize()).toMatchObject({
+      image: { type: "image", uri: "" },
+      folder: "",
+      filename: "",
+      overwrite: false,
+    });
+    expect(new LoadImageAssetsNode().serialize()).toMatchObject({ folder: { type: "folder", uri: "" } });
+    expect(new SaveImageNode().serialize()).toMatchObject({
+      image: { type: "image", uri: "" },
+      folder: { type: "folder", uri: "" },
+      name: "%Y-%m-%d_%H-%M-%S.png",
+    });
+    expect(new GetMetadataNode().serialize()).toMatchObject({ image: { type: "image", uri: "" } });
+    expect(new BatchToListNode().serialize()).toMatchObject({ batch: { type: "image", uri: "" } });
+    expect(new ImagesToListNode().serialize()).toEqual({});
+    expect(new PasteNode().serialize()).toMatchObject({
+      image: { type: "image", uri: "" },
+      paste: { type: "image", uri: "" },
       left: 0,
       top: 0,
-      scale: 1,
-      right: null,
-      bottom: null,
     });
-    expect(new TextToImageNode().defaults()).toEqual({ prompt: "", width: 512, height: 512 });
-    expect(new ImageToImageNode().defaults()).toEqual({ image: {}, prompt: "" });
+    expect(new TextToImageNode().serialize()).toMatchObject({
+      prompt: "A cat holding a sign that says hello world",
+      width: 512,
+      height: 512,
+    });
+    expect(new ImageToImageNode().serialize()).toMatchObject({
+      image: { type: "image", uri: "" },
+      prompt: "A photorealistic version of the input image",
+    });
   });
 
   it("TextToImageNode generates image bytes from prompt", async () => {
@@ -831,10 +899,8 @@ describe("video nodes — full coverage", () => {
     const ref = videoRef();
     for (const NodeClass of [
       ResizeVideoNode,
-      ResizeVideoAliasNode,
       RotateVideoNode,
       SetSpeedVideoNode,
-      OverlayVideoNode,
       ColorBalanceVideoNode,
       DenoiseVideoNode,
       StabilizeVideoNode,
@@ -842,12 +908,25 @@ describe("video nodes — full coverage", () => {
       BlurVideoNode,
       SaturationVideoNode,
       AddSubtitlesVideoNode,
-      TransitionVideoNode,
       ChromaKeyVideoNode,
     ]) {
       const result = await new NodeClass().process({ video: ref });
       expect((result.output as { data: string }).data.length).toBeGreaterThan(0);
     }
+  });
+
+  it("OverlayVideoNode and TransitionVideoNode use canonical input names", async () => {
+    const ref = videoRef();
+    const overlay = await new OverlayVideoNode().process({
+      main_video: ref,
+      overlay_video: ref,
+    });
+    const transition = await new TransitionVideoNode().process({
+      video_a: ref,
+      video_b: ref,
+    });
+    expect((overlay.output as { data: string }).data).toBeDefined();
+    expect((transition.output as { data: string }).data).toBeDefined();
   });
 
   it("ReverseVideoNode reverses video bytes", async () => {
@@ -913,23 +992,49 @@ describe("video nodes — full coverage", () => {
   });
 
   it("defaults() methods return expected structures", () => {
-    expect(new TextToVideoNode().defaults()).toEqual({ prompt: "", fps: 24, duration: 1 });
-    expect(new ImageToVideoNode().defaults()).toEqual({ image: {}, prompt: "" });
-    expect(new LoadVideoFileNode().defaults()).toEqual({ path: "" });
-    expect(new SaveVideoFileVideoNode().defaults()).toEqual({ video: {}, path: "" });
-    expect(new LoadVideoAssetsNode().defaults()).toEqual({ folder: "." });
-    expect(new SaveVideoNode().defaults()).toEqual({ video: {}, folder: ".", filename: "video_%Y%m%d_%H%M%S.mp4" });
-    expect(new FrameIteratorNode().defaults()).toEqual({ video: {}, frame_size: 1024 });
-    expect(new FpsNode().defaults()).toEqual({ video: {}, fps: 24 });
-    expect(new FrameToVideoNode().defaults()).toEqual({ frames: [] });
-    expect(new ConcatVideoNode().defaults()).toEqual({ video_a: {}, video_b: {} });
-    expect(new TrimVideoNode().defaults()).toEqual({ video: {}, start: 0, end: 0 });
-    expect(new ResizeVideoNode().defaults()).toEqual({ video: {}, width: -1, height: -1 });
-    expect(new ReverseVideoNode().defaults()).toEqual({ video: {} });
-    expect(new AddAudioVideoNode().defaults()).toEqual({ video: {}, audio: {} });
-    expect(new ExtractAudioVideoNode().defaults()).toEqual({ video: {} });
-    expect(new ExtractFrameVideoNode().defaults()).toEqual({ video: {}, frame_index: 0 });
-    expect(new GetVideoInfoNode().defaults()).toEqual({ video: {} });
+    expect(new TextToVideoNode().serialize()).toMatchObject({
+      prompt: "A cat playing with a ball of yarn",
+      aspect_ratio: "16:9",
+      resolution: "720p",
+      num_frames: 60,
+    });
+    expect(new ImageToVideoNode().serialize()).toMatchObject({
+      image: { type: "image", uri: "" },
+      prompt: "",
+      aspect_ratio: "16:9",
+      resolution: "720p",
+    });
+    expect(new LoadVideoFileNode().serialize()).toEqual({ path: "" });
+    expect(new SaveVideoFileVideoNode().serialize()).toMatchObject({
+      video: { type: "video", uri: "" },
+      folder: "",
+      filename: "",
+    });
+    expect(new LoadVideoAssetsNode().serialize()).toMatchObject({ folder: { type: "folder", uri: "" } });
+    expect(new SaveVideoNode().serialize()).toMatchObject({
+      video: { type: "video", uri: "" },
+      folder: { type: "folder", uri: "" },
+      name: "%Y-%m-%d-%H-%M-%S.mp4",
+    });
+    expect(new FrameIteratorNode().serialize()).toMatchObject({ video: { type: "video", uri: "" }, start: 0, end: -1 });
+    expect(new FpsNode().serialize()).toMatchObject({ video: { type: "video", uri: "" } });
+    expect(new FrameToVideoNode().serialize()).toMatchObject({ frame: { type: "image", uri: "" }, fps: 30 });
+    expect(new ConcatVideoNode().serialize()).toMatchObject({
+      video_a: { type: "video", uri: "" },
+      video_b: { type: "video", uri: "" },
+    });
+    expect(new TrimVideoNode().serialize()).toMatchObject({ video: { type: "video", uri: "" }, start_time: 0, end_time: -1 });
+    expect(new ResizeVideoNode().serialize()).toMatchObject({ video: { type: "video", uri: "" }, width: -1, height: -1 });
+    expect(new ReverseVideoNode().serialize()).toMatchObject({ video: { type: "video", uri: "" } });
+    expect(new AddAudioVideoNode().serialize()).toMatchObject({
+      video: { type: "video", uri: "" },
+      audio: { type: "audio", uri: "" },
+      volume: 1,
+      mix: false,
+    });
+    expect(new ExtractAudioVideoNode().serialize()).toMatchObject({ video: { type: "video", uri: "" } });
+    expect(new ExtractFrameVideoNode().serialize()).toMatchObject({ video: { type: "video", uri: "" }, time: 0 });
+    expect(new GetVideoInfoNode().serialize()).toMatchObject({ video: { type: "video", uri: "" } });
   });
 
   it("TextToVideoNode generates video from text", async () => {
@@ -1183,20 +1288,43 @@ describe("model3d nodes — full coverage", () => {
   });
 
   it("defaults() methods return expected structures", () => {
-    expect(new LoadModel3DFileNode().defaults()).toEqual({ path: "" });
-    expect(new SaveModel3DFileNode().defaults()).toEqual({ model: {}, folder: ".", filename: "model.glb" });
-    expect(new SaveModel3DNode().defaults()).toEqual({ model: {}, folder: ".", name: "model_%Y%m%d_%H%M%S.glb" });
-    expect(new FormatConverterNode().defaults()).toEqual({ model: {}, output_format: "glb" });
-    expect(new GetModel3DMetadataNode().defaults()).toEqual({ model: {} });
-    expect(new Transform3DNode().defaults()).toEqual({ model: {} });
-    expect(new DecimateNode().defaults()).toEqual({ model: {}, ratio: 0.5 });
-    expect(new Boolean3DNode().defaults()).toEqual({ model_a: {}, model_b: {}, operation: "union" });
-    expect(new RecalculateNormalsNode().defaults()).toEqual({ model: {} });
-    expect(new CenterMeshNode().defaults()).toEqual({ model: {} });
-    expect(new FlipNormalsNode().defaults()).toEqual({ model: {} });
-    expect(new MergeMeshesNode().defaults()).toEqual({ models: [] });
-    expect(new TextTo3DNode().defaults()).toEqual({ prompt: "" });
-    expect(new ImageTo3DNode().defaults()).toEqual({ image: {} });
+    expect(new LoadModel3DFileNode().serialize()).toEqual({ path: "" });
+    expect(new SaveModel3DFileNode().serialize()).toMatchObject({
+      model: { type: "model_3d", uri: "" },
+      folder: "",
+      filename: "",
+      overwrite: false,
+    });
+    expect(new SaveModel3DNode().serialize()).toMatchObject({
+      model: { type: "model_3d", uri: "" },
+      folder: { type: "folder", uri: "" },
+      name: "%Y-%m-%d_%H-%M-%S.glb",
+    });
+    expect(new FormatConverterNode().serialize()).toMatchObject({ model: { type: "model_3d", uri: "" }, output_format: "glb" });
+    expect(new GetModel3DMetadataNode().serialize()).toMatchObject({ model: { type: "model_3d", uri: "" } });
+    expect(new Transform3DNode().serialize()).toMatchObject({ model: { type: "model_3d", uri: "" } });
+    expect(new DecimateNode().serialize()).toMatchObject({
+      model: { type: "model_3d", uri: "" },
+      target_ratio: 0.5,
+    });
+    expect(new Boolean3DNode().serialize()).toMatchObject({
+      model_a: { type: "model_3d", uri: "" },
+      model_b: { type: "model_3d", uri: "" },
+      operation: "union",
+    });
+    expect(new RecalculateNormalsNode().serialize()).toMatchObject({ model: { type: "model_3d", uri: "" } });
+    expect(new CenterMeshNode().serialize()).toMatchObject({ model: { type: "model_3d", uri: "" } });
+    expect(new FlipNormalsNode().serialize()).toMatchObject({ model: { type: "model_3d", uri: "" } });
+    expect(new MergeMeshesNode().serialize()).toEqual({ models: [] });
+    expect(new TextTo3DNode().serialize()).toMatchObject({
+      prompt: "",
+      output_format: "glb",
+      negative_prompt: "",
+      art_style: "",
+      seed: -1,
+      timeout_seconds: 600,
+    });
+    expect(new ImageTo3DNode().serialize()).toMatchObject({ image: { type: "image", uri: "" } });
   });
 
   it("TextTo3DNode generates model from text", async () => {

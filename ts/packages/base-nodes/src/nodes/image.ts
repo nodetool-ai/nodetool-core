@@ -1,4 +1,4 @@
-import { BaseNode } from "@nodetool/node-sdk";
+import { BaseNode, prop } from "@nodetool/node-sdk";
 import type { ProcessingContext } from "@nodetool/runtime";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -147,15 +147,20 @@ async function transformImage(
 
 export class LoadImageFileNode extends BaseNode {
   static readonly nodeType = "nodetool.image.LoadImageFile";
-  static readonly title = "Load Image File";
-  static readonly description = "Load image bytes from local file";
+            static readonly title = "Load Image File";
+            static readonly description = "Read an image file from disk.\n    image, input, load, file";
+        static readonly metadataOutputTypes = {
+    output: "image"
+  };
+  
+  @prop({ type: "str", default: "", title: "Path", description: "Path to the image file to read" })
+  declare path: any;
 
-  defaults() {
-    return { path: "" };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const p = filePath(String(inputs.path ?? this._props.path ?? ""));
+    const p = filePath(String(inputs.path ?? this.path ?? ""));
     const data = new Uint8Array(await fs.readFile(p));
     const meta = await metadataFor(data);
     return {
@@ -171,20 +176,43 @@ export class LoadImageFileNode extends BaseNode {
 
 export class LoadImageFolderNode extends BaseNode {
   static readonly nodeType = "nodetool.image.LoadImageFolder";
-  static readonly title = "Load Image Folder";
-  static readonly description = "Stream image files from folder";
-  static readonly isStreamingOutput = true;
+            static readonly title = "Load Image Folder";
+            static readonly description = "Load all images from a folder, optionally including subfolders.\n    image, load, folder, files";
+        static readonly metadataOutputTypes = {
+    image: "image",
+    path: "str"
+  };
+  
+            static readonly isStreamingOutput = true;
+  @prop({ type: "str", default: "", title: "Folder", description: "Folder to scan for images" })
+  declare folder: any;
 
-  defaults() {
-    return { folder: "." };
-  }
+  @prop({ type: "bool", default: false, title: "Include Subdirectories", description: "Include images in subfolders" })
+  declare include_subdirectories: any;
+
+  @prop({ type: "list[str]", default: [
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".bmp",
+  ".gif",
+  ".webp",
+  ".tiff"
+], title: "Extensions", description: "Image file extensions to include" })
+  declare extensions: any;
+
+  @prop({ type: "str", default: "", title: "Pattern", description: "Pattern to match image files" })
+  declare pattern: any;
+
+
+
 
   async process(): Promise<Record<string, unknown>> {
     return {};
   }
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
-    const folder = String(inputs.folder ?? this._props.folder ?? ".");
+    const folder = String(inputs.folder ?? this.folder ?? ".");
     const entries = await fs.readdir(folder, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isFile()) continue;
@@ -208,30 +236,62 @@ export class LoadImageFolderNode extends BaseNode {
 
 export class SaveImageFileImageNode extends BaseNode {
   static readonly nodeType = "nodetool.image.SaveImageFile";
-  static readonly title = "Save Image File";
-  static readonly description = "Save image to local file";
+            static readonly title = "Save Image File";
+            static readonly description = "Write an image to disk.\n    image, output, save, file";
+        static readonly metadataOutputTypes = {
+    output: "image"
+  };
+  
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "The image to save" })
+  declare image: any;
 
-  defaults() {
-    return { image: {}, path: "" };
-  }
+  @prop({ type: "str", default: "", title: "Folder", description: "Folder where the file will be saved" })
+  declare folder: any;
+
+  @prop({ type: "str", default: "", title: "Filename", description: "\n        The name of the image file.\n        You can use time and date variables to create unique names:\n        %Y - Year\n        %m - Month\n        %d - Day\n        %H - Hour\n        %M - Minute\n        %S - Second\n        " })
+  declare filename: any;
+
+  @prop({ type: "bool", default: false, title: "Overwrite", description: "Overwrite the file if it already exists, otherwise file will be renamed" })
+  declare overwrite: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const p = filePath(String(inputs.path ?? this._props.path ?? ""));
+    const p = filePath(String(inputs.path ?? this.path ?? ""));
     await fs.mkdir(path.dirname(p), { recursive: true });
-    await fs.writeFile(p, imageBytes(inputs.image ?? this._props.image));
+    await fs.writeFile(p, imageBytes(inputs.image ?? this.image));
     return { output: p };
   }
 }
 
 export class LoadImageAssetsNode extends BaseNode {
   static readonly nodeType = "nodetool.image.LoadImageAssets";
-  static readonly title = "Load Image Assets";
-  static readonly description = "Alias for folder image loading";
-  static readonly isStreamingOutput = true;
+            static readonly title = "Load Image Assets";
+            static readonly description = "Load images from an asset folder.\n    load, image, file, import";
+        static readonly metadataOutputTypes = {
+    image: "image",
+    name: "str"
+  };
+  
+            static readonly isStreamingOutput = true;
+  @prop({ type: "folder", default: {
+  "type": "folder",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Folder", description: "The asset folder to load the images from." })
+  declare folder: any;
 
-  defaults() {
-    return { folder: "." };
-  }
+
+
 
   async process(): Promise<Record<string, unknown>> {
     return {};
@@ -239,7 +299,7 @@ export class LoadImageAssetsNode extends BaseNode {
 
   async *genProcess(inputs: Record<string, unknown>): AsyncGenerator<Record<string, unknown>> {
     const loader = new LoadImageFolderNode();
-    loader.assign({ folder: inputs.folder ?? this._props.folder ?? "." });
+    loader.assign({ folder: inputs.folder ?? this.folder ?? "." });
     for await (const item of loader.genProcess({})) {
       yield item;
     }
@@ -248,19 +308,42 @@ export class LoadImageAssetsNode extends BaseNode {
 
 export class SaveImageNode extends BaseNode {
   static readonly nodeType = "nodetool.image.SaveImage";
-  static readonly title = "Save Image";
-  static readonly description = "Save image bytes using folder/name";
+            static readonly title = "Save Image Asset";
+            static readonly description = "Save an image to specified asset folder with customizable name format.\n    save, image, folder, naming";
+        static readonly metadataOutputTypes = {
+    output: "image"
+  };
+  
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "The image to save." })
+  declare image: any;
 
-  defaults() {
-    return { image: {}, folder: ".", name: "image_%Y%m%d_%H%M%S.png" };
-  }
+  @prop({ type: "folder", default: {
+  "type": "folder",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Folder", description: "The asset folder to save the image in." })
+  declare folder: any;
+
+  @prop({ type: "str", default: "%Y-%m-%d_%H-%M-%S.png", title: "Name", description: "\n        Name of the output file.\n        You can use time and date variables to create unique names:\n        %Y - Year\n        %m - Month\n        %d - Day\n        %H - Hour\n        %M - Minute\n        %S - Second\n        " })
+  declare name: any;
+
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const folder = String(inputs.folder ?? this._props.folder ?? ".");
-    const name = dateName(String(inputs.name ?? this._props.name ?? "image.png"));
+    const folder = String(inputs.folder ?? this.folder ?? ".");
+    const name = dateName(String(inputs.name ?? this.name ?? "image.png"));
     const full = path.resolve(folder, name);
     await fs.mkdir(path.dirname(full), { recursive: true });
-    const bytes = imageBytes(inputs.image ?? this._props.image);
+    const bytes = imageBytes(inputs.image ?? this.image);
     await fs.writeFile(full, bytes);
     return { output: imageRef(bytes, { uri: `file://${full}` }) };
   }
@@ -268,15 +351,30 @@ export class SaveImageNode extends BaseNode {
 
 export class GetMetadataNode extends BaseNode {
   static readonly nodeType = "nodetool.image.GetMetadata";
-  static readonly title = "Get Metadata";
-  static readonly description = "Return basic image metadata";
+            static readonly title = "Get Metadata";
+            static readonly description = "Get metadata about the input image.\n    metadata, properties, analysis, information";
+        static readonly metadataOutputTypes = {
+    format: "str",
+    mode: "str",
+    width: "int",
+    height: "int",
+    channels: "int"
+  };
+  
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "The input image." })
+  declare image: any;
 
-  defaults() {
-    return { image: {} };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const image = (inputs.image ?? this._props.image ?? {}) as ImageRefLike;
+    const image = (inputs.image ?? this.image ?? {}) as ImageRefLike;
     const bytes = await imageBytesAsync(image);
     const meta = await metadataFor(bytes);
     return {
@@ -293,15 +391,26 @@ export class GetMetadataNode extends BaseNode {
 
 export class BatchToListNode extends BaseNode {
   static readonly nodeType = "nodetool.image.BatchToList";
-  static readonly title = "Batch To List";
-  static readonly description = "Convert batch input to image list";
+            static readonly title = "Batch To List";
+            static readonly description = "Convert an image batch to a list of image references.\n    batch, list, images, processing";
+        static readonly metadataOutputTypes = {
+    output: "list[image]"
+  };
+  
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Batch", description: "The batch of images to convert." })
+  declare batch: any;
 
-  defaults() {
-    return { batch: [] };
-  }
+
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const batch = inputs.batch ?? this._props.batch ?? [];
+    const batch = inputs.batch ?? this.batch ?? [];
     if (Array.isArray(batch)) return { output: batch };
     return { output: [batch] };
   }
@@ -309,20 +418,23 @@ export class BatchToListNode extends BaseNode {
 
 export class ImagesToListNode extends BaseNode {
   static readonly nodeType = "nodetool.image.ImagesToList";
-  static readonly title = "Images To List";
-  static readonly description = "Collect image inputs into a list";
+            static readonly title = "Images To List";
+            static readonly description = "Convert all dynamic properties to a list of image references.\n    list, images, processing";
+        static readonly metadataOutputTypes = {
+    output: "list[image]"
+  };
+          static readonly isDynamic = true;
+  
 
-  defaults() {
-    return { image_a: null, image_b: null, images: [] };
-  }
+
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const explicit = Array.isArray(inputs.images ?? this._props.images)
-      ? (inputs.images ?? this._props.images) as unknown[]
+    const explicit = Array.isArray(inputs.images ?? this.images)
+      ? (inputs.images ?? this.images) as unknown[]
       : [];
     const out = [...explicit];
-    const a = inputs.image_a ?? this._props.image_a;
-    const b = inputs.image_b ?? this._props.image_b;
+    const a = inputs.image_a ?? this.image_a;
+    const b = inputs.image_b ?? this.image_b;
     if (a) out.push(a);
     if (b) out.push(b);
     return { output: out };
@@ -330,39 +442,52 @@ export class ImagesToListNode extends BaseNode {
 }
 
 abstract class TransformImageNode extends BaseNode {
-  defaults() {
-    return {
-      image: {},
-      width: null,
-      height: null,
-      paste: {},
-      left: 0,
-      top: 0,
-      scale: 1,
-      right: null,
-      bottom: null,
-    };
-  }
-
   protected transformMeta(inputs: Record<string, unknown>): Record<string, unknown> {
-    const image = (inputs.image ?? this._props.image ?? {}) as ImageRefLike;
+    const image = (inputs.image ?? this.image ?? {}) as ImageRefLike;
     return {
-      width: Number(inputs.width ?? this._props.width ?? image.width ?? 0) || null,
-      height: Number(inputs.height ?? this._props.height ?? image.height ?? 0) || null,
+      width: Number(inputs.width ?? this.width ?? image.width ?? 0) || null,
+      height: Number(inputs.height ?? this.height ?? image.height ?? 0) || null,
     };
   }
 }
 
 export class PasteNode extends TransformImageNode {
   static readonly nodeType = "nodetool.image.Paste";
-  static readonly title = "Paste";
-  static readonly description = "Paste one image onto another at specified coordinates";
+      static readonly title = "Paste";
+      static readonly description = "Paste one image onto another at specified coordinates.\n    paste, composite, positioning, overlay";
+    static readonly metadataOutputTypes = {
+    output: "image"
+  };
+
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "The image to paste into." })
+  declare image: any;
+
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Paste", description: "The image to paste." })
+  declare paste: any;
+
+  @prop({ type: "int", default: 0, title: "Left", description: "The left coordinate.", min: 0, max: 4096 })
+  declare left: any;
+
+  @prop({ type: "int", default: 0, title: "Top", description: "The top coordinate.", min: 0, max: 4096 })
+  declare top: any;
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const image = (inputs.image ?? this._props.image ?? {}) as ImageRefLike;
-    const paste = (inputs.paste ?? this._props.paste ?? {}) as ImageRefLike;
-    const left = Math.max(0, Number(inputs.left ?? this._props.left ?? 0));
-    const top = Math.max(0, Number(inputs.top ?? this._props.top ?? 0));
+    const image = (inputs.image ?? this.image ?? {}) as ImageRefLike;
+    const paste = (inputs.paste ?? this.paste ?? {}) as ImageRefLike;
+    const left = Math.max(0, Number(inputs.left ?? this.left ?? 0));
+    const top = Math.max(0, Number(inputs.top ?? this.top ?? 0));
     const baseBytes = await imageBytesAsync(image);
     const overlayBytes = await imageBytesAsync(paste);
 
@@ -401,14 +526,29 @@ export class PasteNode extends TransformImageNode {
 
 export class ScaleNode extends TransformImageNode {
   static readonly nodeType = "nodetool.image.Scale";
-  static readonly title = "Scale";
-  static readonly description = "Scale image by a factor";
+      static readonly title = "Scale";
+      static readonly description = "Enlarge or shrink an image by a scale factor.\n    image, resize, scale";
+    static readonly metadataOutputTypes = {
+    output: "image"
+  };
+
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "The image to scale." })
+  declare image: any;
+
+  @prop({ type: "float", default: 1, title: "Scale", description: "The scale factor.", min: 0, max: 10 })
+  declare scale: any;
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const image = (inputs.image ?? this._props.image ?? {}) as ImageRefLike;
-    const requestedScale = Number(inputs.scale ?? this._props.scale ?? 0);
-    const targetWidth = Number(inputs.width ?? this._props.width ?? 0);
-    const targetHeight = Number(inputs.height ?? this._props.height ?? 0);
+    const image = (inputs.image ?? this.image ?? {}) as ImageRefLike;
+    const requestedScale = Number(inputs.scale ?? this.scale ?? 0);
+    const targetWidth = Number(inputs.width ?? this.width ?? 0);
+    const targetHeight = Number(inputs.height ?? this.height ?? 0);
     const scale =
       requestedScale > 0
         ? requestedScale
@@ -449,13 +589,31 @@ export class ScaleNode extends TransformImageNode {
 
 export class ResizeNode extends TransformImageNode {
   static readonly nodeType = "nodetool.image.Resize";
-  static readonly title = "Resize";
-  static readonly description = "Resize image to target dimensions";
+      static readonly title = "Resize";
+      static readonly description = "Change image dimensions to specified width and height.\n    image, resize";
+    static readonly metadataOutputTypes = {
+    output: "image"
+  };
+
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "The image to resize." })
+  declare image: any;
+
+  @prop({ type: "int", default: 512, title: "Width", description: "The target width.", min: 0, max: 4096 })
+  declare width: any;
+
+  @prop({ type: "int", default: 512, title: "Height", description: "The target height.", min: 0, max: 4096 })
+  declare height: any;
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const image = (inputs.image ?? this._props.image ?? {}) as ImageRefLike;
-    const width = Number(inputs.width ?? this._props.width ?? image.width ?? 0) || null;
-    const height = Number(inputs.height ?? this._props.height ?? image.height ?? 0) || null;
+    const image = (inputs.image ?? this.image ?? {}) as ImageRefLike;
+    const width = Number(inputs.width ?? this.width ?? image.width ?? 0) || null;
+    const height = Number(inputs.height ?? this.height ?? image.height ?? 0) || null;
     const output = (await transformImage(image, (instance) =>
       instance.resize(width ?? undefined, height ?? undefined)
     )) as Record<string, unknown>;
@@ -471,18 +629,42 @@ export class ResizeNode extends TransformImageNode {
 
 export class CropNode extends TransformImageNode {
   static readonly nodeType = "nodetool.image.Crop";
-  static readonly title = "Crop";
-  static readonly description = "Crop image to specified bounds";
+      static readonly title = "Crop";
+      static readonly description = "Crop an image to specified coordinates.\n    image, crop";
+    static readonly metadataOutputTypes = {
+    output: "image"
+  };
+
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "The image to crop." })
+  declare image: any;
+
+  @prop({ type: "int", default: 0, title: "Left", description: "The left coordinate.", min: 0, max: 4096 })
+  declare left: any;
+
+  @prop({ type: "int", default: 0, title: "Top", description: "The top coordinate.", min: 0, max: 4096 })
+  declare top: any;
+
+  @prop({ type: "int", default: 512, title: "Right", description: "The right coordinate.", min: 0, max: 4096 })
+  declare right: any;
+
+  @prop({ type: "int", default: 512, title: "Bottom", description: "The bottom coordinate.", min: 0, max: 4096 })
+  declare bottom: any;
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const image = (inputs.image ?? this._props.image ?? {}) as ImageRefLike;
-    const left = Math.max(0, Number(inputs.left ?? this._props.left ?? 0));
-    const top = Math.max(0, Number(inputs.top ?? this._props.top ?? 0));
+    const image = (inputs.image ?? this.image ?? {}) as ImageRefLike;
+    const left = Math.max(0, Number(inputs.left ?? this.left ?? 0));
+    const top = Math.max(0, Number(inputs.top ?? this.top ?? 0));
     const right = Number(
-      inputs.right ?? this._props.right ?? inputs.width ?? this._props.width ?? image.width ?? 0
+      inputs.right ?? this.right ?? inputs.width ?? this.width ?? image.width ?? 0
     );
     const bottom = Number(
-      inputs.bottom ?? this._props.bottom ?? inputs.height ?? this._props.height ?? image.height ?? 0
+      inputs.bottom ?? this.bottom ?? inputs.height ?? this.height ?? image.height ?? 0
     );
     const width = Math.max(1, right - left);
     const height = Math.max(1, bottom - top);
@@ -501,13 +683,31 @@ export class CropNode extends TransformImageNode {
 
 export class FitNode extends TransformImageNode {
   static readonly nodeType = "nodetool.image.Fit";
-  static readonly title = "Fit";
-  static readonly description = "Fit image to target dimensions while preserving aspect ratio";
+      static readonly title = "Fit";
+      static readonly description = "Resize an image to fit within specified dimensions while preserving aspect ratio.\n    image, resize, fit";
+    static readonly metadataOutputTypes = {
+    output: "image"
+  };
+
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "The image to fit." })
+  declare image: any;
+
+  @prop({ type: "int", default: 512, title: "Width", description: "Width to fit to.", min: 1, max: 4096 })
+  declare width: any;
+
+  @prop({ type: "int", default: 512, title: "Height", description: "Height to fit to.", min: 1, max: 4096 })
+  declare height: any;
 
   async process(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const image = (inputs.image ?? this._props.image ?? {}) as ImageRefLike;
-    const width = Math.max(1, Number(inputs.width ?? this._props.width ?? image.width ?? 512));
-    const height = Math.max(1, Number(inputs.height ?? this._props.height ?? image.height ?? 512));
+    const image = (inputs.image ?? this.image ?? {}) as ImageRefLike;
+    const width = Math.max(1, Number(inputs.width ?? this.width ?? image.width ?? 512));
+    const height = Math.max(1, Number(inputs.height ?? this.height ?? image.height ?? 512));
     const output = (await transformImage(image, (instance) =>
       instance.resize(width, height, { fit: "cover", position: "centre" })
     )) as Record<string, unknown>;
@@ -523,21 +723,68 @@ export class FitNode extends TransformImageNode {
 
 export class TextToImageNode extends BaseNode {
   static readonly nodeType = "nodetool.image.TextToImage";
-  static readonly title = "Text To Image";
-  static readonly description = "Generate placeholder image bytes from text";
+            static readonly title = "Text To Image";
+            static readonly description = "Generate images from text prompts using any supported image provider. Automatically routes to the appropriate backend (HuggingFace, FAL, MLX).\n    image, generation, AI, text-to-image, t2i";
+        static readonly metadataOutputTypes = {
+    output: "image"
+  };
+          static readonly basicFields = [
+  "model",
+  "prompt",
+  "width",
+  "height",
+  "seed"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "image_model", default: {
+  "type": "image_model",
+  "provider": "huggingface_fal_ai",
+  "id": "fal-ai/flux/schnell",
+  "name": "FLUX.1 Schnell",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "The image generation model to use" })
+  declare model: any;
 
-  defaults() {
-    return { prompt: "", width: 512, height: 512 };
-  }
+  @prop({ type: "str", default: "A cat holding a sign that says hello world", title: "Prompt", description: "Text prompt describing the desired image" })
+  declare prompt: any;
+
+  @prop({ type: "str", default: "", title: "Negative Prompt", description: "Text prompt describing what to avoid in the image" })
+  declare negative_prompt: any;
+
+  @prop({ type: "int", default: 512, title: "Width", description: "Width of the generated image", min: 64, max: 2048 })
+  declare width: any;
+
+  @prop({ type: "int", default: 512, title: "Height", description: "Height of the generated image", min: 64, max: 2048 })
+  declare height: any;
+
+  @prop({ type: "float", default: 7.5, title: "Guidance Scale", description: "Classifier-free guidance scale (higher = closer to prompt)", min: 0, max: 30 })
+  declare guidance_scale: any;
+
+  @prop({ type: "int", default: 30, title: "Num Inference Steps", description: "Number of denoising steps", min: 1, max: 100 })
+  declare num_inference_steps: any;
+
+  @prop({ type: "int", default: -1, title: "Seed", description: "Random seed for reproducibility (-1 for random)", min: -1 })
+  declare seed: any;
+
+  @prop({ type: "bool", default: true, title: "Safety Check", description: "Enable safety checker to filter inappropriate content" })
+  declare safety_check: any;
+
+  @prop({ type: "int", default: 0, title: "Timeout Seconds", description: "Timeout in seconds for API calls (0 = use provider default)", min: 0, max: 3600 })
+  declare timeout_seconds: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const prompt = String(inputs.prompt ?? this._props.prompt ?? "");
-    const width = Number(inputs.width ?? this._props.width ?? 512);
-    const height = Number(inputs.height ?? this._props.height ?? 512);
-    const { providerId, modelId } = getModelConfig(inputs, this._props);
+    const prompt = String(inputs.prompt ?? this.prompt ?? "");
+    const width = Number(inputs.width ?? this.width ?? 512);
+    const height = Number(inputs.height ?? this.height ?? 512);
+    const { providerId, modelId } = getModelConfig(inputs, this.serialize());
     if (hasProviderSupport(context, providerId, modelId)) {
       const output = (await context.runProviderPrediction({
         provider: providerId,
@@ -547,8 +794,8 @@ export class TextToImageNode extends BaseNode {
           prompt,
           width,
           height,
-          negative_prompt: inputs.negative_prompt ?? this._props.negative_prompt,
-          quality: inputs.quality ?? this._props.quality,
+          negative_prompt: inputs.negative_prompt ?? this.negative_prompt,
+          quality: inputs.quality ?? this.quality,
         },
       })) as Uint8Array;
       const meta = await metadataFor(output);
@@ -572,20 +819,82 @@ export class TextToImageNode extends BaseNode {
 
 export class ImageToImageNode extends BaseNode {
   static readonly nodeType = "nodetool.image.ImageToImage";
-  static readonly title = "Image To Image";
-  static readonly description = "Transform image with prompt (placeholder passthrough)";
+            static readonly title = "Image To Image";
+            static readonly description = "Transform images using text prompts with any supported image provider. Automatically routes to the appropriate backend (HuggingFace, FAL, MLX).\n    image, transformation, AI, image-to-image, i2i";
+        static readonly metadataOutputTypes = {
+    output: "image"
+  };
+          static readonly basicFields = [
+  "model",
+  "image",
+  "prompt",
+  "strength",
+  "seed"
+];
+          static readonly exposeAsTool = true;
+  
+  @prop({ type: "image_model", default: {
+  "type": "image_model",
+  "provider": "huggingface_fal_ai",
+  "id": "fal-ai/flux/dev",
+  "name": "FLUX.1 Dev",
+  "path": null,
+  "supported_tasks": []
+}, title: "Model", description: "The image generation model to use" })
+  declare model: any;
 
-  defaults() {
-    return { image: {}, prompt: "" };
-  }
+  @prop({ type: "image", default: {
+  "type": "image",
+  "uri": "",
+  "asset_id": null,
+  "data": null,
+  "metadata": null
+}, title: "Image", description: "Input image to transform" })
+  declare image: any;
+
+  @prop({ type: "str", default: "A photorealistic version of the input image", title: "Prompt", description: "Text prompt describing the desired transformation" })
+  declare prompt: any;
+
+  @prop({ type: "str", default: "", title: "Negative Prompt", description: "Text prompt describing what to avoid" })
+  declare negative_prompt: any;
+
+  @prop({ type: "float", default: 0.8, title: "Strength", description: "How much to transform the input image (0.0 = no change, 1.0 = maximum change)", min: 0, max: 1 })
+  declare strength: any;
+
+  @prop({ type: "float", default: 7.5, title: "Guidance Scale", description: "Classifier-free guidance scale", min: 0, max: 30 })
+  declare guidance_scale: any;
+
+  @prop({ type: "int", default: 30, title: "Num Inference Steps", description: "Number of denoising steps", min: 1, max: 100 })
+  declare num_inference_steps: any;
+
+  @prop({ type: "int", default: 512, title: "Target Width", description: "Target width of the output image", min: 64, max: 2048 })
+  declare target_width: any;
+
+  @prop({ type: "int", default: 512, title: "Target Height", description: "Target height of the output image", min: 64, max: 2048 })
+  declare target_height: any;
+
+  @prop({ type: "int", default: -1, title: "Seed", description: "Random seed for reproducibility (-1 for random)", min: -1 })
+  declare seed: any;
+
+  @prop({ type: "str", default: "", title: "Scheduler", description: "Scheduler to use (provider-specific)" })
+  declare scheduler: any;
+
+  @prop({ type: "bool", default: true, title: "Safety Check", description: "Enable safety checker" })
+  declare safety_check: any;
+
+  @prop({ type: "int", default: 0, title: "Timeout Seconds", description: "Timeout in seconds for API calls (0 = use provider default)", min: 0, max: 3600 })
+  declare timeout_seconds: any;
+
+
+
 
   async process(
     inputs: Record<string, unknown>,
     context?: ProcessingContext
   ): Promise<Record<string, unknown>> {
-    const image = (inputs.image ?? this._props.image ?? {}) as ImageRefLike;
+    const image = (inputs.image ?? this.image ?? {}) as ImageRefLike;
     const bytes = await imageBytesAsync(image);
-    const { providerId, modelId } = getModelConfig(inputs, this._props);
+    const { providerId, modelId } = getModelConfig(inputs, this.serialize());
     if (hasProviderSupport(context, providerId, modelId)) {
       const output = (await context.runProviderPrediction({
         provider: providerId,
@@ -593,11 +902,11 @@ export class ImageToImageNode extends BaseNode {
         model: modelId,
         params: {
           image: bytes,
-          prompt: String(inputs.prompt ?? this._props.prompt ?? ""),
-          negative_prompt: inputs.negative_prompt ?? this._props.negative_prompt,
-          target_width: inputs.target_width ?? this._props.target_width,
-          target_height: inputs.target_height ?? this._props.target_height,
-          quality: inputs.quality ?? this._props.quality,
+          prompt: String(inputs.prompt ?? this.prompt ?? ""),
+          negative_prompt: inputs.negative_prompt ?? this.negative_prompt,
+          target_width: inputs.target_width ?? this.target_width,
+          target_height: inputs.target_height ?? this.target_height,
+          quality: inputs.quality ?? this.quality,
         },
       })) as Uint8Array;
       const meta = await metadataFor(output);
@@ -613,7 +922,7 @@ export class ImageToImageNode extends BaseNode {
     return {
       output: imageRef(bytes, {
         uri: image.uri ?? "",
-        prompt: String(inputs.prompt ?? this._props.prompt ?? ""),
+        prompt: String(inputs.prompt ?? this.prompt ?? ""),
       }),
     };
   }
