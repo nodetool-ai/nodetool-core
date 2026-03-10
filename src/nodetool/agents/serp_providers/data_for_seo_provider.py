@@ -376,7 +376,7 @@ class DataForSEOProvider(SerpProvider):
         return {"error": "DuckDuckGo search not supported by DataForSEO provider"}
 
     async def search_raw(
-        self, engine: str, query: str, num_results: int = 10, **kwargs: Any
+        self, engine: str, params: dict[str, Any]
     ) -> Any:
         """
         Perform a raw search using the specified engine.
