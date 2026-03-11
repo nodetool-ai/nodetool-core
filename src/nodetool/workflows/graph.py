@@ -383,34 +383,79 @@ class Graph(BaseModel):
         """
         errors = []
 
-        # Build control adjacency list
+        # Build control adjacency list and compute indegrees
         control_graph: dict[str, list[str]] = defaultdict(list)
+        indegree: dict[str, int] = defaultdict(int)
+        nodes: set[str] = set()
+
         for edge in edges:
             if edge.edge_type == "control":
-                control_graph[edge.source].append(edge.target)
+                source = edge.source
+                target = edge.target
+                control_graph[source].append(target)
+                indegree[target] += 1
+                nodes.add(source)
+                nodes.add(target)
 
-        # DFS to detect cycles
-        def has_cycle(node: str, visited: set[str], rec_stack: set[str]) -> tuple[bool, list[str]]:
-            visited.add(node)
-            rec_stack.add(node)
+        # Fast path: Check for cycles using Kahn's algorithm
+        # This is O(V+E) and very fast for DAGs, avoiding deep recursion issues.
+        queue = deque([n for n in nodes if indegree[n] == 0])
+        visited_count = 0
 
+        while queue:
+            node = queue.popleft()
+            visited_count += 1
             for neighbor in control_graph.get(node, []):
-                if neighbor not in visited:
-                    found, path = has_cycle(neighbor, visited, rec_stack)
-                    if found:
-                        return True, [node, *path]
-                elif neighbor in rec_stack:
-                    return True, [node, neighbor]
+                indegree[neighbor] -= 1
+                if indegree[neighbor] == 0:
+                    queue.append(neighbor)
 
-            rec_stack.remove(node)
-            return False, []
+        # If all nodes were visited, it's a DAG, no cycles.
+        if visited_count == len(nodes):
+            return errors
 
+        # If we reached here, there is at least one cycle.
+        # We find it using an iterative DFS to avoid RecursionError for deep graphs.
+
+        # We only care about nodes that are part of cycles (indegree > 0 after Kahn's)
+        cycle_nodes = {n for n in nodes if indegree[n] > 0}
         visited: set[str] = set()
-        for node_id in control_graph:
-            if node_id not in visited:
-                found, path = has_cycle(node_id, visited, set())
-                if found:
-                    errors.append(f"Circular control dependency detected: {' -> '.join(path)}")
+
+        for start_node in cycle_nodes:
+            if start_node in visited:
+                continue
+
+            stack = [(start_node, 0)]
+            path = []
+            path_set = set()
+
+            while stack:
+                node, edge_idx = stack.pop()
+
+                if edge_idx == 0:
+                    if node in path_set:
+                        cycle_idx = path.index(node)
+                        cycle_path = [*path[cycle_idx:], node]
+                        errors.append(f"Circular control dependency detected: {' -> '.join(cycle_path)}")
+                        return errors
+
+                    if node in visited:
+                        continue
+
+                    visited.add(node)
+                    path.append(node)
+                    path_set.add(node)
+
+                neighbors = control_graph.get(node, [])
+                cycle_neighbors = [n for n in neighbors if n in cycle_nodes]
+
+                if edge_idx < len(cycle_neighbors):
+                    stack.append((node, edge_idx + 1))
+                    stack.append((cycle_neighbors[edge_idx], 0))
+                else:
+                    if path and path[-1] == node:
+                        path_set.remove(node)
+                        path.pop()
 
         return errors
 
