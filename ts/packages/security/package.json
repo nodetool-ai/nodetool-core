@@ -14,7 +14,7 @@
     "keytar": "^7.9.0"
   },
   "devDependencies": {
-    "vitest": "^1.6.1",
+    "vitest": "^4.0.18",
     "typescript": "^5.4.5"
   }
 }
