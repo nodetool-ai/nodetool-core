@@ -7,9 +7,9 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "build:all": "npm run build --workspace @nodetool/protocol && npm run build --workspace @nodetool/runtime && npm run build --workspace @nodetool/kernel && npm run build --workspace @nodetool/node-sdk && npm run build --workspace @nodetool/base-nodes && npm run build --workspace @nodetool/models && npm run build",
-    "dev": "npm run build:all && node dist/server.js",
-    "test-ui": "npm run build:all && node dist/test-ui-server.js",
+    "build:all": "node ../../scripts/build-websocket-workspaces.mjs",
+    "dev": "node ../../scripts/run-websocket-dev.mjs server",
+    "test-ui": "node ../../scripts/run-websocket-dev.mjs test-ui",
     "devserver": "npm run test-ui",
     "test": "vitest run",
     "test:watch": "vitest",
