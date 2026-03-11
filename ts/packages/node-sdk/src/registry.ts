@@ -68,6 +68,10 @@ export class NodeRegistry {
     return instance.toExecutor();
   }
 
+  getClass(nodeType: string): NodeClass | undefined {
+    return this._classes.get(nodeType);
+  }
+
   has(nodeType: string): boolean {
     return this._classes.has(nodeType);
   }
@@ -168,7 +172,7 @@ export function createGraphNodeTypeResolver(
       const outputs = Object.fromEntries(
         (metadata.outputs ?? []).map((output) => [output.name, typeMetadataToString(output.type)]),
       );
-      const NodeClass = registry._classes.get(nodeType);
+      const NodeClass = registry.getClass(nodeType);
       return {
         nodeType: metadata.node_type,
         propertyTypes,
