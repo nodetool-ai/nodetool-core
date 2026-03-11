@@ -437,19 +437,31 @@ export class WorkflowRunner {
       if (incoming.length > 0) continue; // not an input node
       if (!this._isExternalInputNode(node)) continue;
 
-      // Check if we have a param for this node
-      const paramValue = params[node.name ?? node.id];
-      if (paramValue !== undefined) {
-        // Deliver the value on outgoing edges
-        const outgoing = this._graph.findOutgoingEdges(node.id).filter(isDataEdge);
-        for (const edge of outgoing) {
-          const targetInbox = this._inboxes.get(edge.target);
-          if (targetInbox) {
-            await targetInbox.put(edge.targetHandle, paramValue);
-          }
-          this._incrementEdgeCounter(edge);
+      const inputName = this._getExternalInputName(node);
+      const properties =
+        node.properties && typeof node.properties === "object"
+          ? (node.properties as Record<string, unknown>)
+          : {};
+      const hasRuntimeParam = Object.prototype.hasOwnProperty.call(params, inputName);
+      const hasDefaultValue = Object.prototype.hasOwnProperty.call(properties, "value");
+
+      // Non-streaming workflow inputs should emit once even when no runtime param
+      // was supplied, using the node's configured default value from properties.
+      if (!hasRuntimeParam && (node.is_streaming_input || !hasDefaultValue)) {
+        continue;
+      }
+
+      const value = hasRuntimeParam ? params[inputName] : properties.value;
+      const outgoing = this._graph.findOutgoingEdges(node.id).filter(isDataEdge);
+      for (const edge of outgoing) {
+        const targetInbox = this._inboxes.get(edge.target);
+        if (targetInbox) {
+          await targetInbox.put(edge.targetHandle, value);
         }
-        // Mark all downstream as source done
+        this._incrementEdgeCounter(edge);
+      }
+
+      if (!node.is_streaming_input) {
         for (const edge of outgoing) {
           const targetInbox = this._inboxes.get(edge.target);
           if (targetInbox) {
@@ -841,6 +853,18 @@ export class WorkflowRunner {
     return node.type.startsWith("nodetool.input.") || node.type === "test.Input";
   }
 
+  private _getExternalInputName(node: NodeDescriptor): string {
+    const properties =
+      node.properties && typeof node.properties === "object"
+        ? (node.properties as Record<string, unknown>)
+        : {};
+    const propertyName = typeof properties.name === "string" ? properties.name.trim() : "";
+    if (propertyName) {
+      return propertyName;
+    }
+    return node.name ?? node.id;
+  }
+
   private _emit(msg: ProcessingMessage): void {
     this._messages.push(msg);
     if (this._options.executionContext) {
@@ -852,6 +876,6 @@ export class WorkflowRunner {
   private _resolveInputNodes(inputName: string): NodeDescriptor[] {
     return this._graph
       .inputNodes()
-      .filter((node) => (node.name ?? node.id) === inputName || node.id === inputName);
+      .filter((node) => this._getExternalInputName(node) === inputName || node.id === inputName);
   }
 }

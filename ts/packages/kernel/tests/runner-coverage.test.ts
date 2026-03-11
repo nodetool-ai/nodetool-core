@@ -421,3 +421,91 @@ describe("WorkflowRunner – repeated runs on the same instance", () => {
     ).toEqual([2]);
   });
 });
+
+describe("WorkflowRunner – external workflow inputs", () => {
+  it("uses the input node property name to resolve runtime params", async () => {
+    const nodes: NodeDescriptor[] = [
+      {
+        id: "input-a",
+        type: "nodetool.input.IntegerInput",
+        name: "Integer Input",
+        properties: { name: "a", value: 0 },
+      },
+      {
+        id: "input-b",
+        type: "nodetool.input.IntegerInput",
+        name: "Integer Input 2",
+        properties: { name: "b", value: 0 },
+      },
+      { id: "sum", type: "test.Sum", sync_mode: "zip_all" },
+      { id: "out", type: "test.Output", name: "result" },
+    ];
+    const edges: Edge[] = [
+      { source: "input-a", sourceHandle: "output", target: "sum", targetHandle: "a" },
+      { source: "input-b", sourceHandle: "output", target: "sum", targetHandle: "b" },
+      { source: "sum", sourceHandle: "value", target: "out", targetHandle: "value" },
+    ];
+
+    const runner = new WorkflowRunner("test-external-input-names", {
+      resolveExecutor: (node) => {
+        if (node.id === "sum") {
+          return simpleExecutor((inputs) => ({
+            value: Number(inputs.a ?? 0) + Number(inputs.b ?? 0),
+          }));
+        }
+        return simpleExecutor((inputs) => ({ value: inputs.value }));
+      },
+    });
+
+    const result = await runner.run(
+      { job_id: "j-ext-names", params: { a: 2, b: 3 } },
+      { nodes, edges },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.outputs.result).toEqual([5]);
+  });
+
+  it("uses configured default values for non-streaming input nodes", async () => {
+    const nodes: NodeDescriptor[] = [
+      {
+        id: "input-a",
+        type: "nodetool.input.IntegerInput",
+        name: "Integer Input",
+        properties: { name: "a", value: 4 },
+      },
+      {
+        id: "input-b",
+        type: "nodetool.input.IntegerInput",
+        name: "Integer Input 2",
+        properties: { name: "b", value: 6 },
+      },
+      { id: "sum", type: "test.Sum", sync_mode: "zip_all" },
+      { id: "out", type: "test.Output", name: "result" },
+    ];
+    const edges: Edge[] = [
+      { source: "input-a", sourceHandle: "output", target: "sum", targetHandle: "a" },
+      { source: "input-b", sourceHandle: "output", target: "sum", targetHandle: "b" },
+      { source: "sum", sourceHandle: "value", target: "out", targetHandle: "value" },
+    ];
+
+    const runner = new WorkflowRunner("test-external-input-defaults", {
+      resolveExecutor: (node) => {
+        if (node.id === "sum") {
+          return simpleExecutor((inputs) => ({
+            value: Number(inputs.a ?? 0) + Number(inputs.b ?? 0),
+          }));
+        }
+        return simpleExecutor((inputs) => ({ value: inputs.value }));
+      },
+    });
+
+    const result = await runner.run(
+      { job_id: "j-ext-defaults", params: {} },
+      { nodes, edges },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.outputs.result).toEqual([10]);
+  });
+});
