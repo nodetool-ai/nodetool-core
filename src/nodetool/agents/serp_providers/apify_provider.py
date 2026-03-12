@@ -121,6 +121,13 @@ class ApifyProvider(SerpProvider):
         except Exception as e:
             return {"error": f"Unexpected error during Apify request: {e!s}"}
 
+    async def search_raw(self, endpoint: str, params: dict[str, Any]) -> Any:
+        """
+        Execute a raw search against Apify. Note: not fully supported as Apify
+        uses different acts/datasets vs SerpApi endpoints.
+        """
+        return {"error": "Raw endpoint search is not directly supported by ApifyProvider."}
+
     async def search(self, keyword: str, num_results: int = 10) -> Any:
         """
         Perform an organic web search using Apify's Google Search Scraper.
