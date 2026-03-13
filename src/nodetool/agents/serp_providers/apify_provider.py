@@ -11,6 +11,8 @@ from nodetool.runtime.resources import maybe_scope, require_scope
 
 
 class ApifyProvider(SerpProvider):
+    async def search_raw(self, engine: str, params: dict) -> dict:
+        return {}
     """
     A SERP provider that uses the Apify API.
     Apify provides various actors (scraping tools) for different search engines.

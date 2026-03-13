@@ -124,7 +124,7 @@ class Graph(BaseModel):
         ):
             self._rebuild_edge_caches()
 
-        return self._outgoing_edges_cache.get((source, source_handle), [])
+        return self._outgoing_edges_cache.get((source, source_handle), []) if self._outgoing_edges_cache else []
 
     @classmethod
     def from_dict(
@@ -267,7 +267,7 @@ class Graph(BaseModel):
             self._inputs_cache = [node for node in self.nodes if isinstance(node, InputNode)]
             self._outputs_cache = [node for node in self.nodes if isinstance(node, OutputNode)]
             self._cached_nodes_len = len(self.nodes)
-        return self._inputs_cache
+        return self._inputs_cache or []
 
     def outputs(self) -> list[OutputNode]:
         """
@@ -282,7 +282,7 @@ class Graph(BaseModel):
             self._inputs_cache = [node for node in self.nodes if isinstance(node, InputNode)]
             self._outputs_cache = [node for node in self.nodes if isinstance(node, OutputNode)]
             self._cached_nodes_len = len(self.nodes)
-        return self._outputs_cache
+        return self._outputs_cache or []
 
     def get_input_schema(self):
         """
@@ -368,7 +368,7 @@ class Graph(BaseModel):
             self.edges
         ):
             self._rebuild_edge_caches()
-        return self._control_edges_target_cache.get(target_id, [])
+        return self._control_edges_target_cache.get(target_id, []) if self._control_edges_target_cache else []
 
     def get_controller_nodes(self, target_id: str) -> list[BaseNode]:
         """Return all nodes that control the given target node."""
@@ -386,7 +386,7 @@ class Graph(BaseModel):
             self.edges
         ):
             self._rebuild_edge_caches()
-        return self._control_edges_source_cache.get(source_id, [])
+        return self._control_edges_source_cache.get(source_id, []) if self._control_edges_source_cache else []
 
     def validate_control_edges(self) -> list[str]:
         """

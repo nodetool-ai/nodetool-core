@@ -12,6 +12,8 @@ from nodetool.runtime.resources import maybe_scope, require_scope
 
 
 class DataForSEOProvider(SerpProvider):
+    async def search_raw(self, engine: str, params: dict) -> dict:
+        return {}
     """
     A SERP provider that uses the DataForSEO API.
     """
