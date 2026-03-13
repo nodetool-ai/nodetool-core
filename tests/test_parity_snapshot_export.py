@@ -1,5 +1,6 @@
-"""Tests for the parity snapshot export script."""
 from __future__ import annotations
+
+"""Tests for the parity snapshot export script."""
 
 import json
 import subprocess
@@ -7,13 +8,12 @@ import sys
 
 import pytest
 
-
 SCRIPT = "scripts/export_parity_snapshot.py"
 
 
 def _run_export(*sections: str) -> dict:
     """Run the export script and return the parsed JSON output."""
-    cmd = [sys.executable, SCRIPT] + list(sections)
+    cmd = [sys.executable, SCRIPT, *list(sections)]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, f"Export failed:\n{result.stderr}"
     return json.loads(result.stdout)
