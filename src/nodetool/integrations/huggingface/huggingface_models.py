@@ -875,7 +875,13 @@ async def _build_cached_repo_entry(
         size_on_disk, file_entries = await asyncio.to_thread(_calculate_repo_stats, snapshot_path, file_list)
 
     if repo_id in recommended_models:
-        model = recommended_models[repo_id][0]
+        model = recommended_models[repo_id][0].model_copy(
+            update={
+                "downloaded": repo_root is not None or repo_dir.exists(),
+                "cache_path": str(repo_root) if repo_root else str(repo_dir),
+                "size_on_disk": size_on_disk or recommended_models[repo_id][0].size_on_disk,
+            }
+        )
         return model, file_entries
 
     artifact_detection: ArtifactDetection | None = None
