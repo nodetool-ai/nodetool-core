@@ -61,6 +61,11 @@ class Graph(BaseModel):
     _streaming_upstream_cache: set[str] | None = PrivateAttr(default=None)
     _outgoing_edges_cache: dict[tuple[str, str], list[Edge]] | None = PrivateAttr(default=None)
     _cached_edges_len: int = PrivateAttr(default=-1)
+    _inputs_cache: list[InputNode] | None = PrivateAttr(default=None)
+    _outputs_cache: list[OutputNode] | None = PrivateAttr(default=None)
+    _cached_nodes_len: int = PrivateAttr(default=-1)
+    _control_edges_target_cache: dict[str, list[Edge]] | None = PrivateAttr(default=None)
+    _control_edges_source_cache: dict[str, list[str]] | None = PrivateAttr(default=None)
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -69,6 +74,11 @@ class Graph(BaseModel):
         self._streaming_upstream_cache = None
         self._outgoing_edges_cache = None
         self._cached_edges_len = -1
+        self._cached_nodes_len = -1
+        self._inputs_cache = None
+        self._outputs_cache = None
+        self._control_edges_target_cache = None
+        self._control_edges_source_cache = None
 
     def model_post_init(self, __context: Any):
         # Build node ID index after model initialization
@@ -76,6 +86,28 @@ class Graph(BaseModel):
         self._streaming_upstream_cache = None
         self._outgoing_edges_cache = None
         self._cached_edges_len = -1
+        self._cached_nodes_len = -1
+        self._inputs_cache = None
+        self._outputs_cache = None
+        self._control_edges_target_cache = None
+        self._control_edges_source_cache = None
+
+    def _rebuild_edge_caches(self):
+        """
+        ⚡ Bolt Optimization:
+        Centralized edge cache rebuilder to avoid O(E) traversal on every lookup.
+        Rebuilds outgoing edges, control targets, and control sources in a single pass.
+        Expected impact: O(E) -> amortized O(1) for frequent edge queries during execution.
+        """
+        self._outgoing_edges_cache = defaultdict(list)
+        self._control_edges_target_cache = defaultdict(list)
+        self._control_edges_source_cache = defaultdict(list)
+        for edge in self.edges:
+            self._outgoing_edges_cache[(edge.source, edge.sourceHandle)].append(edge)
+            if edge.edge_type == "control":
+                self._control_edges_target_cache[edge.target].append(edge)
+                self._control_edges_source_cache[edge.source].append(edge.target)
+        self._cached_edges_len = len(self.edges)
 
     def find_node(self, node_id: str) -> BaseNode | None:
         """
@@ -87,11 +119,10 @@ class Graph(BaseModel):
         """
         Find edges by their source and source_handle.
         """
-        if getattr(self, '_outgoing_edges_cache', None) is None or getattr(self, '_cached_edges_len', -1) != len(self.edges):
-            self._outgoing_edges_cache = defaultdict(list)
-            for edge in self.edges:
-                self._outgoing_edges_cache[(edge.source, edge.sourceHandle)].append(edge)
-            self._cached_edges_len = len(self.edges)
+        if getattr(self, "_outgoing_edges_cache", None) is None or getattr(self, "_cached_edges_len", -1) != len(
+            self.edges
+        ):
+            self._rebuild_edge_caches()
 
         return self._outgoing_edges_cache.get((source, source_handle), [])
 
@@ -226,14 +257,32 @@ class Graph(BaseModel):
     def inputs(self) -> list[InputNode]:
         """
         Returns a list of nodes that inherit from InputNode.
+
+        ⚡ Bolt Optimization:
+        Caches the result to avoid O(N) traversal of all nodes.
+        Invalidates when the number of nodes changes.
+        Expected impact: O(N) -> amortized O(1) for schema generation and input processing.
         """
-        return [node for node in self.nodes if isinstance(node, InputNode)]
+        if getattr(self, "_inputs_cache", None) is None or getattr(self, "_cached_nodes_len", -1) != len(self.nodes):
+            self._inputs_cache = [node for node in self.nodes if isinstance(node, InputNode)]
+            self._outputs_cache = [node for node in self.nodes if isinstance(node, OutputNode)]
+            self._cached_nodes_len = len(self.nodes)
+        return self._inputs_cache
 
     def outputs(self) -> list[OutputNode]:
         """
         Returns a list of nodes that are designated as OutputNode instances.
+
+        ⚡ Bolt Optimization:
+        Caches the result to avoid O(N) traversal of all nodes.
+        Invalidates when the number of nodes changes.
+        Expected impact: O(N) -> amortized O(1) for schema generation and output processing.
         """
-        return [node for node in self.nodes if isinstance(node, OutputNode)]
+        if getattr(self, "_outputs_cache", None) is None or getattr(self, "_cached_nodes_len", -1) != len(self.nodes):
+            self._inputs_cache = [node for node in self.nodes if isinstance(node, InputNode)]
+            self._outputs_cache = [node for node in self.nodes if isinstance(node, OutputNode)]
+            self._cached_nodes_len = len(self.nodes)
+        return self._outputs_cache
 
     def get_input_schema(self):
         """
@@ -315,7 +364,11 @@ class Graph(BaseModel):
 
     def get_control_edges(self, target_id: str) -> list[Edge]:
         """Return all control edges targeting the given node."""
-        return [edge for edge in self.edges if edge.target == target_id and edge.edge_type == "control"]
+        if getattr(self, "_control_edges_target_cache", None) is None or getattr(self, "_cached_edges_len", -1) != len(
+            self.edges
+        ):
+            self._rebuild_edge_caches()
+        return self._control_edges_target_cache.get(target_id, [])
 
     def get_controller_nodes(self, target_id: str) -> list[BaseNode]:
         """Return all nodes that control the given target node."""
@@ -329,7 +382,11 @@ class Graph(BaseModel):
 
     def get_controlled_nodes(self, source_id: str) -> list[str]:
         """Return IDs of all nodes controlled by the given source."""
-        return [edge.target for edge in self.edges if edge.source == source_id and edge.edge_type == "control"]
+        if getattr(self, "_control_edges_source_cache", None) is None or getattr(self, "_cached_edges_len", -1) != len(
+            self.edges
+        ):
+            self._rebuild_edge_caches()
+        return self._control_edges_source_cache.get(source_id, [])
 
     def validate_control_edges(self) -> list[str]:
         """
