@@ -11,7 +11,7 @@ def _remove_base64_images(data: T) -> T:
             if key in keys_to_remove:
                 data.pop(key, None)
             elif isinstance(data[key], str):
-                if data[key].startswith("data:"):
+                if str(data[key]).startswith("data:"):
                     data.pop(key, None)
             elif isinstance(data[key], dict | list):
                 data[key] = _remove_base64_images(data[key])  # type: ignore[index]
