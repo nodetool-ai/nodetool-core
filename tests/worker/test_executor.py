@@ -74,6 +74,21 @@ async def test_execute_wraps_single_asset_blob_into_image_list():
 
 
 @pytest.mark.asyncio
+async def test_execute_preserves_multiple_asset_blobs_for_image_list():
+    result = await execute_node(
+        node_type="test.ImageListNode",
+        fields={},
+        secrets={},
+        input_blobs={"images": [b"first-image", b"second-image"]},
+    )
+    output = result["outputs"]["output"]
+    assert output["count"] == 2
+    assert output["first_is_empty"] is False
+    assert output["first_uri"].startswith("file://")
+    assert result["blobs"] == {}
+
+
+@pytest.mark.asyncio
 async def test_execute_wraps_single_serialized_image_into_image_list():
     result = await execute_node(
         node_type="test.ImageListNode",

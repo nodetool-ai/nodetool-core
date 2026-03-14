@@ -49,7 +49,7 @@ async def execute_node(
     node_type: str,
     fields: dict[str, Any],
     secrets: dict[str, str],
-    input_blobs: dict[str, bytes],
+    input_blobs: dict[str, bytes | list[bytes]],
     cancel_event: asyncio.Event | None = None,
 ) -> dict[str, Any]:
     """Execute a single Python node and return outputs + blobs."""
@@ -65,13 +65,22 @@ async def execute_node(
 
         # Write input blobs to temp files for URI resolution
         temp_dir = tempfile.mkdtemp(prefix="nodetool_worker_")
-        input_ref_uris: dict[str, str] = {}
+        input_ref_uris: dict[str, str | list[str]] = {}
         try:
             for name, data in input_blobs.items():
-                path = os.path.join(temp_dir, f"input_{name}")
-                with open(path, "wb") as f:
-                    f.write(data)
-                input_ref_uris[name] = f"file://{path}"
+                if isinstance(data, list):
+                    uris: list[str] = []
+                    for index, item in enumerate(data):
+                        path = os.path.join(temp_dir, f"input_{name}_{index}")
+                        with open(path, "wb") as f:
+                            f.write(item)
+                        uris.append(f"file://{path}")
+                    input_ref_uris[name] = uris
+                else:
+                    path = os.path.join(temp_dir, f"input_{name}")
+                    with open(path, "wb") as f:
+                        f.write(data)
+                    input_ref_uris[name] = f"file://{path}"
 
             # Instantiate node
             node = node_class()
@@ -81,10 +90,16 @@ async def execute_node(
             for field_name, field_info in node.__class__.model_fields.items():
                 if field_name in input_blobs:
                     uri = input_ref_uris.get(field_name, f"blob://{field_name}")
-                    resolved_fields[field_name] = {
-                        "uri": uri,
-                        "type": _get_asset_ref_type(field_info.annotation),
-                    }
+                    ref_type = _get_asset_ref_type(field_info.annotation)
+                    if isinstance(uri, list):
+                        resolved_fields[field_name] = [
+                            {"uri": item, "type": ref_type} for item in uri
+                        ]
+                    else:
+                        resolved_fields[field_name] = {
+                            "uri": uri,
+                            "type": ref_type,
+                        }
 
             for key, value in resolved_fields.items():
                 error = node.assign_property(key, value)

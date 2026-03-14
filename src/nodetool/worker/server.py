@@ -96,6 +96,9 @@ async def start_server(
         worker.handle_connection,
         host,
         port,
+        # Workflow asset blobs routinely exceed the websockets default 1 MiB limit.
+        # Let the bridge transport large execute payloads instead of closing.
+        max_size=None,
     )
 
     # Get the actual port (important when port=0)

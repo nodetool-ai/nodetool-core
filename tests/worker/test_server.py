@@ -117,3 +117,47 @@ async def test_full_execute_with_echo_node():
         await task
     finally:
         NODE_BY_TYPE.pop("testns.IntegrationEchoNode", None)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_execute_accepts_large_blob_payload():
+    """Large execute payloads should not close the worker websocket."""
+    from nodetool.worker.server import WorkerServer, start_server
+
+    worker = WorkerServer()
+
+    async def handle(data, cancel):
+        blobs = data.get("blobs", {})
+        image_blob = blobs.get("image", b"")
+        return {
+            "outputs": {"size": len(image_blob)},
+            "blobs": {},
+        }
+
+    worker.set_execute_handler(handle)
+    host, port, stop_event, task = await start_server(
+        host="127.0.0.1", port=0, worker=worker,
+    )
+
+    try:
+        async with websockets.connect(f"ws://{host}:{port}") as ws:
+            msg = msgpack.packb({
+                "type": "execute",
+                "request_id": "large-1",
+                "data": {
+                    "node_type": "test.LargeBlobNode",
+                    "fields": {},
+                    "secrets": {},
+                    "blobs": {
+                        "image": b"x" * (2 * 1024 * 1024),
+                    },
+                },
+            })
+            await ws.send(msg)
+            raw = await asyncio.wait_for(ws.recv(), timeout=5)
+            response = msgpack.unpackb(raw, raw=False)
+            assert response["type"] == "result"
+            assert response["data"]["outputs"]["size"] == 2 * 1024 * 1024
+    finally:
+        stop_event.set()
+        await task
