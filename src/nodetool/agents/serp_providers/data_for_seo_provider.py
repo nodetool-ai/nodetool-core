@@ -335,17 +335,13 @@ class DataForSEOProvider(SerpProvider):
         """
         return {"error": "Amazon product search not supported by DataForSEO provider"}
 
-    async def search_youtube(
-        self, query: str, num_results: int = 10
-    ) -> dict[str, Any] | ErrorResponse:
+    async def search_youtube(self, query: str, num_results: int = 10) -> dict[str, Any] | ErrorResponse:
         """
         Searches YouTube. Not currently supported by DataForSEOProvider.
         """
         return {"error": "YouTube search not supported by DataForSEO provider"}
 
-    async def search_scholar(
-        self, query: str, num_results: int = 10
-    ) -> dict[str, Any] | ErrorResponse:
+    async def search_scholar(self, query: str, num_results: int = 10) -> dict[str, Any] | ErrorResponse:
         """
         Searches Google Scholar. Not currently supported by DataForSEOProvider.
         """
@@ -359,17 +355,13 @@ class DataForSEOProvider(SerpProvider):
         """
         return {"error": "Trends search not supported by DataForSEO provider"}
 
-    async def search_yelp(
-        self, query: str, location: str, num_results: int = 10
-    ) -> dict[str, Any] | ErrorResponse:
+    async def search_yelp(self, query: str, location: str, num_results: int = 10) -> dict[str, Any] | ErrorResponse:
         """
         Searches Yelp. Not currently supported by DataForSEOProvider.
         """
         return {"error": "Yelp search not supported by DataForSEO provider"}
 
-    async def search_duckduckgo(
-        self, query: str, num_results: int = 10
-    ) -> dict[str, Any] | ErrorResponse:
+    async def search_duckduckgo(self, query: str, num_results: int = 10) -> dict[str, Any] | ErrorResponse:
         """
         Searches DuckDuckGo. Not currently supported by DataForSEOProvider.
         """
@@ -388,3 +380,12 @@ class DataForSEOProvider(SerpProvider):
             except Exception:
                 pass
             await self._client.aclose()
+
+    async def search_raw(self, engine: str, params: dict[str, Any]) -> dict[str, Any] | ErrorResponse:
+        """
+        Generic search method, currently not fully implemented for DataForSEO in the same way as SerpApi.
+        Returns an error response if called.
+        """
+        return {
+            "error": "search_raw is not natively supported by DataForSEOProvider in the same way as SerpApiProvider."
+        }
