@@ -4,16 +4,45 @@ Instantiate a Python BaseNode, set fields, call process(), collect results.
 import asyncio
 import os
 import tempfile
-from typing import Any
+from types import UnionType
+from typing import Any, Union, get_args, get_origin
 
-from nodetool.workflows.base_node import NODE_BY_TYPE
-from nodetool.metadata.types import AssetRef, ImageRef, AudioRef, VideoRef, Model3DRef
+from nodetool.metadata.types import AssetRef, AudioRef, ImageRef, Model3DRef, VideoRef
 from nodetool.runtime.resources import ResourceScope
-
 from nodetool.worker.context_stub import WorkerContext
+from nodetool.workflows.base_node import NODE_BY_TYPE
 
 # Asset ref types that should be extracted as blobs
 ASSET_REF_TYPES = (ImageRef, AudioRef, VideoRef, Model3DRef, AssetRef)
+REF_TYPE_BY_CLASS_NAME = {
+    "ImageRef": "image",
+    "AudioRef": "audio",
+    "VideoRef": "video",
+    "Model3DRef": "model_3d",
+    "AssetRef": "asset",
+}
+
+
+def _get_asset_ref_type(annotation: Any) -> str:
+    """Infer the asset type literal expected by BaseNode.assign_property()."""
+    if annotation is None:
+        return "asset"
+
+    origin = get_origin(annotation)
+    if origin in (list, tuple, set):
+        args = get_args(annotation)
+        return _get_asset_ref_type(args[0] if args else None)
+    if origin in (UnionType, Union):
+        for arg in get_args(annotation):
+            if arg is type(None):
+                continue
+            ref_type = _get_asset_ref_type(arg)
+            if ref_type != "asset":
+                return ref_type
+        return "asset"
+
+    type_name = getattr(annotation, "__name__", "")
+    return REF_TYPE_BY_CLASS_NAME.get(type_name, "asset")
 
 
 async def execute_node(
@@ -37,7 +66,6 @@ async def execute_node(
         # Write input blobs to temp files for URI resolution
         temp_dir = tempfile.mkdtemp(prefix="nodetool_worker_")
         input_ref_uris: dict[str, str] = {}
-        blob_ref_map: dict[str, str] = {}
         try:
             for name, data in input_blobs.items():
                 path = os.path.join(temp_dir, f"input_{name}")
@@ -52,32 +80,16 @@ async def execute_node(
             resolved_fields = dict(fields)
             for field_name, field_info in node.__class__.model_fields.items():
                 if field_name in input_blobs:
-                    annotation = field_info.annotation
-                    type_name = getattr(annotation, "__name__", "")
                     uri = input_ref_uris.get(field_name, f"blob://{field_name}")
-                    if type_name == "ImageRef":
-                        ref = ImageRef(uri=uri)
-                    elif type_name == "AudioRef":
-                        ref = AudioRef(uri=uri)
-                    elif type_name == "VideoRef":
-                        ref = VideoRef(uri=uri)
-                    elif type_name == "Model3DRef":
-                        ref = Model3DRef(uri=uri)
-                    else:
-                        ref = AssetRef(uri=uri)
-                    blob_ref_map[uri] = field_name
-                    resolved_fields[field_name] = ref
+                    resolved_fields[field_name] = {
+                        "uri": uri,
+                        "type": _get_asset_ref_type(field_info.annotation),
+                    }
 
             for key, value in resolved_fields.items():
-                if hasattr(node, key):
-                    # Use Pydantic validation for complex fields (e.g. HFTextClassification)
-                    field_info = node.__class__.model_fields.get(key)
-                    if field_info and isinstance(value, dict):
-                        from pydantic import BaseModel
-                        annotation = field_info.annotation
-                        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-                            value = annotation.model_validate(value)
-                    setattr(node, key, value)
+                error = node.assign_property(key, value)
+                if error:
+                    raise ValueError(error)
 
             # Lifecycle: pre_process -> preload_model -> move_to_device -> process
             await node.pre_process(ctx)

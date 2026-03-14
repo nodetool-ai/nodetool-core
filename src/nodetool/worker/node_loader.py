@@ -56,13 +56,7 @@ def node_to_metadata(node_class: type[BaseNode]) -> dict[str, Any]:
             "type": {"type": _field_type_name(field_info.annotation)},
         }
         if field_info.default is not PydanticUndefined and field_info.default is not None:
-            from pydantic import BaseModel
-            default = field_info.default
-            if isinstance(default, BaseModel):
-                default = default.model_dump()
-            elif isinstance(default, Enum):
-                default = default.value
-            prop["default"] = default
+            prop["default"] = _normalize_default(field_info.default)
         if field_info.description:
             prop["description"] = field_info.description
         properties.append(prop)
@@ -98,6 +92,29 @@ def _call_or_get(cls: type, name: str) -> bool:
         except TypeError:
             return False
     return bool(attr)
+
+
+def _normalize_default(value: Any) -> Any:
+    """Convert field defaults into msgpack-safe primitives."""
+    from pydantic import BaseModel
+
+    if isinstance(value, BaseModel):
+        return {
+            key: _normalize_default(item)
+            for key, item in value.model_dump().items()
+        }
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, list):
+        return [_normalize_default(item) for item in value]
+    if isinstance(value, tuple):
+        return [_normalize_default(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: _normalize_default(item)
+            for key, item in value.items()
+        }
+    return value
 
 
 def _field_type_name(annotation: Any) -> str:
