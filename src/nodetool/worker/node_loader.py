@@ -9,25 +9,30 @@ from pydantic_core import PydanticUndefined
 from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
 
 
-DEFAULT_NAMESPACES = ["huggingface", "mlx"]
-
-
 def _discover_namespaces() -> list[str]:
     """Auto-discover namespaces from installed nodetool-* packages.
 
-    Falls back to DEFAULT_NAMESPACES if discovery returns nothing.
+    Collects namespaces from PackageModel.namespaces first, then falls
+    back to deriving top-level namespaces from node_type strings in the
+    package's node list (e.g. "huggingface.image_classification.X" → "huggingface").
     """
     try:
         from nodetool.packages.registry import discover_node_packages
         namespaces = set()
         for pkg in discover_node_packages():
-            for ns in pkg.namespaces:
-                namespaces.add(ns)
-        if namespaces:
-            return sorted(namespaces)
+            # Prefer explicit namespaces field
+            if pkg.namespaces:
+                for ns in pkg.namespaces:
+                    namespaces.add(ns)
+            # Fall back to deriving from node_type strings
+            elif pkg.nodes:
+                for node_meta in pkg.nodes:
+                    top_ns = node_meta.node_type.split(".")[0]
+                    namespaces.add(top_ns)
+        return sorted(namespaces)
     except Exception as e:
         print(f"Warning: auto-discovery failed: {e}", file=sys.stderr)
-    return list(DEFAULT_NAMESPACES)
+        return []
 
 
 def node_to_metadata(node_class: type[BaseNode]) -> dict[str, Any]:
