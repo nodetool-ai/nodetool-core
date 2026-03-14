@@ -70,6 +70,16 @@ class WorkerServer:
                 if cancel_event:
                     cancel_event.set()
 
+            elif msg_type and msg_type.startswith("provider."):
+                from nodetool.worker.provider_handler import handle_provider_message
+                await handle_provider_message(
+                    msg_type=msg_type,
+                    request_id=request_id,
+                    data=msg.get("data", {}),
+                    websocket=websocket,
+                    cancel_flags=self._cancel_flags,
+                )
+
 
 async def start_server(
     host: str = "127.0.0.1",
