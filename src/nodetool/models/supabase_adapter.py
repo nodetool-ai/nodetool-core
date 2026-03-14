@@ -177,6 +177,33 @@ class SupabaseAdapter(DatabaseAdapter):
             log.exception(f"Error saving item to Supabase table {self.table_name}: {e}")
             raise
 
+    async def save_many(self, items: list[dict[str, Any]]) -> None:
+        """Saves (inserts or updates) multiple items in the Supabase table using upsert."""
+        if not items:
+            return
+
+        supabase_items = [
+            {
+                key: convert_to_supabase_format(value, self.fields[key].annotation)
+                for key, value in item.items()
+                if key in self.fields
+            }
+            for item in items
+        ]
+
+        try:
+            response = await (
+                self.client.table(self.table_name)
+                .upsert(supabase_items)
+                .execute()
+            )
+
+            if not response.data:  # type: ignore
+                pass
+        except Exception as e:
+            log.error(f"Error upserting data to Supabase table {self.table_name}: {e}")
+            raise e
+
     async def get(self, key: Any) -> dict[str, Any] | None:
         """Retrieves an item from Supabase by its primary key."""
         pk = self._get_primary_key()
