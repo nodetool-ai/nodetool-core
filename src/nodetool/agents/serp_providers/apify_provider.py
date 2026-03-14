@@ -400,3 +400,11 @@ class ApifyProvider(SerpProvider):
             except Exception:
                 pass
             await self._client.aclose()
+
+    async def search_raw(
+        self, engine: str, params: dict[str, Any]
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Generic search method. Not currently supported by ApifyProvider.
+        """
+        return {"error": "Raw engine search is not supported by ApifyProvider."}
