@@ -517,6 +517,37 @@ class SQLiteAdapter(DatabaseAdapter):
 
         await retry_on_locked(_save)
 
+    async def save_many(self, items: list[dict[str, Any]]) -> None:
+        """Saves (inserts or replaces) multiple items into the database table.
+
+        Args:
+            items: A list of dictionaries representing the model instances to save.
+        """
+        if not items:
+            return
+
+        # Assuming all items have the same keys, use the first item to determine columns
+        valid_keys = [key for key in items[0] if key in self.fields]
+        columns = ", ".join([quote_identifier(key) for key in valid_keys])
+        placeholders = ", ".join(["?" for _ in valid_keys])
+
+        all_values = [
+            tuple(
+                convert_to_sqlite_format(item[key], self.fields[key].annotation)  # type: ignore
+                for key in valid_keys
+            )
+            for item in items
+        ]
+
+        query = f"INSERT OR REPLACE INTO {quote_identifier(self.table_name)} ({columns}) VALUES ({placeholders})"
+
+        async def _save_many():
+            async with self._pool.acquire_context() as conn:
+                await self._execute_with_timeout(conn.executemany(query, all_values))
+                await self._execute_with_timeout(conn.commit())
+
+        await retry_on_locked(_save_many)
+
     async def get(self, key: Any) -> dict[str, Any] | None:
         """Retrieves an item from the database table by its primary key.
 
