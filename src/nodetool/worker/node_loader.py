@@ -56,13 +56,7 @@ def node_to_metadata(node_class: type[BaseNode]) -> dict[str, Any]:
             "type": {"type": _field_type_name(field_info.annotation)},
         }
         if field_info.default is not PydanticUndefined and field_info.default is not None:
-            from pydantic import BaseModel
-            default = field_info.default
-            if isinstance(default, BaseModel):
-                default = default.model_dump()
-            elif isinstance(default, Enum):
-                default = default.value
-            prop["default"] = default
+            prop["default"] = _serialize_default(field_info.default)
         if field_info.description:
             prop["description"] = field_info.description
         properties.append(prop)
@@ -87,6 +81,21 @@ def node_to_metadata(node_class: type[BaseNode]) -> dict[str, Any]:
         "is_streaming_input": _call_or_get(node_class, "is_streaming_input"),
         "is_dynamic": _call_or_get(node_class, "is_dynamic"),
     }
+
+
+def _serialize_default(value: Any) -> Any:
+    """Recursively convert a default value to msgpack-safe primitives."""
+    from pydantic import BaseModel
+
+    if isinstance(value, BaseModel):
+        return value.model_dump()
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, list):
+        return [_serialize_default(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _serialize_default(v) for k, v in value.items()}
+    return value
 
 
 def _call_or_get(cls: type, name: str) -> bool:
