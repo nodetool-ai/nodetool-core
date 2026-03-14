@@ -1,8 +1,7 @@
 import os
 import sys
-from typing import Any
-
 from enum import Enum
+from typing import Any
 
 from pydantic_core import PydanticUndefined
 
@@ -189,10 +188,7 @@ def load_nodes(
     """
     if namespaces is None:
         ns_env = os.environ.get("NODETOOL_WORKER_NAMESPACES")
-        if ns_env:
-            namespaces = ns_env.split(",")
-        else:
-            namespaces = _discover_namespaces()
+        namespaces = ns_env.split(",") if ns_env else _discover_namespaces()
 
     _import_node_packages(namespaces)
 
