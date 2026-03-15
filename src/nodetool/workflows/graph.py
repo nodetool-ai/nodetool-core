@@ -120,7 +120,7 @@ class Graph(BaseModel):
         """
         if getattr(self, '_outgoing_edges_cache', None) is None or getattr(self, '_cached_edges_len', -1) != len(self.edges):
             self._rebuild_edge_caches()
-        return self._outgoing_edges_cache.get((source, source_handle), [])
+        return self._outgoing_edges_cache.get((source, source_handle), []) if self._outgoing_edges_cache is not None else []
 
     @classmethod
     def from_dict(
@@ -256,7 +256,7 @@ class Graph(BaseModel):
         """
         if getattr(self, '_inputs_cache', None) is None or getattr(self, '_cached_nodes_len', -1) != len(self.nodes):
             self._rebuild_node_caches()
-        return self._inputs_cache
+        return self._inputs_cache or []
 
     def outputs(self) -> list[OutputNode]:
         """
@@ -264,7 +264,7 @@ class Graph(BaseModel):
         """
         if getattr(self, '_outputs_cache', None) is None or getattr(self, '_cached_nodes_len', -1) != len(self.nodes):
             self._rebuild_node_caches()
-        return self._outputs_cache
+        return self._outputs_cache or []
 
     def get_input_schema(self):
         """
@@ -348,7 +348,7 @@ class Graph(BaseModel):
         """Return all control edges targeting the given node."""
         if getattr(self, '_control_edges_target_cache', None) is None or getattr(self, '_cached_edges_len', -1) != len(self.edges):
             self._rebuild_edge_caches()
-        return self._control_edges_target_cache.get(target_id, [])
+        return self._control_edges_target_cache.get(target_id, []) if self._control_edges_target_cache is not None else []
 
     def get_controller_nodes(self, target_id: str) -> list[BaseNode]:
         """Return all nodes that control the given target node."""
@@ -364,7 +364,7 @@ class Graph(BaseModel):
         """Return IDs of all nodes controlled by the given source."""
         if getattr(self, '_control_edges_source_cache', None) is None or getattr(self, '_cached_edges_len', -1) != len(self.edges):
             self._rebuild_edge_caches()
-        return self._control_edges_source_cache.get(source_id, [])
+        return self._control_edges_source_cache.get(source_id, []) if self._control_edges_source_cache is not None else []
 
     def validate_control_edges(self) -> list[str]:
         """
