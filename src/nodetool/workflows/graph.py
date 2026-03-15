@@ -60,6 +60,11 @@ class Graph(BaseModel):
     _node_index: dict[str, BaseNode] | None = PrivateAttr(default=None)
     _streaming_upstream_cache: set[str] | None = PrivateAttr(default=None)
     _outgoing_edges_cache: dict[tuple[str, str], list[Edge]] | None = PrivateAttr(default=None)
+    _inputs_cache: list[InputNode] | None = PrivateAttr(default=None)
+    _outputs_cache: list[OutputNode] | None = PrivateAttr(default=None)
+    _control_edges_target_cache: dict[str, list[Edge]] | None = PrivateAttr(default=None)
+    _control_edges_source_cache: dict[str, list[str]] | None = PrivateAttr(default=None)
+    _cached_nodes_len: int = PrivateAttr(default=-1)
     _cached_edges_len: int = PrivateAttr(default=-1)
 
     def __init__(self, **data):
@@ -68,6 +73,11 @@ class Graph(BaseModel):
         self._node_index = {node._id: node for node in self.nodes} if self.nodes else {}
         self._streaming_upstream_cache = None
         self._outgoing_edges_cache = None
+        self._inputs_cache = None
+        self._outputs_cache = None
+        self._control_edges_target_cache = None
+        self._control_edges_source_cache = None
+        self._cached_nodes_len = len(self.nodes) if self.nodes else -1
         self._cached_edges_len = -1
 
     def model_post_init(self, __context: Any):
@@ -75,7 +85,28 @@ class Graph(BaseModel):
         self._node_index = {node._id: node for node in self.nodes} if self.nodes else {}
         self._streaming_upstream_cache = None
         self._outgoing_edges_cache = None
+        self._inputs_cache = None
+        self._outputs_cache = None
+        self._control_edges_target_cache = None
+        self._control_edges_source_cache = None
+        self._cached_nodes_len = len(self.nodes) if self.nodes else -1
         self._cached_edges_len = -1
+
+    def _rebuild_node_caches(self):
+        self._inputs_cache = [node for node in self.nodes if isinstance(node, InputNode)]
+        self._outputs_cache = [node for node in self.nodes if isinstance(node, OutputNode)]
+        self._cached_nodes_len = len(self.nodes)
+
+    def _rebuild_edge_caches(self):
+        self._outgoing_edges_cache = defaultdict(list)
+        self._control_edges_target_cache = defaultdict(list)
+        self._control_edges_source_cache = defaultdict(list)
+        for edge in self.edges:
+            self._outgoing_edges_cache[(edge.source, edge.sourceHandle)].append(edge)
+            if edge.edge_type == "control":
+                self._control_edges_target_cache[edge.target].append(edge)
+                self._control_edges_source_cache[edge.source].append(edge.target)
+        self._cached_edges_len = len(self.edges)
 
     def find_node(self, node_id: str) -> BaseNode | None:
         """
@@ -88,11 +119,7 @@ class Graph(BaseModel):
         Find edges by their source and source_handle.
         """
         if getattr(self, '_outgoing_edges_cache', None) is None or getattr(self, '_cached_edges_len', -1) != len(self.edges):
-            self._outgoing_edges_cache = defaultdict(list)
-            for edge in self.edges:
-                self._outgoing_edges_cache[(edge.source, edge.sourceHandle)].append(edge)
-            self._cached_edges_len = len(self.edges)
-
+            self._rebuild_edge_caches()
         return self._outgoing_edges_cache.get((source, source_handle), [])
 
     @classmethod
@@ -227,13 +254,17 @@ class Graph(BaseModel):
         """
         Returns a list of nodes that inherit from InputNode.
         """
-        return [node for node in self.nodes if isinstance(node, InputNode)]
+        if getattr(self, '_inputs_cache', None) is None or getattr(self, '_cached_nodes_len', -1) != len(self.nodes):
+            self._rebuild_node_caches()
+        return self._inputs_cache
 
     def outputs(self) -> list[OutputNode]:
         """
         Returns a list of nodes that are designated as OutputNode instances.
         """
-        return [node for node in self.nodes if isinstance(node, OutputNode)]
+        if getattr(self, '_outputs_cache', None) is None or getattr(self, '_cached_nodes_len', -1) != len(self.nodes):
+            self._rebuild_node_caches()
+        return self._outputs_cache
 
     def get_input_schema(self):
         """
@@ -315,7 +346,9 @@ class Graph(BaseModel):
 
     def get_control_edges(self, target_id: str) -> list[Edge]:
         """Return all control edges targeting the given node."""
-        return [edge for edge in self.edges if edge.target == target_id and edge.edge_type == "control"]
+        if getattr(self, '_control_edges_target_cache', None) is None or getattr(self, '_cached_edges_len', -1) != len(self.edges):
+            self._rebuild_edge_caches()
+        return self._control_edges_target_cache.get(target_id, [])
 
     def get_controller_nodes(self, target_id: str) -> list[BaseNode]:
         """Return all nodes that control the given target node."""
@@ -329,7 +362,9 @@ class Graph(BaseModel):
 
     def get_controlled_nodes(self, source_id: str) -> list[str]:
         """Return IDs of all nodes controlled by the given source."""
-        return [edge.target for edge in self.edges if edge.source == source_id and edge.edge_type == "control"]
+        if getattr(self, '_control_edges_source_cache', None) is None or getattr(self, '_cached_edges_len', -1) != len(self.edges):
+            self._rebuild_edge_caches()
+        return self._control_edges_source_cache.get(source_id, [])
 
     def validate_control_edges(self) -> list[str]:
         """
