@@ -1,6 +1,6 @@
 import re
 
-with open("src/nodetool/api/file.py", "r") as f:
+with open("src/nodetool/api/file.py") as f:
     content = f.read()
 
 # Fix 1: Add check in list_files

@@ -60,6 +60,28 @@ class TestPathUtils(unittest.TestCase):
             resolve_workspace_path(self.workspace_dir, "../../../etc/passwd")
         self.assertIn("outside the workspace directory", str(context.exception))
 
+    def test_resolve_workspace_path_with_symlink_traversal_attack(self):
+        """Test that symlink traversal attacks are prevented."""
+        # Create a directory outside the workspace
+        outside_dir = tempfile.mkdtemp()
+        try:
+            # Create a file in the outside directory
+            outside_file = os.path.join(outside_dir, "secret.txt")
+            with open(outside_file, "w") as f:
+                f.write("secret content")
+
+            # Create a symlink inside the workspace pointing to the outside directory
+            symlink_path = os.path.join(self.workspace_dir, "outside_link")
+            os.symlink(outside_dir, symlink_path)
+
+            # Try to resolve a path that traverses through the symlink
+            with self.assertRaises(ValueError) as context:
+                resolve_workspace_path(self.workspace_dir, "outside_link/secret.txt")
+            self.assertIn("outside the workspace directory", str(context.exception))
+        finally:
+            import shutil
+            shutil.rmtree(outside_dir)
+
     def test_resolve_workspace_path_with_empty_workspace_dir(self):
         """Test that empty workspace directory raises ValueError."""
         with self.assertRaises(ValueError) as context:
