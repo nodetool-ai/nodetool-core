@@ -5,10 +5,13 @@ This table provides idempotent message delivery with support for
 at-least-once or exactly-once semantics depending on configuration.
 """
 
+import io
+import json
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
 from nodetool.models.base_model import DBField, DBIndex, DBModel, create_time_ordered_uuid
+from nodetool.runtime.resources import maybe_scope
 
 MessageStatus = Literal["pending", "claimed", "consumed"]
 
@@ -337,17 +340,43 @@ class RunInboxMessage(DBModel):
         self.consumed_at = datetime.now()
         await self.save()
 
-    def get_payload(self) -> dict[str, Any]:
+    async def get_payload(self) -> dict[str, Any]:
         """
         Get message payload (handles both inline and external).
 
         Returns:
             Message payload dictionary
+
+        Raises:
+            ValueError: If payload_ref is set but no ResourceScope is bound
+            FileNotFoundError: If the external payload file doesn't exist
+            json.JSONDecodeError: If the external payload is not valid JSON
         """
         if self.payload_ref:
-            # TODO: Load from external storage
-            # For now, raise error
-            raise NotImplementedError("External payload storage not yet implemented")
+            # Load from external storage
+            scope = maybe_scope()
+            if scope is None:
+                raise ValueError(
+                    "Cannot load external payload: no ResourceScope bound. "
+                    "Ensure this is called within a ResourceScope context."
+                )
+
+            storage = scope.get_temp_storage()
+            if storage is None:
+                raise ValueError(
+                    "Cannot load external payload: no temp storage configured. "
+                    "Configure TEMP_STORAGE_URL or ASSET_TEMP_BUCKET."
+                )
+
+            # Download the payload from storage
+            stream = io.BytesIO()
+            await storage.download(self.payload_ref, stream)
+            stream.seek(0)
+
+            # Parse JSON content
+            content = stream.read().decode("utf-8")
+            return json.loads(content)
+
         return self.payload_json
 
     @classmethod
