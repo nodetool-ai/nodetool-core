@@ -353,13 +353,25 @@ class TestIsAssignable:
         assert is_assignable(enum_int, 4) is False
 
     def test_comfy_type_assignability(self):
-        """Test ComfyUI type assignability (always True for now)."""
+        """Test ComfyUI type assignability with type field validation."""
         comfy_type = TypeMetadata(type="comfy.model")
 
-        # According to the implementation, comfy types are always assignable
-        assert is_assignable(comfy_type, {"id": "123"}) is True
-        assert is_assignable(comfy_type, "anything") is True
-        assert is_assignable(comfy_type, 42) is True
+        # Dictionary with matching type field is assignable
+        assert is_assignable(comfy_type, {"type": "comfy.model"}) is True
+        assert is_assignable(comfy_type, {"type": "comfy.model", "id": "123"}) is True
+
+        # Dictionary with different type field is not assignable
+        assert is_assignable(comfy_type, {"type": "comfy.vae"}) is False
+        assert is_assignable(comfy_type, {"type": "different.type"}) is False
+
+        # Dictionary without type field is not assignable
+        assert is_assignable(comfy_type, {"id": "123"}) is False
+        assert is_assignable(comfy_type, {}) is False
+
+        # Non-dict values are not assignable (no type field)
+        assert is_assignable(comfy_type, "anything") is False
+        assert is_assignable(comfy_type, 42) is False
+        assert is_assignable(comfy_type, None) is False
 
     def test_edge_cases(self):
         """Test edge cases and error conditions."""

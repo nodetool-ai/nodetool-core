@@ -127,7 +127,7 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
     This function recursively checks if the provided value conforms to the
     type specification defined in type_meta. It handles various types including
     primitives, lists, dictionaries, enums, unions, assets (like image, video),
-    tensors, and ComfyUI types (currently treated as always assignable).
+    tensors, and ComfyUI types (with type field validation).
 
     Args:
         type_meta: The metadata defining the expected type.
@@ -147,10 +147,18 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
         primitive_types = (int, float, str, bool, type(None), Enum, list, dict, tuple)
         return not isinstance(value, primitive_types)
 
-    # TODO: implement type checking for comfy types
-    # Currently, ComfyUI types are always considered assignable.
+    # Type checking for ComfyUI types
     if type_meta.is_comfy_type():
-        return True
+        # Check if value has a 'type' attribute/field
+        if isinstance(value, dict):
+            # For dictionary values, check the 'type' field matches
+            return value.get("type") == type_meta.type
+        elif hasattr(value, "type"):
+            # For object instances, check the type attribute matches
+            return value.type == type_meta.type
+        else:
+            # Value doesn't have type information, not assignable
+            return False
 
     # Handle list types.
     if type_meta.type == "list":
