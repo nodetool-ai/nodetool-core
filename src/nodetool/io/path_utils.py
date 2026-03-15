@@ -69,10 +69,14 @@ def resolve_workspace_path(workspace_dir: str | None, path: str) -> str:
     # Join the workspace directory with the potentially cleaned relative path
     abs_path = os.path.abspath(os.path.join(workspace_dir, relative_path))
 
+    # Resolve symlinks to prevent symlink traversal attacks
+    real_path = os.path.realpath(abs_path)
+    real_workspace_dir = os.path.realpath(workspace_dir)
+
     # Final check: ensure the resolved path is still within the workspace directory
     # Use commonpath for robustness across OS (prevents partial path traversal)
-    common_path = os.path.commonpath([os.path.abspath(workspace_dir), abs_path])
-    if os.path.abspath(workspace_dir) != common_path:
+    common_path = os.path.commonpath([real_workspace_dir, real_path])
+    if real_workspace_dir != common_path:
         log.error(
             f"Resolved path '{abs_path}' is outside the workspace directory '{workspace_dir}'. Original path: '{path}'"
         )
