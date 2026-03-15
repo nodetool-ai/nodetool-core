@@ -1,12 +1,14 @@
 import pytest
+
 from nodetool.worker.node_loader import load_nodes, node_to_metadata
 
 
 def test_node_to_metadata_from_mock_node():
     """Test that we can extract metadata from a BaseNode subclass."""
-    from nodetool.workflows.base_node import BaseNode, NODE_BY_TYPE
-    from nodetool.workflows.processing_context import ProcessingContext
     from pydantic import Field
+
+    from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
+    from nodetool.workflows.processing_context import ProcessingContext
 
     class MockTestNode(BaseNode):
         """A test node for unit testing."""

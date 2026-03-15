@@ -9,10 +9,10 @@ import asyncio
 import os
 import uuid
 from io import BytesIO
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from nodetool.metadata.types import AudioRef, ImageRef, Model3DRef
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.metadata.types import ImageRef, AudioRef, Model3DRef
 
 if TYPE_CHECKING:
     import numpy as np
@@ -84,8 +84,9 @@ class WorkerContext(ProcessingContext):
         name: str | None = None,
         parent_id: str | None = None,
     ) -> AudioRef:
-        import numpy as np
         import struct
+
+        import numpy as np
 
         if data.dtype != np.int16:
             data = (data * 32767).astype(np.int16)
