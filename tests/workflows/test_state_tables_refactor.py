@@ -221,7 +221,7 @@ class TestRunInboxMessage:
         )
 
         assert msg1.id == msg2.id
-        assert msg1.get_payload() == {"data": 1}
+        assert await msg1.get_payload() == {"data": 1}
 
     @pytest.mark.asyncio
     async def test_get_pending_messages(self):
@@ -251,6 +251,75 @@ class TestRunInboxMessage:
 
         pending = await RunInboxMessage.get_pending_messages(run_id, "node-1", "input")
         assert not any(m.message_id == "msg-123" for m in pending)
+
+    @pytest.mark.asyncio
+    async def test_external_payload_storage(self):
+        """Test storing and loading payload from external storage."""
+        run_id = f"test-run-{datetime.now().timestamp()}"
+        message_id = f"msg-{datetime.now().timestamp()}"
+
+        # Create a large payload that should be stored externally
+        large_payload = {"data": "x" * 1000, "nested": {"key": "value" * 100}}
+
+        # Store payload externally first
+        from nodetool.runtime.resources import ResourceScope
+
+        async with ResourceScope() as scope:
+            storage = scope.get_temp_storage()
+            import io
+            import json
+
+            # Upload payload to storage
+            payload_key = f"inbox/{run_id}/node-1/input/{message_id}.json"
+            content = json.dumps(large_payload).encode("utf-8")
+            stream = io.BytesIO(content)
+            await storage.upload(payload_key, stream)
+
+            # Create message with external reference
+            message = await RunInboxMessage.append_message(
+                run_id=run_id,
+                node_id="node-1",
+                handle="input",
+                message_id=message_id,
+                payload={},  # Empty payload since it's external
+                payload_ref=payload_key,
+            )
+
+            # Load payload from external storage
+            loaded_payload = await message.get_payload()
+            assert loaded_payload == large_payload
+
+    @pytest.mark.asyncio
+    async def test_external_payload_no_scope_error(self):
+        """Test that loading external payload without ResourceScope raises error."""
+        from nodetool.runtime.resources import _current_scope
+
+        # Save and reset current scope
+        old_token = _current_scope.get(None)
+        if old_token:
+            _current_scope.set(None)
+
+        try:
+            # Create message with external reference
+            message = RunInboxMessage(
+                id="test-id",
+                message_id="msg-123",
+                run_id="run-1",
+                node_id="node-1",
+                handle="input",
+                msg_seq=0,
+                payload_json={},
+                payload_ref="inbox/test.json",
+                status="pending",
+            )
+
+            # Should raise ValueError when no scope is bound
+            with pytest.raises(ValueError, match="no ResourceScope bound"):
+                await message.get_payload()
+        finally:
+            # Restore scope
+            if old_token:
+                _current_scope.set(old_token)
 
 
 class TestTriggerInput:
