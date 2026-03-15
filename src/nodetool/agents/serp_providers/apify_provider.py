@@ -387,6 +387,13 @@ class ApifyProvider(SerpProvider):
         """
         return {"error": "DuckDuckGo search not supported by Apify provider"}
 
+
+
+    async def search_raw(
+        self, engine: str, params: dict[str, Any]
+    ) -> dict[str, Any] | ErrorResponse:
+        return {"error": "Provider does not support raw engine searches."}
+
     async def close(self) -> None:
         """Clean up any resources (e.g., close HTTP clients)."""
         # Only close if we created the client ourselves (not from ResourceScope)
