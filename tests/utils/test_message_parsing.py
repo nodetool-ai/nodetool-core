@@ -103,7 +103,8 @@ class TestLenientJsonParse:
         from nodetool.utils.message_parsing import lenient_json_parse
 
         assert lenient_json_parse("not json at all") is None
-        assert lenient_json_parse("{broken: json}") is None
+        # yaml.safe_load parses {broken: json} as {"broken": "json"}
+        assert lenient_json_parse("{broken: json}") == {"broken": "json"}
 
     def test_nested_json(self):
         """Test parsing nested JSON structures."""
