@@ -141,8 +141,11 @@ async def list_files(path: str = ".", __user: str = Depends(current_user)) -> li
         # Re-raise HTTPExceptions (like from validate_path)
         raise
     except Exception as e:
-        log.error(f"Error listing files in {path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        log.error("Error listing files in %s: %s", path, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to list files. Please check the path and try again.",
+        ) from e
 
 
 @router.get("/info")
@@ -161,8 +164,11 @@ async def get_file(path: str, __user: str = Depends(current_user)) -> FileInfo:
         # Re-raise HTTPExceptions (like from validate_path)
         raise
     except Exception as e:
-        log.error(f"Error getting file info for {path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        log.error("Error getting file info for %s: %s", path, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to get file information. Please check the path and try again.",
+        ) from e
 
 
 SENSITIVE_PATHS = {
@@ -272,8 +278,11 @@ async def download_file(path: str, __user: str = Depends(current_user)):
         # Re-raise HTTPExceptions (like from validate_path)
         raise
     except Exception as e:
-        log.error(f"Error downloading file {path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        log.error("Error downloading file %s: %s", path, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to download file. Please check the path and try again.",
+        ) from e
 
 
 @router.post("/upload/{path:path}")
@@ -298,8 +307,11 @@ async def upload_file(path: str, file: UploadFile, __user: str = Depends(current
         # Re-raise HTTPExceptions (like from validate_path)
         raise
     except Exception as e:
-        log.error(f"Error uploading file to {path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        log.error("Error uploading file to %s: %s", path, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to upload file. Please check the path and file size, then try again.",
+        ) from e
 
 
 # Workspace-specific endpoints

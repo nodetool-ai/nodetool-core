@@ -75,8 +75,11 @@ def create_openai_compatible_router(
                     },
                 )
         except Exception as e:
-            log.error(f"OpenAI Chat error: {e}")
-            raise HTTPException(status_code=500, detail=str(e)) from e
+            log.error("OpenAI Chat error for user '%s': %s", user, e)
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to process chat completion request. Please check your request format and try again.",
+            ) from e
 
     @router.get("/models")
     async def openai_models(user: str = Depends(current_user)):
@@ -96,7 +99,10 @@ def create_openai_compatible_router(
             ]
             return {"object": "list", "data": data}
         except Exception as e:
-            log.error(f"OpenAI Models error: {e}")
-            raise HTTPException(status_code=500, detail=str(e)) from e
+            log.error("OpenAI Models error for user '%s': %s", user, e)
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to retrieve available models. Please try again later.",
+            ) from e
 
     return router

@@ -9,7 +9,10 @@ Works with all deployment types: Docker, Root, GCP, RunPod.
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
+from nodetool.config.logging_config import get_logger
 from nodetool.security.admin_auth import is_admin_user
+
+log = get_logger(__name__)
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -151,7 +154,11 @@ async def add_user(req: AddUserRequest, request: Request) -> dict:
             "created_at": result.created_at,
         }
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
+        log.error("Failed to add user '%s' by admin '%s': %s", req.username, user_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to add user '{req.username}'. Please check if the user already exists or the role is valid.",
+        ) from None
 
 
 @router.post("/reset-token")
@@ -191,7 +198,11 @@ async def reset_token(req: ResetTokenRequest, request: Request) -> dict:
             "created_at": result.created_at,
         }
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None
+        log.error("Failed to reset token for user '%s' by admin '%s': %s", req.username, user_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User '{req.username}' not found or token reset failed.",
+        ) from None
 
 
 @router.delete("/{username}")
@@ -224,4 +235,8 @@ async def delete_user(username: str, request: Request) -> dict:
         manager.remove_user(username)
         return {"message": f"User '{username}' removed successfully"}
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None
+        log.error("Failed to remove user '%s' by admin '%s': %s", username, user_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User '{username}' not found or could not be removed.",
+        ) from None
