@@ -10,6 +10,9 @@ from typing import Any, Optional
 from fastapi import APIRouter, File, Header, HTTPException, UploadFile
 from pydantic import BaseModel
 
+from nodetool.config.logging_config import get_logger
+
+log = get_logger(__name__)
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 
 DEFAULT_EMBEDDING_MODEL = "all-minilm:latest"
@@ -197,7 +200,11 @@ async def index(
         raise HTTPException(status_code=404, detail="Collection not found") from e
     except Exception as e:
         # Surface other failures as server errors
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        log.error("Error accessing collection '%s': %s", name, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to access collection. Please verify the collection exists and try again.",
+        ) from e
 
     # Extract token from authorization header, defaulting to local_token for development
     token = _authorization or "local_token"
@@ -227,12 +234,12 @@ async def index(
 
         return IndexResponse(path=file.filename or "unknown", error=None)
     except Exception as e:
-        from nodetool.config.logging_config import get_logger
-
-        log = get_logger(__name__)
-        log.error(f"Error indexing file {file.filename}: {e}")
+        log.error("Error indexing file '%s': %s", file.filename, e)
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to index file. Please check the file format and try again.",
+        ) from e
     finally:
         # Ensure temporary directory is cleaned up without blocking
         await asyncio.to_thread(shutil.rmtree, tmp_dir)

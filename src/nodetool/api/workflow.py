@@ -189,7 +189,11 @@ async def create(
                 )
             )
         except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e)) from e
+            log.error("Failed to load example workflow '%s' from package '%s': %s", from_example_name, from_example_package, e)
+            raise HTTPException(
+                status_code=404,
+                detail=f"Example workflow '{from_example_name}' not found in package '{from_example_package}'.",
+            ) from e
     elif workflow_request.graph:
         workflow = await from_model(
             await WorkflowModel.create(
@@ -213,7 +217,11 @@ async def create(
 
             edges, nodes = read_graph(workflow_request.comfy_workflow)
         except Exception as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
+            log.error("Failed to read Comfy workflow graph: %s", e)
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid Comfy workflow format. Please check the workflow structure.",
+            ) from e
         workflow = await from_model(
             await WorkflowModel.create(
                 name=workflow_request.name,
@@ -500,7 +508,11 @@ async def get_example(package_name: str, example_name: str) -> Workflow:
             )
         return workflow
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+        log.error("Failed to load example '%s' from package '%s': %s", example_name, package_name, e)
+        raise HTTPException(
+            status_code=404,
+            detail=f"Example '{example_name}' not found in package '{package_name}'.",
+        ) from e
 
 
 @router.get("/{id}")
@@ -651,9 +663,12 @@ async def save_example_workflow(
         saved_workflow = await asyncio.to_thread(example_registry.save_example, workflow)
         return saved_workflow
     except ValueError as e:
-        log.error(f"Error saving example workflow: {str(e)}")
+        log.error("Error saving example workflow: %s", e)
         traceback.print_exc()
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        raise HTTPException(
+            status_code=400,
+            detail="Failed to save example workflow. Please check the workflow format.",
+        ) from e
 
 
 class RunWorkflowRequest(BaseModel):
@@ -1158,8 +1173,11 @@ async def dsl_export(
     try:
         code = graph_to_dsl_py(api_graph)
     except Exception as e:
-        log.error(f"Error exporting workflow {id} to DSL: {e}")
-        raise HTTPException(status_code=500, detail=f"Error exporting workflow: {e}") from e
+        log.error("Error exporting workflow %s to DSL: %s", id, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to export workflow to DSL code. Please check the workflow structure.",
+        ) from e
 
     return code
 
@@ -1205,8 +1223,11 @@ async def gradio_export(
             queue=config.queue,
         )
     except Exception as e:
-        log.error(f"Error exporting workflow {id} to Gradio: {e}")
-        raise HTTPException(status_code=500, detail=f"Error exporting workflow: {e}") from e
+        log.error("Error exporting workflow %s to Gradio: %s", id, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to export workflow to Gradio app. Please check the workflow structure.",
+        ) from e
 
     return code
 
