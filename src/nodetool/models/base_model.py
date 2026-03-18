@@ -328,6 +328,25 @@ class DBModel(BaseModel):
         return self
 
     @classmethod
+    async def save_many(cls, items: list["DBModel"]):
+        """
+        Save multiple model instances in a batch operation.
+        """
+        if not items:
+            return []
+
+        for item in items:
+            item.before_save()
+
+        adapter = await cls.adapter()
+        await adapter.save_many([item.model_dump() for item in items])
+
+        for item in items:
+            ModelObserver.notify(item, ModelChangeEvent.UPDATED)
+
+        return items
+
+    @classmethod
     def db_fields(cls) -> dict[str, Any]:
         """
         Return a dictionary of fields that should be persisted.

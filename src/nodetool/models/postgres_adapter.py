@@ -367,6 +367,37 @@ class PostgresAdapter(DatabaseAdapter):
                 await cursor.execute(query, values)  # type: ignore[arg-type]
             await conn.commit()
 
+    async def save_many(self, items: list[dict[str, Any]]) -> None:
+        """Saves (inserts or updates) multiple items into the database table.
+
+        Uses an INSERT ... ON CONFLICT (primary_key) DO UPDATE statement with executemany.
+        Converts the items' attributes to PostgreSQL-compatible formats before saving.
+
+        Args:
+            items: A list of dictionaries representing the model instances to save.
+        """
+        if not items:
+            return
+
+        valid_keys = [key for key in items[0] if key in self.fields]
+        columns = ", ".join(valid_keys)
+        placeholders = ", ".join([f"%({key})s" for key in valid_keys])
+        query = (
+            f"INSERT INTO {self.table_name} ({columns}) VALUES ({placeholders}) ON CONFLICT ({self.get_primary_key()}) DO UPDATE SET "
+            + ", ".join([f"{key} = EXCLUDED.{key}" for key in valid_keys])
+        )
+
+        values_list = []
+        for item in items:
+            values = {key: convert_to_postgres_format(item[key], self.fields[key].annotation) for key in valid_keys}
+            values_list.append(values)
+
+        pool = await self._get_pool()
+        async with pool.connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.executemany(query, values_list)  # type: ignore[arg-type]
+            await conn.commit()
+
     async def get(self, key: Any) -> dict[str, Any] | None:
         """Retrieves an item from the database table by its primary key.
 
