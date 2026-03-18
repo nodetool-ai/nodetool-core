@@ -128,6 +128,10 @@ class SupabaseAdapter(DatabaseAdapter):
         # Assuming 'id' or defined in table_schema, like PostgresAdapter
         return self.table_schema.get("primary_key", "id")
 
+    def get_primary_key(self) -> str:
+        """Gets the primary key column name from the schema."""
+        return self._get_primary_key()
+
     async def create_table(self) -> None:
         """Creates the database table.
         NOTE: Table creation in Supabase is typically handled via migrations (UI or CLI).
@@ -149,7 +153,6 @@ class SupabaseAdapter(DatabaseAdapter):
 
     async def save(self, item: dict[str, Any]) -> None:
         """Saves (inserts or updates) an item in the Supabase table using upsert."""
-        self._get_primary_key()
         # Prepare item data, converting types if necessary
         supabase_item = {
             key: convert_to_supabase_format(value, self.fields[key].annotation)
@@ -175,6 +178,36 @@ class SupabaseAdapter(DatabaseAdapter):
 
         except Exception as e:
             log.exception(f"Error saving item to Supabase table {self.table_name}: {e}")
+            raise
+
+    async def save_many(self, items: list[dict[str, Any]]) -> None:
+        """Saves (inserts or updates) multiple items in the Supabase table using upsert."""
+        if not items:
+            return
+
+        supabase_items = []
+        for item in items:
+            supabase_item = {
+                key: convert_to_supabase_format(value, self.fields[key].annotation)
+                for key, value in item.items()
+                if key in self.fields
+            }
+            supabase_items.append(supabase_item)
+
+        try:
+            response = await (
+                self.client.table(self.table_name)
+                .upsert(
+                    supabase_items
+                )
+                .execute()
+            )
+
+            if not response.data:  # type: ignore
+                log.error(f"Supabase batch upsert failed for table {self.table_name}. Response: {response}")
+
+        except Exception as e:
+            log.exception(f"Error saving multiple items to Supabase table {self.table_name}: {e}")
             raise
 
     async def get(self, key: Any) -> dict[str, Any] | None:

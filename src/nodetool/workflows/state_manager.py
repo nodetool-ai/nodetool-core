@@ -382,11 +382,10 @@ class StateManager:
                 # Update timestamp
                 state.updated_at = datetime.now()
 
-            # Save all states (ideally in a transaction, but save() is per-record)
-            # TODO: If adapter supports batch operations, use that here
-            for node_id in coalesced:
-                state = self.state_cache[node_id]
-                await state.save()
+            # Save all states using batch operations
+            states_to_save = [self.state_cache[node_id] for node_id in coalesced]
+            if states_to_save:
+                await RunNodeState.save_many(states_to_save)
 
             # Update stats
             self.stats["updates_processed"] += len(batch)

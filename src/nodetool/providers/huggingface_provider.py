@@ -1181,27 +1181,27 @@ class HuggingFaceProvider(BaseProvider):
 
         try:
             client = self.get_client()
-            
+
             # Prepare optional parameters
             # Note: AsyncInferenceClient.automatic_speech_recognition parameters might vary by version
             # but generally accepts the binary audio data
-            
-            # We call the method directly. 
+
+            # We call the method directly.
             # Based on docs: https://huggingface.co/docs/inference-providers/en/tasks/automatic-speech-recognition
             # The result object typically contains 'text' field or is a JSON object.
-            
+
             result = await client.automatic_speech_recognition(
                 audio,
                 model=model,
             )
-            
+
             log.debug("HuggingFace ASR API call successful")
-            
+
             # If it's a dict or object (parsed JSON)
             if isinstance(result, dict):
                 if "text" in result:
                     return result["text"]
-                
+
             return str(result)
 
         except Exception as e:
@@ -1268,23 +1268,23 @@ class HuggingFaceProvider(BaseProvider):
 
             if params.negative_prompt:
                 parameters["negative_prompt"] = params.negative_prompt
-            
+
             if params.height:
                 parameters["height"] = params.height
-                
+
             if params.width:
                 parameters["width"] = params.width
-                
+
             if params.num_inference_steps:
                 parameters["num_inference_steps"] = params.num_inference_steps
-                
+
             if params.guidance_scale:
                 parameters["guidance_scale"] = params.guidance_scale
-                
+
             # Preserve original logic for seed: ignore if 0 or None
             if params.seed and params.seed >= 0:
                 parameters["seed"] = params.seed
-                
+
             if hasattr(params, "scheduler") and params.scheduler:
                 parameters["scheduler"] = params.scheduler
 
@@ -1327,6 +1327,7 @@ class HuggingFaceProvider(BaseProvider):
 
             # Convert to PNG using PIL to ensure consistent output format
             import io
+
             from PIL import Image
 
             try:
@@ -1337,7 +1338,7 @@ class HuggingFaceProvider(BaseProvider):
                 img_bytes = io.BytesIO()
                 image.save(img_bytes, format="PNG")
                 img_bytes.seek(0)
-                
+
                 result = img_bytes.read()
                 log.debug(f"Generated {len(result)} bytes of image data")
                 return result

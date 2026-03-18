@@ -51,6 +51,15 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
+    async def save_many(self, items: list[dict[str, Any]]) -> None:
+        """Saves (inserts or updates) multiple items in the database.
+
+        Args:
+            items: A list of dictionaries representing the model instances to save.
+        """
+        pass
+
+    @abstractmethod
     async def get(self, key: Any) -> dict[str, Any] | None:
         """Retrieves an item from the database by its primary key.
 
