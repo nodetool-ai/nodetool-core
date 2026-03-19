@@ -379,6 +379,14 @@ class ApifyProvider(SerpProvider):
         """
         return {"error": "Yelp search not supported by Apify provider"}
 
+    async def search_raw(
+        self, engine: str, params: dict[str, Any]
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Generic search method to fulfill SerpProvider interface.
+        Not properly implemented for Apify yet.
+        """
+        raise NotImplementedError("search_raw is not yet supported by ApifyProvider")
     async def search_duckduckgo(
         self, query: str, num_results: int = 10
     ) -> Any:
