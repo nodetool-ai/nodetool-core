@@ -8,6 +8,8 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any, Optional
 
+import yaml
+
 if TYPE_CHECKING:
     from nodetool.metadata.types import Message
 
@@ -37,22 +39,13 @@ def lenient_json_parse(text: str) -> Optional[dict[str, Any]]:
     except json.JSONDecodeError:
         pass
 
-    # 2. Try Python literal eval (handles single quotes, but needs True/False/None fix)
+    # 2. Try YAML safe_load (handles single quotes, unquoted keys, and standard JSON constants naturally)
     try:
-        # Replace JSON constants with Python constants
-        # Use word boundaries to avoid replacing inside strings (mostly)
-        # Note: This is heuristic and perfectly valid strings like "dict contain true" will get mapped.
-        # But this is a fallback for broken JSON.
-        py_text = text
-        py_text = re.sub(r"\btrue\b", "True", py_text)
-        py_text = re.sub(r"\bfalse\b", "False", py_text)
-        py_text = re.sub(r"\bnull\b", "None", py_text)
-
-        parsed = ast.literal_eval(py_text)
+        parsed = yaml.safe_load(text)
         if isinstance(parsed, dict):
-            log.debug("Parsed JSON using ast.literal_eval fallback")
+            log.debug("Parsed JSON using yaml.safe_load fallback")
             return parsed
-    except (ValueError, SyntaxError, MemoryError, RecursionError):
+    except Exception:
         pass
 
     return None

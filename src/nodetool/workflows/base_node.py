@@ -2369,11 +2369,7 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
         log.debug(f"Importing module: {module_prefix}")
         importlib.import_module(module_prefix)
     except ModuleNotFoundError as e:
-        log.error(f"Module not found: {module_prefix}")
-        log.error(f"Error: {e}")
-        import traceback
-
-        traceback.print_exc()
+        log.debug(f"Module not found: {module_prefix}. Error: {e}")
         return None
     found = _lookup(node_type)
     if found:
