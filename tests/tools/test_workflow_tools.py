@@ -10,7 +10,7 @@ class TestWorkflowToolsFunctions:
 
     def test_get_tool_functions_returns_correct_functions(self):
         """Test that get_tool_functions returns expected functions."""
-        from nodetool.tools.workflow_tools import WorkflowTools
+        from nodetool.server_tools.workflow_tools import WorkflowTools
 
         funcs = WorkflowTools.get_tool_functions()
         assert "get_workflow" in funcs
@@ -25,7 +25,7 @@ class TestWorkflowToolsFunctions:
 
     def test_get_tool_functions_are_callable(self):
         """Test that all returned functions are callable."""
-        from nodetool.tools.workflow_tools import WorkflowTools
+        from nodetool.server_tools.workflow_tools import WorkflowTools
 
         funcs = WorkflowTools.get_tool_functions()
         for name, func in funcs.items():
@@ -33,7 +33,7 @@ class TestWorkflowToolsFunctions:
 
     def test_get_tool_functions_count(self):
         """Test that exactly 9 functions are returned."""
-        from nodetool.tools.workflow_tools import WorkflowTools
+        from nodetool.server_tools.workflow_tools import WorkflowTools
 
         funcs = WorkflowTools.get_tool_functions()
         assert len(funcs) == 9
@@ -45,7 +45,7 @@ class TestWorkflowToolsGetWorkflow:
     @pytest.mark.asyncio
     async def test_get_workflow_not_found(self):
         """Test that get_workflow raises ValueError for unknown workflow."""
-        from nodetool.tools.workflow_tools import WorkflowTools
+        from nodetool.server_tools.workflow_tools import WorkflowTools
 
         with pytest.raises(ValueError, match="not found"):
             await WorkflowTools.get_workflow("nonexistent_id", user_id="test_user")
@@ -57,7 +57,7 @@ class TestWorkflowToolsGenerateDotGraph:
     @pytest.mark.asyncio
     async def test_generate_dot_graph_empty(self):
         """Test generating DOT graph from empty graph."""
-        from nodetool.tools.workflow_tools import WorkflowTools
+        from nodetool.server_tools.workflow_tools import WorkflowTools
 
         graph = {"nodes": [], "edges": []}
         result = await WorkflowTools.generate_dot_graph(graph, graph_name="test")
@@ -70,7 +70,7 @@ class TestWorkflowToolsGenerateDotGraph:
     @pytest.mark.asyncio
     async def test_generate_dot_graph_with_nodes(self):
         """Test generating DOT graph with nodes."""
-        from nodetool.tools.workflow_tools import WorkflowTools
+        from nodetool.server_tools.workflow_tools import WorkflowTools
 
         graph = {
             "nodes": [

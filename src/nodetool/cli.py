@@ -388,7 +388,7 @@ def workflows_list(
 ) -> None:
     """List workflows (user, example, or both)."""
     from nodetool.runtime.resources import ResourceScope
-    from nodetool.tools.workflow_tools import WorkflowTools
+    from nodetool.server_tools.workflow_tools import WorkflowTools
 
     async def _run() -> dict[str, Any]:
         async with ResourceScope():
@@ -436,7 +436,7 @@ def workflows_list(
 def workflows_get(workflow_id: str, user_id: str, as_json: bool) -> None:
     """Get workflow details by ID."""
     from nodetool.runtime.resources import ResourceScope
-    from nodetool.tools.workflow_tools import WorkflowTools
+    from nodetool.server_tools.workflow_tools import WorkflowTools
 
     async def _run() -> dict[str, Any]:
         async with ResourceScope():
@@ -469,7 +469,7 @@ def workflows_get(workflow_id: str, user_id: str, as_json: bool) -> None:
 def workflows_run(workflow_id: str, params_json: str | None, params_file: str | None, user_id: str, as_json: bool):
     """Run a workflow by ID (single-shot result)."""
     from nodetool.runtime.resources import ResourceScope
-    from nodetool.tools.workflow_tools import WorkflowTools
+    from nodetool.server_tools.workflow_tools import WorkflowTools
 
     params = _load_json_input(params_json, params_file, json_option="--params", json_file_option="--params-file")
     if params is not None and not isinstance(params, dict):
@@ -527,7 +527,7 @@ def assets_list(
 ) -> None:
     """List/search assets."""
     from nodetool.runtime.resources import ResourceScope
-    from nodetool.tools.asset_tools import AssetTools
+    from nodetool.server_tools.asset_tools import AssetTools
 
     async def _run() -> dict[str, Any]:
         async with ResourceScope():
@@ -575,7 +575,7 @@ def assets_list(
 def assets_get(asset_id: str, user_id: str, as_json: bool) -> None:
     """Get asset details by ID."""
     from nodetool.runtime.resources import ResourceScope
-    from nodetool.tools.asset_tools import AssetTools
+    from nodetool.server_tools.asset_tools import AssetTools
 
     async def _run() -> dict[str, Any]:
         async with ResourceScope():
@@ -607,7 +607,7 @@ def jobs() -> None:
 def jobs_list(workflow_id: str | None, limit: int, start_key: str | None, user_id: str, as_json: bool) -> None:
     """List jobs for a user."""
     from nodetool.runtime.resources import ResourceScope
-    from nodetool.tools.job_tools import JobTools
+    from nodetool.server_tools.job_tools import JobTools
 
     async def _run() -> dict[str, Any]:
         async with ResourceScope():
@@ -652,7 +652,7 @@ def jobs_list(workflow_id: str | None, limit: int, start_key: str | None, user_i
 def jobs_get(job_id: str, user_id: str, as_json: bool) -> None:
     """Get job details by ID."""
     from nodetool.runtime.resources import ResourceScope
-    from nodetool.tools.job_tools import JobTools
+    from nodetool.server_tools.job_tools import JobTools
 
     async def _run() -> dict[str, Any]:
         async with ResourceScope():
@@ -678,7 +678,7 @@ def jobs_get(job_id: str, user_id: str, as_json: bool) -> None:
 def jobs_logs(job_id: str, limit: int, user_id: str, as_json: bool) -> None:
     """Get logs for a job."""
     from nodetool.runtime.resources import ResourceScope
-    from nodetool.tools.job_tools import JobTools
+    from nodetool.server_tools.job_tools import JobTools
 
     async def _run() -> dict[str, Any]:
         async with ResourceScope():
@@ -724,7 +724,7 @@ def jobs_start(
 ) -> None:
     """Start a background job for a workflow."""
     from nodetool.runtime.resources import ResourceScope
-    from nodetool.tools.job_tools import JobTools
+    from nodetool.server_tools.job_tools import JobTools
 
     params = _load_json_input(params_json, params_file, json_option="--params", json_file_option="--params-file")
     if params is not None and not isinstance(params, dict):

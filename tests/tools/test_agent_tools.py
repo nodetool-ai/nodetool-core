@@ -10,14 +10,14 @@ class TestAgentToolsFunctions:
 
     def test_get_tool_functions_returns_correct_functions(self):
         """Test that get_tool_functions returns expected functions."""
-        from nodetool.tools.agent_tools import AgentTools
+        from nodetool.server_tools.agent_tools import AgentTools
 
         funcs = AgentTools.get_tool_functions()
         assert "run_agent" in funcs
 
     def test_get_tool_functions_are_callable(self):
         """Test that all returned functions are callable."""
-        from nodetool.tools.agent_tools import AgentTools
+        from nodetool.server_tools.agent_tools import AgentTools
 
         funcs = AgentTools.get_tool_functions()
         for name, func in funcs.items():
@@ -25,7 +25,7 @@ class TestAgentToolsFunctions:
 
     def test_get_tool_functions_count(self):
         """Test that exactly 1 function is returned."""
-        from nodetool.tools.agent_tools import AgentTools
+        from nodetool.server_tools.agent_tools import AgentTools
 
         funcs = AgentTools.get_tool_functions()
         assert len(funcs) == 1

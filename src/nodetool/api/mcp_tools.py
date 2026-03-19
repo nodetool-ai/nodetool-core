@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from fastmcp import Context
 
 from nodetool.api.mcp_server import mcp
-from nodetool.tools import (
+from nodetool.server_tools import (
     AgentTools,
     AssetTools,
     CollectionTools,
