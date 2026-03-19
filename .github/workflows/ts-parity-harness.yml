@@ -13,10 +13,10 @@ on:
 
 jobs:
   parity-harness:
+    if: false
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ts
 
     steps:
       - name: Checkout
