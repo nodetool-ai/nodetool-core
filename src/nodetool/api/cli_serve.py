@@ -327,8 +327,31 @@ def download_and_cache_ui(url: str) -> str:
             shutil.rmtree(cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
 
+        def _safe_extract(zf: zipfile.ZipFile, dest_dir) -> None:
+            import os
+            from pathlib import Path
+            dest_dir = dest_dir.resolve()
+            for info in zf.infolist():
+                name = info.filename
+                if name.startswith("/") or ".." in Path(name).parts:
+                    continue
+                target = (dest_dir / name).resolve()
+                if not str(target).startswith(str(dest_dir) + os.sep):
+                    continue
+                if name.endswith("/"):
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(info, "r") as src, open(target, "wb") as dst:
+                    while True:
+                        chunk = src.read(1024 * 64)
+                        if not chunk:
+                            break
+                        dst.write(chunk)
+
         with zipfile.ZipFile(BytesIO(resp.content)) as z:
-            z.extractall(cache_dir)
+            _safe_extract(z, cache_dir)
+
 
         # Handle case where zip contains a single top-level folder
         # e.g. nodetool-web-0.6.3-rc.12/index.html -> move contents up
