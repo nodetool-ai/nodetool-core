@@ -13,6 +13,8 @@ on:
 
 jobs:
   parity-harness:
+    # Only run if ts directory is present
+    if: hashFiles('ts/package-lock.json') != ''
     runs-on: ubuntu-latest
     defaults:
       run:

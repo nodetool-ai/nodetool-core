@@ -320,7 +320,9 @@ def extract_video_frames(
     video_source = io.BytesIO(input_video) if isinstance(input_video, bytes) else input_video
 
     try:
-        reader = imageio.get_reader(video_source, format="ffmpeg")  # type: ignore[arg-type]
+        # FFMPEG plugin cannot handle BytesIO directly, so use mp4 format for bytes
+        read_format = "mp4" if isinstance(video_source, io.BytesIO) else "ffmpeg"
+        reader = imageio.get_reader(video_source, format=read_format)  # type: ignore[arg-type]
         meta = reader.get_meta_data()
         video_fps = meta.get("fps", 30)
 
