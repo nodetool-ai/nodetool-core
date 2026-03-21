@@ -1327,7 +1327,6 @@ class HuggingFaceProvider(BaseProvider):
 
             # Convert to PNG using PIL to ensure consistent output format
             import io
-
             from PIL import Image
 
             try:

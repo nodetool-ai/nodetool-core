@@ -1,7 +1,5 @@
 import asyncio
-
 import pytest
-
 from nodetool.runtime.resources import ResourceScope
 from nodetool.worker.context_stub import WorkerContext
 
@@ -38,9 +36,8 @@ async def test_cancellation_flag():
 @pytest.mark.asyncio
 async def test_image_roundtrip():
     """Test image_from_pil produces output blob."""
-    import io
-
     import PIL.Image
+    import io
 
     async with ResourceScope():
         img = PIL.Image.new("RGB", (4, 4), color="red")

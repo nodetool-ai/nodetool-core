@@ -7,6 +7,7 @@ import sys
 
 import pytest
 
+
 SCRIPT = "scripts/export_parity_snapshot.py"
 
 

@@ -1,10 +1,7 @@
-from unittest.mock import MagicMock
-
 import pytest
-
-from nodetool.agents.tools.filesystem_tools import ListDirectoryTool, ReadFileTool, WriteFileTool
+from unittest.mock import MagicMock
 from nodetool.workflows.processing_context import ProcessingContext
-
+from nodetool.agents.tools.filesystem_tools import WriteFileTool, ReadFileTool, ListDirectoryTool
 
 @pytest.fixture
 def mock_context():
