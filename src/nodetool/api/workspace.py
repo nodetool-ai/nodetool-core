@@ -15,6 +15,7 @@ This module provides REST API endpoints for managing user-defined workspaces:
 
 import asyncio
 import os
+import stat
 from datetime import UTC, datetime
 from typing import Optional
 
@@ -299,14 +300,15 @@ async def get_file_info(path: str) -> FileInfo:
     import aiofiles.os
 
     try:
-        stat = await aiofiles.os.stat(path)
-        is_dir = await asyncio.to_thread(os.path.isdir, path)
+        st = await aiofiles.os.stat(path)
+        # Optimization: use stat result instead of spawning a new thread for os.path.isdir
+        is_dir = stat.S_ISDIR(st.st_mode)
         return FileInfo(
             name=os.path.basename(path),
             path=path,
-            size=stat.st_size,
+            size=st.st_size,
             is_dir=is_dir,
-            modified_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
+            modified_at=datetime.fromtimestamp(st.st_mtime, tz=UTC).isoformat(),
         )
     except Exception as e:
         log.error(f"Error getting file info for {path}: {str(e)}")
@@ -476,10 +478,15 @@ async def download_workflow_file(
             "Access denied: path outside workspace",
         )
 
-        exists = await asyncio.to_thread(os.path.exists, full_path)
-        is_dir = await asyncio.to_thread(os.path.isdir, full_path)
-        if not exists or is_dir:
-            raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+        import aiofiles.os
+        try:
+            st = await aiofiles.os.stat(full_path)
+            # Optimization: use stat result instead of spawning two threads
+            is_dir = stat.S_ISDIR(st.st_mode)
+            if is_dir:
+                raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+        except OSError as e:
+            raise HTTPException(status_code=404, detail=f"File not found: {file_path}") from e
 
         async def file_iterator():
             import aiofiles
