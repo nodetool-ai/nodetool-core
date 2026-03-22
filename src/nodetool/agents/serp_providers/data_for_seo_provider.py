@@ -202,6 +202,19 @@ class DataForSEOProvider(SerpProvider):
 
         return _remove_base64_images(news_items_transformed)
 
+    async def search_raw(
+        self,
+        engine: str,
+        query: dict[str, Any],
+        **kwargs: Any,
+    ) -> Any:
+        """
+        Perform a raw search.
+        Currently not natively supported by DataForSEO provider as it requires
+        different endpoint routing based on the engine.
+        """
+        return {"error": "Raw search is not supported by DataForSEO provider."}
+
     async def search_images(
         self,
         keyword: str | None = None,
