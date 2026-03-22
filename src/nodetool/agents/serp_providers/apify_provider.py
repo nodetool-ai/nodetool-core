@@ -158,6 +158,36 @@ class ApifyProvider(SerpProvider):
 
         return _remove_base64_images(result_data)
 
+    async def search_raw(
+        self,
+        engine: str,
+        query: dict[str, Any],
+        **kwargs: Any,
+    ) -> Any:
+        """
+        Perform a raw search using the specified engine and query parameters.
+        Not all engines are supported by ApifyProvider.
+        """
+        # Map engine to actor ID if possible, otherwise return error
+        engine_map = {
+            "google": self.GOOGLE_SEARCH_ACTOR,
+            "google_news": self.GOOGLE_NEWS_ACTOR,
+            "google_images": self.GOOGLE_IMAGES_ACTOR,
+            "google_maps": self.GOOGLE_MAPS_ACTOR,
+            "google_shopping": self.GOOGLE_SHOPPING_ACTOR,
+        }
+
+        actor_id = engine_map.get(engine)
+        if not actor_id:
+            return {"error": f"Engine '{engine}' is not supported by ApifyProvider."}
+
+        result_data = await self._run_actor_and_wait(actor_id, query)
+
+        if isinstance(result_data, dict) and "error" in result_data:
+            return result_data
+
+        return _remove_base64_images(result_data)
+
     async def search_news(self, keyword: str, num_results: int = 10) -> Any:
         """
         Perform a news search using Apify's Google News Scraper.
