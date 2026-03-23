@@ -1,4 +1,4 @@
-# NodeTool Core <img src="https://img.shields.io/badge/version-0.6.3--rc.26-blue.svg" alt="Version Badge">
+# NodeTool Core <img src="https://img.shields.io/badge/version-0.6.3--rc.47-blue.svg" alt="Version Badge">
 
 <h3>AI Workflow Engine</h3>
 
