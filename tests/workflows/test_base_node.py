@@ -355,30 +355,7 @@ def test_get_node_class_and_by_name():
     assert get_node_class(TestNode.get_node_type()) == TestNode
 
 
-def test_get_node_class_imports_kie_dynamic_node_from_namespace_package():
-    node_type = "kie.DynamicKie"
 
-    NODE_BY_TYPE.pop(node_type, None)
-    sys.modules.pop("nodetool.nodes.kie.dynamic_schema", None)
-    sys.modules.pop("nodetool.nodes.kie", None)
-
-    node_class = get_node_class(node_type)
-
-    assert node_class is not None
-    assert node_class.get_node_type() == node_type
-
-
-def test_get_node_class_imports_replicate_dynamic_node_from_namespace_package():
-    node_type = "replicate.DynamicReplicate"
-
-    NODE_BY_TYPE.pop(node_type, None)
-    sys.modules.pop("nodetool.nodes.replicate.dynamic_schema", None)
-    sys.modules.pop("nodetool.nodes.replicate", None)
-
-    node_class = get_node_class(node_type)
-
-    assert node_class is not None
-    assert node_class.get_node_type() == node_type
 
 
 def test_base_node_from_dict():

@@ -388,3 +388,11 @@ class DataForSEOProvider(SerpProvider):
             except Exception:
                 pass
             await self._client.aclose()
+
+    async def search_raw(
+        self, engine: str, params: dict[str, Any]
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Generic search method. Not fully supported by DataForSEOProvider in the same way as SerpApi.
+        """
+        return {"error": "Raw search by engine is not fully supported by DataForSEO provider"}

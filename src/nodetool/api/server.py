@@ -757,7 +757,7 @@ def create_app(
             huggingface_download_endpoint,
         )
 
-        app.add_websocket_route("/ws/download", huggingface_download_endpoint)
+        app.add_api_websocket_route("/ws/download", huggingface_download_endpoint)
 
     async def _authenticate_websocket(websocket: WebSocket):
         if not enforce_auth:
