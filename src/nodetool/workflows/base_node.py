@@ -2371,7 +2371,6 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
     except ModuleNotFoundError as e:
         log.error(f"Module not found: {module_prefix}")
         log.error(f"Error: {e}")
-        return None
         import traceback
 
         traceback.print_exc()
