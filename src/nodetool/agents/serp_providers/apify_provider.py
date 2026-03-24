@@ -121,6 +121,13 @@ class ApifyProvider(SerpProvider):
         except Exception as e:
             return {"error": f"Unexpected error during Apify request: {e!s}"}
 
+    async def search_raw(self, query: str, **kwargs: Any) -> Any:
+        """
+        Raw search implementation required by the abstract base class.
+        For Apify, this maps directly to organic search.
+        """
+        return await self.search_organic(query, **kwargs)
+
     async def search(self, keyword: str, num_results: int = 10) -> Any:
         """
         Perform an organic web search using Apify's Google Search Scraper.

@@ -97,6 +97,14 @@ class DataForSEOProvider(SerpProvider):
         except Exception as e:
             return {"error": f"Unexpected error during DataForSEO request: {e!s}"}
 
+    async def search_raw(self, query: str, **kwargs: Any) -> Any:
+        """
+        Raw search implementation required by the abstract base class.
+        For DataForSEO, this maps directly to organic search.
+        """
+        # Note: mapping `query` to `keyword` as expected by `search`
+        return await self.search(keyword=query, **kwargs)
+
     async def search(self, keyword: str, num_results: int = 10) -> list[dict[str, Any]] | ErrorResponse:
         payload_dict = {
             "keyword": keyword,
