@@ -1,5 +1,6 @@
 import asyncio
 import enum
+import importlib
 import os
 import sys
 from typing import AsyncGenerator, ClassVar, Optional, TypedDict, Union
@@ -362,6 +363,11 @@ def test_get_node_class_imports_kie_dynamic_node_from_namespace_package():
     sys.modules.pop("nodetool.nodes.kie.dynamic_schema", None)
     sys.modules.pop("nodetool.nodes.kie", None)
 
+    try:
+        importlib.import_module("nodetool.nodes.kie")
+    except ImportError:
+        pytest.skip("nodetool.nodes.kie not installed")
+
     node_class = get_node_class(node_type)
 
     assert node_class is not None
@@ -374,6 +380,11 @@ def test_get_node_class_imports_replicate_dynamic_node_from_namespace_package():
     NODE_BY_TYPE.pop(node_type, None)
     sys.modules.pop("nodetool.nodes.replicate.dynamic_schema", None)
     sys.modules.pop("nodetool.nodes.replicate", None)
+
+    try:
+        importlib.import_module("nodetool.nodes.replicate")
+    except ImportError:
+        pytest.skip("nodetool.nodes.replicate not installed")
 
     node_class = get_node_class(node_type)
 
