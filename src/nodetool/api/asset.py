@@ -303,7 +303,12 @@ async def get_package_asset(package_name: str, asset_name: str):
                 detail=f"Asset '{asset_name}' not found in package '{package_name}'",
             )
 
-        asset_path = os.path.join(str(package.source_folder), "nodetool", "assets", package_name, asset_name)
+        base_dir = os.path.realpath(os.path.join(str(package.source_folder), "nodetool", "assets", package_name))
+        asset_path = os.path.realpath(os.path.join(base_dir, asset_name))
+
+        # Prevent path traversal outside the package assets directory
+        if not asset_path.startswith(base_dir + os.sep) and asset_path != base_dir:
+            raise HTTPException(status_code=403, detail="Access denied: path outside package assets")
 
         # Get the physical path to the asset file
         if not os.path.exists(asset_path):

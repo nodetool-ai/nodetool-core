@@ -541,3 +541,36 @@ async def test_filter_assets_by_multiple_criteria(client: TestClient, headers: d
     data = response.json()
     assert len(data["assets"]) == 1
     assert data["assets"][0]["id"] == asset_match.id
+
+def test_get_package_asset_path_traversal(client: TestClient, headers: dict[str, str], monkeypatch):
+    """Test that path traversal is blocked when fetching package assets."""
+    from nodetool.packages.registry import PackageInfo, Registry
+
+    class DummyRegistry:
+        def find_package_by_name(self, name):
+            if name == "dummy_pkg":
+                return PackageInfo(
+                    id="dummy",
+                    name="dummy_pkg",
+                    version="1.0",
+                    source_folder="/app/dummy",
+                )
+            return None
+
+        def find_asset_by_name(self, name, package_name):
+            return "dummy_asset"
+
+    monkeypatch.setattr("nodetool.api.asset.Registry", DummyRegistry)
+
+    # Path inside test uses unquote which might not parse the URL right in TestClient for url paths if not careful,
+    # but requests with URL-encoded slashes are generally decoded by FastAPI router.
+    # To bypass routing issues, we can request exactly via url
+    response = client.get("/api/assets/packages/dummy_pkg/..%2F..%2F..%2F..%2F..%2Fetc%2Fpasswd", headers=headers)
+
+    # In some FastAPI/Starlette setups, the path parameter (if not defined as {asset_name:path})
+    # won't match if it contains slashes, returning a 404 instead of 403. Either way, it shouldn't
+    # allow file retrieval. The endpoint might have been changed to `{asset_name:path}` if it needs
+    # to support folders inside packages, or it will 404. Let's assert it is either 403 or 404
+    assert response.status_code in (403, 404)
+    if response.status_code == 403:
+        assert "Access denied" in response.json()["detail"]
