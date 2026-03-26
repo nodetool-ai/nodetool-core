@@ -364,9 +364,8 @@ def test_get_node_class_imports_kie_dynamic_node_from_namespace_package():
 
     node_class = get_node_class(node_type)
 
-    # Tests assume node packages are present but they might not be in CI without `uv sync --all-extras` or during isolated runs.
-    if node_class is not None:
-        assert node_class.get_node_type() == node_type
+    assert node_class is not None
+    assert node_class.get_node_type() == node_type
 
 
 def test_get_node_class_imports_replicate_dynamic_node_from_namespace_package():
@@ -378,9 +377,8 @@ def test_get_node_class_imports_replicate_dynamic_node_from_namespace_package():
 
     node_class = get_node_class(node_type)
 
-    # Tests assume node packages are present but they might not be in CI without `uv sync --all-extras` or during isolated runs.
-    if node_class is not None:
-        assert node_class.get_node_type() == node_type
+    assert node_class is not None
+    assert node_class.get_node_type() == node_type
 
 
 def test_base_node_from_dict():
