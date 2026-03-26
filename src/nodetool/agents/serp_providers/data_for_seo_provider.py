@@ -375,6 +375,15 @@ class DataForSEOProvider(SerpProvider):
         """
         return {"error": "DuckDuckGo search not supported by DataForSEO provider"}
 
+    async def search_raw(
+        self, engine: str, params: dict[str, Any]
+    ) -> dict[str, Any] | ErrorResponse:
+        """
+        Generic search method for any SerpAPI engine.
+        Not supported by DataForSEOProvider - use specific search methods instead.
+        """
+        return {"error": "search_raw is not supported by DataForSEOProvider - use specific search methods"}
+
     async def close(self) -> None:
         """Closes the HTTP client."""
         # Only close if we created the client ourselves (not from ResourceScope)

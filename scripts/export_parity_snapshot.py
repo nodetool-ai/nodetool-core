@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 Export Python-side metadata for systematic parity checking against the
 TypeScript port.
@@ -16,7 +18,6 @@ Usage:
     python scripts/export_parity_snapshot.py cli           # cli only
     python scripts/export_parity_snapshot.py library       # library only
 """
-from __future__ import annotations
 
 import datetime
 import inspect
@@ -24,7 +25,6 @@ import json
 import sys
 import types
 import typing
-
 
 # ── Type Mapping ──────────────────────────────────────────────────────
 
