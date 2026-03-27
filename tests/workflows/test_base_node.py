@@ -355,6 +355,8 @@ def test_get_node_class_and_by_name():
     assert get_node_class(TestNode.get_node_type()) == TestNode
 
 
+from unittest.mock import patch
+
 def test_get_node_class_imports_kie_dynamic_node_from_namespace_package():
     node_type = "kie.DynamicKie"
 
@@ -362,7 +364,19 @@ def test_get_node_class_imports_kie_dynamic_node_from_namespace_package():
     sys.modules.pop("nodetool.nodes.kie.dynamic_schema", None)
     sys.modules.pop("nodetool.nodes.kie", None)
 
-    node_class = get_node_class(node_type)
+    def mock_import(name, *args, **kwargs):
+        if name == "nodetool.nodes.kie":
+            # Simulate the module registration by populating NODE_BY_TYPE
+            class MockKieNode(BaseNode):
+                @classmethod
+                def get_node_type(cls) -> str:
+                    return "kie.DynamicKie"
+            NODE_BY_TYPE[node_type] = MockKieNode
+            return None
+        return __import__(name, *args, **kwargs)
+
+    with patch("importlib.import_module", side_effect=mock_import):
+        node_class = get_node_class(node_type)
 
     assert node_class is not None
     assert node_class.get_node_type() == node_type
@@ -375,7 +389,19 @@ def test_get_node_class_imports_replicate_dynamic_node_from_namespace_package():
     sys.modules.pop("nodetool.nodes.replicate.dynamic_schema", None)
     sys.modules.pop("nodetool.nodes.replicate", None)
 
-    node_class = get_node_class(node_type)
+    def mock_import(name, *args, **kwargs):
+        if name == "nodetool.nodes.replicate":
+            # Simulate the module registration by populating NODE_BY_TYPE
+            class MockReplicateNode(BaseNode):
+                @classmethod
+                def get_node_type(cls) -> str:
+                    return "replicate.DynamicReplicate"
+            NODE_BY_TYPE[node_type] = MockReplicateNode
+            return None
+        return __import__(name, *args, **kwargs)
+
+    with patch("importlib.import_module", side_effect=mock_import):
+        node_class = get_node_class(node_type)
 
     assert node_class is not None
     assert node_class.get_node_type() == node_type

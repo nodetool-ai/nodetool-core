@@ -602,7 +602,7 @@ class LlamaServerManager:
             False otherwise.
         """
         deadline = time.time() + max(5, self._ready_timeout)
-        async with httpx.AsyncClient(timeout=5.0, verify=False) as client:  # nosec B501
+        async with httpx.AsyncClient(timeout=5.0, verify=True) as client:  # nosec B501
             while time.time() < deadline:
                 try:
                     r = await client.get(f"{base_url}/health")
@@ -624,7 +624,7 @@ class LlamaServerManager:
             models_url = f"{base_url}/v1/models"
             log.debug(f"Querying model capabilities: {models_url}")
 
-            async with httpx.AsyncClient(timeout=5.0, verify=False) as client:  # nosec B501
+            async with httpx.AsyncClient(timeout=5.0, verify=True) as client:  # nosec B501
                 response = await client.get(models_url)
                 response.raise_for_status()
                 data = response.json()
