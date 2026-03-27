@@ -322,7 +322,7 @@ import sys
 # Ensure we start clean
 modules_before = set(sys.modules.keys())
 
-from nodetool.tools.workflow_tools import WorkflowTools
+from nodetool.server_tools.workflow_tools import WorkflowTools
 
 modules_after = set(sys.modules.keys())
 new_modules = modules_after - modules_before
@@ -547,7 +547,7 @@ x = 42
         """Test that importing CollectionTools does not trigger ChromaDB load."""
         script = """
 import sys
-from nodetool.tools.collection_tools import CollectionTools
+from nodetool.server_tools.collection_tools import CollectionTools
 
 # Check for ChromaDB
 chroma_modules = [m for m in sys.modules.keys() if 'chromadb' in m]
@@ -581,7 +581,7 @@ class TestWorkflowsListDiagnostics:
         import nodetool.cli as cli_mod
         import nodetool.runtime.db_sqlite as db_sqlite
         import nodetool.runtime.resources as resources
-        from nodetool.tools.workflow_tools import WorkflowTools
+        from nodetool.server_tools.workflow_tools import WorkflowTools
 
         class DummyScope:
             async def __aenter__(self):
@@ -696,7 +696,7 @@ class TestCliAsyncRunnerCleanup:
         """Test that importing node_tools does not trigger heavy imports."""
         script = """
 import sys
-from nodetool.tools.node_tools import NodeTools
+from nodetool.server_tools.node_tools import NodeTools
 
 # Check for heavy libs
 heavy_libs = ['numpy', 'torch', 'PIL', 'huggingface_hub']

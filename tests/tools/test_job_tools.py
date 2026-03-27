@@ -10,7 +10,7 @@ class TestJobToolsFunctions:
 
     def test_get_tool_functions_returns_correct_functions(self):
         """Test that get_tool_functions returns expected functions."""
-        from nodetool.tools.job_tools import JobTools
+        from nodetool.server_tools.job_tools import JobTools
 
         funcs = JobTools.get_tool_functions()
         assert "list_jobs" in funcs
@@ -20,7 +20,7 @@ class TestJobToolsFunctions:
 
     def test_get_tool_functions_are_callable(self):
         """Test that all returned functions are callable."""
-        from nodetool.tools.job_tools import JobTools
+        from nodetool.server_tools.job_tools import JobTools
 
         funcs = JobTools.get_tool_functions()
         for name, func in funcs.items():
@@ -28,7 +28,7 @@ class TestJobToolsFunctions:
 
     def test_get_tool_functions_count(self):
         """Test that exactly 4 functions are returned."""
-        from nodetool.tools.job_tools import JobTools
+        from nodetool.server_tools.job_tools import JobTools
 
         funcs = JobTools.get_tool_functions()
         assert len(funcs) == 4

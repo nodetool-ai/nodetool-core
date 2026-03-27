@@ -256,8 +256,8 @@ class TestWorkflowOperations:
                 return False
 
         paginate_mock = AsyncMock(return_value=([], None))
-        monkeypatch.setattr("nodetool.tools.workflow_tools.maybe_scope", lambda: None)
-        monkeypatch.setattr("nodetool.tools.workflow_tools.ResourceScope", DummyScope)
+        monkeypatch.setattr("nodetool.server_tools.workflow_tools.maybe_scope", lambda: None)
+        monkeypatch.setattr("nodetool.server_tools.workflow_tools.ResourceScope", DummyScope)
         monkeypatch.setattr(Workflow, "paginate", paginate_mock)
 
         result = await list_workflows(limit=10, user_id="1")
@@ -698,7 +698,7 @@ class TestHuggingFaceOperations:
     @pytest.mark.asyncio
     async def test_get_hf_cache_info(self):
         """Test getting HuggingFace cache information."""
-        with patch("nodetool.tools.hf_tools.read_cached_hf_models") as mock_read:
+        with patch("nodetool.server_tools.hf_tools.read_cached_hf_models") as mock_read:
             mock_read.return_value = [
                 Mock(
                     repo_id="meta-llama/Llama-2-7b",
@@ -718,7 +718,7 @@ class TestHuggingFaceOperations:
     @pytest.mark.asyncio
     async def test_inspect_hf_cached_model(self):
         """Test inspecting a specific cached model."""
-        with patch("nodetool.tools.hf_tools.read_cached_hf_models") as mock_read:
+        with patch("nodetool.server_tools.hf_tools.read_cached_hf_models") as mock_read:
             mock_read.return_value = [
                 Mock(
                     repo_id="meta-llama/Llama-2-7b",
@@ -739,7 +739,7 @@ class TestHuggingFaceOperations:
     @pytest.mark.asyncio
     async def test_inspect_hf_cached_model_not_found(self):
         """Test inspecting non-existent cached model."""
-        with patch("nodetool.tools.hf_tools.read_cached_hf_models") as mock_read:
+        with patch("nodetool.server_tools.hf_tools.read_cached_hf_models") as mock_read:
             mock_read.return_value = []
 
             with pytest.raises(ValueError, match="not found in cache"):
@@ -749,8 +749,8 @@ class TestHuggingFaceOperations:
     async def test_query_hf_model_files(self):
         """Test querying HuggingFace Hub for model files."""
         with (
-            patch("nodetool.tools.hf_tools.HfApi") as mock_api_class,
-            patch("nodetool.tools.hf_tools.asdict") as mock_asdict,
+            patch("nodetool.server_tools.hf_tools.HfApi") as mock_api_class,
+            patch("nodetool.server_tools.hf_tools.asdict") as mock_asdict,
         ):
             mock_file_info = Mock()
             mock_file_info.size = 5000000000
@@ -787,8 +787,8 @@ class TestHuggingFaceOperations:
     async def test_search_hf_hub_models(self):
         """Test searching HuggingFace Hub for models."""
         with (
-            patch("nodetool.tools.hf_tools.HfApi") as mock_api_class,
-            patch("nodetool.tools.hf_tools.asdict") as mock_asdict,
+            patch("nodetool.server_tools.hf_tools.HfApi") as mock_api_class,
+            patch("nodetool.server_tools.hf_tools.asdict") as mock_asdict,
         ):
             mock_model = Mock()
             mock_model.id = "meta-llama/Llama-2-7b"
@@ -821,8 +821,8 @@ class TestHuggingFaceOperations:
     async def test_get_hf_model_info(self):
         """Test getting detailed model info from HuggingFace Hub."""
         with (
-            patch("nodetool.tools.hf_tools.HfApi") as mock_api_class,
-            patch("nodetool.tools.hf_tools.asdict") as mock_asdict,
+            patch("nodetool.server_tools.hf_tools.HfApi") as mock_api_class,
+            patch("nodetool.server_tools.hf_tools.asdict") as mock_asdict,
         ):
             mock_info = Mock()
             mock_info.id = "meta-llama/Llama-2-7b"
