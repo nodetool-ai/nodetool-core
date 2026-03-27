@@ -97,6 +97,12 @@ class DataForSEOProvider(SerpProvider):
         except Exception as e:
             return {"error": f"Unexpected error during DataForSEO request: {e!s}"}
 
+    async def search_raw(self, endpoint: str, params: dict[str, Any]) -> Any:
+        """
+        Execute a raw search against DataForSEO. Note: params format differs from SerpApi.
+        """
+        return {"error": "Raw endpoint search is not directly supported by DataForSEOProvider."}
+
     async def search(self, keyword: str, num_results: int = 10) -> list[dict[str, Any]] | ErrorResponse:
         payload_dict = {
             "keyword": keyword,
