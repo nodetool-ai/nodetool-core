@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import stat
 from datetime import UTC, datetime
 
 import aiofiles
@@ -38,16 +39,16 @@ class WorkspaceInfo(BaseModel):
 async def get_file_info(path: str) -> FileInfo:
     """Helper function to get file information"""
     try:
-        stat = await aiofiles.os.stat(path)
-        is_dir = await asyncio.to_thread(os.path.isdir, path)
+        st = await aiofiles.os.stat(path)
+        is_dir = stat.S_ISDIR(st.st_mode)
         return FileInfo(
             name=os.path.basename(path),
             path=path,
-            size=stat.st_size,
+            size=st.st_size,
             is_dir=is_dir,
-            modified_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
+            modified_at=datetime.fromtimestamp(st.st_mtime, tz=UTC).isoformat(),
         )
-    except Exception as e:
+    except OSError as e:
         log.error(f"Error getting file info for {path}: {str(e)}")
         raise HTTPException(status_code=404, detail=f"File not found: {path}") from e
 
@@ -121,22 +122,30 @@ async def list_files(path: str = ".", __user: str = Depends(current_user)) -> li
         if not exists:
             raise HTTPException(status_code=404, detail=f"Path not found: {path}")
 
-        files = []
-        entries = await aiofiles.os.listdir(abs_path)
-        for entry in entries:
-            # Skip files/directories that start with a dot
-            if entry.startswith("."):
-                continue
+        def _get_files_sync(dir_path: str) -> list[FileInfo]:
+            files_sync = []
+            with os.scandir(dir_path) as entries:
+                for entry in entries:
+                    if entry.name.startswith("."):
+                        continue
+                    try:
+                        st = entry.stat()
+                        is_dir = entry.is_dir()
+                        files_sync.append(
+                            FileInfo(
+                                name=entry.name,
+                                path=entry.path,
+                                size=st.st_size,
+                                is_dir=is_dir,
+                                modified_at=datetime.fromtimestamp(st.st_mtime, tz=UTC).isoformat(),
+                            )
+                        )
+                    except OSError as e:
+                        log.warning(f"Skipping {entry.path}: {str(e)}")
+                        continue
+            return files_sync
 
-            entry_path = os.path.join(abs_path, entry)
-            try:
-                file_info = await get_file_info(entry_path)
-                files.append(file_info)
-            except Exception as e:
-                log.warning(f"Skipping {entry_path}: {str(e)}")
-                continue
-
-        return files
+        return await asyncio.to_thread(_get_files_sync, abs_path)
     except HTTPException:
         # Re-raise HTTPExceptions (like from validate_path)
         raise
