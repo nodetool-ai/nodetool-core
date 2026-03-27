@@ -11,13 +11,10 @@ import httpx
 import PIL.Image
 import pytest
 import pytest_asyncio
-from fastapi.testclient import TestClient
 from pydantic import Field
 
-from nodetool.api.server import create_app
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import configure_logging
-from nodetool.deploy.auth import get_server_auth_token
 from nodetool.models.asset import Asset
 from nodetool.models.job import Job
 from nodetool.models.message import Message
@@ -56,46 +53,15 @@ def worker_id(request):
     return "master"
 
 
-# @pytest.fixture(scope="session", autouse=True)
-# def _silence_aiosqlite_logging():
-#     """Reduce noisy aiosqlite logs during tests."""
-#     import logging
-
-#     for name in (
-#         "aiosqlite",
-#         "aiosqlite.core",
-#         "aiosqlite.cursor",
-#         "aiosqlite.connection",
-#     ):
-#         logger = logging.getLogger(name)
-#         logger.setLevel(logging.ERROR)
-#         logger.propagate = False
-
-
 @pytest_asyncio.fixture(scope="session")
 async def test_db_pool(worker_id):
-    """Create test database once for entire session with connection pool.
-
-    This fixture:
-    - Creates a single temporary database file per worker (for pytest-xdist compatibility)
-    - Runs migrations once at session start
-    - Creates a persistent connection pool
-    - Cleans up pool at session end
-
-    Args:
-        worker_id: Provided by pytest-xdist to identify the worker process
-
-    Yields:
-        tuple: (pool, db_path) for use in tests
-    """
+    """Create test database once for entire session with connection pool."""
     import os
     import tempfile
 
     from nodetool.models.migrations import run_startup_migrations
     from nodetool.runtime.db_sqlite import SQLiteConnectionPool
 
-    # Create a temporary database file for the entire test session
-    # Use worker_id to ensure each xdist worker gets a unique database
     worker_suffix = f"_{worker_id}" if worker_id != "master" else ""
     with tempfile.NamedTemporaryFile(
         suffix=f"{worker_suffix}.sqlite3", prefix="nodetool_test_session_", delete=False
@@ -104,15 +70,12 @@ async def test_db_pool(worker_id):
 
     pool = None
     try:
-        # Create connection pool (will be reused across all tests in this worker)
         pool = await SQLiteConnectionPool.get_shared(db_path)
-        # Run migrations once for the session
         await run_startup_migrations(pool)
 
         yield pool
 
     finally:
-        # Clean up pool at session end
         if pool is not None:
             try:
                 await pool.close_all()
@@ -125,7 +88,6 @@ async def test_db_pool(worker_id):
 
                 logging.warning(f"Error cleaning up session connection pool: {e}")
 
-        # Remove temporary database file
         try:
             os.unlink(db_path)
         except Exception:
@@ -142,7 +104,6 @@ async def _truncate_all_tables(pool):
         )
         tables = await cursor.fetchall()
 
-        # Use a single transaction for all deletes
         for table in tables:
             table_name = table[0]
             try:
@@ -153,10 +114,8 @@ async def _truncate_all_tables(pool):
                 logging.debug(f"Failed to truncate table {table_name}: {e}")
                 pass
 
-        # Commit all deletes in a single transaction
         await connection.commit()
     except Exception as e:
-        # Rollback on error
         import logging
 
         logging.debug(f"Error during table truncation, rolling back: {e}")
@@ -173,37 +132,15 @@ async def _truncate_all_tables(pool):
 
 @pytest_asyncio.fixture(autouse=True, scope="function")
 async def setup_and_teardown(request, test_db_pool):
-    """Set up ResourceScope with table truncation for test isolation.
-
-    This fixture:
-    - Uses shared database and connection pool across all tests
-    - Provides ResourceScope for each test
-    - Truncates all tables after test to ensure clean state
-    - Much faster than creating new database per test
-    """
+    """Set up ResourceScope with table truncation for test isolation."""
     if request.node.get_closest_marker("no_setup"):
         yield
         return
-
-    from nodetool.workflows.job_execution_manager import JobExecutionManager
 
     async with ResourceScope(pool=test_db_pool):
         try:
             yield
         finally:
-            try:
-                if JobExecutionManager._instance is not None:
-                    manager = JobExecutionManager.get_instance()
-                    for _job_id, job in list(manager._jobs.items()):
-                        try:
-                            await job.cleanup_resources()
-                        except Exception:
-                            pass
-                    manager._jobs.clear()
-                    await manager.shutdown()
-            except Exception:
-                pass
-
             # Clear model observers to prevent leaks between tests
             from nodetool.models.base_model import ModelObserver
 
@@ -226,18 +163,7 @@ async def setup_and_teardown(request, test_db_pool):
 
 @pytest.fixture(autouse=True)
 def _set_dummy_api_keys(monkeypatch):
-    """Provide dummy API keys so provider constructors don't fail in unit tests.
-
-    This fixture provides environment variables for backward compatibility and for
-    code paths that check environment variables directly.
-
-    RECOMMENDED: For provider tests, use BaseProviderTest.create_provider() instead,
-    which dynamically fetches secrets using provider_class.required_secrets() and
-    builds the secrets dict. This is cleaner and doesn't rely on env vars.
-
-    These tests mock network calls; real keys are not required. Setting the env vars
-    prevents providers from raising ApiKeyMissingError during initialization.
-    """
+    """Provide dummy API keys so provider constructors don't fail in unit tests."""
     monkeypatch.setenv("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", "test-openai-key"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", os.getenv("ANTHROPIC_API_KEY", "test-anthropic-key"))
     monkeypatch.setenv("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", "test-gemini-key"))
@@ -250,14 +176,7 @@ def _set_dummy_api_keys(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def mock_keyring(monkeypatch):
-    """Provide an in-memory keyring implementation for tests.
-
-    The default keyring backend used in CI raises NoKeyringError because no
-    secure storage backend is available. Tests that interact with
-    ``MasterKeyManager`` need ``keyring`` to behave like a functional backend,
-    so we replace ``get_password``/``set_password``/``delete_password`` with a
-    simple dictionary-backed store.
-    """
+    """Provide an in-memory keyring implementation for tests."""
 
     import keyring
 
@@ -278,7 +197,6 @@ def mock_keyring(monkeypatch):
     monkeypatch.setattr(keyring, "set_password", set_password)
     monkeypatch.setattr(keyring, "delete_password", delete_password)
 
-    # Ensure tests don't reuse a cached master key from previous runs
     MasterKeyManager.clear_cache()
 
     try:
@@ -290,12 +208,7 @@ def mock_keyring(monkeypatch):
 
 @pytest.fixture(scope="session")
 def event_loop():
-    """Provide a shared asyncio event loop for the entire test session.
-
-    Session-scoped to support session-scoped async fixtures (test_db_pool).
-    Ensures the loop runs at least one cycle before close so the internal
-    self-pipe is initialized, preventing AttributeError on close in CPython 3.11.
-    """
+    """Provide a shared asyncio event loop for the entire test session."""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -313,30 +226,12 @@ def event_loop():
 
 
 def pil_to_bytes(image: PIL.Image.Image, format="PNG") -> bytes:
-    """
-    Convert a PIL.Image.Image to bytes.
-
-    Args:
-        image (PIL.Image.Image): The image to convert.
-        format (str, optional): The format to use. Defaults to "PNG".
-
-    Returns:
-        bytes: The image as bytes.
-    """
     with io.BytesIO() as buffer:
         image.save(buffer, format=format)
         return buffer.getvalue()
 
 
 async def upload_test_image(image: Asset, width: int = 512, height: int = 512):
-    """
-    Upload a test image to the memory storage.
-
-    Args:
-        image (Asset): The asset to upload the image for.
-        width (int, optional): Width of the test image. Defaults to 512.
-        height (int, optional): Height of the test image. Defaults to 512.
-    """
     storage = require_scope().get_asset_storage()
     assert isinstance(storage, MemoryStorage)
     img = PIL.Image.new("RGB", (width, height))
@@ -351,19 +246,6 @@ async def make_image(
     width: int = 512,
     height: int = 512,
 ) -> Asset:
-    """
-    Create and upload a test image asset.
-
-    Args:
-        user_id (str): The user ID who owns the image.
-        workflow_id (str | None, optional): Associated workflow ID. Defaults to None.
-        parent_id (str | None, optional): Parent asset ID. Defaults to None.
-        width (int, optional): Width of the test image. Defaults to 512.
-        height (int, optional): Height of the test image. Defaults to 512.
-
-    Returns:
-        Asset: The created image asset.
-    """
     image = await Asset.create(
         user_id=user_id,
         name="test_image",
@@ -381,18 +263,6 @@ async def make_text(
     workflow_id: str | None = None,
     parent_id: str | None = None,
 ):
-    """
-    Create and upload a test text asset.
-
-    Args:
-        user_id (str): The user ID who owns the text asset.
-        content (str): The text content to upload.
-        workflow_id (str | None, optional): Associated workflow ID. Defaults to None.
-        parent_id (str | None, optional): Parent asset ID. Defaults to None.
-
-    Returns:
-        Asset: The created text asset.
-    """
     asset = await Asset.create(
         user_id=user_id,
         name="test_text",
@@ -406,16 +276,6 @@ async def make_text(
 
 
 async def make_job(user_id: str, **kwargs):
-    """
-    Create a test job.
-
-    Args:
-        user_id (str): The user ID who owns the job.
-        **kwargs: Additional job attributes.
-
-    Returns:
-        Job: The created job instance.
-    """
     return await Job.create(
         workflow_id=str(uuid.uuid4()),
         user_id=user_id,
@@ -456,41 +316,7 @@ def context(user_id: str, http_client):
     )
 
 
-@pytest.fixture()
-def client():
-    """
-    Create a test client for the FastAPI app and ensure it closes.
-
-    Use a context-managed TestClient to ensure proper startup/shutdown
-    and avoid event loop cleanup issues across tests.
-    """
-    with TestClient(create_app()) as c:
-        yield c
-
-
-@pytest.fixture()
-def headers(user_id: str):
-    """
-    Create headers for a http request that requires authentication.
-
-    This fixture is scoped to the function, so it will be created once for each test function.
-    """
-    token = get_server_auth_token()
-    return {"Authorization": f"Bearer {token}"}
-
-
 def make_node(id, type: str, data: dict[str, Any]):
-    """
-    Create a node for workflow testing.
-
-    Args:
-        id: The node ID.
-        type (str): The node type identifier.
-        data (dict[str, Any]): Node configuration data.
-
-    Returns:
-        Node: The created node instance.
-    """
     return Node(id=id, type=type, data=data)
 
 
@@ -531,7 +357,6 @@ class Add(BaseNode):
 
 @pytest_asyncio.fixture()
 async def workflow(user_id: str):
-    # Restore graph definition from previous version
     nodes = [
         make_node("1", FloatInput.get_node_type(), {"name": "in1", "value": 10}),
         make_node("2", Add.get_node_type(), {"b": 1, "a": 1}),
@@ -545,7 +370,7 @@ async def workflow(user_id: str):
         ),
     ]
     wf = await Workflow.create(
-        user_id=user_id,  # Use the string user_id
+        user_id=user_id,
         name="test_workflow",
         graph={
             "nodes": [node.model_dump() for node in nodes],
@@ -561,25 +386,20 @@ def pytest_sessionfinish(session, exitstatus):
     import os
     import time
 
-    # Force garbage collection
     gc.collect()
 
-    # Close any lingering event loops
     try:
-        # Try to get running loop first (preferred in Python 3.10+)
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
-            # No running loop, try the deprecated method for cleanup purposes
             loop = asyncio.get_event_loop_policy().get_event_loop()
         if loop.is_running():
             loop.stop()
         if not loop.is_closed():
             loop.close()
     except RuntimeError:
-        pass  # No event loop in current thread
+        pass
 
-    # Log any non-daemon threads that might prevent exit
     main_thread = threading.main_thread()
     non_daemon_threads = [t for t in threading.enumerate() if t != main_thread and t.is_alive() and not t.daemon]
 
@@ -589,8 +409,6 @@ def pytest_sessionfinish(session, exitstatus):
             f"{[t.name for t in non_daemon_threads]}"
         )
 
-        # Force exit if there are hanging threads
-        # Give threads a brief moment to clean up, then force exit
         def force_exit_thread():
             time.sleep(1)
             os._exit(exitstatus)
@@ -598,5 +416,4 @@ def pytest_sessionfinish(session, exitstatus):
         exit_thread = threading.Thread(target=force_exit_thread, daemon=True)
         exit_thread.start()
 
-    # Shutdown any thread pools or executors
     gc.collect()

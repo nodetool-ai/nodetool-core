@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from nodetool.agents.tools.base import Tool
+from nodetool.metadata.tool_types import Tool
 from nodetool.metadata.types import Message as ApiMessage
 from nodetool.models.message import Message as DBMessage
 from nodetool.models.thread import Thread

@@ -1,0 +1,61 @@
+"""
+Tool type definition for provider integrations.
+
+Provides the Tool class used by LLM providers for function calling.
+Relocated from agents/tools/base.py during server layer removal.
+"""
+
+from typing import Any
+
+from nodetool.config.logging_config import get_logger
+from nodetool.workflows.processing_context import ProcessingContext
+
+logger = get_logger(__name__)
+
+
+class Tool:
+    """Base class that all tools inherit from."""
+
+    # Class attributes expected to be defined by subclasses
+    name: str = "base_tool"  # Provide a default or make abstract
+    description: str = "Base tool description"
+    input_schema: dict[str, Any] = {}  # noqa: RUF012  # Mutable default is intentional; overridden by subclasses
+    example: str = ""
+
+    def user_message(self, params: dict[str, Any]) -> str:
+        """
+        Returns a user message for the tool.
+        """
+        return f"Running {self.name}"
+
+    def tool_param(self) -> dict[str, Any]:
+        """
+        Returns the tool's definition in a format suitable for LLM function calling.
+        """
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.input_schema,
+            },
+        }
+
+    async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:
+        """
+        Process the tool's action. Subclasses MUST override this method.
+
+        Args:
+            context: The processing context containing shared state.
+            params: A dictionary of parameters matching the tool's input_schema.
+
+        Returns:
+            The result of the tool's execution. The type depends on the tool.
+        """
+        logger.warning(f"Process method not implemented for tool: {self.name}")
+        # Default implementation returns params, but subclasses should override
+        return params
+
+    def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
+        """Return environment variables needed when running inside Docker."""
+        return {}

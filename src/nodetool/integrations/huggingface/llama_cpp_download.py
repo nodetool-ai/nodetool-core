@@ -23,8 +23,20 @@ from typing import TYPE_CHECKING, Optional
 import aiofiles
 import httpx
 
+import sys
+
 from nodetool.config.logging_config import get_logger
-from nodetool.providers.llama_server_manager import get_llama_cpp_cache_dir
+
+
+def get_llama_cpp_cache_dir() -> str:
+    """Return the llama.cpp native cache directory."""
+    if sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Caches/llama.cpp")
+    elif sys.platform == "win32":
+        local_app_data = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+        return os.path.join(local_app_data, "llama.cpp")
+    else:
+        return os.path.expanduser("~/.cache/llama.cpp")
 
 if TYPE_CHECKING:
     from typing import Callable

@@ -85,11 +85,12 @@ def get_static_auth_provider() -> Any:
     Raises:
         ValueError: If SERVER_AUTH_TOKEN is not configured
     """
-    from nodetool.deploy.auth import get_server_auth_token
+    import os
+
     from nodetool.security.providers.static_token import StaticTokenAuthProvider
 
     if ResourceScope._class_static_auth_provider is None:
-        token = get_server_auth_token()
+        token = os.environ.get("SERVER_AUTH_TOKEN")
         if not token:
             raise ValueError("SERVER_AUTH_TOKEN is required for static authentication.")
         ResourceScope._class_static_auth_provider = StaticTokenAuthProvider(static_token=token)
@@ -551,11 +552,12 @@ class ResourceScope:
         Raises:
             ValueError: If SERVER_AUTH_TOKEN is not configured
         """
-        from nodetool.deploy.auth import get_server_auth_token
+        import os
+
         from nodetool.security.providers.static_token import StaticTokenAuthProvider
 
         if ResourceScope._class_static_auth_provider is None:
-            token = get_server_auth_token()
+            token = os.environ.get("SERVER_AUTH_TOKEN")
             if not token:
                 raise ValueError("SERVER_AUTH_TOKEN is required for static authentication.")
             ResourceScope._class_static_auth_provider = StaticTokenAuthProvider(static_token=token)

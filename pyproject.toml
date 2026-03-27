@@ -22,21 +22,13 @@ dependencies = [
     # Pin until upstream aiodns supports pycares 5.x.
     "pycares<5",
     "websockets>=14.1",
-    "fastapi>=0.115.5",
-    "fastmcp>=2.12.4",
-    "openapi-pydantic",
-    "uvicorn>=0.32.0",
     "msgpack>=1.1.0",
     "networkx>=3.4.2",
     "supabase>=2.15.0",
-    "paramiko>=4.0.0",
     "psycopg[binary]>=3.2.9",
     "psycopg-pool>=3.2.6",
-    "docker==7.1.0",
 
     # Utils dependencies
-    "watchdog>=4.0.0",
-    "aioconsole",
     "click>=8.1.7",
     "cryptography>=43.0.0",
     "feedparser",
@@ -52,15 +44,12 @@ dependencies = [
     "nvidia-ml-py>=13.580.65",
     "python-dateutil>=2.9.0.post0",
     "python-dotenv>=1.0.0",
-    "prompt_toolkit>=3.0.50",
     "pyyaml>=6.0.2",
     "rich>=13.9.4",
     "setuptools>=80.8.0",
-    "tabulate>=0.9.0",
     "tomli>=2.2.1",
     "tomlkit",
     "tqdm>=4.67.0",
-
 
     # Document processing dependencies
     "bs4==0.0.2",
@@ -71,21 +60,9 @@ dependencies = [
     "pymupdf4llm>=0.0.27",
     "jinja2==3.1.6",
 
-    # AI dependencies
-    "anthropic>=0.76.0",
-    "claude-agent-sdk>=0.1.19",
+    # AI/ML dependencies
     "huggingface_hub>=0.35.3",
-    "openai>=2.15.0",
-    "traceloop-sdk>=0.50.0",
-    "fal-client>=0.8.1",
-    "gguf>=0.17.1",
-    "ollama>=0.6.1",
     "tiktoken",
-    "sentencepiece",
-    "google-genai>=1.57.0",
-    # "replicate==1.0.3",
-    "runpod",
-    "mcp",
 
     # Media dependencies
     "ffmpeg-python>=0.2.0",
@@ -117,25 +94,15 @@ dependencies = [
     "boto3>=1.35.63",
     "pymemcache>=4.0.0",
     "protobuf",
-    "moto>=5.1.4",
 
     # Web and networking
     "httpx>=0.27.2",
     "websocket-client>=1.8.0",
-    "pyngrok>=7.2.8",
-    "playwright>=1.40.0",
     "hf_xet>=0.0.1",
     "hf_transfer",
 
     # Authentication and security
     "annotated-types>=0.7.0",
-    "authlib>=1.3.2",
-    "itsdangerous",
-    "PyJWT",
-
-    # Observability
-    "opentelemetry-distro==0.60b1",
-    "opentelemetry-exporter-otlp==1.39.1",
 ]
 
 [project.optional-dependencies]
@@ -150,9 +117,6 @@ dev = [
 
 [tool.hatch.metadata]
 allow-direct-references = true
-
-[project.scripts]
-nodetool = "nodetool.cli:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/nodetool"]

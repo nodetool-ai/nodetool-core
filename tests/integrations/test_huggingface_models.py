@@ -211,7 +211,7 @@ class TestParseGgufFlatFilename(unittest.TestCase):
             )
 
             with patch(
-                "nodetool.providers.llama_server_manager.get_llama_cpp_cache_dir",
+                "nodetool.integrations.huggingface.llama_cpp_download.get_llama_cpp_cache_dir",
                 return_value=tmpdir,
             ):
                 models = asyncio.run(huggingface_models.get_llama_cpp_models_from_cache())
@@ -230,7 +230,7 @@ class TestParseGgufFlatFilename(unittest.TestCase):
             gguf.write_bytes(b"\x00" * 8)
 
             with patch(
-                "nodetool.providers.llama_server_manager.get_llama_cpp_cache_dir",
+                "nodetool.integrations.huggingface.llama_cpp_download.get_llama_cpp_cache_dir",
                 return_value=tmpdir,
             ):
                 models = asyncio.run(huggingface_models.get_llamacpp_language_models_from_llama_cache())
@@ -259,7 +259,7 @@ class TestParseGgufFlatFilename(unittest.TestCase):
             )
 
             with patch(
-                "nodetool.providers.llama_server_manager.get_llama_cpp_cache_dir",
+                "nodetool.integrations.huggingface.llama_cpp_download.get_llama_cpp_cache_dir",
                 return_value=tmpdir,
             ):
                 models = asyncio.run(huggingface_models.get_llamacpp_language_models_from_llama_cache())

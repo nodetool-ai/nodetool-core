@@ -1663,7 +1663,7 @@ async def get_llama_cpp_models_from_cache() -> list[UnifiedModel]:
     Returns:
         List[UnifiedModel]: Models with type='llama_cpp_model' found in the cache.
     """
-    from nodetool.providers.llama_server_manager import get_llama_cpp_cache_dir
+    from nodetool.integrations.huggingface.llama_cpp_download import get_llama_cpp_cache_dir
 
     cache_dir = get_llama_cpp_cache_dir()
     if not os.path.isdir(cache_dir):
@@ -1719,7 +1719,7 @@ async def get_llamacpp_language_models_from_llama_cache() -> list[LanguageModel]
     Returns:
         List[LanguageModel]: Llama.cpp-compatible models discovered in the native cache.
     """
-    from nodetool.providers.llama_server_manager import get_llama_cpp_cache_dir
+    from nodetool.integrations.huggingface.llama_cpp_download import get_llama_cpp_cache_dir
 
     cache_dir = get_llama_cpp_cache_dir()
     if not os.path.isdir(cache_dir):
