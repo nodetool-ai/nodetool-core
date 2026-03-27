@@ -104,7 +104,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
     def _normalize_messages_for_llama(
         self,
         messages: Sequence[Message],
-        tools: Sequence[Tool] = [],
+        tools: Sequence[Tool] | None = None,
         use_tool_emulation: bool = False,
         model: str | None = None,
     ) -> list[Message]:
@@ -129,6 +129,10 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         Returns:
             A list of messages compatible with llama.cpp chat templates.
         """
+
+        # Convert None to empty tuple to avoid mutable default argument
+        if tools is None:
+            tools = ()
 
         system_parts: list[str] = []
         normalized: list[Message] = []
