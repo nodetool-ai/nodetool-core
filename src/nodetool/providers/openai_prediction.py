@@ -490,14 +490,7 @@ async def run_openai(prediction: Prediction, env: dict[str, str]) -> AsyncGenera
 
 
 # --- Cost Calculation Helpers (DEPRECATED) ---
-# These functions are deprecated. Please use the new centralized cost calculator instead:
-# from nodetool.providers.cost_calculator import (
-#     calculate_chat_cost,
-#     calculate_embedding_cost,
-#     calculate_speech_cost,
-#     calculate_whisper_cost,
-#     calculate_image_cost,
-# )
+# These functions are deprecated. Please use nodetool.providers.cost_calculator instead.
 # Or use BaseProvider.track_usage() for automatic cost tracking.
 
 
