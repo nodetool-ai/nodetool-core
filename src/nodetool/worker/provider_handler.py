@@ -206,8 +206,8 @@ def _deserialize_messages(raw_messages: list[dict]) -> list[Any]:
             for part in content:
                 if part.get("type") == "text":
                     parts.append(MessageTextContent(type="text", text=part["text"]))
-                elif part.get("type") == "image":
-                    parts.append(MessageImageContent(type="image", image=part["image"]))
+                elif part.get("type") == "image_url":
+                    parts.append(MessageImageContent(type="image_url", image=part["image"]))
                 elif part.get("type") == "audio":
                     parts.append(MessageAudioContent(type="audio", audio=part["audio"]))
             content = parts
