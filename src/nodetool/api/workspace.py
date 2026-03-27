@@ -15,6 +15,7 @@ This module provides REST API endpoints for managing user-defined workspaces:
 
 import asyncio
 import os
+import stat
 from datetime import UTC, datetime
 from typing import Optional
 
@@ -299,16 +300,16 @@ async def get_file_info(path: str) -> FileInfo:
     import aiofiles.os
 
     try:
-        stat = await aiofiles.os.stat(path)
-        is_dir = await asyncio.to_thread(os.path.isdir, path)
+        st = await aiofiles.os.stat(path)
+        is_dir = stat.S_ISDIR(st.st_mode)
         return FileInfo(
             name=os.path.basename(path),
             path=path,
-            size=stat.st_size,
+            size=st.st_size,
             is_dir=is_dir,
-            modified_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
+            modified_at=datetime.fromtimestamp(st.st_mtime, tz=UTC).isoformat(),
         )
-    except Exception as e:
+    except OSError as e:
         log.error(f"Error getting file info for {path}: {str(e)}")
         raise HTTPException(status_code=404, detail=f"File not found: {path}") from e
 
@@ -386,21 +387,29 @@ async def list_workflow_files(
         if not exists:
             raise HTTPException(status_code=404, detail=f"Path not found: {path}")
 
-        files = []
-        import aiofiles.os
+        def _get_files_sync(dir_path: str) -> list[FileInfo]:
+            files_sync = []
+            with os.scandir(dir_path) as entries:
+                for entry in entries:
+                    # Include hidden files in workspace view
+                    try:
+                        st = entry.stat()
+                        is_dir = entry.is_dir()
+                        files_sync.append(
+                            FileInfo(
+                                name=entry.name,
+                                path=entry.path,
+                                size=st.st_size,
+                                is_dir=is_dir,
+                                modified_at=datetime.fromtimestamp(st.st_mtime, tz=UTC).isoformat(),
+                            )
+                        )
+                    except OSError as e:
+                        log.warning(f"Skipping {entry.path}: {str(e)}")
+                        continue
+            return files_sync
 
-        entries = await aiofiles.os.listdir(resolved_path)
-        for entry in entries:
-            # Include hidden files in workspace view
-            entry_path = os.path.join(resolved_path, entry)
-            try:
-                file_info = await get_file_info(entry_path)
-                files.append(file_info)
-            except Exception as e:
-                log.warning(f"Skipping {entry_path}: {str(e)}")
-                continue
-
-        return files
+        return await asyncio.to_thread(_get_files_sync, resolved_path)
     except HTTPException:
         raise
     except Exception as e:
