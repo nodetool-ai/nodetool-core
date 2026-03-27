@@ -1,134 +1,59 @@
 """
-Database migration system for NodeTool.
+Database migration stub.
 
-Provides startup migrations using the professional migration runner with
-version tracking, database-level locking, and rollback support.
-
-This module serves as the bridge between the application startup and the
-migration system. It handles:
-- Automatic database state detection (fresh, legacy, or tracked)
-- Migration execution with transaction safety
-- Baselining for legacy databases
+Migrations are now handled by the TypeScript server (Drizzle).
+This module provides basic table creation for standalone Python usage and tests.
 """
-
-import asyncio
-from typing import TYPE_CHECKING
 
 from nodetool.config.logging_config import get_logger
 
-if TYPE_CHECKING:
-    from nodetool.runtime.db_postgres import PostgresConnectionPool
-    from nodetool.runtime.db_sqlite import SQLiteConnectionPool
-
 log = get_logger(__name__)
 
-# Only one migration at a time (process-level lock, DB-level lock in runner)
-_migration_lock = asyncio.Lock()
 
+async def run_startup_migrations(pool=None) -> None:
+    """Create database tables if they don't exist.
 
-async def run_startup_migrations(pool: "SQLiteConnectionPool | PostgresConnectionPool | None" = None) -> None:
-    """Run all database migrations at application startup.
-
-    This function uses the new migration runner which:
-    - Detects database state (fresh install, legacy, or tracked)
-    - Handles baselining for legacy databases automatically
-    - Uses database-level locking for multi-instance safety
-    - Validates checksums of previously applied migrations
-    - Runs migrations in transactions with rollback on failure
-
-    For Supabase deployments, programmatic migrations are skipped.
-    Use 'nodetool migrations export' to generate SQL files, then
-    run 'supabase db push' to apply them.
-
-    Args:
-        pool: Optional connection pool. If None, creates one based on
-              environment configuration (PostgreSQL or SQLite).
-
-    Raises:
-        MigrationError: If any migration fails
-        ChecksumError: If checksum validation fails
-        LockError: If migration lock cannot be acquired
+    In production, the TypeScript server handles migrations via Drizzle.
+    This function ensures tables exist for standalone Python usage and tests.
     """
-    from nodetool.config.environment import Environment
-    from nodetool.migrations.runner import MigrationRunner
-    from nodetool.migrations.state import detect_database_state_postgres
+    from nodetool.models.asset import Asset
+    from nodetool.models.job import Job
+    from nodetool.models.message import Message
+    from nodetool.models.oauth_credential import OAuthCredential
+    from nodetool.models.prediction import Prediction
+    from nodetool.models.run_event import RunEvent
+    from nodetool.models.run_inbox_message import RunInboxMessage
+    from nodetool.models.run_lease import RunLease
+    from nodetool.models.run_node_state import RunNodeState
+    from nodetool.models.secret import Secret
+    from nodetool.models.thread import Thread
+    from nodetool.models.trigger_input import TriggerInput
+    from nodetool.models.workflow import Workflow
+    from nodetool.models.workspace import Workspace
+    from nodetool.runtime.resources import ResourceScope, maybe_scope
 
-    log.info("Starting database migrations...")
+    models = [Asset, Job, Message, OAuthCredential, Prediction, RunEvent, RunInboxMessage, RunLease, RunNodeState, Secret, Thread, TriggerInput, Workflow, Workspace]
 
-    # Check if using Supabase (Supabase URL present but no direct PostgreSQL connection)
-    supabase_url = Environment.get_supabase_url()
-    postgres_db = Environment.get("POSTGRES_DB")
-
-    if supabase_url and not postgres_db:
-        log.info("Supabase detected - programmatic migrations skipped")
-        log.info("To manage schema, run:")
-        log.info("  1. nodetool migrations export  # Generate SQL files")
-        log.info("  2. supabase db push            # Apply migrations via Supabase CLI")
+    # If we're already in a scope, create tables directly
+    scope = maybe_scope()
+    if scope is not None:
+        for model in models:
+            try:
+                await model.create_table()
+            except Exception as e:
+                log.debug(f"Table creation for {model.__name__}: {e}")
+        log.info("Database tables ensured.")
         return
 
-    async with _migration_lock:
-        # Get or create pool based on database type
-        if pool is None:
-            if postgres_db:
-                # Use PostgreSQL
-                from nodetool.runtime.db_postgres import PostgresConnectionPool
+    # Otherwise create a temporary scope using the provided pool
+    if pool is not None:
+        async with ResourceScope(pool=pool):
+            for model in models:
+                try:
+                    await model.create_table()
+                except Exception as e:
+                    log.debug(f"Table creation for {model.__name__}: {e}")
+        log.info("Database tables ensured.")
+        return
 
-                db_params = Environment.get_postgres_params()
-                conninfo = (
-                    f"dbname={db_params['database']} user={db_params['user']} "
-                    f"password={db_params['password']} host={db_params['host']} port={db_params['port']}"
-                )
-                pool = await PostgresConnectionPool.get_shared(conninfo)
-            else:
-                # Fall back to SQLite
-                from pathlib import Path
-
-                db_path = Environment.get("DB_PATH", "~/.config/nodetool/nodetool.sqlite3")
-                db_path = str(Path(db_path).expanduser())
-                from nodetool.runtime.db_sqlite import SQLiteConnectionPool
-
-                pool = await SQLiteConnectionPool.get_shared(db_path)
-
-        # Acquire connection for migrations
-        conn = await pool.acquire()
-
-        try:
-            # Detect initial state for logging
-            if postgres_db:
-                db_state = await detect_database_state_postgres(pool)
-            else:
-                from nodetool.migrations.state import detect_database_state_sqlite
-
-                db_state = await detect_database_state_sqlite(conn)
-            log.info(f"Database state: {db_state.value}")
-
-            # Create migration runner and execute migrations
-            runner = MigrationRunner(conn)
-
-            # Run migrations - the runner handles all three scenarios
-            applied = await runner.migrate(
-                dry_run=False,
-                validate_checksums=True,
-            )
-
-            if applied:
-                log.info(f"Applied {len(applied)} migration(s): {', '.join(applied)}")
-            else:
-                log.info("No pending migrations - database is up to date")
-
-            # Log final state
-            status = await runner.status()
-            log.info(
-                f"Database migrations completed. "
-                f"State: {status['state']}, "
-                f"Version: {status['current_version'] or 'None'}, "
-                f"Applied: {len(status['applied'])}, "
-                f"Pending: {len(status['pending'])}"
-            )
-
-        except Exception as e:
-            log.error(f"Migration failed: {e}", exc_info=True)
-            raise
-
-        finally:
-            await pool.release(conn)  # type: ignore[arg-type]
+    log.info("No pool or scope available — skipping table creation.")

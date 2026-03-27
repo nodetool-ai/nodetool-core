@@ -23,7 +23,8 @@ if TYPE_CHECKING:  # pragma: no cover - for type checking only
     from nodetool.metadata.types import TorchTensor
     from nodetool.workflows.base_node import BaseNode
     from nodetool.workflows.processing_context import ProcessingContext
-    from nodetool.workflows.workflow_runner import WorkflowRunner
+
+    WorkflowRunner = Any
 
 log = get_logger(__name__)
 

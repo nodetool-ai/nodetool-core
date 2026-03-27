@@ -1,1 +1,0 @@
-# Chat providers tests package

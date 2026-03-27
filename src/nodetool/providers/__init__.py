@@ -1,15 +1,12 @@
 """
-Provider module for multi-modal AI services.
+Provider module for AI services.
 
-This module provides a unified interface for AI service providers including
-language models (OpenAI, Anthropic, Ollama) and image generation services
-(DALL-E, Gemini, FAL, etc.). Providers declare their capabilities and
-implement the corresponding methods.
+This module provides the provider infrastructure (base classes, registry,
+caching) used by Python-only providers (HuggingFace Local, MLX).
+Cloud/API providers (OpenAI, Anthropic, Gemini, etc.) are implemented
+in the TypeScript server.
 """
 import asyncio
-import os
-import shutil
-import subprocess
 import sys
 import threading
 import traceback
@@ -43,101 +40,35 @@ log = get_logger(__name__)
 _providers_imported = False
 
 
-def _is_llama_server_available() -> bool:
-    """Check if llama-server binary is available in PATH or via environment variable.
-
-    Returns:
-        True if llama-server binary can be found, False otherwise.
-    """
-    # Check environment variable first (allows custom path)
-    binary_name = os.environ.get("LLAMA_SERVER_BINARY", "llama-server")
-
-    # If it's an absolute path, check if file exists
-    if os.path.isabs(binary_name) or os.path.sep in binary_name:
-        return os.path.isfile(binary_name) and os.access(binary_name, os.X_OK)
-
-    # Otherwise, check if it's in PATH
-    return shutil.which(binary_name) is not None
-
-
 def import_providers():
     global _providers_imported
     if _providers_imported:
         return
 
-    # Mark imported early to avoid repeating expensive probes on concurrent requests.
-    # If a hard failure occurs during imports, restart the process to retry.
     _providers_imported = True
 
-    # import providers to ensure they are registered
-    from nodetool.providers import (
-        aime_provider,
-        anthropic_provider,
-        cerebras_provider,
-        comfy_local_provider,
-        comfy_runpod_provider,
-        fake_provider,
-        gemini_provider,
-        groq_provider,
-        huggingface_provider,
-        kie_provider,
-        lmstudio_provider,
-        meshy_provider,
-        minimax_provider,
-        mistral_provider,
-        ollama_provider,
-        openai_provider,
-        openrouter_provider,
-        rodin_provider,
-        together_provider,
-        vllm_provider,
-        zai_provider,
-    )
-
-    # Conditionally import llama_provider only if llama-server binary is available
-    if _is_llama_server_available():
-        try:
-            from nodetool.providers import llama_provider  # type: ignore
-
-            log.debug("Llama provider imported successfully (llama-server binary found)")
-        except ImportError as e:
-            log.warning(
-                f"Llama provider could not be imported despite binary being available: {e}. "
-                "Some llama.cpp features may be unavailable."
-            )
-        except Exception as e:
-            log.warning(f"Unexpected error importing Llama provider: {e}. Some llama.cpp features may be unavailable.")
-    else:
-        log.debug(
-            "Llama provider skipped: llama-server binary not found in PATH or LLAMA_SERVER_BINARY. "
-            "Install llama.cpp to enable local LLM inference."
-        )
-
-    # Optional providers that may have missing dependencies
-    # These are imported with better error handling and logging
+    # Import Python-only providers (local compute)
+    # Cloud/API providers are handled by the TypeScript server.
 
     if RUNNING_PYTEST:
-        log.debug("Skipping FAL provider import under pytest")
+        log.debug("Skipping MLX/FAL provider import under pytest")
     else:
         try:
             import nodetool.fal.fal_provider  # type: ignore
 
             log.debug("FAL provider imported successfully")
         except ImportError as e:
-            log.warning(f"FAL provider could not be imported (some features may be unavailable): {e}")
+            log.debug(f"FAL provider not available: {e}")
         except Exception as e:
             traceback.print_exc()
             log.warning(f"Unexpected error importing FAL provider: {e}")
 
-    if RUNNING_PYTEST:
-        log.debug("Skipping MLX provider import under pytest")
-    else:
         try:
             import nodetool.mlx.mlx_provider  # type: ignore
 
             log.debug("MLX provider imported successfully")
         except ImportError as e:
-            log.warning(f"MLX provider could not be imported (some features may be unavailable): {e}")
+            log.debug(f"MLX provider not available: {e}")
         except Exception as e:
             log.warning(f"Unexpected error importing MLX provider: {e}")
 
@@ -146,7 +77,7 @@ def import_providers():
 
         log.debug("HuggingFace local provider imported successfully")
     except ImportError as e:
-        log.debug(f"HuggingFace local provider could not be imported: {e}")
+        log.debug(f"HuggingFace local provider not available: {e}")
     except Exception as e:
         log.warning(f"Unexpected error importing HuggingFace local provider: {e}")
 
@@ -168,12 +99,7 @@ def clear_provider_cache() -> int:
 
 
 def _get_provider_cache_lock() -> asyncio.Lock:
-    """Get or create the provider cache lock lazily.
-
-    This ensures the lock is created in the correct event loop.
-    Multiple event loops (threads) each get their own lock to avoid
-    the "locked by different event loop" error.
-    """
+    """Get or create the provider cache lock lazily."""
     global _provider_cache_lock
     if _provider_cache_lock is None:
         _provider_cache_lock = asyncio.Lock()
@@ -188,17 +114,8 @@ def _get_provider_cache_lock() -> asyncio.Lock:
 
 async def get_provider(provider_type: ProviderEnum, user_id: str = "1", **kwargs) -> BaseProvider:
     """
-    Get a chat provider instance based on the provider type.
+    Get a provider instance based on the provider type.
     Providers are cached after first creation.
-
-    Args:
-        provider_type: The provider type enum
-        user_id: The user ID
-    Returns:
-        A chat provider instance
-
-    Raises:
-        ValueError: If the provider type is not supported
     """
     async with _get_provider_cache_lock():
         if provider_type in _provider_cache:
@@ -209,7 +126,9 @@ async def get_provider(provider_type: ProviderEnum, user_id: str = "1", **kwargs
         provider_cls, kwargs = get_registered_provider(provider_type)
         if provider_cls is None:
             raise ValueError(
-                f"Provider {provider_type.value} is not available. Install the corresponding package via nodetool's package manager."
+                f"Provider {provider_type.value} is not available. "
+                "Cloud providers are handled by the TS server; "
+                "local providers require the corresponding Python package."
             )
 
         required_secrets = provider_cls.required_secrets()
@@ -224,15 +143,6 @@ async def get_provider(provider_type: ProviderEnum, user_id: str = "1", **kwargs
 async def list_providers(user_id: str) -> list["BaseProvider"]:
     """
     List all registered providers for a given user.
-
-    Results are cached for 60 seconds to avoid repeated database queries
-    for secrets lookup.
-
-    Args:
-        user_id: The user ID to get providers for
-
-    Returns:
-        List of initialized provider instances for this user
     """
     import logging
 
@@ -240,40 +150,33 @@ async def list_providers(user_id: str) -> list["BaseProvider"]:
 
     import_providers()
 
-    # Get providers from the registry
     provider_enums = list[ProviderEnum](_PROVIDER_REGISTRY.keys())
 
-    # Collect all required secrets across all providers
     all_required_secrets = set()
-    provider_secret_map = {}  # provider_enum -> list of required secrets
+    provider_secret_map = {}
     for provider_enum in provider_enums:
         provider_cls, kwargs = get_registered_provider(provider_enum)
         required_secrets = provider_cls.required_secrets()
         provider_secret_map[provider_enum] = (provider_cls, kwargs, required_secrets)
         all_required_secrets.update(required_secrets)
 
-    # Batch fetch all secrets in one query
     if all_required_secrets:
         secrets_dict = await get_secrets_batch(list(all_required_secrets), user_id)
     else:
         secrets_dict = {}
 
-    # Initialize providers with their secrets
     providers = []
     for provider_enum, (provider_cls, kwargs, required_secrets) in provider_secret_map.items():
-        # Collect this provider's secrets
         provider_secrets = {}
         for secret in required_secrets:
             secret_value = secrets_dict.get(secret)
             if secret_value:
                 provider_secrets[secret] = secret_value
 
-        # Skip provider if required secrets are missing
         if len(required_secrets) > 0 and len(provider_secrets) == 0:
             logger.debug(f"Skipping provider {provider_enum.value}: missing required secrets {required_secrets}")
             continue
 
-        # Initialize and register provider
         provider = provider_cls(secrets=provider_secrets, **kwargs)
         providers.append(provider)
 

@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar, Generic, TypeVar, cast
@@ -8,23 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from nodetool.config.logging_config import get_logger
 from nodetool.dsl.handles import DynamicOutputsProxy, OutputHandle, OutputsProxy
 from nodetool.metadata.types import OutputSlot
-from nodetool.runtime.resources import ResourceScope
 from nodetool.types.api_graph import Graph, Node
-from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import BaseNode
-from nodetool.workflows.processing_context import (
-    ProcessingContext,
-)
-from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.types import (
-    Error,
-    NodeUpdate,
-    OutputUpdate,
-    PlanningUpdate,
-    TaskUpdate,
-    ToolCallUpdate,
-)
 
 log = get_logger(__name__)
 
@@ -166,94 +150,6 @@ def create_graph(*graph_nodes: "GraphNode[Any]"):
     return Graph(nodes=nodes, edges=g.edges)
 
 
-async def run_graph_async(graph: Graph, **kwargs):
-    """
-    Run the workflow with the given graph.
-
-    Args:
-      graph (Graph): The graph object representing the workflow.
-      asset_output_mode (AssetOutputMode | None): Optional asset output mode applied to the run.
-
-    Returns:
-      Any: The result of the workflow execution.
-    """
-    async with ResourceScope():
-        req = RunJobRequest(**kwargs, graph=graph)
-
-        if "context" in kwargs:
-            context = kwargs["context"]
-        elif "asset_output_mode" in kwargs:
-            # Only construct a ProcessingContext when the caller supplied an explicit
-            # asset_output_mode. Otherwise defer to run_workflow defaults (context=None).
-            context = ProcessingContext(
-                user_id=kwargs.get("user_id"),
-                auth_token=kwargs.get("auth_token"),
-                asset_output_mode=kwargs.get("asset_output_mode"),
-            )
-        else:
-            context = None
-
-        res = {}
-        async for msg in run_workflow(req, context=context):
-            if isinstance(msg, OutputUpdate):
-                res[msg.node_name] = msg.value
-                print(f"OutputUpdate: node_name={msg.node_name}, value={msg.value}")
-            elif isinstance(msg, PlanningUpdate):
-                print(f"PlanningUpdate: phase={msg.phase}, status={msg.status}, content={msg.content}")
-                log.debug("planning: %s", msg.content)
-            elif isinstance(msg, TaskUpdate):
-                print(f"TaskUpdate: event={msg.event}, node_id={msg.node_id}")
-                log.debug("task: %s", msg.event)
-            elif isinstance(msg, NodeUpdate):
-                print(f"NodeUpdate: node_name={msg.node_name}, status={msg.status}, node_type={msg.node_type}")
-                log.debug("node update: %s %s", msg.node_name, msg.status)
-            elif isinstance(msg, ToolCallUpdate):
-                print(f"ToolCallUpdate: name={msg.name}, args={msg.args}")
-                log.debug("tool call: %s", msg.message)
-            elif isinstance(msg, JobUpdate):
-                print(f"JobUpdate: status={msg.status}, job_id={msg.job_id}, message={msg.message}")
-                log.debug("job update: %s", msg.status)
-            elif isinstance(msg, Error):
-                print(f"Error: message={msg.message}")
-                raise Exception(msg.message)
-        return res
-
-
-def run_graph(graph: Graph, **kwargs):
-    """
-    Run the workflow with the given graph.
-
-    Args:
-        graph (Graph): The graph object representing the workflow.
-        **kwargs: Additional keyword arguments to pass to the workflow runner.
-
-    Returns:
-        Any: The result of the workflow execution.
-    """
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return run_graph_sync(graph, **kwargs)
-    return run_graph_async(graph, **kwargs)
-
-
-def run_graph_sync(graph: Graph, **kwargs):
-    """
-    Synchronous helper to run a workflow for scripts without an event loop.
-    """
-    return asyncio.run(run_graph_async(graph, **kwargs))
-
-
 def graph(*nodes: "GraphNode[Any]") -> Graph:
     """Convenience wrapper mapping DSL nodes to a Graph model."""
     return create_graph(*nodes)
-
-
-async def graph_result(node: "GraphNode[Any] | Any", **kwargs):
-    """
-    Build a graph from a single DSL node and execute it asynchronously.
-
-    Convenience helper that forwards kwargs to `run_graph`.
-    """
-    g = graph(node)
-    return await run_graph_async(g, **kwargs)
