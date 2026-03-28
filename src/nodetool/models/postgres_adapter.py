@@ -304,17 +304,26 @@ class PostgresAdapter(DatabaseAdapter):
         table_name = f"{self.table_name}{suffix}"
         fields = self.fields
         primary_key = self.get_primary_key()
-        sql = f"CREATE TABLE IF NOT EXISTS {table_name} ("
+
+        column_defs = []
         for field_name, field in fields.items():
             field_type = field.annotation
-            sql += f"{field_name} {get_postgres_type(field_type)}, "
-        sql += f"PRIMARY KEY ({primary_key}))"
+            column_defs.append(SQL("{} {}").format(
+                Identifier(field_name),
+                SQL(get_postgres_type(field_type))
+            ))
+
+        sql = SQL("CREATE TABLE IF NOT EXISTS {table} ({columns}, PRIMARY KEY ({pk}))").format(
+            table=Identifier(table_name),
+            columns=SQL(", ").join(column_defs),
+            pk=Identifier(primary_key)
+        )
 
         try:
             pool = await self._get_pool()
             async with pool.connection() as conn:
                 async with conn.cursor() as cursor:
-                    await cursor.execute(sql)  # type: ignore[arg-type]
+                    await cursor.execute(sql)
                 await conn.commit()
         except psycopg.Error as e:
             print(f"PostgreSQL error during table creation: {e}")
@@ -322,11 +331,11 @@ class PostgresAdapter(DatabaseAdapter):
 
     async def drop_table(self) -> None:
         """Drops the database table associated with this adapter."""
-        sql = f"DROP TABLE IF EXISTS {self.table_name}"
+        sql = SQL("DROP TABLE IF EXISTS {}").format(Identifier(self.table_name))
         pool = await self._get_pool()
         async with pool.connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute(sql)  # type: ignore[arg-type]
+                await cursor.execute(sql)
             await conn.commit()
 
     async def migrate_table(self) -> None:
@@ -353,11 +362,20 @@ class PostgresAdapter(DatabaseAdapter):
                 # Alter table to add new fields
                 for field_name in fields_to_add:
                     field_type = get_postgres_type(self.fields[field_name].annotation)
-                    await cursor.execute(f"ALTER TABLE {self.table_name} ADD COLUMN {field_name} {field_type}")  # type: ignore[arg-type]
+                    add_sql = SQL("ALTER TABLE {table} ADD COLUMN {col} {type}").format(
+                        table=Identifier(self.table_name),
+                        col=Identifier(field_name),
+                        type=SQL(field_type)
+                    )
+                    await cursor.execute(add_sql)
 
                 # Alter table to remove fields
                 for field_name in fields_to_remove:
-                    await cursor.execute(f"ALTER TABLE {self.table_name} DROP COLUMN {field_name}")  # type: ignore[arg-type]
+                    drop_sql = SQL("ALTER TABLE {table} DROP COLUMN {col}").format(
+                        table=Identifier(self.table_name),
+                        col=Identifier(field_name)
+                    )
+                    await cursor.execute(drop_sql)
 
             await conn.commit()
 
@@ -377,17 +395,29 @@ class PostgresAdapter(DatabaseAdapter):
             item: A dictionary representing the model instance to save.
         """
         valid_keys = [key for key in item if key in self.fields]
-        columns = ", ".join(valid_keys)
-        placeholders = ", ".join([f"%({key})s" for key in valid_keys])
-        values = {key: convert_to_postgres_format(item[key], self.fields[key].annotation) for key in valid_keys}
-        query = (
-            f"INSERT INTO {self.table_name} ({columns}) VALUES ({placeholders}) ON CONFLICT ({self.get_primary_key()}) DO UPDATE SET "
-            + ", ".join([f"{key} = EXCLUDED.{key}" for key in valid_keys])
+
+        cols_composed = SQL(", ").join([Identifier(key) for key in valid_keys])
+        placeholders_composed = SQL(", ").join([Placeholder(key) for key in valid_keys])
+
+        update_composed = SQL(", ").join([
+            SQL("{} = EXCLUDED.{}").format(Identifier(key), Identifier(key))
+            for key in valid_keys
+        ])
+
+        query = SQL("INSERT INTO {table} ({cols}) VALUES ({vals}) ON CONFLICT ({pk}) DO UPDATE SET {updates}").format(
+            table=Identifier(self.table_name),
+            cols=cols_composed,
+            vals=placeholders_composed,
+            pk=Identifier(self.get_primary_key()),
+            updates=update_composed
         )
+
+        values = {key: convert_to_postgres_format(item[key], self.fields[key].annotation) for key in valid_keys}
+
         pool = await self._get_pool()
         async with pool.connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute(query, values)  # type: ignore[arg-type]
+                await cursor.execute(query, values)
             await conn.commit()
 
     async def get(self, key: Any) -> dict[str, Any] | None:
@@ -400,13 +430,19 @@ class PostgresAdapter(DatabaseAdapter):
             A dictionary representing the retrieved item, or None if not found.
             Attributes are converted back to their Python types.
         """
-        primary_key = self.get_primary_key()
-        cols = ", ".join(self.fields)
-        query = f"SELECT {cols} FROM {self.table_name} WHERE {primary_key} = %s"
+        cols_composed = SQL(", ").join([Identifier(col) for col in self.fields])
+
+        query = SQL("SELECT {cols} FROM {table} WHERE {pk} = %s").format(
+            cols=cols_composed,
+            table=Identifier(self.table_name),
+            pk=Identifier(self.get_primary_key())
+        )
+
         pool = await self._get_pool()
         async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(query, (key,))  # type: ignore[arg-type]
+            await cursor.execute(query, (key,))
             item = await cursor.fetchone()
+
         if item is None:
             return None
         return convert_from_postgres_attributes(dict(item), self.fields)
@@ -417,12 +453,15 @@ class PostgresAdapter(DatabaseAdapter):
         Args:
             primary_key: The primary key value of the item to delete.
         """
-        pk_column = self.get_primary_key()
-        query = f"DELETE FROM {self.table_name} WHERE {pk_column} = %s"
+        query = SQL("DELETE FROM {table} WHERE {pk} = %s").format(
+            table=Identifier(self.table_name),
+            pk=Identifier(self.get_primary_key())
+        )
+
         pool = await self._get_pool()
         async with pool.connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute(query, (primary_key,))  # type: ignore[arg-type]
+                await cursor.execute(query, (primary_key,))
             await conn.commit()
 
     def _build_condition(self, condition: Condition | ConditionGroup) -> tuple[Composed, list[Any]]:
@@ -555,30 +594,37 @@ class PostgresAdapter(DatabaseAdapter):
             return []
 
     async def create_index(self, index_name: str, columns: list[str], unique: bool = False) -> None:
-        _validate_column_name(index_name)
-        unique_str = "UNIQUE" if unique else ""
-        columns_str = ", ".join([_validate_column_name(col) for col in columns])
-        sql = f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON {self.table_name} ({columns_str})"
+        unique_sql = SQL("UNIQUE ") if unique else SQL("")
+
+        cols_composed = SQL(", ").join([Identifier(col) for col in columns])
+
+        sql = SQL("CREATE {unique_str}INDEX IF NOT EXISTS {index_name} ON {table_name} ({columns_str})").format(
+            unique_str=unique_sql,
+            index_name=Identifier(index_name),
+            table_name=Identifier(self.table_name),
+            columns_str=cols_composed
+        )
 
         try:
             pool = await self._get_pool()
             async with pool.connection() as conn:
                 async with conn.cursor() as cursor:
-                    await cursor.execute(sql)  # type: ignore[arg-type]
+                    await cursor.execute(sql)
                 await conn.commit()
         except psycopg.Error as e:
             print(f"PostgreSQL error during index creation: {e}")
             raise e
 
     async def drop_index(self, index_name: str) -> None:
-        _validate_column_name(index_name)
-        sql = f"DROP INDEX IF EXISTS {index_name}"
+        sql = SQL("DROP INDEX IF EXISTS {index_name}").format(
+            index_name=Identifier(index_name)
+        )
 
         try:
             pool = await self._get_pool()
             async with pool.connection() as conn:
                 async with conn.cursor() as cursor:
-                    await cursor.execute(sql)  # type: ignore[arg-type]
+                    await cursor.execute(sql)
                 await conn.commit()
         except psycopg.Error as e:
             print(f"PostgreSQL error during index deletion: {e}")
