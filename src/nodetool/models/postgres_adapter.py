@@ -185,6 +185,29 @@ def translate_postgres_params(query: str, params: dict[str, Any]) -> tuple[str, 
     return translated_query, params
 
 
+VALID_COLUMN_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def _validate_column_name(column_name: str) -> str:
+    """Validate column name to prevent SQL injection.
+
+    Args:
+        column_name: The column name to validate.
+
+    Returns:
+        The validated column name.
+
+    Raises:
+        ValueError: If the column name contains invalid characters.
+    """
+    # Allow "*" as a special case for selecting all columns
+    if column_name == "*":
+        return column_name
+    if not VALID_COLUMN_NAME_RE.match(column_name):
+        raise ValueError(f"Invalid column name: {column_name}")
+    return column_name
+
+
 class PostgresAdapter(DatabaseAdapter):
     """Adapts DBModel operations to a PostgreSQL database."""
 
@@ -214,7 +237,7 @@ class PostgresAdapter(DatabaseAdapter):
             indexes: List of index definitions for the table.
         """
         self.db_params = db_params
-        self.table_name = table_schema["table_name"]
+        self.table_name = _validate_column_name(table_schema["table_name"])
         self.table_schema = table_schema
         self.fields = fields
         self.indexes = indexes
@@ -412,13 +435,14 @@ class PostgresAdapter(DatabaseAdapter):
             A tuple containing the SQL Composed object for the WHERE clause and a list of parameters.
         """
         if isinstance(condition, Condition):
+            validated_field = _validate_column_name(condition.field)
             if condition.operator == Operator.IN:
                 placeholders = SQL(", ").join([Placeholder()] * len(condition.value))
-                sql = SQL("{} IN ({})").format(Identifier(condition.field), placeholders)
+                sql = SQL("{} IN ({})").format(Identifier(validated_field), placeholders)
                 params = condition.value
             else:
                 sql = SQL("{} {} {}").format(
-                    Identifier(condition.field),
+                    Identifier(validated_field),
                     SQL(condition.operator.value),
                     Placeholder(),
                 )
@@ -449,8 +473,9 @@ class PostgresAdapter(DatabaseAdapter):
     ) -> tuple[list[dict[str, Any]], str]:
         pk = self.get_primary_key()
         if order_by:
+            validated_order_by = _validate_column_name(order_by)
             order_clause = SQL("{}.{} {}").format(
-                Identifier(self.table_name), Identifier(order_by), SQL("DESC" if reverse else "ASC")
+                Identifier(self.table_name), Identifier(validated_order_by), SQL("DESC" if reverse else "ASC")
             )
         else:
             order_clause = SQL("{}.{} DESC" if reverse else "{}.{} ASC").format(
@@ -464,11 +489,12 @@ class PostgresAdapter(DatabaseAdapter):
             params = []
 
         if columns:
-            if columns == ["*"]:
+            validated_cols = [_validate_column_name(col) for col in columns]
+            if validated_cols == ["*"]:
                 cols = SQL("*")
             else:
                 cols = SQL(", ").join(
-                    [SQL("{}.{}").format(Identifier(self.table_name), Identifier(col)) for col in columns]
+                    [SQL("{}.{}").format(Identifier(self.table_name), Identifier(col)) for col in validated_cols]
                 )
         else:
             cols = SQL(", ").join(
@@ -529,8 +555,9 @@ class PostgresAdapter(DatabaseAdapter):
             return []
 
     async def create_index(self, index_name: str, columns: list[str], unique: bool = False) -> None:
+        _validate_column_name(index_name)
         unique_str = "UNIQUE" if unique else ""
-        columns_str = ", ".join(columns)
+        columns_str = ", ".join([_validate_column_name(col) for col in columns])
         sql = f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON {self.table_name} ({columns_str})"
 
         try:
@@ -544,6 +571,7 @@ class PostgresAdapter(DatabaseAdapter):
             raise e
 
     async def drop_index(self, index_name: str) -> None:
+        _validate_column_name(index_name)
         sql = f"DROP INDEX IF EXISTS {index_name}"
 
         try:
