@@ -13,6 +13,14 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+# Pre-compiled regex patterns for performance (avoid recompilation on every call)
+# These patterns are used in agent planning and execution, which are performance-critical paths
+_THINK_TAGS_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n(.*?)\n```", re.DOTALL)
+_TRUE_RE = re.compile(r"\btrue\b")
+_FALSE_RE = re.compile(r"\bfalse\b")
+_NULL_RE = re.compile(r"\bnull\b")
+
 
 def remove_think_tags(text_content: Optional[str]) -> Optional[str]:
     """Strip `<think>...</think>` blocks from the provided text."""
@@ -20,7 +28,7 @@ def remove_think_tags(text_content: Optional[str]) -> Optional[str]:
     if text_content is None:
         return None
 
-    return re.sub(r"<think>.*?</think>", "", text_content, flags=re.DOTALL).strip()
+    return _THINK_TAGS_RE.sub("", text_content).strip()
 
 
 def lenient_json_parse(text: str) -> Optional[dict[str, Any]]:
@@ -44,9 +52,9 @@ def lenient_json_parse(text: str) -> Optional[dict[str, Any]]:
         # Note: This is heuristic and perfectly valid strings like "dict contain true" will get mapped.
         # But this is a fallback for broken JSON.
         py_text = text
-        py_text = re.sub(r"\btrue\b", "True", py_text)
-        py_text = re.sub(r"\bfalse\b", "False", py_text)
-        py_text = re.sub(r"\bnull\b", "None", py_text)
+        py_text = _TRUE_RE.sub("True", py_text)
+        py_text = _FALSE_RE.sub("False", py_text)
+        py_text = _NULL_RE.sub("None", py_text)
 
         parsed = ast.literal_eval(py_text)
         if isinstance(parsed, dict):
@@ -86,8 +94,7 @@ def extract_json_from_message(message: Optional[Message]) -> Optional[dict]:
 
     # Strategy 1: Look for code fences
     # Match ```json or just ``` blocks. Non-greedy content match.
-    json_fence_pattern = r"```(?:json)?\s*\n(.*?)\n```"
-    matches = re.findall(json_fence_pattern, cleaned_content, re.DOTALL)
+    matches = _JSON_FENCE_RE.findall(cleaned_content)
     for match in matches:
         parsed = lenient_json_parse(match)
         if parsed:
