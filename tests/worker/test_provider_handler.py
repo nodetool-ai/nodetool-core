@@ -1,7 +1,6 @@
 """Tests for the provider bridge handler."""
 
 import asyncio
-
 import msgpack
 import pytest
 import pytest_asyncio
