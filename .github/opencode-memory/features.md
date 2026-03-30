@@ -1,10 +1,11 @@
 # Feature Inventory
 
-- **Workflow Engine**: Executes async workflows in Python
-- **Node System**: Typed nodes with media refs and processing context
-- **Agent Framework**: LLM-backed planning and tool execution
-- **API Server**: FastAPI HTTP/WebSocket services
-- **Storage Layer**: Pluggable persistence backends
+- **Node System**: Typed nodes with media refs and processing context (`BaseNode`, `ProcessingContext`)
+- **Worker Subprocess**: WebSocket+MessagePack server for node discovery and execution
+- **Provider Infrastructure**: Base classes and registry for local-compute providers (HuggingFace, MLX)
+- **Media Processing**: Image, audio, video conversion utilities
+- **DSL**: Graph construction and code generation helpers
+- **Storage Layer**: Pluggable persistence backends (memory, file, S3)
 - **Async Utilities**: `AsyncSemaphore` and `gather_with_concurrency` for async concurrency control
 - **Async Iterators**: `AsyncByteStream` for async byte sequence iteration in chunks, plus `async_take`, `async_slice`, `async_first`, `async_list`, `async_map`, `async_merge`, `async_filter`, `async_flat_map`, `async_reduce`, `async_partition`, and `async_chunked` utilities for async iterable manipulation
 - **Retry Utilities**: `retry_with_exponential_backoff` and `RetryPolicy` for handling transient failures
