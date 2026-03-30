@@ -4,7 +4,7 @@ This document provides essential context about the nodetool-core repository for 
 
 ## Project Overview
 
-**NodeTool Core** is an open-source Python AI workflow engine that powers NodeTool. It provides a node-based DSL for building AI workflows, agent systems, and integrations with multiple AI providers.
+**NodeTool Core** is a Python library and node runner subprocess for the NodeTool platform. The TypeScript server (separate repository) handles HTTP API, workflow orchestration, agents, chat, and cloud AI providers. Python handles node execution, local-compute providers (HuggingFace, MLX), and media processing.
 
 ## Key Technologies
 
@@ -19,20 +19,31 @@ This document provides essential context about the nodetool-core repository for 
 
 ```
 src/nodetool/
-├── agents/         # LLM task planning and execution
-├── api/            # FastAPI server with WebSocket support
-├── chat/           # AI provider integrations
-├── workflows/      # DAG-based workflow execution
-├── storage/        # Multi-backend data persistence
-├── models/         # Database adapters and schemas
-├── dsl/            # Domain-specific language for workflows
-├── metadata/       # Node metadata and types
-└── ...
+├── config/         # Environment, logging, settings
+├── concurrency/    # Async utilities (semaphore, rate limiter, circuit breaker)
+├── dsl/            # DSL for graph construction (codegen, handles)
+├── integrations/   # HuggingFace models, vector stores
+├── io/             # URI utilities, media fetch
+├── media/          # Audio, image, video processing helpers
+├── metadata/       # Type definitions, node metadata, tool_types
+├── ml/             # Model management, TTS/ASR/image model lists
+├── models/         # Database models (Asset, Job, Secret, etc.)
+├── packages/       # Package registry and scanning
+├── providers/      # Provider base classes, registry, fake provider
+├── runtime/        # ResourceScope, DB connection pools
+├── security/       # Crypto, master key, secret helper, auth providers
+├── storage/        # Abstract storage, memory/file/S3 backends
+├── types/          # API graph types, prediction types
+├── utils/          # Misc utilities
+├── worker/         # Worker subprocess (WebSocket server, executor)
+└── workflows/      # Node execution core (BaseNode, ProcessingContext, graph)
 
 tests/              # Mirror structure of src/
 docs/               # Documentation
 examples/           # Code examples
 ```
+
+**Note**: The TypeScript server handles HTTP API, WebSocket, database, auth, agents, chat, storage, deploy, and workflow orchestration. Python only handles node execution and local-compute providers.
 
 ## Development Environment
 
