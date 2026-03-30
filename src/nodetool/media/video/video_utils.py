@@ -245,30 +245,39 @@ def _legacy_export_to_video_bytes(
     else:
         raise ValueError(f"Unsupported frame type: {type(first_frame)}")
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
-    video_writer = cv2.VideoWriter("/tmp/temp_video.mp4", fourcc, fps=fps, frameSize=(w, h))
-
-    for frame in video_frames:
-        if isinstance(frame, PIL.Image.Image):
-            frame = np.array(frame)
-
-        # Convert to uint8 if needed (assume float 0..1 if not uint8)
-        if frame.dtype != np.uint8:
-            frame = (frame * 255).astype(np.uint8)
-
-        img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        video_writer.write(img)
-
-    video_writer.release()
-
-    # Read the file back into bytes
-    with open("/tmp/temp_video.mp4", "rb") as f:
-        video_bytes = f.read()
-
-    # Clean up temp file
     import os
+    import tempfile
 
-    os.remove("/tmp/temp_video.mp4")
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
+        temp_video_path = tmp_file.name
+
+    try:
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
+        video_writer = cv2.VideoWriter(temp_video_path, fourcc, fps=fps, frameSize=(w, h))
+
+        for frame in video_frames:
+            if isinstance(frame, PIL.Image.Image):
+                frame = np.array(frame)
+
+            # Convert to uint8 if needed (assume float 0..1 if not uint8)
+            if frame.dtype != np.uint8:
+                frame = (frame * 255).astype(np.uint8)
+
+            img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            video_writer.write(img)
+
+        video_writer.release()
+
+        # Read the file back into bytes
+        with open(temp_video_path, "rb") as f:
+            video_bytes = f.read()
+
+    finally:
+        # Clean up temp file
+        try:
+            os.remove(temp_video_path)
+        except OSError:
+            pass
 
     return video_bytes
 
