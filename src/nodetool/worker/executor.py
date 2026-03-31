@@ -70,13 +70,17 @@ async def execute_node(
 
             for key, value in resolved_fields.items():
                 if hasattr(node, key):
-                    # Use Pydantic validation for complex fields (e.g. HFTextClassification)
                     field_info = node.__class__.model_fields.get(key)
-                    if field_info and isinstance(value, dict):
+                    if field_info:
                         from pydantic import BaseModel
+                        from enum import Enum
                         annotation = field_info.annotation
-                        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+                        # Convert dicts to Pydantic models
+                        if isinstance(value, dict) and isinstance(annotation, type) and issubclass(annotation, BaseModel):
                             value = annotation.model_validate(value)
+                        # Convert strings to enums
+                        elif isinstance(value, str) and isinstance(annotation, type) and issubclass(annotation, Enum):
+                            value = annotation(value)
                     setattr(node, key, value)
 
             # Lifecycle: pre_process -> preload_model -> move_to_device -> process
@@ -132,7 +136,7 @@ def _extract_outputs(
 
 
 def _serialize_value(value: Any) -> Any:
-    """Convert a value to JSON-safe form."""
+    """Convert a value to JSON/msgpack-safe form."""
     if isinstance(value, ASSET_REF_TYPES):
         return {"uri": value.uri, "type": type(value).__name__}
     from enum import Enum
@@ -141,4 +145,8 @@ def _serialize_value(value: Any) -> Any:
     from pydantic import BaseModel
     if isinstance(value, BaseModel):
         return value.model_dump()
+    if isinstance(value, list):
+        return [_serialize_value(item) for item in value]
+    if isinstance(value, dict):
+        return {k: _serialize_value(v) for k, v in value.items()}
     return value

@@ -438,3 +438,108 @@ async def _handle_embedding(data: dict) -> dict:
         dimensions=data.get("dimensions"),
     )
     return {"embeddings": result}
+
+
+# ── Stdio transport adapter ──────────────────────────────────────────────
+
+
+async def handle_provider_message_stdio(
+    msg_type: str,
+    request_id: str | None,
+    data: dict[str, Any],
+    transport: Any,  # StdioTransport
+    cancel_flags: dict[str, asyncio.Event],
+) -> None:
+    """Handle a provider.* message via stdio transport (same logic, different send)."""
+
+    async def send_result(rid: str | None, d: dict) -> None:
+        await transport.send_msg({"type": "result", "request_id": rid, "data": d})
+
+    async def send_error(rid: str | None, error: str, tb: str | None = None) -> None:
+        await transport.send_msg({"type": "error", "request_id": rid, "data": {"error": error, "traceback": tb}})
+
+    async def send_chunk(rid: str | None, d: dict) -> None:
+        await transport.send_msg({"type": "chunk", "request_id": rid, "data": d})
+
+    try:
+        if msg_type == "provider.list":
+            providers = get_available_providers()
+            await send_result(request_id, {"providers": providers})
+
+        elif msg_type == "provider.models":
+            result = await _handle_models(data)
+            await send_result(request_id, result)
+
+        elif msg_type == "provider.generate":
+            result = await _handle_generate(data)
+            await send_result(request_id, result)
+
+        elif msg_type == "provider.stream":
+            cancel_event = asyncio.Event()
+            if request_id:
+                cancel_flags[request_id] = cancel_event
+            try:
+                provider = _get_provider(data["provider"], data.get("secrets", {}))
+                messages = _deserialize_messages(data["messages"])
+                model = data["model"]
+                kwargs: dict[str, Any] = {}
+                for key in ("max_tokens", "temperature", "top_p", "response_format"):
+                    if key in data:
+                        kwargs[key] = data[key]
+                tools = data.get("tools")
+                if tools:
+                    kwargs["tools"] = tools
+
+                from nodetool.metadata.types import ToolCall
+                async for item in provider.generate_messages(messages=messages, model=model, **kwargs):
+                    if cancel_event.is_set():
+                        break
+                    if isinstance(item, ToolCall):
+                        await send_chunk(request_id, {"type": "tool_call", "id": item.id, "name": item.name, "args": item.args})
+                    else:
+                        await send_chunk(request_id, {"type": "chunk", "content": getattr(item, "content", str(item)), "done": getattr(item, "done", False)})
+                await send_result(request_id, {"done": True})
+            finally:
+                if request_id:
+                    cancel_flags.pop(request_id, None)
+
+        elif msg_type == "provider.text_to_image":
+            result = await _handle_text_to_image(data)
+            await send_result(request_id, result)
+
+        elif msg_type == "provider.image_to_image":
+            result = await _handle_image_to_image(data)
+            await send_result(request_id, result)
+
+        elif msg_type == "provider.tts":
+            cancel_event = asyncio.Event()
+            if request_id:
+                cancel_flags[request_id] = cancel_event
+            try:
+                provider = _get_provider(data["provider"], data.get("secrets", {}))
+                kwargs_tts: dict[str, Any] = {"text": data["text"], "model": data["model"]}
+                for key in ("voice", "speed"):
+                    if key in data:
+                        kwargs_tts[key] = data[key]
+                async for audio_chunk in provider.text_to_speech(**kwargs_tts):
+                    if cancel_event.is_set():
+                        break
+                    await send_chunk(request_id, {"blobs": {"audio": audio_chunk.tobytes()}})
+                await send_result(request_id, {"done": True})
+            finally:
+                if request_id:
+                    cancel_flags.pop(request_id, None)
+
+        elif msg_type == "provider.asr":
+            result = await _handle_asr(data)
+            await send_result(request_id, result)
+
+        elif msg_type == "provider.embedding":
+            result = await _handle_embedding(data)
+            await send_result(request_id, result)
+
+        else:
+            await send_error(request_id, f"Unknown provider message type: {msg_type}")
+
+    except Exception as e:
+        await send_error(request_id, str(e), traceback.format_exc())
