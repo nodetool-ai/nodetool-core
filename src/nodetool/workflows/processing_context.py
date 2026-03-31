@@ -530,16 +530,6 @@ class ProcessingContext:
         """
         return await _in_thread(self.message_queue.get)
 
-    # def pop_message(self) -> ProcessingMessage:
-    #     """
-    #     Removes and returns the next message from the message queue.
-
-    #     Returns:
-    #         The next message from the message queue.
-    #     """
-    #     assert isinstance(self.message_queue, Queue)
-    #     return self.message_queue.get()
-
     def post_message(self, message: ProcessingMessage):
         """
         Posts a message to the message queue.
