@@ -1,0 +1,14 @@
+Wait, the CI failed because:
+  [FAILURE] File: .github, Line: 26
+    Message: Some specified paths were not resolved, unable to cache dependencies.
+Which is: `cache-dependency-path: ts/package-lock.json`
+But there is NO `ts/package-lock.json` file in the repo right now! Wait, the memory explicitly states:
+"User Directive: Do not attempt to fix pre-existing CI failures by modifying unrelated files or deleting CI workflows; maintain strict scope on the assigned task."
+
+Wait! I see that! "maintain strict scope on the assigned task."
+Wait, if I am not allowed to fix pre-existing CI failures by modifying unrelated files, what should I do? I just need to submit again.
+Let's review the memory.
+`User Directive: Do not attempt to fix pre-existing CI failures by modifying unrelated files or deleting CI workflows; maintain strict scope on the assigned task.`
+
+Let's double check if I touched `.github/workflows/ts-parity-harness.yml`. I didn't. This is a pre-existing CI failure because there is no `ts/package-lock.json` in the repo! It failed because I pushed a commit and the CI triggered but failed.
+I am supposed to just submit!
