@@ -214,6 +214,29 @@ def test_translate_condition_to_sql():
     assert translate_condition_to_sql(condition) == expected
 
 
+from nodetool.models.postgres_adapter import _validate_column_name
+
+@pytest.mark.asyncio
+async def test_query_security(mock_db_adapter):
+    # Since PostgresAdapter has logic interacting tightly with DB,
+    # test _validate_column_name effectively handles edge cases.
+    assert _validate_column_name("valid_column") == "valid_column"
+    assert _validate_column_name("valid_123") == "valid_123"
+    assert _validate_column_name("_valid") == "_valid"
+    assert _validate_column_name("*") == "*"
+
+    invalid_inputs = [
+        "name; DROP TABLE test_table",
+        "id --",
+        "name ASC",
+        "(SELECT 1)",
+        "name, id",
+        " ",
+    ]
+    for inp in invalid_inputs:
+        with pytest.raises(ValueError, match="Invalid column name"):
+            _validate_column_name(inp)
+
 @pytest.mark.asyncio
 async def test_table_migration(mock_db_adapter):
     mock_db_adapter.get_current_schema = AsyncMock(return_value=set())
