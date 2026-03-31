@@ -1,3 +1,3 @@
-## 2025-02-12 - Video Export Optimization and Correctness
-**Learning:** Upfront list comprehension for processing large sequences (like video frames) consumes O(N) memory and can lead to OOM. Lazy processing inside the writing loop reduces memory usage to O(1). Additionally, assuming input data types (e.g. float vs uint8) without checking can lead to critical bugs like integer overflow when scaling `uint8` arrays by 255.
-**Action:** Always prefer lazy iteration/generators for large data processing pipelines. Explicitly check `numpy.dtype` before performing arithmetic scaling to ensure correctness and avoid unnecessary operations.
+## 2024-05-26 - Recursive DFS limit in Deep Graphs
+**Learning:** Python's default recursion limit (usually 1000) causes `RecursionError` in workflow systems when parsing deeply nested or long linear graph definitions using recursive algorithms like recursive DFS. For example, validating `control_edges` on a graph with 5000 linearly connected nodes will crash.
+**Action:** When working with graph validation or traversal in workflow codebases, always prefer iterative algorithms over recursive ones (e.g., Kahn's Algorithm for topological sorting or iterative DFS using an explicit stack).
