@@ -93,5 +93,24 @@ class TestPathUtils(unittest.TestCase):
         self.assertIsInstance(result, str)
 
 
+
+    def test_resolve_workspace_path_with_symlink_traversal_attack(self):
+        """Test that symlink traversal attacks are prevented using os.path.realpath."""
+        secret_dir = tempfile.mkdtemp()
+        try:
+            # Create a symlink in the workspace pointing to the secret directory
+            symlink_path = os.path.join(self.workspace_dir, "link")
+            os.symlink(secret_dir, symlink_path)
+
+            # Try to resolve a file inside the symlinked directory
+            path_to_resolve = "link/secret.txt"
+
+            with self.assertRaises(ValueError) as context:
+                resolve_workspace_path(self.workspace_dir, path_to_resolve)
+            self.assertIn("outside the workspace directory", str(context.exception))
+        finally:
+            import shutil
+            shutil.rmtree(secret_dir)
+
 if __name__ == "__main__":
     unittest.main()
