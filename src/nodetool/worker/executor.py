@@ -159,7 +159,7 @@ def _extract_outputs(
 
 
 def _serialize_value(value: Any) -> Any:
-    """Convert a value to JSON-safe form."""
+    """Convert a value to JSON/msgpack-safe form."""
     if isinstance(value, ASSET_REF_TYPES):
         return {"uri": value.uri, "type": type(value).__name__}
     from enum import Enum
@@ -168,4 +168,8 @@ def _serialize_value(value: Any) -> Any:
     from pydantic import BaseModel
     if isinstance(value, BaseModel):
         return value.model_dump()
+    if isinstance(value, list):
+        return [_serialize_value(item) for item in value]
+    if isinstance(value, dict):
+        return {k: _serialize_value(v) for k, v in value.items()}
     return value
