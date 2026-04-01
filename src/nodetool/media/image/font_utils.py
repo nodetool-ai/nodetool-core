@@ -2,6 +2,7 @@
 Shared font-related utilities used across the codebase.
 """
 
+import functools
 import os
 import platform
 from typing import Optional
@@ -11,7 +12,14 @@ from nodetool.config.logging_config import get_logger
 log = get_logger(__name__)
 
 
-def get_system_font_path(font_name: str = "Arial.ttf", env: Optional[dict[str, str]] = None) -> str:
+# ⚡ Bolt Optimization:
+# System font resolution can take O(n) disk I/O operations by walking through
+# large directories (like C:\Windows\Fonts or /usr/share/fonts) repeatedly.
+# By memoizing this function, subsequent lookups for the same font name and
+# environment return instantly via an O(1) memory lookup, significantly reducing
+# latency when rendering multiple texts.
+@functools.lru_cache(maxsize=128)
+def _get_system_font_path_cached(font_name: str, env_tuple: Optional[tuple] = None, current_os: str = "Linux") -> str:
     """
     Get the system path for a font file based on the operating system.
 
@@ -26,7 +34,6 @@ def get_system_font_path(font_name: str = "Arial.ttf", env: Optional[dict[str, s
         FileNotFoundError: If the font file cannot be found in system locations
     """
     # Determine allowed font extensions per OS (aligned with api/font.py)
-    current_os = platform.system()
     if current_os == "Darwin":
         allowed_exts = [".ttf", ".otf", ".ttc", ".dfont"]
     elif current_os == "Windows":
@@ -47,6 +54,7 @@ def get_system_font_path(font_name: str = "Arial.ttf", env: Optional[dict[str, s
         # No extension provided: match base name with any allowed extension
         return name_no_ext == base_name and file_ext in allowed_exts
 
+    env = dict(env_tuple) if env_tuple else None
     # First check FONT_PATH environment variable if it exists
     if env and "FONT_PATH" in env:
         font_path = env["FONT_PATH"]
@@ -95,3 +103,7 @@ def get_system_font_path(font_name: str = "Arial.ttf", env: Optional[dict[str, s
                         return os.path.join(root, f)
 
     raise FileNotFoundError(f"Could not find font '{font_name}' in system locations")
+
+def get_system_font_path(font_name: str = "Arial.ttf", env: Optional[dict[str, str]] = None) -> str:
+    env_tuple = tuple(sorted(env.items())) if env else None
+    return _get_system_font_path_cached(font_name, env_tuple, platform.system())
