@@ -20,6 +20,19 @@ log = get_logger(__name__)
 # latency when rendering multiple texts.
 @functools.lru_cache(maxsize=128)
 def _get_system_font_path_cached(font_name: str, env_tuple: Optional[tuple] = None, current_os: str = "Linux") -> str:
+    """
+    Get the system path for a font file based on the operating system.
+
+    Args:
+        font_name (str, optional): Name of the font file to find. Defaults to "Arial.ttf"
+        env (Optional[Dict[str, str]], optional): Environment variables dict. Defaults to None.
+
+    Returns:
+        str: Full path to the font file
+
+    Raises:
+        FileNotFoundError: If the font file cannot be found in system locations
+    """
     # Determine allowed font extensions per OS (aligned with api/font.py)
     if current_os == "Darwin":
         allowed_exts = [".ttf", ".otf", ".ttc", ".dfont"]
