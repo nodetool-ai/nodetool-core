@@ -105,18 +105,5 @@ def _get_system_font_path_cached(font_name: str, env_tuple: Optional[tuple] = No
     raise FileNotFoundError(f"Could not find font '{font_name}' in system locations")
 
 def get_system_font_path(font_name: str = "Arial.ttf", env: Optional[dict[str, str]] = None) -> str:
-    """
-    Get the system path for a font file based on the operating system.
-
-    Args:
-        font_name (str, optional): Name of the font file to find. Defaults to "Arial.ttf"
-        env (Optional[Dict[str, str]], optional): Environment variables dict. Defaults to None.
-
-    Returns:
-        str: Full path to the font file
-
-    Raises:
-        FileNotFoundError: If the font file cannot be found in system locations
-    """
     env_tuple = tuple(sorted(env.items())) if env else None
     return _get_system_font_path_cached(font_name, env_tuple, platform.system())
