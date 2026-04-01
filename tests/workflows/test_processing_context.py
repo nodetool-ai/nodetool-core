@@ -2,6 +2,11 @@ import os
 from typing import Any, Iterator, List, Tuple
 
 import pytest
+from nodetool.media.image.font_utils import _get_system_font_path_cached
+
+@pytest.fixture(autouse=True)
+def clear_cache_font():
+    _get_system_font_path_cached.cache_clear()
 
 from nodetool.types.api_graph import Edge
 from nodetool.workflows.base_node import BaseNode

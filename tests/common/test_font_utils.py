@@ -6,7 +6,10 @@ from unittest.mock import patch
 
 import pytest
 
-from nodetool.media.image.font_utils import get_system_font_path
+from nodetool.media.image.font_utils import get_system_font_path, _get_system_font_path_cached
+@pytest.fixture(autouse=True)
+def clear_cache():
+    _get_system_font_path_cached.cache_clear()
 
 
 class TestGetSystemFontPath:
