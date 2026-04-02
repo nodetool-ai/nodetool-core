@@ -154,6 +154,13 @@ def _extract_outputs(
                     outputs[key] = _serialize_value(value)
             return outputs, blobs
 
+    # Multi-output dict: if result is a dict with named output keys
+    # (not a plain data dict), split into separate output handles.
+    # A dict with an "output" key is a single-output wrapper — don't split.
+    if isinstance(result, dict) and len(result) > 1 and "output" not in result:
+        outputs = {key: _serialize_value(value) for key, value in result.items()}
+        return outputs, output_blobs
+
     # Default: single output slot named "output"
     return {"output": _serialize_value(result)}, output_blobs
 
