@@ -14,8 +14,6 @@ on:
 jobs:
   parity-harness:
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     defaults:
       run:
         working-directory: ts
@@ -43,6 +41,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
+          cache-dependency-path: ts/package-lock.json
 
       - name: Install dependencies
         run: npm ci
