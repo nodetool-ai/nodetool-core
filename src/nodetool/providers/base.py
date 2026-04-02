@@ -750,8 +750,9 @@ class BaseProvider:
         temperature: float = 0.0,
         timeout_s: int | None = None,
         context: Any = None,  # ProcessingContext, but imported later
+        word_timestamps: bool = False,
         **kwargs: Any,
-    ) -> str:
+    ) -> str | dict:
         """Transcribe audio to text using automatic speech recognition.
 
         Only implemented by providers with AUTOMATIC_SPEECH_RECOGNITION capability.
@@ -764,10 +765,12 @@ class BaseProvider:
             temperature: Sampling temperature between 0 and 1 (default 0)
             timeout_s: Optional timeout in seconds
             context: Optional processing context
+            word_timestamps: If True, return chunks with word-level timestamps
             **kwargs: Additional provider-specific parameters
 
         Returns:
-            str: Transcribed text from the audio
+            str or dict: Transcribed text, or {"text": str, "chunks": list} when word_timestamps=True.
+            Each chunk is {"timestamp": [start, end], "text": str}.
 
         Raises:
             NotImplementedError: If provider doesn't support AUTOMATIC_SPEECH_RECOGNITION capability

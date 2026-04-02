@@ -420,12 +420,15 @@ async def _handle_asr(data: dict) -> dict:
         "audio": data.get("audio", b""),
         "model": data["model"],
     }
-    for key in ("language", "prompt", "temperature"):
+    for key in ("language", "prompt", "temperature", "word_timestamps"):
         if key in data:
             kwargs[key] = data[key]
 
-    text = await provider.automatic_speech_recognition(**kwargs)
-    return {"text": text}
+    result = await provider.automatic_speech_recognition(**kwargs)
+    # Provider may return str (legacy) or dict with text + chunks
+    if isinstance(result, str):
+        return {"text": result}
+    return result
 
 
 async def _handle_embedding(data: dict) -> dict:
