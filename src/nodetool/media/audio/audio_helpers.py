@@ -81,10 +81,25 @@ def concatenate_audios(audios: list[AudioSegment]) -> AudioSegment:
     Returns:
         AudioSegment: The concatenated audio segment.
     """
-    concatenated_audio = AudioSegment.empty()
+    if not audios:
+        return AudioSegment.empty()
+
+    first = audios[0]
     for audio in audios:
-        concatenated_audio += audio
-    return concatenated_audio
+        if (
+            audio.sample_width != first.sample_width
+            or audio.frame_rate != first.frame_rate
+            or audio.channels != first.channels
+        ):
+            # Fallback to sequential addition if properties don't match
+            concatenated_audio = AudioSegment.empty()
+            for a in audios:
+                concatenated_audio += a
+            return concatenated_audio
+
+    # Fast path: directly concatenate raw bytes
+    raw_data = b"".join(a.raw_data for a in audios)
+    return first._spawn(data=raw_data)
 
 
 def remove_silence(
