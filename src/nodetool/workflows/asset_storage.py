@@ -32,7 +32,7 @@ def _asset_type_name(asset_ref: AssetRef) -> str:
     return str(getattr(asset_ref, "type", "") or "")
 
 
-def _derive_asset_name(node: BaseNode, path: str, asset_ref: AssetRef) -> str:
+def _derive_asset_name(node: "BaseNode", path: str, asset_ref: AssetRef) -> str:
     """Prefer a readable filename from the source URI when available."""
     uri = getattr(asset_ref, "uri", "") or ""
     if uri.startswith(("http://", "https://", "file://")):

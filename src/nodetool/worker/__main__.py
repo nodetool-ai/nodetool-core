@@ -3,9 +3,9 @@ import asyncio
 import os
 import sys
 
-from nodetool.worker.executor import execute_node
-from nodetool.worker.node_loader import load_nodes
 from nodetool.worker.server import WorkerServer, start_server
+from nodetool.worker.node_loader import load_nodes
+from nodetool.worker.executor import execute_node
 
 
 def main():

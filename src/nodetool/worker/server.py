@@ -1,10 +1,9 @@
 import asyncio
 import traceback
-from typing import Any, Awaitable, Callable
+from typing import Any, Callable, Awaitable
 
 import msgpack
-from websockets.asyncio.server import ServerConnection
-from websockets.asyncio.server import serve as ws_serve
+from websockets.asyncio.server import serve as ws_serve, ServerConnection
 
 
 class WorkerServer:
