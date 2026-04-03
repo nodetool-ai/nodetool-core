@@ -152,4 +152,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:7777/health || exit 1
 
 # Run the NodeTool server
-CMD ["python", "-m", "nodetool.api.run_server"]
+CMD ["python", "-m", "nodetool.worker.__main__"]
