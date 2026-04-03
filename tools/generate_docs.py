@@ -2,7 +2,6 @@ import os
 from typing import Any, List
 
 import nodetool.cli
-
 import nodetool.workflows
 from nodetool.packages.gen_docs import process_module
 

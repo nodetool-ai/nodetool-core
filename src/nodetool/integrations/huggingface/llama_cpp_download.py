@@ -17,12 +17,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 import aiofiles
 import httpx
+
+import sys
 
 from nodetool.config.logging_config import get_logger
 
