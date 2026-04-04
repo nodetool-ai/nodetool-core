@@ -19,7 +19,7 @@ def get_files(path: str, extensions: list[str] | None = None):
     files = []
     if os.path.isdir(path):
         for file in os.listdir(path):
-            files += get_files(os.path.join(path, file), extensions)
+            files.extend(get_files(os.path.join(path, file), extensions))
     return files
 
 
@@ -38,11 +38,11 @@ def get_content(
         str: The concatenated content of all the files found.
     """
     extensions = extensions or [".py", ".js", ".ts", ".jsx", ".tsx", ".md"]
-    content = ""
+    content_parts = []
     for path in paths:
         for file in get_files(path, extensions):
-            content += "\n\n"
-            content += f"## {file}\n\n"
+            content_parts.append("\n\n")
+            content_parts.append(f"## {file}\n\n")
             with open(file, encoding="utf-8") as f:
-                content += f.read()
-    return content
+                content_parts.append(f.read())
+    return "".join(content_parts)
