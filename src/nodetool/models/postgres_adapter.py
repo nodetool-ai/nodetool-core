@@ -63,6 +63,23 @@ def convert_to_postgres_format(value: Any, py_type: type | None) -> int | float 
         raise TypeError(f"Unsupported type for PostgreSQL: {py_type}")
 
 
+def _validate_column_name(column_name: str) -> str:
+    """Validate column name to prevent SQL injection.
+
+    Args:
+        column_name: The column name to validate.
+
+    Returns:
+        The validated column name.
+
+    Raises:
+        ValueError: If the column name is invalid.
+    """
+    if not re.match(r"^[a-zA-Z0-9_]+$", column_name):
+        raise ValueError(f"Invalid identifier: {column_name}")
+    return column_name
+
+
 def convert_from_postgres_format(value: Any, py_type: type | None) -> Any:
     """
     Convert a value from PostgreSQL to a Python type based on the provided Python type.
@@ -354,17 +371,27 @@ class PostgresAdapter(DatabaseAdapter):
             item: A dictionary representing the model instance to save.
         """
         valid_keys = [key for key in item if key in self.fields]
-        columns = ", ".join(valid_keys)
-        placeholders = ", ".join([f"%({key})s" for key in valid_keys])
-        values = {key: convert_to_postgres_format(item[key], self.fields[key].annotation) for key in valid_keys}
-        query = (
-            f"INSERT INTO {self.table_name} ({columns}) VALUES ({placeholders}) ON CONFLICT ({self.get_primary_key()}) DO UPDATE SET "
-            + ", ".join([f"{key} = EXCLUDED.{key}" for key in valid_keys])
+        columns_sql = SQL(", ").join(map(Identifier, map(_validate_column_name, valid_keys)))
+        placeholders_sql = SQL(", ").join([SQL(f"%({key})s") for key in valid_keys])
+
+        update_set_sql = SQL(", ").join(
+            [SQL("{} = EXCLUDED.{}").format(Identifier(_validate_column_name(key)), Identifier(_validate_column_name(key))) for key in valid_keys]
         )
+
+        query = SQL("INSERT INTO {} ({}) VALUES ({}) ON CONFLICT ({}) DO UPDATE SET {}").format(
+            Identifier(_validate_column_name(self.table_name)),
+            columns_sql,
+            placeholders_sql,
+            Identifier(_validate_column_name(self.get_primary_key())),
+            update_set_sql,
+        )
+
+        values = {key: convert_to_postgres_format(item[key], self.fields[key].annotation) for key in valid_keys}
+
         pool = await self._get_pool()
         async with pool.connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute(query, values)  # type: ignore[arg-type]
+                await cursor.execute(query, values)
             await conn.commit()
 
     async def get(self, key: Any) -> dict[str, Any] | None:
@@ -378,11 +405,16 @@ class PostgresAdapter(DatabaseAdapter):
             Attributes are converted back to their Python types.
         """
         primary_key = self.get_primary_key()
-        cols = ", ".join(self.fields)
-        query = f"SELECT {cols} FROM {self.table_name} WHERE {primary_key} = %s"
+        cols_sql = SQL(", ").join(map(Identifier, map(_validate_column_name, self.fields.keys())))
+        query = SQL("SELECT {} FROM {} WHERE {} = {}").format(
+            cols_sql,
+            Identifier(_validate_column_name(self.table_name)),
+            Identifier(_validate_column_name(primary_key)),
+            Placeholder(),
+        )
         pool = await self._get_pool()
         async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(query, (key,))  # type: ignore[arg-type]
+            await cursor.execute(query, (key,))
             item = await cursor.fetchone()
         if item is None:
             return None
@@ -395,11 +427,15 @@ class PostgresAdapter(DatabaseAdapter):
             primary_key: The primary key value of the item to delete.
         """
         pk_column = self.get_primary_key()
-        query = f"DELETE FROM {self.table_name} WHERE {pk_column} = %s"
+        query = SQL("DELETE FROM {} WHERE {} = {}").format(
+            Identifier(_validate_column_name(self.table_name)),
+            Identifier(_validate_column_name(pk_column)),
+            Placeholder(),
+        )
         pool = await self._get_pool()
         async with pool.connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute(query, (primary_key,))  # type: ignore[arg-type]
+                await cursor.execute(query, (primary_key,))
             await conn.commit()
 
     def _build_condition(self, condition: Condition | ConditionGroup) -> tuple[Composed, list[Any]]:
@@ -529,28 +565,33 @@ class PostgresAdapter(DatabaseAdapter):
             return []
 
     async def create_index(self, index_name: str, columns: list[str], unique: bool = False) -> None:
-        unique_str = "UNIQUE" if unique else ""
-        columns_str = ", ".join(columns)
-        sql = f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON {self.table_name} ({columns_str})"
+        unique_str = SQL("UNIQUE ") if unique else SQL("")
+        columns_sql = SQL(", ").join(map(Identifier, map(_validate_column_name, columns)))
+        query = SQL("CREATE {}INDEX IF NOT EXISTS {} ON {} ({})").format(
+            unique_str,
+            Identifier(_validate_column_name(index_name)),
+            Identifier(_validate_column_name(self.table_name)),
+            columns_sql,
+        )
 
         try:
             pool = await self._get_pool()
             async with pool.connection() as conn:
                 async with conn.cursor() as cursor:
-                    await cursor.execute(sql)  # type: ignore[arg-type]
+                    await cursor.execute(query)
                 await conn.commit()
         except psycopg.Error as e:
             print(f"PostgreSQL error during index creation: {e}")
             raise e
 
     async def drop_index(self, index_name: str) -> None:
-        sql = f"DROP INDEX IF EXISTS {index_name}"
+        query = SQL("DROP INDEX IF EXISTS {}").format(Identifier(_validate_column_name(index_name)))
 
         try:
             pool = await self._get_pool()
             async with pool.connection() as conn:
                 async with conn.cursor() as cursor:
-                    await cursor.execute(sql)  # type: ignore[arg-type]
+                    await cursor.execute(query)
                 await conn.commit()
         except psycopg.Error as e:
             print(f"PostgreSQL error during index deletion: {e}")
