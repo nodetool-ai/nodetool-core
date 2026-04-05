@@ -322,18 +322,9 @@ class Asset(DBModel):
         result = {}
 
         # Step 1: Batch fetch all requested assets
-        asset_condition = Field("user_id").equals(user_id)
-        # Create an OR condition for all asset IDs
-        if len(asset_ids) == 1:
-            asset_condition = asset_condition.and_(Field("id").equals(asset_ids[0]))
-        else:
-            id_conditions = [Field("id").equals(asset_id) for asset_id in asset_ids]
-            # Combine with OR - this assumes the query system supports it
-            # If not, we'll need to make multiple queries in batches
-            combined_id_condition = id_conditions[0]
-            for condition in id_conditions[1:]:
-                combined_id_condition = combined_id_condition.or_(condition)
-            asset_condition = asset_condition.and_(combined_id_condition)
+        # ⚡ Bolt Optimization: Replaced O(N) iterative OR chaining with O(1) in_list (SQL IN clause)
+        # Expected Impact: Eliminates deep condition tree nesting, parsing overhead, and yields a native IN query.
+        asset_condition = Field("user_id").equals(user_id).and_(Field("id").in_list(asset_ids))
 
         try:
             assets, _ = await cls.query(asset_condition, limit=len(asset_ids) * 2)
@@ -356,15 +347,9 @@ class Asset(DBModel):
         # Step 3: Batch fetch all parent folders
         parent_assets = {}
         if all_parent_ids:
-            parent_condition = Field("user_id").equals(user_id)
-            if len(all_parent_ids) == 1:
-                parent_condition = parent_condition.and_(Field("id").equals(next(iter(all_parent_ids))))
-            else:
-                parent_id_conditions = [Field("id").equals(parent_id) for parent_id in all_parent_ids]
-                combined_parent_condition = parent_id_conditions[0]
-                for condition in parent_id_conditions[1:]:
-                    combined_parent_condition = combined_parent_condition.or_(condition)
-                parent_condition = parent_condition.and_(combined_parent_condition)
+            # ⚡ Bolt Optimization: Replaced O(N) iterative OR chaining with O(1) in_list (SQL IN clause)
+            # Expected Impact: Eliminates deep condition tree nesting, parsing overhead, and yields a native IN query.
+            parent_condition = Field("user_id").equals(user_id).and_(Field("id").in_list(list(all_parent_ids)))
 
             try:
                 parent_results, _ = await cls.query(parent_condition, limit=len(all_parent_ids) * 2)
