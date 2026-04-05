@@ -92,6 +92,24 @@ class TestPathUtils(unittest.TestCase):
         # The behavior depends on the filesystem, but the function should not crash
         self.assertIsInstance(result, str)
 
+    def test_resolve_workspace_path_with_symlink_traversal_attack(self):
+        """Test that symlink traversal attacks are prevented."""
+        # Create a secret file outside workspace
+        secret_file = os.path.join(self.workspace_dir, "..", "secret.txt")
+        with open(secret_file, "w") as f:
+            f.write("secret")
+
+        # Create a symlink in workspace pointing to the secret
+        symlink_path = os.path.join(self.workspace_dir, "symlink")
+        os.symlink(secret_file, symlink_path)
+
+        with self.assertRaises(ValueError) as context:
+            resolve_workspace_path(self.workspace_dir, "symlink")
+        self.assertIn("outside the workspace directory", str(context.exception))
+
+        # Cleanup
+        os.remove(secret_file)
+        os.remove(symlink_path)
 
 if __name__ == "__main__":
     unittest.main()
