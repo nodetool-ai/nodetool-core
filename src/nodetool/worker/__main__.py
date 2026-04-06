@@ -63,9 +63,12 @@ async def run(args):
 
     try:
         await task
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         stop_event.set()
-        await task
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
 
 
 if __name__ == "__main__":
