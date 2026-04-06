@@ -22,32 +22,36 @@ import msgpack
 class StdioTransport:
     """Async reader/writer for length-prefixed msgpack over stdin/stdout.
 
+    Uses run_in_executor for blocking I/O so it works on all platforms,
+    including Windows where asyncio connect_read_pipe/connect_write_pipe
+    fail with OSError (WinError 6) on the ProactorEventLoop.
+
     Writes are serialized with a lock so concurrent tasks cannot
     interleave their length-prefix + payload.
     """
 
-    def __init__(
-        self,
-        reader: asyncio.StreamReader,
-        writer: asyncio.StreamWriter,
-    ):
-        self._reader = reader
-        self._writer = writer
+    def __init__(self) -> None:
         self._write_lock = asyncio.Lock()
 
     async def read_message(self) -> dict[str, Any] | None:
         """Read one length-prefixed msgpack message. Returns None on EOF."""
-        header = await self._reader.readexactly(4)
+        loop = asyncio.get_event_loop()
+        header = await loop.run_in_executor(None, sys.stdin.buffer.read, 4)
+        if len(header) < 4:
+            return None
         length = struct.unpack(">I", header)[0]
-        payload = await self._reader.readexactly(length)
+        payload = await loop.run_in_executor(None, sys.stdin.buffer.read, length)
+        if len(payload) < length:
+            return None
         return msgpack.unpackb(payload, raw=False)
 
     async def send(self, data: bytes) -> None:
         """Write a length-prefixed msgpack payload (thread-safe)."""
-        header = struct.pack(">I", len(data))
+        loop = asyncio.get_event_loop()
+        message = struct.pack(">I", len(data)) + data
         async with self._write_lock:
-            self._writer.write(header + data)
-            await self._writer.drain()
+            await loop.run_in_executor(None, sys.stdout.buffer.write, message)
+            await loop.run_in_executor(None, sys.stdout.buffer.flush)
 
     async def send_msg(self, msg: dict[str, Any]) -> None:
         """Encode and send a dict as msgpack."""
@@ -74,18 +78,7 @@ class StdioWorkerServer:
 
     async def run(self) -> None:
         """Main loop: read from stdin, dispatch, write to stdout."""
-        loop = asyncio.get_event_loop()
-
-        reader = asyncio.StreamReader()
-        protocol = asyncio.StreamReaderProtocol(reader)
-        await loop.connect_read_pipe(lambda: protocol, sys.stdin.buffer)
-
-        w_transport, w_protocol = await loop.connect_write_pipe(
-            asyncio.streams.FlowControlMixin, sys.stdout.buffer
-        )
-        writer = asyncio.StreamWriter(w_transport, w_protocol, reader, loop)
-
-        self._transport = StdioTransport(reader, writer)
+        self._transport = StdioTransport()
         self._tasks: set[asyncio.Task] = set()
 
         try:
