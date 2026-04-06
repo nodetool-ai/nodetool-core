@@ -19,7 +19,8 @@ def get_files(path: str, extensions: list[str] | None = None):
     files = []
     if os.path.isdir(path):
         for file in os.listdir(path):
-            files += get_files(os.path.join(path, file), extensions)
+            # ⚡ Bolt Optimization: Use .extend() instead of += to avoid creating new lists at each recursive step
+            files.extend(get_files(os.path.join(path, file), extensions))
     return files
 
 
@@ -38,11 +39,14 @@ def get_content(
         str: The concatenated content of all the files found.
     """
     extensions = extensions or [".py", ".js", ".ts", ".jsx", ".tsx", ".md"]
-    content = ""
+    # ⚡ Bolt Optimization: Use a list and "".join() to build string output.
+    # Appending to a list is O(1) amortized, whereas string concatenation (+=) in a loop
+    # can lead to O(N²) memory reallocation overhead for large or numerous files.
+    content_parts = []
     for path in paths:
         for file in get_files(path, extensions):
-            content += "\n\n"
-            content += f"## {file}\n\n"
+            content_parts.append("\n\n")
+            content_parts.append(f"## {file}\n\n")
             with open(file, encoding="utf-8") as f:
-                content += f.read()
-    return content
+                content_parts.append(f.read())
+    return "".join(content_parts)
