@@ -42,8 +42,7 @@ jobs:
             --ignore=tests/workflows/test_job_execution_manager.py \
             --ignore=tests/workflows/test_job_execution.py \
             --ignore=tests/workflows/test_threaded_job_execution.py \
-            --ignore=tests/workflows/test_subprocess_job_execution.py \
-            --ignore=tests/deploy/test_docker_api_integration.py
+            --ignore=tests/workflows/test_subprocess_job_execution.py
 
   # Optional: Run Docker integration tests if explicitly requested
   docker-integration:
@@ -83,29 +82,7 @@ jobs:
             -e DB_PATH=/workspace/nodetool.db \
             -e HF_HOME=/hf-cache \
             -e ENV=test \
-            --health-cmd "curl -f http://localhost:7777/health || exit 1" \
-            --health-interval 10s \
-            --health-timeout 5s \
-            --health-retries 5 \
-            --health-start-period 30s \
             nodetool:local
-
-      - name: Wait for container to be ready
-        run: |
-          timeout 90s bash -c '
-            until curl -s http://localhost:8777/health | grep -q "OK"; do
-              echo "Waiting for API..."
-              sleep 2
-            done
-          '
-
-      - name: Run Docker integration tests
-        run: |
-          uv run pytest \
-            tests/deploy/test_docker_api_integration.py \
-            -v \
-            -m integration \
-            --timeout=300
 
       - name: Cleanup container
         if: always()

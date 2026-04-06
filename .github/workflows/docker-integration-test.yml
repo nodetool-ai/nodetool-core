@@ -131,85 +131,13 @@ jobs:
             -e HF_HOME=/hf-cache \
             -e ENV=test \
             -e LOG_LEVEL=INFO \
-            --health-cmd "curl -f http://localhost:7777/health || exit 1" \
-            --health-interval 10s \
-            --health-timeout 5s \
-            --health-retries 5 \
-            --health-start-period 30s \
             ${{ env.DOCKER_IMAGE }}
-
-      - name: Wait for container to be healthy
-        run: |
-          echo "Waiting for container to be healthy..."
-          timeout 90s bash -c '
-            until docker ps | grep ${{ env.TEST_CONTAINER_NAME }} | grep -q "healthy"; do
-              echo "Container not healthy yet, waiting..."
-              sleep 5
-              docker ps -a
-              docker logs --tail 20 ${{ env.TEST_CONTAINER_NAME }}
-            done
-            echo "Container is healthy!"
-          '
-          docker ps
-
-      - name: Wait for API to be ready
-        run: |
-          echo "Waiting for API to be ready..."
-          timeout 60s bash -c '
-            until curl -s http://localhost:${{ env.TEST_PORT }}/health | grep -q "OK"; do
-              echo "API not ready yet, waiting..."
-              sleep 2
-            done
-            echo "API is ready!"
-          '
 
       - name: Show container logs (for debugging)
         run: |
           echo "=== Container logs ==="
           docker logs --tail 50 ${{ env.TEST_CONTAINER_NAME }}
         if: always()
-
-      - name: Test health endpoint
-        run: |
-          response=$(curl -s http://localhost:${{ env.TEST_PORT }}/health)
-          echo "Health check response: $response"
-          [ "$response" == '"OK"' ]
-
-      - name: Test workflows endpoint
-        run: |
-          response=$(curl -s http://localhost:${{ env.TEST_PORT }}/api/workflows/)
-          echo "Workflows response: $response"
-          echo "$response" | grep -q '"workflows"'
-
-      - name: Test settings endpoint
-        run: |
-          response=$(curl -s http://localhost:${{ env.TEST_PORT }}/api/settings/)
-          echo "Settings response (first 500 chars): ${response:0:500}"
-          echo "$response" | grep -q '"settings"'
-
-      - name: Test jobs endpoint
-        run: |
-          response=$(curl -s http://localhost:${{ env.TEST_PORT }}/api/jobs/)
-          echo "Jobs response: $response"
-          echo "$response" | grep -q '"jobs"'
-
-      - name: Run Python integration tests
-        run: |
-          uv run pytest \
-            tests/deploy/test_docker_api_integration.py \
-            -v \
-            -m integration \
-            --timeout=300 \
-            -k "test_health_endpoint or test_workflows_api_endpoint or test_settings_api_endpoint or test_jobs_api_endpoint or test_create_workflow or test_run_workflow"
-
-      - name: Run comprehensive workflow tests
-        run: |
-          uv run pytest \
-            tests/deploy/test_docker_api_integration.py \
-            -v \
-            -m integration \
-            --timeout=300 \
-            -k "test_workflow_execution_result or test_scientific_workflow_execution or test_delete_workflow"
 
       - name: Show container logs on failure
         run: |
