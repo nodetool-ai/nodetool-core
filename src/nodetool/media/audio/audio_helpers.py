@@ -85,16 +85,15 @@ def concatenate_audios(audios: list[AudioSegment]) -> AudioSegment:
         return AudioSegment.empty()
 
     # ⚡ Bolt Optimization: Calculate the target parameters that pydub's += operator
-    # would implicitly upgrade to (comparing against an empty segment's defaults),
+    # would implicitly upgrade to by finding the max across all input segments,
     # convert all segments to those targets, and then do a fast O(N) byte join
     # to avoid the O(N^2) penalty of repeated += copying.
-    empty = AudioSegment.empty()
+    first = audios[0]
+    target_sample_width = first.sample_width
+    target_frame_rate = first.frame_rate
+    target_channels = first.channels
 
-    target_sample_width = empty.sample_width
-    target_frame_rate = empty.frame_rate
-    target_channels = empty.channels
-
-    for a in audios:
+    for a in audios[1:]:
         target_sample_width = max(target_sample_width, a.sample_width)
         target_frame_rate = max(target_frame_rate, a.frame_rate)
         target_channels = max(target_channels, a.channels)
@@ -109,7 +108,7 @@ def concatenate_audios(audios: list[AudioSegment]) -> AudioSegment:
             a = a.set_channels(target_channels)
         raw_data_list.append(a.raw_data)
 
-    res = empty._spawn(b"".join(raw_data_list), overrides={
+    res = first._spawn(b"".join(raw_data_list), overrides={
         "sample_width": target_sample_width,
         "frame_rate": target_frame_rate,
         "channels": target_channels
