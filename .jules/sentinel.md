@@ -10,3 +10,8 @@
 **Vulnerability:** The `_legacy_export_to_video_bytes` function in `src/nodetool/media/video/video_utils.py` used a hardcoded path (`/tmp/temp_video.mp4`) for temporary file storage during video encoding. This allowed for symlink attacks, race conditions, and cross-tenant data leakage if multiple processes or users executed the function concurrently.
 **Learning:** Hardcoded temporary paths are a common anti-pattern that can easily be overlooked in fallback or legacy code paths. They violate the principle of isolation and can lead to severe vulnerabilities in multi-user environments.
 **Prevention:** Always use secure temporary file creation mechanisms like `tempfile.NamedTemporaryFile` with appropriate cleanup logic (e.g., `delete=False` followed by a `try...finally` block for manual removal) to guarantee uniqueness and prevent race conditions.
+
+## 2025-04-07 - Fixed Path Traversal in Workspace Resolution
+**Vulnerability:** The function `resolve_workspace_path` used `os.path.abspath` when joining a workspace directory with a relative path. This permitted path traversal attacks where the relative path could contain a symlink that points outside the allowed workspace boundary, as `os.path.abspath` merely normalizes the path without resolving underlying symlinks.
+**Learning:** Checking path boundaries (e.g. `os.path.commonpath`) on symlink-containing paths is unreliable because the path components might appear valid while ultimately pointing outside the safe directory.
+**Prevention:** Always use `os.path.realpath` to resolve all symlinks *before* performing boundary validation to ensure the true resolved path resides within the intended directory limits.

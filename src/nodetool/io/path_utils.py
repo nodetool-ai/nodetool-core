@@ -67,12 +67,12 @@ def resolve_workspace_path(workspace_dir: str | None, path: str) -> str:
 
     # Prevent path traversal attempts (e.g., ../../etc/passwd)
     # Join the workspace directory with the potentially cleaned relative path
-    abs_path = os.path.abspath(os.path.join(workspace_dir, relative_path))
+    abs_path = os.path.realpath(os.path.join(workspace_dir, relative_path))
 
     # Final check: ensure the resolved path is still within the workspace directory
     # Use commonpath for robustness across OS (prevents partial path traversal)
-    common_path = os.path.commonpath([os.path.abspath(workspace_dir), abs_path])
-    if os.path.abspath(workspace_dir) != common_path:
+    common_path = os.path.commonpath([os.path.realpath(workspace_dir), abs_path])
+    if os.path.realpath(workspace_dir) != common_path:
         log.error(
             f"Resolved path '{abs_path}' is outside the workspace directory '{workspace_dir}'. Original path: '{path}'"
         )
