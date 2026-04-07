@@ -81,6 +81,21 @@ def concatenate_audios(audios: list[AudioSegment]) -> AudioSegment:
     Returns:
         AudioSegment: The concatenated audio segment.
     """
+    if not audios:
+        return AudioSegment.empty()
+
+    # ⚡ Bolt Optimization: Use raw byte joining when audio parameters match
+    # to avoid O(N^2) copying penalty from += operator in loop.
+    first = audios[0]
+    same_params = all(
+        a.sample_width == first.sample_width and a.frame_rate == first.frame_rate and a.channels == first.channels
+        for a in audios
+    )
+
+    if same_params:
+        raw_data = b"".join(a.raw_data for a in audios)
+        return first._spawn(raw_data)
+
     concatenated_audio = AudioSegment.empty()
     for audio in audios:
         concatenated_audio += audio
