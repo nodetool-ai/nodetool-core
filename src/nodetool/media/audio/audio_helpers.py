@@ -84,22 +84,37 @@ def concatenate_audios(audios: list[AudioSegment]) -> AudioSegment:
     if not audios:
         return AudioSegment.empty()
 
-    # ⚡ Bolt Optimization: Use raw byte joining when audio parameters match
-    # to avoid O(N^2) copying penalty from += operator in loop.
-    first = audios[0]
-    same_params = all(
-        a.sample_width == first.sample_width and a.frame_rate == first.frame_rate and a.channels == first.channels
-        for a in audios
-    )
+    # ⚡ Bolt Optimization: Calculate the target parameters that pydub's += operator
+    # would implicitly upgrade to (comparing against an empty segment's defaults),
+    # convert all segments to those targets, and then do a fast O(N) byte join
+    # to avoid the O(N^2) penalty of repeated += copying.
+    empty = AudioSegment.empty()
 
-    if same_params:
-        raw_data = b"".join(a.raw_data for a in audios)
-        return first._spawn(raw_data)
+    target_sample_width = empty.sample_width
+    target_frame_rate = empty.frame_rate
+    target_channels = empty.channels
 
-    concatenated_audio = AudioSegment.empty()
-    for audio in audios:
-        concatenated_audio += audio
-    return concatenated_audio
+    for a in audios:
+        target_sample_width = max(target_sample_width, a.sample_width)
+        target_frame_rate = max(target_frame_rate, a.frame_rate)
+        target_channels = max(target_channels, a.channels)
+
+    raw_data_list = []
+    for a in audios:
+        if a.sample_width != target_sample_width:
+            a = a.set_sample_width(target_sample_width)
+        if a.frame_rate != target_frame_rate:
+            a = a.set_frame_rate(target_frame_rate)
+        if a.channels != target_channels:
+            a = a.set_channels(target_channels)
+        raw_data_list.append(a.raw_data)
+
+    res = empty._spawn(b"".join(raw_data_list), overrides={
+        "sample_width": target_sample_width,
+        "frame_rate": target_frame_rate,
+        "channels": target_channels
+    })
+    return res
 
 
 def remove_silence(
