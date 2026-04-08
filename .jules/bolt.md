@@ -1,3 +1,3 @@
-## 2025-02-12 - Video Export Optimization and Correctness
-**Learning:** Upfront list comprehension for processing large sequences (like video frames) consumes O(N) memory and can lead to OOM. Lazy processing inside the writing loop reduces memory usage to O(1). Additionally, assuming input data types (e.g. float vs uint8) without checking can lead to critical bugs like integer overflow when scaling `uint8` arrays by 255.
-**Action:** Always prefer lazy iteration/generators for large data processing pipelines. Explicitly check `numpy.dtype` before performing arithmetic scaling to ensure correctness and avoid unnecessary operations.
+## 2026-04-08 - String Concatenation and List Extensions Optimization
+**Learning:** In Python, string concatenations (`+=`) in loops create O(n^2) performance bottlenecks because strings are immutable, requiring intermediate copies. A similar, though less severe, reallocation impact happens with `+=` on lists compared to `.extend()`.
+**Action:** Use the pattern `list.append()` followed by `"".join(list)` when dynamically building large strings iteratively. Similarly, prefer `.extend()` when merging list results from recursion.
