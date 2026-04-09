@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import inspect
 import json
 import os
@@ -1020,6 +1021,8 @@ class ProcessingContext:
             if isinstance(asset_ref, ImageRef):
                 if isinstance(data, bytes):
                     return BytesIO(data)
+                elif isinstance(data, str):
+                    return BytesIO(base64.b64decode(data))
                 elif isinstance(data, PIL_Image.Image):
                     return BytesIO(await _in_thread(_pil_to_png_bytes_with_exif, data))
                 elif isinstance(data, np.ndarray):
@@ -1030,6 +1033,8 @@ class ProcessingContext:
             elif isinstance(asset_ref, AudioRef):
                 if isinstance(data, bytes):
                     return BytesIO(data)
+                elif isinstance(data, str):
+                    return BytesIO(base64.b64decode(data))
                 elif isinstance(data, AudioSegment):
                     return BytesIO(await _in_thread(_audio_segment_to_wav_bytes, data))
                 elif isinstance(data, np.ndarray):
