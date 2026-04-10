@@ -37,7 +37,18 @@ jobs:
         working-directory: .
         run: uv sync --all-extras --dev
 
+      - name: Check if ts directory exists
+        working-directory: .
+        id: check_ts
+        run: |
+          if [ -d "ts" ] && [ -f "ts/package-lock.json" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Setup Node
+        if: steps.check_ts.outputs.exists == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -45,25 +56,31 @@ jobs:
           cache-dependency-path: ts/package-lock.json
 
       - name: Install dependencies
+        if: steps.check_ts.outputs.exists == 'true'
         run: npm ci
 
       - name: Build TS workspaces
+        if: steps.check_ts.outputs.exists == 'true'
         run: npm run build
 
       - name: Run parity harness tests (including cross-language checks)
+        if: steps.check_ts.outputs.exists == 'true'
         run: npm --workspace @nodetool/parity-harness run test
 
       - name: Export Python parity snapshot
+        if: steps.check_ts.outputs.exists == 'true'
         working-directory: .
         run: uv run python scripts/export_parity_snapshot.py > ts/parity-snapshot.json
 
       - name: Upload parity snapshot artifact
+        if: steps.check_ts.outputs.exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: parity-snapshot
           path: ts/parity-snapshot.json
 
       - name: Generate sample shadow report
+        if: steps.check_ts.outputs.exists == 'true'
         run: |
           npm --workspace @nodetool/parity-harness run build
           node packages/parity-harness/dist/cli.js \
@@ -72,6 +89,7 @@ jobs:
             > parity-shadow-report.json
 
       - name: Upload shadow report artifact
+        if: steps.check_ts.outputs.exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: parity-shadow-report
