@@ -73,7 +73,10 @@ def resize_audio(audio: AudioSegment, duration: float) -> AudioSegment:
 
 def concatenate_audios(audios: list[AudioSegment]) -> AudioSegment:
     """
-    Concatenate a list of audio segments
+    Concatenate a list of audio segments.
+    ⚡ Bolt Optimization: Uses b''.join() on raw bytes instead of `+=` to avoid
+    O(n^2) performance penalties from repeated memory allocations, with
+    a fallback to `+=` if the segments have different encodings.
 
     Args:
         audios (List[AudioSegment]): A list of audio segments to concatenate.
@@ -81,6 +84,26 @@ def concatenate_audios(audios: list[AudioSegment]) -> AudioSegment:
     Returns:
         AudioSegment: The concatenated audio segment.
     """
+    if not audios:
+        return AudioSegment.empty()
+
+    first = audios[0]
+
+    # Fast path: all segments have the same encoding
+    if all(
+        a.sample_width == first.sample_width and
+        a.frame_rate == first.frame_rate and
+        a.channels == first.channels
+        for a in audios
+    ):
+        return AudioSegment(
+            data=b''.join(a.raw_data for a in audios),
+            sample_width=first.sample_width,
+            frame_rate=first.frame_rate,
+            channels=first.channels
+        )
+
+    # Fallback to slow path if encodings differ
     concatenated_audio = AudioSegment.empty()
     for audio in audios:
         concatenated_audio += audio
