@@ -281,17 +281,23 @@ class PostgresAdapter(DatabaseAdapter):
         table_name = f"{self.table_name}{suffix}"
         fields = self.fields
         primary_key = self.get_primary_key()
-        sql = f"CREATE TABLE IF NOT EXISTS {table_name} ("
+
+        column_defs = []
         for field_name, field in fields.items():
             field_type = field.annotation
-            sql += f"{field_name} {get_postgres_type(field_type)}, "
-        sql += f"PRIMARY KEY ({primary_key}))"
+            column_defs.append(SQL("{} {}").format(Identifier(field_name), SQL(get_postgres_type(field_type))))
+
+        sql = SQL("CREATE TABLE IF NOT EXISTS {} ({}, PRIMARY KEY ({}))").format(
+            Identifier(table_name),
+            SQL(", ").join(column_defs),
+            Identifier(primary_key)
+        )
 
         try:
             pool = await self._get_pool()
             async with pool.connection() as conn:
                 async with conn.cursor() as cursor:
-                    await cursor.execute(sql)  # type: ignore[arg-type]
+                    await cursor.execute(sql)
                 await conn.commit()
         except psycopg.Error as e:
             print(f"PostgreSQL error during table creation: {e}")
@@ -299,11 +305,11 @@ class PostgresAdapter(DatabaseAdapter):
 
     async def drop_table(self) -> None:
         """Drops the database table associated with this adapter."""
-        sql = f"DROP TABLE IF EXISTS {self.table_name}"
+        sql = SQL("DROP TABLE IF EXISTS {}").format(Identifier(self.table_name))
         pool = await self._get_pool()
         async with pool.connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute(sql)  # type: ignore[arg-type]
+                await cursor.execute(sql)
             await conn.commit()
 
     async def migrate_table(self) -> None:
@@ -330,11 +336,17 @@ class PostgresAdapter(DatabaseAdapter):
                 # Alter table to add new fields
                 for field_name in fields_to_add:
                     field_type = get_postgres_type(self.fields[field_name].annotation)
-                    await cursor.execute(f"ALTER TABLE {self.table_name} ADD COLUMN {field_name} {field_type}")  # type: ignore[arg-type]
+                    query = SQL("ALTER TABLE {} ADD COLUMN {} {}").format(
+                        Identifier(self.table_name), Identifier(field_name), SQL(field_type)
+                    )
+                    await cursor.execute(query)
 
                 # Alter table to remove fields
                 for field_name in fields_to_remove:
-                    await cursor.execute(f"ALTER TABLE {self.table_name} DROP COLUMN {field_name}")  # type: ignore[arg-type]
+                    query = SQL("ALTER TABLE {} DROP COLUMN {}").format(
+                        Identifier(self.table_name), Identifier(field_name)
+                    )
+                    await cursor.execute(query)
 
             await conn.commit()
 
@@ -354,17 +366,28 @@ class PostgresAdapter(DatabaseAdapter):
             item: A dictionary representing the model instance to save.
         """
         valid_keys = [key for key in item if key in self.fields]
-        columns = ", ".join(valid_keys)
-        placeholders = ", ".join([f"%({key})s" for key in valid_keys])
+        columns = SQL(", ").join([Identifier(key) for key in valid_keys])
+        placeholders_list = [Placeholder(name=key) for key in valid_keys]
+        placeholders = SQL(", ").join(placeholders_list)
         values = {key: convert_to_postgres_format(item[key], self.fields[key].annotation) for key in valid_keys}
-        query = (
-            f"INSERT INTO {self.table_name} ({columns}) VALUES ({placeholders}) ON CONFLICT ({self.get_primary_key()}) DO UPDATE SET "
-            + ", ".join([f"{key} = EXCLUDED.{key}" for key in valid_keys])
+
+        update_set = SQL(", ").join(
+            [SQL("{} = EXCLUDED.{}").format(Identifier(key), Identifier(key)) for key in valid_keys]
+        )
+
+        query = SQL(
+            "INSERT INTO {} ({}) VALUES ({}) ON CONFLICT ({}) DO UPDATE SET {}"
+        ).format(
+            Identifier(self.table_name),
+            columns,
+            placeholders,
+            Identifier(self.get_primary_key()),
+            update_set
         )
         pool = await self._get_pool()
         async with pool.connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute(query, values)  # type: ignore[arg-type]
+                await cursor.execute(query, values)
             await conn.commit()
 
     async def get(self, key: Any) -> dict[str, Any] | None:
@@ -378,11 +401,13 @@ class PostgresAdapter(DatabaseAdapter):
             Attributes are converted back to their Python types.
         """
         primary_key = self.get_primary_key()
-        cols = ", ".join(self.fields)
-        query = f"SELECT {cols} FROM {self.table_name} WHERE {primary_key} = %s"
+        cols = SQL(", ").join([Identifier(field) for field in self.fields])
+        query = SQL("SELECT {} FROM {} WHERE {} = {}").format(
+            cols, Identifier(self.table_name), Identifier(primary_key), Placeholder()
+        )
         pool = await self._get_pool()
         async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(query, (key,))  # type: ignore[arg-type]
+            await cursor.execute(query, (key,))
             item = await cursor.fetchone()
         if item is None:
             return None
@@ -395,11 +420,13 @@ class PostgresAdapter(DatabaseAdapter):
             primary_key: The primary key value of the item to delete.
         """
         pk_column = self.get_primary_key()
-        query = f"DELETE FROM {self.table_name} WHERE {pk_column} = %s"
+        query = SQL("DELETE FROM {} WHERE {} = {}").format(
+            Identifier(self.table_name), Identifier(pk_column), Placeholder()
+        )
         pool = await self._get_pool()
         async with pool.connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute(query, (primary_key,))  # type: ignore[arg-type]
+                await cursor.execute(query, (primary_key,))
             await conn.commit()
 
     def _build_condition(self, condition: Condition | ConditionGroup) -> tuple[Composed, list[Any]]:
