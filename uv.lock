@@ -2451,21 +2451,13 @@ dependencies = [
     { name = "aiohttp" },
     { name = "brotli" },
     { name = "cryptography" },
-    { name = "ffmpeg-python" },
-    { name = "ftfy" },
     { name = "hf-transfer" },
     { name = "hf-xet" },
     { name = "httpx" },
     { name = "huggingface-hub" },
-    { name = "imageio" },
-    { name = "imageio-ffmpeg" },
-    { name = "joblib" },
     { name = "keyring" },
     { name = "msgpack" },
-    { name = "networkx" },
     { name = "numpy" },
-    { name = "opencv-python-headless" },
-    { name = "pandas" },
     { name = "pillow" },
     { name = "psutil" },
     { name = "pycares" },
@@ -2473,12 +2465,18 @@ dependencies = [
     { name = "pydub" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
-    { name = "tiktoken" },
     { name = "tqdm" },
     { name = "websockets" },
 ]
 
 [package.optional-dependencies]
+data = [
+    { name = "ftfy" },
+    { name = "joblib" },
+    { name = "networkx" },
+    { name = "pandas" },
+    { name = "tiktoken" },
+]
 dev = [
     { name = "aioresponses" },
     { name = "mypy" },
@@ -2511,6 +2509,12 @@ vectorstore = [
     { name = "chromadb" },
     { name = "langchain-text-splitters" },
 ]
+video = [
+    { name = "ffmpeg-python" },
+    { name = "imageio" },
+    { name = "imageio-ffmpeg" },
+    { name = "opencv-python-headless" },
+]
 viz = [
     { name = "matplotlib" },
     { name = "seaborn" },
@@ -2530,30 +2534,30 @@ requires-dist = [
     { name = "bs4", marker = "extra == 'vectorstore'", specifier = "==0.0.2" },
     { name = "chromadb", marker = "extra == 'vectorstore'", specifier = ">=1.4.0" },
     { name = "cryptography", specifier = ">=43.0.0" },
-    { name = "ffmpeg-python", specifier = ">=0.2.0" },
-    { name = "ftfy", specifier = ">=6.3.1" },
+    { name = "ffmpeg-python", marker = "extra == 'video'", specifier = ">=0.2.0" },
+    { name = "ftfy", marker = "extra == 'data'", specifier = ">=6.3.1" },
     { name = "hf-transfer" },
     { name = "hf-xet", specifier = ">=0.0.1" },
     { name = "html2text", marker = "extra == 'documents'" },
     { name = "httpx", specifier = ">=0.27.2" },
     { name = "huggingface-hub", specifier = ">=0.35.3" },
-    { name = "imageio", specifier = ">=2.37.0" },
-    { name = "imageio-ffmpeg", specifier = ">=0.6.0" },
+    { name = "imageio", marker = "extra == 'video'", specifier = ">=2.37.0" },
+    { name = "imageio-ffmpeg", marker = "extra == 'video'", specifier = ">=0.6.0" },
     { name = "jinja2", marker = "extra == 'documents'", specifier = "==3.1.6" },
-    { name = "joblib" },
+    { name = "joblib", marker = "extra == 'data'" },
     { name = "keyring", specifier = ">=25.5.0" },
     { name = "langchain-text-splitters", marker = "extra == 'vectorstore'", specifier = "==1.1.1" },
     { name = "markitdown", marker = "extra == 'documents'" },
     { name = "matplotlib", marker = "extra == 'viz'", specifier = "==3.10.8" },
     { name = "msgpack", specifier = ">=1.1.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
-    { name = "networkx", specifier = ">=3.4.2" },
+    { name = "networkx", marker = "extra == 'data'", specifier = ">=3.4.2" },
     { name = "numpy", specifier = ">=2.0.0,<2.4" },
-    { name = "opencv-python-headless", specifier = ">=4.11.0.86" },
+    { name = "opencv-python-headless", marker = "extra == 'video'", specifier = ">=4.11.0.86" },
     { name = "openpyxl", marker = "extra == 'documents'", specifier = ">=3.1.3" },
     { name = "paddleocr", marker = "extra == 'ocr'", specifier = ">=3.2.0" },
     { name = "paddlepaddle", marker = "extra == 'ocr'" },
-    { name = "pandas", specifier = ">=2.2.3" },
+    { name = "pandas", marker = "extra == 'data'", specifier = ">=2.2.3" },
     { name = "pdfplumber", marker = "extra == 'documents'", specifier = ">=0.11.4" },
     { name = "pillow", specifier = "<11.0.0" },
     { name = "psutil", specifier = ">=6.1.0" },
@@ -2574,12 +2578,12 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.15.2" },
     { name = "seaborn", marker = "extra == 'viz'", specifier = ">=0.13.2" },
-    { name = "tiktoken" },
+    { name = "tiktoken", marker = "extra == 'data'" },
     { name = "tqdm", specifier = ">=4.67.0" },
     { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.7" },
     { name = "websockets", specifier = ">=14.1" },
 ]
-provides-extras = ["vectorstore", "documents", "ocr", "viz", "dev"]
+provides-extras = ["vectorstore", "documents", "ocr", "viz", "video", "data", "dev"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "basedpyright", specifier = ">=1.37.1" }]

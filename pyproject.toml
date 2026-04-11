@@ -28,28 +28,17 @@ dependencies = [
     "cryptography>=43.0.0",
     "psutil>=6.1.0",
     "tqdm>=4.67.0",
-    "ftfy>=6.3.1",
-    "joblib",
-    "networkx>=3.4.2",
 
     # Media processing (used by nodes via ProcessingContext)
     "pillow < 11.0.0",
     "numpy>=2.0.0,<2.4",
-    "opencv-python-headless>=4.11.0.86",
     "pydub>=0.25.1",
-    "ffmpeg-python>=0.2.0",
-    "imageio>=2.37.0",
-    "imageio-ffmpeg>=0.6.0",
-
-    # Data (used by nodes via ProcessingContext)
-    "pandas>=2.2.3",
 
     # HuggingFace integration (used by HF nodes)
     "huggingface_hub>=0.35.3",
     "hf_xet>=0.0.1",
     "hf_transfer",
     "aiofiles>=24.1.0",
-    "tiktoken",
 ]
 
 [project.optional-dependencies]
@@ -81,6 +70,21 @@ ocr = [
 viz = [
     "matplotlib==3.10.8",
     "seaborn>=0.13.2",
+]
+# Video processing (opencv, imageio)
+video = [
+    "opencv-python-headless>=4.11.0.86",
+    "imageio>=2.37.0",
+    "imageio-ffmpeg>=0.6.0",
+    "ffmpeg-python>=0.2.0",
+]
+# Data processing (pandas, joblib, etc.)
+data = [
+    "pandas>=2.2.3",
+    "joblib",
+    "ftfy>=6.3.1",
+    "networkx>=3.4.2",
+    "tiktoken",
 ]
 dev = [
     "pytest>=8.0.0",
