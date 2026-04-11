@@ -3,7 +3,6 @@ import io
 import pytest
 
 from nodetool.runtime.resources import ResourceScope
-from nodetool.storage.memory_uri_cache import MemoryUriCache
 from nodetool.workflows.processing_context import ProcessingContext
 
 

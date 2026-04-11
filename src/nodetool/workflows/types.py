@@ -4,8 +4,31 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from nodetool.metadata.types import Chunk, Step, Task
-from nodetool.types.job import JobUpdate
 from nodetool.types.prediction import Prediction
+
+
+class RunStateInfo(BaseModel):
+    """Run state info for WebSocket messages."""
+
+    status: str
+    suspended_node_id: str | None = None
+    suspension_reason: str | None = None
+    error_message: str | None = None
+    execution_strategy: str | None = None
+    is_resumable: bool = False
+
+
+class JobUpdate(BaseModel):
+    type: Literal["job_update"] = "job_update"
+    status: str
+    job_id: str | None = None
+    workflow_id: str | None = None
+    message: str | None = None
+    result: dict | None = None
+    error: str | None = None
+    traceback: str | None = None
+    run_state: RunStateInfo | None = None
+    duration: float | None = None
 
 
 def sanitize_memory_uris_for_client(value: Any) -> Any:

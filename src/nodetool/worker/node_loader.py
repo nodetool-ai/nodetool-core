@@ -9,29 +9,40 @@ from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
 
 
 def _discover_namespaces() -> list[str]:
-    """Auto-discover namespaces from installed nodetool-* packages.
+    """Auto-discover namespaces from installed nodetool node packages.
 
-    Collects namespaces from PackageModel.namespaces first, then falls
-    back to deriving top-level namespaces from node_type strings in the
-    package's node list (e.g. "huggingface.image_classification.X" → "huggingface").
+    Uses Python entry_points (group='nodetool.namespaces') for discovery.
+    Each entry point value is a comma-separated list of namespaces.
+    Falls back to scanning for nodetool.nodes.* packages.
     """
+    namespaces: set[str] = set()
+
+    # Method 1: entry_points (group kwarg supported since Python 3.9+)
     try:
-        from nodetool.packages.registry import discover_node_packages
-        namespaces = set()
-        for pkg in discover_node_packages():
-            # Prefer explicit namespaces field
-            if pkg.namespaces:
-                for ns in pkg.namespaces:
+        from importlib.metadata import entry_points
+        eps = entry_points(group="nodetool.namespaces")
+
+        for ep in eps:
+            for ns in str(ep.value).split(","):
+                ns = ns.strip()
+                if ns:
                     namespaces.add(ns)
-            # Fall back to deriving from node_type strings
-            elif pkg.nodes:
-                for node_meta in pkg.nodes:
-                    top_ns = node_meta.node_type.split(".")[0]
-                    namespaces.add(top_ns)
-        return sorted(namespaces)
     except Exception as e:
-        print(f"Warning: auto-discovery failed: {e}", file=sys.stderr)
-        return []
+        print(f"Warning: entry_points discovery failed: {e}", file=sys.stderr)
+
+    # Method 2: scan for nodetool.nodes.* subpackages
+    if not namespaces:
+        try:
+            import importlib
+            import pkgutil
+            nodes_pkg = importlib.import_module("nodetool.nodes")
+            if hasattr(nodes_pkg, "__path__"):
+                for _importer, name, _ispkg in pkgutil.iter_modules(nodes_pkg.__path__):
+                    namespaces.add(name)
+        except ImportError:
+            pass
+
+    return sorted(namespaces)
 
 
 def node_to_metadata(node_class: type[BaseNode]) -> dict[str, Any]:
@@ -87,7 +98,7 @@ def _call_or_get(cls: type, name: str) -> bool:
     attr = getattr(cls, name, False)
     if callable(attr):
         try:
-            return attr()
+            return bool(attr())
         except TypeError:
             return False
     return bool(attr)

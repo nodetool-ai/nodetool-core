@@ -52,7 +52,11 @@ from nodetool.metadata.types import (
 )
 from nodetool.security.secret_helper import get_secret
 from nodetool.types.model import UnifiedModel
-from nodetool.workflows.recommended_models import get_recommended_models
+try:
+    from nodetool.workflows.recommended_models import get_recommended_models
+except ImportError:
+    def get_recommended_models():
+        return {}
 
 # Extensions that identify repo-root single-file diffusion checkpoints we surface directly.
 SINGLE_FILE_DIFFUSION_EXTENSIONS = (
