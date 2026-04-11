@@ -12,107 +12,86 @@ requires-python = ">=3.11"
 
 dependencies = [
 
-    # Core dependencies
+    # Core — worker subprocess communication
     "pydantic>=2.11.2",
-    "python-multipart>=0.0.17",
-    "aiohttp>=3.13.1",  # 3.13.1 fixes zstd decompression for chunked streams
-    "brotli>=1.2.0",  # Required by aiohttp 3.13+ for br encoding
-    # aiodns (pulled in by aiohttp speedups) crashes at import-time with pycares 5.x:
-    # AttributeError: module 'pycares' has no attribute 'ares_query_a_result'
-    # Pin until upstream aiodns supports pycares 5.x.
-    "pycares<5",
-    "websockets>=14.1",
     "msgpack>=1.1.0",
-    "networkx>=3.4.2",
-    "supabase>=2.15.0",
-    "psycopg[binary]>=3.2.9",
-    "psycopg-pool>=3.2.6",
+    "websockets>=14.1",
+    "httpx>=0.27.2",
+    "aiohttp>=3.13.1",
+    "brotli>=1.2.0",
+    "pycares<5",
 
-    # Utils dependencies
-    "click>=8.1.7",
-    "cryptography>=43.0.0",
-    "feedparser",
-    "ftfy>=6.3.1",
-    "importlib_metadata",
-    "importlib-resources",
-    "joblib",
-    "jsonpath-ng>=1.7.0",
-    "jsonschema",
-    "attrs>=23.2.0",
-    "keyring>=25.5.0",
-    "psutil>=6.1.0",
-    "nvidia-ml-py>=13.580.65",
-    "python-dateutil>=2.9.0.post0",
+    # Node execution utilities
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.2",
-    "rich>=13.9.4",
-    "setuptools>=80.8.0",
-    "tomli>=2.2.1",
-    "tomlkit",
+    "keyring>=25.5.0",
+    "cryptography>=43.0.0",
+    "psutil>=6.1.0",
     "tqdm>=4.67.0",
+    "ftfy>=6.3.1",
+    "joblib",
+    "networkx>=3.4.2",
 
-    # Document processing dependencies
-    "bs4==0.0.2",
+    # Media processing (used by nodes via ProcessingContext)
+    "pillow < 11.0.0",
+    "numpy>=2.0.0,<2.4",
+    "opencv-python-headless>=4.11.0.86",
+    "pydub>=0.25.1",
+    "ffmpeg-python>=0.2.0",
+    "imageio>=2.37.0",
+    "imageio-ffmpeg>=0.6.0",
+
+    # Data (used by nodes via ProcessingContext)
+    "pandas>=2.2.3",
+
+    # HuggingFace integration (used by HF nodes)
+    "huggingface_hub>=0.35.3",
+    "hf_xet>=0.0.1",
+    "hf_transfer",
+    "aiofiles>=24.1.0",
+    "tiktoken",
+]
+
+[project.optional-dependencies]
+# Vectorstore nodes (chromadb + langchain)
+vectorstore = [
+    "chromadb>=1.4.0",
     "langchain-text-splitters==1.1.1",
+    "bs4==0.0.2",
+]
+# Document processing nodes
+documents = [
     "html2text",
     "markitdown",
     "PyMuPDF>=1.25.2",
     "pymupdf4llm>=0.0.27",
     "jinja2==3.1.6",
-
-    # AI/ML dependencies
-    "huggingface_hub>=0.35.3",
-    "tiktoken",
-
-    # Media dependencies
-    "ffmpeg-python>=0.2.0",
-    "pillow < 11.0.0",                    # due to mflux
-    "imageio>=2.37.0",
-    "imageio-ffmpeg>=0.6.0",
-    "pydub>=0.25.1",
-    "opencv-python-headless>=4.11.0.86",
-
-    # Data dependencies
-    "numpy>=2.0.0,<2.4",  # numba (librosa) requires numpy<2.4
-    "pandas>=2.2.3",
-    "llama-index-core>=0.14.4",
-    "llama-index-embeddings-ollama>=0.8.3",
-    "matplotlib==3.10.8",
-    "seaborn>=0.13.2",
     "pypandoc>=1.14.0",
     "python-docx==1.2.0",
     "pdfplumber>=0.11.4",
+    "openpyxl>=3.1.3",
+]
+# OCR nodes
+ocr = [
     "paddleocr>=3.2.0",
     "paddlepaddle",
     "pytesseract>=0.3.13",
-    "openpyxl>=3.1.3",
-
-    # Database and storage
-    "chromadb>=1.4.0",
-    "aiofiles>=24.1.0",
-    "aiosqlite>=0.20.0",
-    "boto3>=1.35.63",
-    "pymemcache>=4.0.0",
-    "protobuf",
-
-    # Web and networking
-    "httpx>=0.27.2",
-    "websocket-client>=1.8.0",
-    "hf_xet>=0.0.1",
-    "hf_transfer",
-
-    # Authentication and security
-    "annotated-types>=0.7.0",
 ]
-
-[project.optional-dependencies]
+# Data visualization nodes
+viz = [
+    "matplotlib==3.10.8",
+    "seaborn>=0.13.2",
+]
 dev = [
-    "aioresponses>=0.7.8",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=7.0.0",
     "pytest-timeout>=2.3.1",
-    "pytest-xdist>=3.6.0",   # Parallel test execution
-    "mypy>=1.0.0",           # Type checking
-    "ruff==0.15.2",           # Linting and formatting
-    "ty>=0.0.7",             # Fast type checking
+    "pytest-xdist>=3.6.0",
+    "aioresponses>=0.7.8",
+    "mypy>=1.0.0",
+    "ruff==0.15.2",
+    "ty>=0.0.7",
 ]
 
 [tool.hatch.metadata]
@@ -237,5 +216,4 @@ reportShadowedImports = "none"
 [dependency-groups]
 dev = [
     "basedpyright>=1.37.1",
-    "pytest-cov>=7.0.0",
 ]

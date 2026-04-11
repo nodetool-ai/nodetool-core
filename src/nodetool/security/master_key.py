@@ -10,9 +10,7 @@ import logging
 import os
 from typing import Optional
 
-import boto3
 import keyring
-from botocore.exceptions import ClientError
 from keyring.errors import KeyringError
 
 from nodetool.security.crypto import SecretCrypto
@@ -61,6 +59,8 @@ class MasterKeyManager:
             region = os.environ.get("AWS_REGION", "us-east-1")
 
             # Create Secrets Manager client
+            import boto3
+            from botocore.exceptions import ClientError
             session = boto3.session.Session()
             client = session.client(service_name="secretsmanager", region_name=region)
 
