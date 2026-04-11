@@ -2462,7 +2462,6 @@ dependencies = [
     { name = "psutil" },
     { name = "pycares" },
     { name = "pydantic" },
-    { name = "pydub" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "tqdm" },
@@ -2470,6 +2469,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+audio = [
+    { name = "pydub" },
+]
 data = [
     { name = "ftfy" },
     { name = "joblib" },
@@ -2563,7 +2565,7 @@ requires-dist = [
     { name = "psutil", specifier = ">=6.1.0" },
     { name = "pycares", specifier = "<5" },
     { name = "pydantic", specifier = ">=2.11.2" },
-    { name = "pydub", specifier = ">=0.25.1" },
+    { name = "pydub", marker = "extra == 'audio'", specifier = ">=0.25.1" },
     { name = "pymupdf", marker = "extra == 'documents'", specifier = ">=1.25.2" },
     { name = "pymupdf4llm", marker = "extra == 'documents'", specifier = ">=0.0.27" },
     { name = "pypandoc", marker = "extra == 'documents'", specifier = ">=1.14.0" },
@@ -2583,7 +2585,7 @@ requires-dist = [
     { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.7" },
     { name = "websockets", specifier = ">=14.1" },
 ]
-provides-extras = ["vectorstore", "documents", "ocr", "viz", "video", "data", "dev"]
+provides-extras = ["vectorstore", "documents", "ocr", "viz", "audio", "video", "data", "dev"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "basedpyright", specifier = ">=1.37.1" }]

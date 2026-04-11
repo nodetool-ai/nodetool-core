@@ -32,7 +32,6 @@ dependencies = [
     # Media processing (used by nodes via ProcessingContext)
     "pillow < 11.0.0",
     "numpy>=2.0.0,<2.4",
-    "pydub>=0.25.1",
 
     # HuggingFace integration (used by HF nodes)
     "huggingface_hub>=0.35.3",
@@ -70,6 +69,10 @@ ocr = [
 viz = [
     "matplotlib==3.10.8",
     "seaborn>=0.13.2",
+]
+# Audio processing
+audio = [
+    "pydub>=0.25.1",
 ]
 # Video processing (opencv, imageio)
 video = [
