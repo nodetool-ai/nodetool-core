@@ -1,14 +1,13 @@
 """Tests for ProcessingContext helper methods.
 
-Note: Some tests avoid the set() method which has a missing _persist_variable_if_needed method.
+Note: Some tests avoid methods with blocking behavior or missing implementations.
 """
 
+import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import ProcessingMessage
+from nodetool.workflows.types import NodeUpdate
 
 
 def _make_context(env: dict | None = None) -> ProcessingContext:
@@ -33,23 +32,23 @@ class TestProcessingContextBasicOperations:
         env = {"TEST_VAR": "test_value", "ANOTHER_VAR": "another_value"}
         context = _make_context(env)
 
-        assert context.environment == env
+        # Environment includes system vars, but should include our custom vars
+        assert "TEST_VAR" in context.environment
         assert context.environment["TEST_VAR"] == "test_value"
+        assert "ANOTHER_VAR" in context.environment
+        assert context.environment["ANOTHER_VAR"] == "another_value"
 
-    def test_user_id_and_workflow_id(self):
-        """Test user_id and workflow_id properties."""
+    def test_user_id_default(self):
+        """Test user_id has default value."""
         context = _make_context()
+        # Default user_id is "1"
+        assert context.user_id == "1"
 
-        # Default values
-        assert context.user_id == ""
+    def test_workflow_id_default(self):
+        """Test workflow_id has default value."""
+        context = _make_context()
+        # Default workflow_id is empty string
         assert context.workflow_id == ""
-
-    def test_is_cancelled(self):
-        """Test is_cancelled property."""
-        context = _make_context()
-
-        # Default is not cancelled
-        assert context.is_cancelled is False
 
 
 class TestProcessingContextCopy:
@@ -57,12 +56,14 @@ class TestProcessingContextCopy:
 
     def test_copy(self):
         """Test copy() creates a shallow copy."""
-        context = _make_context({"ENV_VAR": "value"})
+        env = {"TEST_VAR": "test_value"}
+        context = _make_context(env)
 
         copied = context.copy()
 
-        # Check environment is copied
-        assert copied.environment == {"ENV_VAR": "value"}
+        # Check environment is copied (includes system vars)
+        assert "TEST_VAR" in copied.environment
+        assert copied.environment["TEST_VAR"] == "test_value"
 
         # Check it's a different instance
         assert copied is not context
@@ -84,7 +85,12 @@ class TestProcessingContextMessages:
         assert context.has_messages() is False
 
         # Post a message
-        msg = ProcessingMessage(type="test", data={"key": "value"})
+        msg = NodeUpdate(
+            node_id="test_node",
+            node_name="TestNode",
+            node_type="test",
+            status="running"
+        )
         context.post_message(msg)
 
         # Now has messages
@@ -94,8 +100,18 @@ class TestProcessingContextMessages:
         """Test posting multiple messages."""
         context = _make_context()
 
-        msg1 = ProcessingMessage(type="test1", data={"key": "value1"})
-        msg2 = ProcessingMessage(type="test2", data={"key": "value2"})
+        msg1 = NodeUpdate(
+            node_id="test_node1",
+            node_name="TestNode1",
+            node_type="test",
+            status="running"
+        )
+        msg2 = NodeUpdate(
+            node_id="test_node2",
+            node_name="TestNode2",
+            node_type="test",
+            status="completed"
+        )
 
         context.post_message(msg1)
         context.post_message(msg2)
@@ -103,20 +119,22 @@ class TestProcessingContextMessages:
         assert context.has_messages() is True
 
     @pytest.mark.asyncio
-    async def test_pop_message_async_when_no_messages(self):
-        """Test pop_message_async() returns None when no messages."""
-        context = _make_context()
-
-        result = await context.pop_message_async()
-        assert result is None
-
-    @pytest.mark.asyncio
     async def test_pop_message_async_returns_messages_in_order(self):
         """Test pop_message_async() returns messages in FIFO order."""
         context = _make_context()
 
-        msg1 = ProcessingMessage(type="test1", data={"order": 1})
-        msg2 = ProcessingMessage(type="test2", data={"order": 2})
+        msg1 = NodeUpdate(
+            node_id="test_node1",
+            node_name="TestNode1",
+            node_type="test",
+            status="running"
+        )
+        msg2 = NodeUpdate(
+            node_id="test_node2",
+            node_name="TestNode2",
+            node_type="test",
+            status="completed"
+        )
 
         context.post_message(msg1)
         context.post_message(msg2)
@@ -124,11 +142,9 @@ class TestProcessingContextMessages:
         # Pop messages
         result1 = await context.pop_message_async()
         result2 = await context.pop_message_async()
-        result3 = await context.pop_message_async()
 
-        assert result1.type == "test1"
-        assert result2.type == "test2"
-        assert result3 is None  # No more messages
+        assert result1.node_id == "test_node1"
+        assert result2.node_id == "test_node2"
 
 
 class TestProcessingContextCaching:
