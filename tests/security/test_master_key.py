@@ -140,7 +140,8 @@ class TestMasterKeyManager:
         os.environ["AWS_SECRETS_MASTER_KEY_NAME"] = "my-secret"
         assert MasterKeyManager.is_using_aws_key()
 
-    @patch("nodetool.security.master_key.boto3")
+    @pytest.mark.skipif(not __import__("importlib.util", fromlist=["find_spec"]).find_spec("boto3"), reason="boto3 not installed")
+    @patch("boto3.session.Session")
     async def test_get_from_aws_secrets(self, mock_boto3):
         """Test getting master key from AWS Secrets Manager."""
         test_key = SecretCrypto.generate_master_key()
@@ -156,7 +157,8 @@ class TestMasterKeyManager:
         assert key == test_key
         mock_client.get_secret_value.assert_called_once_with(SecretId="nodetool-master-key")
 
-    @patch("nodetool.security.master_key.boto3")
+    @pytest.mark.skipif(not __import__("importlib.util", fromlist=["find_spec"]).find_spec("boto3"), reason="boto3 not installed")
+    @patch("boto3.session.Session")
     @patch("nodetool.security.master_key.keyring")
     async def test_aws_fallback_to_keyring(self, mock_keyring, mock_boto3):
         """Test fallback to keyring when AWS fails."""

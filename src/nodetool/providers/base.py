@@ -191,21 +191,16 @@ class BaseProvider:
         Returns:
             The cost of this operation in credits
         """
-        from nodetool.providers.cost_calculator import CostCalculator, UsageInfo
-
-        usage = UsageInfo(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cached_tokens=cached_tokens,
-            input_characters=input_characters,
-            duration_seconds=duration_seconds,
-            image_count=image_count,
-        )
-        self._usage_info = usage
-
-        cost = CostCalculator.calculate(model, usage, provider=self.provider_name)
-        self.cost += cost
-        return cost
+        self._usage_info = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cached_tokens": cached_tokens,
+            "input_characters": input_characters,
+            "duration_seconds": duration_seconds,
+            "image_count": image_count,
+        }
+        # Cost calculation is handled by the TS server
+        return 0.0
 
     def reset_cost(self) -> None:
         """Reset accumulated cost to zero."""
@@ -249,36 +244,8 @@ class BaseProvider:
             workflow_id: Optional workflow ID for tracking
             metadata: Additional metadata about the call
         """
-        try:
-            from nodetool.models.prediction import Prediction
-
-            await Prediction.create(
-                user_id=user_id,
-                node_id=node_id,
-                provider=provider,
-                model=model,
-                workflow_id=workflow_id,
-                cost=cost,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                total_tokens=total_tokens,
-                cached_tokens=cached_tokens,
-                reasoning_tokens=reasoning_tokens,
-                input_size=input_size,
-                output_size=output_size,
-                parameters=parameters,
-                metadata=metadata,
-                status="completed",
-            )
-        except ImportError as e:
-            # Handle missing module gracefully
-            log.warning(f"Prediction model not available: {e}")
-        except (ValueError, TypeError) as e:
-            # Handle invalid parameter values
-            log.warning(f"Invalid parameters for provider call logging: {e}")
-        except Exception as e:
-            # Don't fail the API call if logging fails
-            log.error(f"Unexpected error logging provider call: {e}", exc_info=True)
+        # Cost tracking is handled by the TS server
+        pass
 
     def get_capabilities(self) -> set[ProviderCapability]:
         """Determine supported capabilities based on implemented methods."""

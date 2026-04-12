@@ -25,13 +25,6 @@ from nodetool.providers.base import (
     get_registered_provider,
     register_provider,
 )
-from nodetool.providers.fake_provider import (
-    FakeProvider,
-    create_fake_tool_call,
-    create_simple_fake_provider,
-    create_streaming_fake_provider,
-    create_tool_calling_fake_provider,
-)
 from nodetool.security.secret_helper import get_secret, get_secrets_batch
 from nodetool.workflows.types import Chunk
 
@@ -186,14 +179,9 @@ async def list_providers(user_id: str) -> list["BaseProvider"]:
 __all__ = [
     "BaseProvider",
     "Chunk",
-    "FakeProvider",
     "MockProvider",
     "ProviderCapability",
     "clear_provider_cache",
-    "create_fake_tool_call",
-    "create_simple_fake_provider",
-    "create_streaming_fake_provider",
-    "create_tool_calling_fake_provider",
     "get_provider",
     "register_provider",
 ]

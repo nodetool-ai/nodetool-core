@@ -216,31 +216,22 @@ async def _fetch_asset_uri_async(uri: str) -> tuple[str, bytes]:
     Returns:
         Tuple of (mime_type, data_bytes)
     """
-    from nodetool.models.asset import Asset
+    import mimetypes
 
     asset_id = _parse_asset_id_from_uri(uri)
-
-    # Fetch the asset from the database
-    asset = await Asset.get(asset_id)
-    if not asset:
-        raise ValueError(f"Asset not found: {asset_id}")
-
-    # Get storage and download the file
     scope = require_scope()
     storage = scope.get_asset_storage()
 
-    exists = await storage.file_exists(asset.file_name)
-    if not exists:
-        raise ValueError(f"Asset file not found in storage: {asset.file_name}")
+    # Try common extensions
+    for ext in ["png", "jpg", "jpeg", "webp", "mp3", "wav", "mp4", "bin"]:
+        key = f"{asset_id}.{ext}"
+        if await storage.file_exists(key):
+            stream = BytesIO()
+            await storage.download(key, stream)
+            mime_type, _ = mimetypes.guess_type(key)
+            return mime_type or "application/octet-stream", stream.getvalue()
 
-    stream = BytesIO()
-    await storage.download(asset.file_name, stream)
-    data = stream.getvalue()
-
-    # Use the asset's content type
-    mime_type = asset.content_type if asset.content_type else "application/octet-stream"
-
-    return mime_type, data
+    raise ValueError(f"Asset not found in storage: {asset_id}")
 
 
 async def fetch_uri_bytes_and_mime_async(uri: str) -> tuple[str, bytes]:

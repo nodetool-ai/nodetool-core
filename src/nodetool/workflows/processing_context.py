@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import inspect
 import json
 import os
@@ -60,7 +61,6 @@ from nodetool.metadata.types import (
     VideoRef,
     asset_types,
 )
-from nodetool.models.asset import Asset
 from nodetool.runtime.resources import require_scope
 from nodetool.workflows.channel import ChannelManager
 from nodetool.workflows.graph import Graph
@@ -575,56 +575,6 @@ class ProcessingContext:
         """
         return await require_scope().get_asset_storage().get_url(key)
 
-    def generate_node_cache_key(
-        self,
-        node: BaseNode,
-    ) -> str:
-        """Generate a cache key for a node based on current user, node type and properties."""
-        return f"{self.user_id}:{node.get_node_type()}:{hash(repr(node.model_dump()))}"
-
-    def get_cached_result(self, node: BaseNode) -> Any:
-        """
-        Get the cached result for a node.
-
-        Args:
-            node (BaseNode): The node to get the cached result for.
-
-        Returns:
-            Any: The cached result, or None if not found.
-        """
-        key = self.generate_node_cache_key(node)
-        val = require_scope().get_node_cache().get(key)
-        return val
-
-    def cache_result(self, node: BaseNode, result: Any, ttl: int = 3600):
-        """
-        Cache the result for a node.
-
-        Args:
-            node (BaseNode): The node to cache the result for.
-            result (Any): The result to cache.
-            ttl (int, optional): Time to live in seconds. Defaults to 3600 (1 hour).
-        """
-        all_cacheable = all(out.type.is_cacheable_type() for out in node.outputs())
-
-        if all_cacheable:
-            key = self.generate_node_cache_key(node)
-
-            cache_value = detach_tensors_recursively(result)
-            require_scope().get_node_cache().set(key, cache_value, ttl)
-
-    async def cache_result_async(self, node: BaseNode, result: Any, ttl: int = 3600) -> None:
-        """
-        Async variant of cache_result that offloads potentially expensive tensor detaching
-        to a thread to avoid blocking the event loop.
-        """
-        all_cacheable = all(out.type.is_cacheable_type() for out in node.outputs())
-        if not all_cacheable:
-            return
-
-        key = self.generate_node_cache_key(node)
-        cache_value = await _in_thread(detach_tensors_recursively, result)
-        require_scope().get_node_cache().set(key, cache_value, ttl)
 
 
 
@@ -672,21 +622,14 @@ class ProcessingContext:
         parent_id: str | None = None,
         instructions: IO | None = None,
         node_id: str | None = None,
-    ) -> Asset:
+    ) -> dict[str, Any]:
         """
-        Creates an asset with the given name, content type, content, and optional parent ID.
+        Creates an asset and uploads it to storage.
 
-        Args:
-            name (str): The name of the asset.
-            content_type (str): The content type of the asset.
-            content (IO): The content of the asset.
-            parent_id (str | None, optional): The ID of the parent asset. Defaults to None.
-            node_id (str | None, optional): The ID of the node that created this asset. Defaults to None.
-
-        Returns:
-            Asset: The created asset.
-
+        Returns a dict with asset metadata (id, name, content_type, file_name, size).
         """
+        from nodetool.types.content_types import CONTENT_TYPE_TO_EXTENSION
+
         content = content or instructions
         if content is None:
             raise ValueError("Asset content is required")
@@ -695,43 +638,39 @@ class ProcessingContext:
         with suppress(Exception):
             content.seek(0)
 
-        # Create the asset record in the database
-        asset = await Asset.create(
-            user_id=self.user_id,
-            name=name,
-            content_type=content_type,
-            parent_id=parent_id,
-            workflow_id=self.workflow_id,
-            job_id=self.job_id,
-            node_id=node_id,
-            size=len(content_bytes),
-        )
+        asset_id = str(uuid.uuid4())
+        ext = CONTENT_TYPE_TO_EXTENSION.get(content_type, "bin")
+        file_name = f"{asset_id}.{ext}"
 
-        # Upload the content to storage
         storage = require_scope().get_asset_storage()
-        await storage.upload(asset.file_name, BytesIO(content_bytes))
+        await storage.upload(file_name, BytesIO(content_bytes))
 
-        return asset
-
-
+        return {
+            "id": asset_id,
+            "name": name,
+            "content_type": content_type,
+            "file_name": file_name,
+            "size": len(content_bytes),
+            "user_id": self.user_id,
+            "workflow_id": self.workflow_id,
+            "node_id": node_id,
+        }
 
     async def download_asset(self, asset_id: str) -> IO:
         """
-        Downloads an asset from the asset storage api.
-
-        Args:
-            asset_id (str): The ID of the asset to download.
-
-        Returns:
-            IO: The downloaded asset.
+        Downloads an asset from storage by trying common extensions.
         """
-        asset = await self.find_asset(asset_id)
-        if not asset:
-            raise ValueError(f"Asset {asset_id} not found")
-        io = BytesIO()
-        await require_scope().get_asset_storage().download(asset.file_name, io)
-        io.seek(0)
-        return io
+        from nodetool.types.content_types import CONTENT_TYPE_TO_EXTENSION
+
+        storage = require_scope().get_asset_storage()
+        for ext in CONTENT_TYPE_TO_EXTENSION.values():
+            key = f"{asset_id}.{ext}"
+            if await storage.file_exists(key):
+                io = BytesIO()
+                await storage.download(key, io)
+                io.seek(0)
+                return io
+        raise ValueError(f"Asset {asset_id} not found in storage")
 
     async def http_get(self, url: str, **kwargs) -> httpx.Response:
         """
@@ -1020,6 +959,8 @@ class ProcessingContext:
             if isinstance(asset_ref, ImageRef):
                 if isinstance(data, bytes):
                     return BytesIO(data)
+                elif isinstance(data, str):
+                    return BytesIO(base64.b64decode(data))
                 elif isinstance(data, PIL_Image.Image):
                     return BytesIO(await _in_thread(_pil_to_png_bytes_with_exif, data))
                 elif isinstance(data, np.ndarray):
@@ -1030,6 +971,8 @@ class ProcessingContext:
             elif isinstance(asset_ref, AudioRef):
                 if isinstance(data, bytes):
                     return BytesIO(data)
+                elif isinstance(data, str):
+                    return BytesIO(base64.b64decode(data))
                 elif isinstance(data, AudioSegment):
                     return BytesIO(await _in_thread(_audio_segment_to_wav_bytes, data))
                 elif isinstance(data, np.ndarray):
@@ -2512,10 +2455,7 @@ class ProcessingContext:
             pattern (str | None): Optional pattern to match memory keys.
                                 If None, clears all memory.
         """
-        # AbstractNodeCache does not support partial clears by pattern.
-        # For now, perform a full clear when requested.
-        with suppress(Exception):
-            require_scope().get_node_cache().clear()
+        pass
 
     def get_memory_stats(self) -> dict[str, int | dict[str, int]]:
         """

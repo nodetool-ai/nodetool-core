@@ -1017,8 +1017,11 @@ class BaseNode(BaseModel):
             NodeMetadata: An object containing all metadata about the node,
             including its properties, outputs, and other relevant information.
         """
-        # avoid circular import
-        from nodetool.metadata.node_metadata import NodeMetadata
+        try:
+            # avoid circular import
+            from nodetool.metadata.node_metadata import NodeMetadata
+        except ImportError:
+            raise ImportError("node_metadata module not available — use node_loader.node_to_metadata() instead")
 
         try:
             return NodeMetadata(
@@ -2262,33 +2265,6 @@ def find_node_class_by_name(class_name: str) -> type[BaseNode] | None:
     for node_type, node_class in NODE_BY_TYPE.items():
         if node_type.split(".")[-1] == class_name:
             return node_class
-
-    # If not found, check the package registry
-    try:
-        from nodetool.packages.registry import Registry
-
-        registry = Registry()
-        package_nodes = registry.get_all_installed_nodes()
-
-        # Search for nodes with matching class name
-        for node in package_nodes:
-            node_type = node.node_type
-            if node_type.split(".")[-1] == class_name:
-                # Try to import and return the node class
-                full_node_type = node_type
-                try:
-                    # Attempt to import the module
-                    module_path = "nodetool.nodes." + ".".join(full_node_type.split(".")[:-1])
-                    if module_path:
-                        importlib.import_module(module_path)
-                        # Check if it's now registered
-                        if full_node_type in NODE_BY_TYPE:
-                            return NODE_BY_TYPE[full_node_type]
-                except Exception as e:
-                    log.debug(f"Failed to import module for {full_node_type}: {e}")
-                return None
-    except Exception as e:
-        log.debug(f"Could not check package registry: {e}")
 
     return None
 

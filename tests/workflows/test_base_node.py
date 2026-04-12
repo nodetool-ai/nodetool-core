@@ -7,7 +7,6 @@ from typing import AsyncGenerator, ClassVar, Optional, TypedDict, Union
 import pytest
 from pydantic import Field
 
-from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.types import DataframeRef, ImageRef, OutputSlot
 from nodetool.workflows.base_node import (
@@ -130,14 +129,8 @@ def test_node_creation():
     assert node._id == ""
 
 
-def test_node_metadata_method():
-    node = DummyClass()
-    assert isinstance(node.get_metadata(), NodeMetadata)
-
-
 def test_node_metadata_includes_required_settings():
-    metadata = ConfigurableDynamicNode.get_metadata()
-    assert metadata.required_settings == ["OPENAI_API_KEY", "SERPAPI_API_KEY"]
+    assert ConfigurableDynamicNode.required_settings() == ["OPENAI_API_KEY", "SERPAPI_API_KEY"]
 
 
 def test_node_find_property_method():

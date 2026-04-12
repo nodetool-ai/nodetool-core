@@ -15,11 +15,6 @@ from pydantic import Field
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import configure_logging
-from nodetool.models.asset import Asset
-from nodetool.models.job import Job
-from nodetool.models.message import Message
-from nodetool.models.thread import Thread
-from nodetool.models.workflow import Workflow
 from nodetool.runtime.resources import ResourceScope, require_scope
 from nodetool.storage.memory_storage import MemoryStorage
 from nodetool.types.api_graph import Edge, Node
@@ -27,143 +22,32 @@ from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.processing_context import ProcessingContext
 
 
-async def get_job_status(job_id: str) -> str:
-    """Get the authoritative status for a job from Job model."""
-    try:
-        job = await Job.get(job_id)
-        if job:
-            return job.status
-    except Exception:
-        pass
-    return "unknown"
-
-
 configure_logging("DEBUG")
 
 
 @pytest.fixture(scope="session")
 def worker_id(request):
-    """Provide worker_id for pytest-xdist compatibility.
-
-    Returns 'master' when not using xdist (sequential execution),
-    or the actual worker id when using xdist (parallel execution).
-    """
     if hasattr(request.config, "workerinput"):
         return request.config.workerinput["workerid"]
     return "master"
 
 
-@pytest_asyncio.fixture(scope="session")
-async def test_db_pool(worker_id):
-    """Create test database once for entire session with connection pool."""
-    import os
-    import tempfile
-
-    from nodetool.models.migrations import run_startup_migrations
-    from nodetool.runtime.db_sqlite import SQLiteConnectionPool
-
-    worker_suffix = f"_{worker_id}" if worker_id != "master" else ""
-    with tempfile.NamedTemporaryFile(
-        suffix=f"{worker_suffix}.sqlite3", prefix="nodetool_test_session_", delete=False
-    ) as temp_db:
-        db_path = temp_db.name
-
-    pool = None
-    try:
-        pool = await SQLiteConnectionPool.get_shared(db_path)
-        await run_startup_migrations(pool)
-
-        yield pool
-
-    finally:
-        if pool is not None:
-            try:
-                await pool.close_all()
-                import asyncio
-
-                loop_id = id(asyncio.get_running_loop())
-                SQLiteConnectionPool._pools.pop((loop_id, db_path), None)
-            except Exception as e:
-                import logging
-
-                logging.warning(f"Error cleaning up session connection pool: {e}")
-
-        try:
-            os.unlink(db_path)
-        except Exception:
-            pass
-
-
-async def _truncate_all_tables(pool):
-    """Truncate all tables to reset database state between tests."""
-    connection = None
-    try:
-        connection = await pool.acquire()
-        cursor = await connection.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'nodetool_%'"
-        )
-        tables = await cursor.fetchall()
-
-        for table in tables:
-            table_name = table[0]
-            try:
-                await connection.execute(f"DELETE FROM {table_name}")
-            except Exception as e:
-                import logging
-
-                logging.debug(f"Failed to truncate table {table_name}: {e}")
-                pass
-
-        await connection.commit()
-    except Exception as e:
-        import logging
-
-        logging.debug(f"Error during table truncation, rolling back: {e}")
-        if connection is not None:
-            try:
-                await connection.rollback()
-            except Exception:
-                pass
-        raise
-    finally:
-        if connection is not None:
-            await pool.release(connection)
-
-
 @pytest_asyncio.fixture(autouse=True, scope="function")
-async def setup_and_teardown(request, test_db_pool):
-    """Set up ResourceScope with table truncation for test isolation."""
+async def setup_and_teardown(request):
     if request.node.get_closest_marker("no_setup"):
         yield
         return
 
-    async with ResourceScope(pool=test_db_pool):
-        try:
-            yield
-        finally:
-            # Clear model observers to prevent leaks between tests
-            from nodetool.models.base_model import ModelObserver
-
-            ModelObserver.clear()
-
-    max_truncate_retries = 3
-    for attempt in range(max_truncate_retries):
-        try:
-            await _truncate_all_tables(test_db_pool)
-            break
-        except Exception as e:
-            import logging
-
-            if attempt < max_truncate_retries - 1:
-                logging.debug(f"Error truncating tables (attempt {attempt + 1}/{max_truncate_retries}), retrying: {e}")
-                await asyncio.sleep(0.1 * (attempt + 1))
-            else:
-                logging.warning(f"Error truncating tables after {max_truncate_retries} attempts: {e}")
+    scope = ResourceScope()
+    # Use memory storage for tests
+    scope._asset_storage = MemoryStorage(base_url="http://localhost:7777/api/storage")
+    scope._temp_storage = MemoryStorage(base_url="http://localhost:7777/api/temp")
+    async with scope:
+        yield
 
 
 @pytest.fixture(autouse=True)
 def _set_dummy_api_keys(monkeypatch):
-    """Provide dummy API keys so provider constructors don't fail in unit tests."""
     monkeypatch.setenv("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", "test-openai-key"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", os.getenv("ANTHROPIC_API_KEY", "test-anthropic-key"))
     monkeypatch.setenv("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", "test-gemini-key"))
@@ -176,10 +60,7 @@ def _set_dummy_api_keys(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def mock_keyring(monkeypatch):
-    """Provide an in-memory keyring implementation for tests."""
-
     import keyring
-
     from nodetool.security.master_key import MasterKeyManager
 
     store: dict[tuple[str, str], str] = {}
@@ -198,7 +79,6 @@ def mock_keyring(monkeypatch):
     monkeypatch.setattr(keyring, "delete_password", delete_password)
 
     MasterKeyManager.clear_cache()
-
     try:
         yield
     finally:
@@ -208,7 +88,6 @@ def mock_keyring(monkeypatch):
 
 @pytest.fixture(scope="session")
 def event_loop():
-    """Provide a shared asyncio event loop for the entire test session."""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -231,12 +110,12 @@ def pil_to_bytes(image: PIL.Image.Image, format="PNG") -> bytes:
         return buffer.getvalue()
 
 
-async def upload_test_image(image: Asset, width: int = 512, height: int = 512):
+async def upload_test_image(asset_id: str, ext: str = "jpeg", width: int = 512, height: int = 512):
     storage = require_scope().get_asset_storage()
     assert isinstance(storage, MemoryStorage)
     img = PIL.Image.new("RGB", (width, height))
     content = io.BytesIO(pil_to_bytes(img))
-    await storage.upload(image.file_name, content)
+    await storage.upload(f"{asset_id}.{ext}", content)
 
 
 async def make_image(
@@ -245,16 +124,16 @@ async def make_image(
     parent_id: str | None = None,
     width: int = 512,
     height: int = 512,
-) -> Asset:
-    image = await Asset.create(
-        user_id=user_id,
-        name="test_image",
-        parent_id=parent_id,
-        content_type="image/jpeg",
-        workflow_id=workflow_id,
-    )
-    await upload_test_image(image, width, height)
-    return image
+) -> dict[str, Any]:
+    asset_id = str(uuid.uuid4())
+    await upload_test_image(asset_id, "jpeg", width, height)
+    return {
+        "id": asset_id,
+        "name": "test_image",
+        "content_type": "image/jpeg",
+        "file_name": f"{asset_id}.jpeg",
+        "user_id": user_id,
+    }
 
 
 async def make_text(
@@ -262,25 +141,17 @@ async def make_text(
     content: str,
     workflow_id: str | None = None,
     parent_id: str | None = None,
-):
-    asset = await Asset.create(
-        user_id=user_id,
-        name="test_text",
-        parent_id=parent_id,
-        content_type="text/plain",
-        workflow_id=workflow_id,
-    )
+) -> dict[str, Any]:
+    asset_id = str(uuid.uuid4())
     storage = require_scope().get_asset_storage()
-    await storage.upload(asset.file_name, io.BytesIO(content.encode()))
-    return asset
-
-
-async def make_job(user_id: str, **kwargs):
-    return await Job.create(
-        workflow_id=str(uuid.uuid4()),
-        user_id=user_id,
-        **kwargs,
-    )
+    await storage.upload(f"{asset_id}.txt", io.BytesIO(content.encode()))
+    return {
+        "id": asset_id,
+        "name": "test_text",
+        "content_type": "text/plain",
+        "file_name": f"{asset_id}.txt",
+        "user_id": user_id,
+    }
 
 
 @pytest_asyncio.fixture()
@@ -295,41 +166,26 @@ async def text_asset(user_id: str):
 
 @pytest.fixture(scope="session")
 def user_id() -> str:
-    """User ID for tests - session scoped since it never changes."""
     return "1"
 
 
 @pytest.fixture(scope="session")
 def http_client():
-    """Mock HTTP client - session scoped since it's stateless."""
     return Mock(httpx.AsyncClient)
 
 
 @pytest.fixture()
 def context(user_id: str, http_client):
-    test_auth_token = "test_token"
     return ProcessingContext(
         user_id=user_id,
         workflow_id="1",
-        auth_token=test_auth_token,
+        auth_token="test_token",
         http_client=http_client,
     )
 
 
 def make_node(id, type: str, data: dict[str, Any]):
     return Node(id=id, type=type, data=data)
-
-
-@pytest_asyncio.fixture()
-async def thread(user_id: str):
-    th = await Thread.create(user_id=user_id)
-    return th
-
-
-@pytest_asyncio.fixture()
-async def message(user_id: str, thread: Thread):
-    msg = await Message.create(user_id=user_id, thread_id=thread.id, role="user", content="Hello")
-    return msg
 
 
 class FloatInput(InputNode):
@@ -355,37 +211,7 @@ class Add(BaseNode):
         return self.a + self.b
 
 
-@pytest_asyncio.fixture()
-async def workflow(user_id: str):
-    nodes = [
-        make_node("1", FloatInput.get_node_type(), {"name": "in1", "value": 10}),
-        make_node("2", Add.get_node_type(), {"b": 1, "a": 1}),
-    ]
-    edges = [
-        Edge(
-            source=nodes[0].id,
-            target=nodes[1].id,
-            sourceHandle="output",
-            targetHandle="a",
-        ),
-    ]
-    wf = await Workflow.create(
-        user_id=user_id,
-        name="test_workflow",
-        graph={
-            "nodes": [node.model_dump() for node in nodes],
-            "edges": [edge.model_dump() for edge in edges],
-        },
-    )
-    return wf
-
-
 def pytest_sessionfinish(session, exitstatus):
-    """Clean up resources after all tests complete to prevent hanging."""
-    import logging
-    import os
-    import time
-
     gc.collect()
 
     try:
@@ -404,6 +230,9 @@ def pytest_sessionfinish(session, exitstatus):
     non_daemon_threads = [t for t in threading.enumerate() if t != main_thread and t.is_alive() and not t.daemon]
 
     if non_daemon_threads:
+        import logging
+        import time
+
         logging.warning(
             f"Found {len(non_daemon_threads)} non-daemon threads that may prevent exit: "
             f"{[t.name for t in non_daemon_threads]}"
