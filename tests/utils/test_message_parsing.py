@@ -103,7 +103,8 @@ class TestLenientJsonParse:
         from nodetool.utils.message_parsing import lenient_json_parse
 
         assert lenient_json_parse("not json at all") is None
-        assert lenient_json_parse("{broken: json}") is None
+        # {broken: json} is valid YAML resulting in {'broken': 'json'}, so we test a truly invalid YAML/JSON string
+        assert lenient_json_parse("{broken: json:") is None
 
     def test_nested_json(self):
         """Test parsing nested JSON structures."""
@@ -202,6 +203,12 @@ More text'''
         msg = Message(role="assistant", content=content)
         result = extract_json_from_message(msg)
         assert result == {"key": "value"}
+
+    def test_lenient_json_trailing_comma(self):
+        from nodetool.utils.message_parsing import lenient_json_parse
+
+        assert lenient_json_parse("{'key': 'value',}") == {"key": "value"}
+        assert lenient_json_parse("{'key': [1, 2, ], }") == {"key": [1, 2]}
 
     def test_json_with_trailing_garbage(self):
         """Test extracting JSON with trailing text."""
