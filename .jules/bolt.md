@@ -1,3 +1,3 @@
-## 2025-02-12 - Video Export Optimization and Correctness
-**Learning:** Upfront list comprehension for processing large sequences (like video frames) consumes O(N) memory and can lead to OOM. Lazy processing inside the writing loop reduces memory usage to O(1). Additionally, assuming input data types (e.g. float vs uint8) without checking can lead to critical bugs like integer overflow when scaling `uint8` arrays by 255.
-**Action:** Always prefer lazy iteration/generators for large data processing pipelines. Explicitly check `numpy.dtype` before performing arithmetic scaling to ensure correctness and avoid unnecessary operations.
+## 2026-04-12 - pydub AudioSegment Concatenation Bottleneck
+**Learning:** `pydub`'s `AudioSegment` objects are immutable. Repeatedly concatenating them in a loop using `+=` forces an $O(N^2)$ byte-copying operation because a new segment instance (and a copy of its underlying byte array) is allocated on every addition. This creates a severe performance degradation for large numbers of segments.
+**Action:** When concatenating lists of `AudioSegment` objects that share the same sample width, frame rate, and channels, bypass `+=` entirely. Instead, use a fast $O(N)$ byte join directly on their underlying data: `b''.join(a.raw_data for a in audios)`, and initialize a single new segment using `first._spawn(data=raw_data)`.
