@@ -31,7 +31,7 @@ dependencies = [
 
     # Media processing (used by nodes via ProcessingContext)
     "pillow < 11.0.0",
-    "numpy>=2.0.0,<2.4",
+    "numpy>=2.4.4,<2.5",
 
     # HuggingFace integration (used by HF nodes)
     "huggingface_hub>=0.35.3",
