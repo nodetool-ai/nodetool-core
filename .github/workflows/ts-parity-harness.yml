@@ -1,11 +1,6 @@
 name: TS Parity Harness
 
 on:
-  pull_request:
-    paths:
-      - "ts/**"
-      - "scripts/export_parity_snapshot.py"
-      - ".github/workflows/ts-parity-harness.yml"
   push:
     branches: [main, develop]
   workflow_dispatch:
