@@ -85,7 +85,7 @@ def concatenate_audios(audios: list[AudioSegment]) -> AudioSegment:
         return AudioSegment.empty()
 
     # ⚡ Bolt Optimization: Avoid O(n^2) byte-copying performance penalty by joining raw data
-    # directly when all segments share the same audio characteristics.
+    # directly when all segments share the same audio characteristics for speed.
     first = audios[0]
     can_fast_concat = all(
         a.sample_width == first.sample_width and
