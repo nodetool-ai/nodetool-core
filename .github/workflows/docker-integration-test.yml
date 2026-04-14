@@ -12,8 +12,6 @@ name: Docker Integration Tests
 on:
   push:
     branches: [main, develop, "copilot/*"]
-  pull_request:
-    branches: [main, develop]
   workflow_dispatch:  # Allow manual trigger
     inputs:
       skip_build:
