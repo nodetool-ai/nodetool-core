@@ -81,6 +81,34 @@ def concatenate_audios(audios: list[AudioSegment]) -> AudioSegment:
     Returns:
         AudioSegment: The concatenated audio segment.
     """
+    if not audios:
+        return AudioSegment.empty()
+
+    # ⚡ Bolt Optimization:
+    # Instead of using `+=` in a loop (which causes O(n^2) performance penalties due to repeated
+    # byte-copying), check if all segments share the same audio properties. If they do,
+    # concatenate the raw bytes directly using `b''.join(...)`.
+    first = audios[0]
+    sample_width = first.sample_width
+    frame_rate = first.frame_rate
+    channels = first.channels
+
+    can_optimize = True
+    for a in audios[1:]:
+        if a.sample_width != sample_width or a.frame_rate != frame_rate or a.channels != channels:
+            can_optimize = False
+            break
+
+    if can_optimize:
+        raw_data = b''.join(a.raw_data for a in audios)
+        return AudioSegment(
+            data=raw_data,
+            sample_width=sample_width,
+            frame_rate=frame_rate,
+            channels=channels,
+        )
+
+    # Fallback if properties differ (which shouldn't usually happen but preserves safety)
     concatenated_audio = AudioSegment.empty()
     for audio in audios:
         concatenated_audio += audio
