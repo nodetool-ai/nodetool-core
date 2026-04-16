@@ -81,10 +81,28 @@ def concatenate_audios(audios: list[AudioSegment]) -> AudioSegment:
     Returns:
         AudioSegment: The concatenated audio segment.
     """
-    concatenated_audio = AudioSegment.empty()
-    for audio in audios:
-        concatenated_audio += audio
-    return concatenated_audio
+    if not audios:
+        return AudioSegment.empty()
+
+    # ⚡ Bolt Optimization: Avoid O(n^2) PyDub += operator by joining raw_data bytes directly.
+    # We can only do this fast-path if all segments share the same format properties.
+    first = audios[0]
+    same_params = all(
+        a.sample_width == first.sample_width
+        and a.frame_rate == first.frame_rate
+        and a.channels == first.channels
+        for a in audios
+    )
+
+    if same_params:
+        raw_data = b"".join(a.raw_data for a in audios)
+        return first._spawn(data=raw_data)
+    else:
+        # Fallback to the slow path
+        concatenated_audio = AudioSegment.empty()
+        for audio in audios:
+            concatenated_audio += audio
+        return concatenated_audio
 
 
 def remove_silence(
