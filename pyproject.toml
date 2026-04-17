@@ -44,7 +44,7 @@ dependencies = [
 # Vectorstore nodes (chromadb + langchain)
 vectorstore = [
     "chromadb>=1.4.0",
-    "langchain-text-splitters==1.1.1",
+    "langchain-text-splitters==1.1.2",
     "bs4==0.0.2",
 ]
 # Document processing nodes
