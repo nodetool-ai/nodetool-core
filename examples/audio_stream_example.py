@@ -9,7 +9,6 @@ import asyncio
 
 import numpy as np
 
-from nodetool.metadata.types import AudioStream
 from nodetool.workflows.processing_context import ProcessingContext
 
 

@@ -8,7 +8,7 @@ and other AI capabilities. Providers declare their capabilities at runtime.
 
 import datetime
 import json
-from enum import Enum, StrEnum
+from enum import StrEnum
 from typing import (
     Any,
     AsyncGenerator,

@@ -1,6 +1,5 @@
 from fastapi.testclient import TestClient
 from nodetool.api.app import app
-import os
 
 client = TestClient(app)
 headers = {"Authorization": "Bearer admin"} # Or however auth is mocked

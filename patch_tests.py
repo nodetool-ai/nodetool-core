@@ -1,4 +1,3 @@
-import re
 
 with open("tests/api/test_file_api.py", "r") as f:
     content = f.read()

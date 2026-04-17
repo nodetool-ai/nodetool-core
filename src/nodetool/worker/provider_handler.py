@@ -8,7 +8,7 @@ provider operations dispatched from the TS backend via the WebSocket protocol.
 import asyncio
 import sys
 import traceback
-from typing import Any, AsyncIterator
+from typing import Any
 
 from websockets.asyncio.server import ServerConnection
 import msgpack
