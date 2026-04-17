@@ -24,7 +24,7 @@ import asyncio
 import json
 import os
 import shutil
-from enum import StrEnum
+from enum import Enum, StrEnum
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Sequence

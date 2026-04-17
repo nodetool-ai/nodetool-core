@@ -6,7 +6,7 @@ files represent shards of the same model or independent variants.
 """
 
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Iterable, Sequence
 

@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import os
 import sys
 
 from nodetool.worker.server import WorkerServer, start_server

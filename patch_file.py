@@ -1,3 +1,4 @@
+import re
 
 with open("src/nodetool/api/file.py", "r") as f:
     content = f.read()
