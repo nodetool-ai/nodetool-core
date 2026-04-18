@@ -14,7 +14,7 @@ import asyncio
 import struct
 import sys
 import traceback
-from typing import Any, Awaitable, Callable
+from typing import Any, Callable, Awaitable
 
 import msgpack
 
@@ -156,8 +156,8 @@ class StdioWorkerServer:
 
 async def run_stdio_worker(namespaces: list[str] | None = None) -> None:
     """Entry point for the stdio worker."""
-    from nodetool.worker.executor import execute_node
     from nodetool.worker.node_loader import load_nodes
+    from nodetool.worker.executor import execute_node
 
     print("Loading node packages...", file=sys.stderr)
     nodes_metadata = load_nodes(namespaces=namespaces)

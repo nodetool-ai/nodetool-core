@@ -6,10 +6,10 @@ communicates via length-prefixed msgpack over stdin/stdout.
 """
 
 import asyncio
-import os
 import struct
 import subprocess
 import sys
+import os
 
 import msgpack
 

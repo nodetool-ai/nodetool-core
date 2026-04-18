@@ -1,6 +1,5 @@
 from pathlib import Path
 from typing import IO
-
 from nodetool.storage.abstract_storage import AbstractStorage
 
 

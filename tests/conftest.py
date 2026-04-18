@@ -21,6 +21,7 @@ from nodetool.types.api_graph import Edge, Node
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.processing_context import ProcessingContext
 
+
 configure_logging("DEBUG")
 
 
@@ -60,7 +61,6 @@ def _set_dummy_api_keys(monkeypatch):
 @pytest.fixture(autouse=True)
 def mock_keyring(monkeypatch):
     import keyring
-
     from nodetool.security.master_key import MasterKeyManager
 
     store: dict[tuple[str, str], str] = {}

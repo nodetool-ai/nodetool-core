@@ -25,6 +25,7 @@ import sys
 import types
 import typing
 
+
 # ── Type Mapping ──────────────────────────────────────────────────────
 
 
@@ -297,9 +298,8 @@ def _field_type_from_jsonschema(prop: dict) -> str:
 
 def export_messages() -> dict:
     """Export Pydantic message class schemas for cross-language protocol parity."""
-    from nodetool.types.job import JobUpdate
-
     from nodetool.metadata.types import Chunk
+    from nodetool.types.job import JobUpdate
     from nodetool.types.prediction import Prediction
     from nodetool.workflows.types import (
         BinaryUpdate,
