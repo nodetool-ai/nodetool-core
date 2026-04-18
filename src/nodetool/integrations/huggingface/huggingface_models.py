@@ -52,6 +52,7 @@ from nodetool.metadata.types import (
 )
 from nodetool.security.secret_helper import get_secret
 from nodetool.types.model import UnifiedModel
+
 try:
     from nodetool.workflows.recommended_models import get_recommended_models
 except ImportError:

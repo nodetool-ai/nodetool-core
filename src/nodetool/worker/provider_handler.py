@@ -10,9 +10,8 @@ import sys
 import traceback
 from typing import Any, AsyncIterator
 
-from websockets.asyncio.server import ServerConnection
 import msgpack
-
+from websockets.asyncio.server import ServerConnection
 
 # Cached provider instances
 _provider_cache: dict[str, Any] = {}
@@ -198,9 +197,9 @@ def _deserialize_messages(raw_messages: list[dict]) -> list[Any]:
         # content can be string, list of content parts, or None
         if isinstance(content, list):
             from nodetool.metadata.types import (
-                MessageTextContent,
-                MessageImageContent,
                 MessageAudioContent,
+                MessageImageContent,
+                MessageTextContent,
             )
             parts = []
             for part in content:
