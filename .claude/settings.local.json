@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsx:*)",
+      "Bash(node --experimental-vm-modules node_modules/.bin/tsx packages/dsl/scripts/codegen.ts)",
+      "Bash(npm run:*)",
+      "Bash(xargs grep:*)",
+      "Bash(grep -l \"registerFalNodes\\\\|registerKieNodes\\\\|registerReplicateNodes\\\\|FAL_NODES\\\\|KIE_NODES\\\\|REPLICATE_NODES\" /m/P/NODETOOL/____REPOS____/nodetool/packages/websocket/src/*.ts)",
+      "Bash(python -m nodetool.worker --stdio)",
+      "Bash(conda run:*)",
+      "Bash(\"C:/Users/rkt/miniconda3/envs/nodetool/python.exe\" -m nodetool.worker --stdio)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(\"C:/Users/rkt/miniconda3/envs/nodetool/python.exe\" -c \"import nodetool.worker; print\\('OK'\\)\")",
+      "Bash(npx tsc:*)",
+      "Bash(findstr /I \"transformPreview error TS\")",
+      "Bash(grep -n \"createRuntime\" \"m:/P/NODETOOL/____REPOS____/nodetool/web/src/components/sketch/rendering/\"*.ts)",
+      "Bash(grep -n \"handleStrokeStart\\\\|handleStrokeEnd\" \"m:/P/NODETOOL/____REPOS____/nodetool/web/src/components/sketch/hooks/\"*.ts)",
+      "Bash(grep -n \"handleLayerTransformChange\\\\|onLayerTransformChange\" \"m:/P/NODETOOL/____REPOS____/nodetool/web/src/components/sketch/hooks/\"*.ts)",
+      "Bash(grep -n \"handleCommitLayerTransform\\\\|commitLayerTransform\" \"m:/P/NODETOOL/____REPOS____/nodetool/web/src/components/sketch/hooks/\"*.ts)",
+      "Bash(grep -n \"commitLayerTransform\" \"m:/P/NODETOOL/____REPOS____/nodetool/web/src/components/sketch/state/\"*.ts)"
+    ]
+  }
+}

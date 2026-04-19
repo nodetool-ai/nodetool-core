@@ -57,7 +57,11 @@ async def main():
     assert resp["type"] == "discover"
     assert resp["request_id"] == "d1"
     nodes = resp["data"]["nodes"]
-    print(f"  OK: {len(nodes)} nodes discovered")
+    from nodetool.worker import BRIDGE_PROTOCOL_VERSION
+    assert resp["data"].get("protocol_version") == BRIDGE_PROTOCOL_VERSION, (
+        f"Expected protocol_version {BRIDGE_PROTOCOL_VERSION}, got {resp['data'].get('protocol_version')}"
+    )
+    print(f"  OK: {len(nodes)} nodes discovered (protocol v{resp['data']['protocol_version']})")
 
     print("\n--- Test 2: execute (valid node) ---")
     # Find a simple node that doesn't need external deps

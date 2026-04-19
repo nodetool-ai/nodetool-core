@@ -18,6 +18,8 @@ from typing import Any, Callable, Awaitable
 
 import msgpack
 
+from nodetool.worker import BRIDGE_PROTOCOL_VERSION
+
 
 class StdioTransport:
     """Async reader/writer for length-prefixed msgpack over stdin/stdout.
@@ -110,7 +112,10 @@ class StdioWorkerServer:
             await transport.send_msg({
                 "type": "discover",
                 "request_id": request_id,
-                "data": {"nodes": self._nodes_metadata},
+                "data": {
+                    "nodes": self._nodes_metadata,
+                    "protocol_version": BRIDGE_PROTOCOL_VERSION,
+                },
             })
 
         elif msg_type == "execute":
