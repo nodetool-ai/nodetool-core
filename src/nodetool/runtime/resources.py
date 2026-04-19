@@ -123,10 +123,10 @@ class ResourceScope:
 
     def get_http_client(self) -> httpx.AsyncClient:
         if self._http_client is None:
+            # 🛡️ Sentinel: Enforce SSL certificate verification to prevent MITM attacks
             self._http_client = httpx.AsyncClient(
                 follow_redirects=True,
                 timeout=600,
-                verify=False,
                 headers={
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                     "Accept": "*/*",
