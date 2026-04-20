@@ -1,6 +1,7 @@
 import os
 import sys
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from pydantic_core import PydanticUndefined
@@ -34,11 +35,15 @@ def _discover_namespaces() -> list[str]:
     if not namespaces:
         try:
             import importlib
-            import pkgutil
             nodes_pkg = importlib.import_module("nodetool.nodes")
             if hasattr(nodes_pkg, "__path__"):
-                for _importer, name, _ispkg in pkgutil.iter_modules(nodes_pkg.__path__):
-                    namespaces.add(name)
+                for package_path in nodes_pkg.__path__:
+                    path = Path(package_path)
+                    if not path.exists():
+                        continue
+                    for child in path.iterdir():
+                        if child.is_dir() and not child.name.startswith("_"):
+                            namespaces.add(child.name)
         except ImportError:
             pass
 

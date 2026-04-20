@@ -1,5 +1,5 @@
 import pytest
-from nodetool.worker.node_loader import load_nodes, node_to_metadata
+from nodetool.worker.node_loader import _discover_namespaces, load_nodes, node_to_metadata
 
 
 def test_node_to_metadata_from_mock_node():
@@ -58,3 +58,19 @@ def test_load_nodes_filters_by_namespace():
     finally:
         NODE_BY_TYPE.pop("huggingface.AllowedNode", None)
         NODE_BY_TYPE.pop("other.DeniedNode", None)
+
+
+def test_discover_namespaces_falls_back_to_namespace_paths(tmp_path, monkeypatch):
+    pkg_a = tmp_path / "pkg_a" / "nodetool" / "nodes" / "huggingface"
+    pkg_b = tmp_path / "pkg_b" / "nodetool" / "nodes" / "mlx"
+    pkg_a.mkdir(parents=True)
+    pkg_b.mkdir(parents=True)
+
+    monkeypatch.syspath_prepend(str(tmp_path / "pkg_a"))
+    monkeypatch.syspath_prepend(str(tmp_path / "pkg_b"))
+    monkeypatch.setattr("importlib.metadata.entry_points", lambda group=None: [])
+
+    namespaces = _discover_namespaces()
+
+    assert "huggingface" in namespaces
+    assert "mlx" in namespaces
