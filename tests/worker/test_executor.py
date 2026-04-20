@@ -1,9 +1,10 @@
 from typing import AsyncGenerator
 
+import numpy as np
 import pytest
 from pydantic import Field
 
-from nodetool.metadata.types import Chunk
+from nodetool.metadata.types import AudioRef, Chunk
 from nodetool.metadata.types import ImageRef
 from nodetool.worker.executor import execute_node
 from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
@@ -59,15 +60,39 @@ class StreamingOnlyNode(BaseNode):
         }
 
 
+class StreamingAudioNode(BaseNode):
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "test.StreamingAudioNode"
+
+    async def process(self, context: ProcessingContext) -> str:
+        raise AssertionError("execute_node should use gen_process for streaming nodes")
+
+    async def gen_process(
+        self, context: ProcessingContext
+    ) -> AsyncGenerator[dict[str, AudioRef | Chunk], None]:
+        audio = await context.audio_from_numpy(
+            np.array([0.0, 0.25, -0.25], dtype=np.float32),
+            24_000,
+            name="preview",
+        )
+        yield {
+            "audio": audio,
+            "chunk": Chunk(content="", done=True, content_type="audio"),
+        }
+
+
 @pytest.fixture(autouse=True)
 def register_echo():
     NODE_BY_TYPE["test.EchoNode"] = EchoNode
     NODE_BY_TYPE["test.ImageListNode"] = ImageListNode
     NODE_BY_TYPE["test.StreamingOnlyNode"] = StreamingOnlyNode
+    NODE_BY_TYPE["test.StreamingAudioNode"] = StreamingAudioNode
     yield
     NODE_BY_TYPE.pop("test.EchoNode", None)
     NODE_BY_TYPE.pop("test.ImageListNode", None)
     NODE_BY_TYPE.pop("test.StreamingOnlyNode", None)
+    NODE_BY_TYPE.pop("test.StreamingAudioNode", None)
 
 
 @pytest.mark.asyncio
@@ -141,3 +166,18 @@ async def test_execute_uses_gen_process_for_streaming_nodes():
     assert result["outputs"]["chunk"]["done"] is True
     assert result["outputs"]["chunk"]["content_type"] == "text"
     assert result["blobs"] == {}
+
+
+@pytest.mark.asyncio
+async def test_execute_serializes_streaming_audio_refs_with_protocol_type():
+    result = await execute_node(
+        node_type="test.StreamingAudioNode",
+        fields={},
+        secrets={},
+        input_blobs={},
+    )
+
+    assert "audio" not in result["outputs"]
+    assert result["blobs"]["audio"].startswith(b"RIFF")
+    assert result["outputs"]["chunk"]["content_type"] == "audio"
+    assert result["outputs"].get("chunk", {}).get("done") is True

@@ -7,7 +7,14 @@ import tempfile
 from types import UnionType
 from typing import Any, Union, get_args, get_origin
 
-from nodetool.metadata.types import AssetRef, AudioRef, ImageRef, Model3DRef, VideoRef
+from nodetool.metadata.types import (
+    AssetRef,
+    AudioRef,
+    ImageRef,
+    Model3DRef,
+    TypeToName,
+    VideoRef,
+)
 from nodetool.runtime.resources import ResourceScope
 from nodetool.worker.context_stub import WorkerContext
 from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
@@ -189,15 +196,34 @@ def _extract_named_outputs(
     result: dict[str, Any],
     ctx: WorkerContext,
 ) -> tuple[dict[str, Any], dict[str, bytes]]:
-    """Serialize a named-output mapping without wrapping it in ``output``."""
-    outputs = {key: _serialize_value(value) for key, value in result.items()}
-    return outputs, ctx.get_output_blobs()
+    """Serialize a named-output mapping and extract blob-backed asset refs."""
+    output_blobs = ctx.get_output_blobs()
+    outputs: dict[str, Any] = {}
+    blobs: dict[str, bytes] = {}
+
+    for key, value in result.items():
+        if (
+            isinstance(value, ASSET_REF_TYPES)
+            and value.uri
+            and value.uri.startswith("blob://")
+        ):
+            blob_key = value.uri[len("blob://"):]
+            if blob_key in output_blobs:
+                blobs[key] = output_blobs[blob_key]
+            continue
+
+        outputs[key] = _serialize_value(value)
+
+    return outputs, blobs
 
 
 def _serialize_value(value: Any) -> Any:
     """Convert a value to JSON/msgpack-safe form."""
     if isinstance(value, ASSET_REF_TYPES):
-        return {"uri": value.uri, "type": type(value).__name__}
+        return {
+            "uri": value.uri,
+            "type": TypeToName.get(type(value), type(value).__name__),
+        }
     from enum import Enum
     if isinstance(value, Enum):
         return value.value
