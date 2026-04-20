@@ -156,15 +156,15 @@ def _simple_name(t: Any) -> str:
 
 
 def _extract_outputs(node_class: type[BaseNode]) -> list[dict]:
-    """Extract output slot metadata from node's return type."""
-    from typing import get_type_hints
-
+    """Extract output slot metadata using BaseNode's canonical output inference."""
     try:
-        hints = get_type_hints(node_class.process)
-        ret = hints.get("return")
-        if ret is None:
-            return [{"name": "output", "type": {"type": "any"}}]
-        return [{"name": "output", "type": {"type": _field_type_name(ret)}}]
+        return [
+            {
+                "name": slot.name,
+                "type": slot.type.model_dump(exclude_none=True),
+            }
+            for slot in node_class.outputs()
+        ]
     except Exception:
         return [{"name": "output", "type": {"type": "any"}}]
 
