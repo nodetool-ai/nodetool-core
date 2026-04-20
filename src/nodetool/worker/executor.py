@@ -10,7 +10,7 @@ from typing import Any, Union, get_args, get_origin
 from nodetool.metadata.types import AssetRef, AudioRef, ImageRef, Model3DRef, VideoRef
 from nodetool.runtime.resources import ResourceScope
 from nodetool.worker.context_stub import WorkerContext
-from nodetool.workflows.base_node import NODE_BY_TYPE
+from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
 
 # Asset ref types that should be extracted as blobs
 ASSET_REF_TYPES = (ImageRef, AudioRef, VideoRef, Model3DRef, AssetRef)
