@@ -112,11 +112,10 @@ async def execute_node(
             await node.move_to_device(ctx.device)
             if node.is_streaming_output():
                 result = await _collect_streaming_outputs(node, ctx)
+                outputs, blobs = _extract_named_outputs(result, ctx)
             else:
                 result = await node.process(ctx)
-
-            # Extract outputs
-            outputs, blobs = _extract_outputs(result, ctx)
+                outputs, blobs = _extract_outputs(result, ctx)
             return {"outputs": outputs, "blobs": blobs}
         finally:
             import shutil
@@ -184,6 +183,15 @@ async def _collect_streaming_outputs(node: BaseNode, ctx: WorkerContext) -> dict
             if value is not None:
                 outputs[slot_name] = value
     return outputs
+
+
+def _extract_named_outputs(
+    result: dict[str, Any],
+    ctx: WorkerContext,
+) -> tuple[dict[str, Any], dict[str, bytes]]:
+    """Serialize a named-output mapping without wrapping it in ``output``."""
+    outputs = {key: _serialize_value(value) for key, value in result.items()}
+    return outputs, ctx.get_output_blobs()
 
 
 def _serialize_value(value: Any) -> Any:
