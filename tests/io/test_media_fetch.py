@@ -83,8 +83,15 @@ class TestParseDataUri:
             _parse_data_uri(uri)
 
 
+import mimetypes
+
 class TestFetchFileUri:
     """Test _fetch_file_uri function."""
+
+    @classmethod
+    def setup_class(cls):
+        # Initialize mimetypes before tests to prevent hangs when builtins.open is mocked
+        mimetypes.init()
 
     @patch("builtins.open")
     def test_fetch_file_uri_success(self, mock_open: Mock) -> None:
@@ -342,6 +349,10 @@ class TestFetchUriBytesAndMimeAsync:
         assert mime == "image/png"
         assert isinstance(result, bytes)
         assert result[:8] == b"\x89PNG\r\n\x1a\n"
+
+    @classmethod
+    def setup_class(cls):
+        mimetypes.init()
 
     @patch("builtins.open")
     async def test_fetch_file_uri(self, mock_open: Mock) -> None:

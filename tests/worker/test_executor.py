@@ -66,7 +66,7 @@ async def test_execute_wraps_single_asset_blob_into_image_list():
         secrets={},
         input_blobs={"images": b"fake-image-bytes"},
     )
-    output = result["outputs"]["output"]
+    output = result["outputs"]
     assert output["count"] == 1
     assert output["first_is_empty"] is False
     assert output["first_uri"].startswith("file://")
@@ -81,7 +81,7 @@ async def test_execute_preserves_multiple_asset_blobs_for_image_list():
         secrets={},
         input_blobs={"images": [b"first-image", b"second-image"]},
     )
-    output = result["outputs"]["output"]
+    output = result["outputs"]
     assert output["count"] == 2
     assert output["first_is_empty"] is False
     assert output["first_uri"].startswith("file://")
@@ -96,7 +96,7 @@ async def test_execute_wraps_single_serialized_image_into_image_list():
         secrets={},
         input_blobs={},
     )
-    output = result["outputs"]["output"]
+    output = result["outputs"]
     assert output["count"] == 1
     assert output["first_is_empty"] is False
     assert output["first_uri"] == "file://example.png"
