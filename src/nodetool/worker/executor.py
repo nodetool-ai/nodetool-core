@@ -1,5 +1,5 @@
 """
-Instantiate a Python BaseNode, set fields, call process(), collect results.
+Instantiate a Python BaseNode, execute it, and collect final outputs.
 """
 import asyncio
 import os
@@ -106,11 +106,14 @@ async def execute_node(
                 if error:
                     raise ValueError(error)
 
-            # Lifecycle: pre_process -> preload_model -> move_to_device -> process
+            # Lifecycle: pre_process -> preload_model -> move_to_device -> execute
             await node.pre_process(ctx)
             await node.preload_model(ctx)
             await node.move_to_device(ctx.device)
-            result = await node.process(ctx)
+            if node.is_streaming_output():
+                result = await _collect_streaming_outputs(node, ctx)
+            else:
+                result = await node.process(ctx)
 
             # Extract outputs
             outputs, blobs = _extract_outputs(result, ctx)
@@ -163,6 +166,24 @@ def _extract_outputs(
 
     # Default: single output slot named "output"
     return {"output": _serialize_value(result)}, output_blobs
+
+
+async def _collect_streaming_outputs(node: BaseNode, ctx: WorkerContext) -> dict[str, Any]:
+    """Collect the final value emitted for each slot from a streaming node."""
+    outputs: dict[str, Any] = {}
+    async for item in node.gen_process(ctx):
+        if not isinstance(item, dict):
+            raise TypeError(
+                "Streaming worker nodes must yield dictionaries mapping output names to values."
+            )
+        for slot_name, value in item.items():
+            if not isinstance(slot_name, str):
+                raise TypeError(
+                    "Streaming worker nodes must use string keys for output names."
+                )
+            if value is not None:
+                outputs[slot_name] = value
+    return outputs
 
 
 def _serialize_value(value: Any) -> Any:
