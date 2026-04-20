@@ -13,13 +13,23 @@ def get_files(path: str, extensions: list[str] | None = None):
         list[str]: A list of file paths matching the specified extensions.
     """
     extensions = extensions or [".py", ".js", ".ts", ".jsx", ".tsx", ".md"]
-    ext = os.path.splitext(path)[1]
-    if os.path.isfile(path) and ext in extensions:
-        return [path]
+
+    if os.path.isfile(path):
+        ext = os.path.splitext(path)[1]
+        if ext in extensions:
+            return [path]
+        return []
+
     files = []
     if os.path.isdir(path):
-        for file in os.listdir(path):
-            files += get_files(os.path.join(path, file), extensions)
+        # ⚡ Bolt Optimization: Use os.walk() instead of recursive custom functions with
+        # os.listdir() and os.path.isdir() because os.walk() utilizes os.scandir() internally
+        # which avoids the performance overhead of repeated stat system calls, and is non-recursive.
+        for root, _, filenames in os.walk(path):
+            for filename in filenames:
+                ext = os.path.splitext(filename)[1]
+                if ext in extensions:
+                    files.append(os.path.join(root, filename))
     return files
 
 
