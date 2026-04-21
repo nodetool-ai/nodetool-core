@@ -22,7 +22,7 @@ dependencies = [
     "pycares<5",
 
     # Node execution utilities
-    "python-dotenv>=1.0.0",
+    "python-dotenv>=1.2.2",
     "pyyaml>=6.0.2",
     "keyring>=25.5.0",
     "cryptography>=43.0.0",
