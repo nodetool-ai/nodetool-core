@@ -1527,8 +1527,11 @@ async def get_hf_language_models_from_hf_cache() -> list[LanguageModel]:
         repo_id.split("/")[-1]
         config = await HF_FAST_CACHE.resolve(repo_id, "config.json")
         if config:
-            async with aiofiles.open(config) as f:
-                config_data = json.loads(await f.read())
+            try:
+                async with aiofiles.open(config, encoding="utf-8") as f:
+                    config_data = json.loads(await f.read())
+            except Exception:
+                continue
             model_type = config_data.get("model_type")
             if model_type in SUPPORTED_MODEL_TYPES:
                 results.append(
