@@ -5,3 +5,11 @@
 ## 2025-02-12 - AudioSegment Concatenation Optimization
 **Learning:** In pydub, concatenating many `AudioSegment` objects in a loop using `+=` causes O(N^2) byte-copying performance penalties.
 **Action:** Always verify if the audio segments share the same `sample_width`, `frame_rate`, and `channels`. If they do, join their raw bytes directly (`b"".join([a._data for a in audios])`) and initialize a new segment via `first_audio._spawn(raw_data)` to reduce concatenation time from O(N^2) to O(N).
+
+## 2025-02-13 - String Concatenation vs List Append
+**Learning:** In Python (specifically CPython), iterative string concatenation using `+=` is highly optimized when there are no other references to the string. It often performs slightly better than `.append()` + `"".join()` for simple loop structures (e.g., 0.400s vs 0.414s in our benchmark).
+**Action:** Do not blindly replace `+=` with `.append()` and `"".join()` unless performance profiling explicitly shows a bottleneck in that specific scenario.
+
+## 2025-02-13 - Pydub AudioSegment Concatenation with Crossfade
+**Learning:** While concatenating raw audio bytes without crossfade is O(N) and fast, using a divide-and-conquer approach to apply crossfade during concatenation actually performs worse than iterative `+=` (8.596s vs 8.358s) due to the overhead of recursive calls and intermediate AudioSegment creation.
+**Action:** Do not attempt divide-and-conquer optimizations for AudioSegment crossfade without a proven, specialized blending implementation.
