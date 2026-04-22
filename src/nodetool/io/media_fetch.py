@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from io import BytesIO
 from typing import IO, cast
+from urllib.parse import urlparse
 
 import aiohttp
 import numpy as np
@@ -13,6 +14,7 @@ from nodetool.media.image.image_utils import (
     pil_to_png_bytes,
 )
 from nodetool.runtime.resources import require_scope
+from nodetool.utils.network import SSRFProtectResolver, is_ip_private
 
 log = logging.getLogger(__name__)
 
@@ -95,7 +97,13 @@ def _fetch_file_uri(uri: str) -> tuple[str, bytes]:
 
 async def _fetch_http_uri_async(uri: str) -> tuple[str, bytes]:
     """Fetch content from an HTTP/HTTPS URL. Local storage URLs are handled by the caller."""
-    async with aiohttp.ClientSession() as session, session.get(uri) as response:
+
+    parsed = urlparse(uri)
+    if parsed.hostname and is_ip_private(parsed.hostname):
+        raise ValueError(f"Access to private/restricted IP blocked: {parsed.hostname}")
+
+    connector = aiohttp.TCPConnector(resolver=SSRFProtectResolver())
+    async with aiohttp.ClientSession(connector=connector) as session, session.get(uri) as response:
         response.raise_for_status()
         data = await response.read()
         content_type = response.headers.get("Content-Type")
