@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nodetool-sample"
+version = "0.0.1"
+description = "Sample package fixture"
+authors = [{ name = "Test", email = "test@example.com" }]
+requires-python = ">=3.11"
+
+[project.urls]
+Repository = "https://github.com/nodetool-ai/nodetool-sample"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nodetool"]

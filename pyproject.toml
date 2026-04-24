@@ -40,6 +40,9 @@ dependencies = [
     "aiofiles>=24.1.0",
 ]
 
+[project.scripts]
+nodetool-pkg = "nodetool.package_tools.__main__:main"
+
 [project.optional-dependencies]
 # Vectorstore nodes (chromadb + langchain)
 vectorstore = [
