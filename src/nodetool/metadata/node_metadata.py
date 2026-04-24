@@ -1,0 +1,194 @@
+"""Node and package metadata models.
+
+Restored from commit e1d10d3a (removed in the 2026-04-11 strip-down,
+commit 88b759f8) so `BaseNode.get_metadata()` keeps working and the
+package scanner under `nodetool.package_tools` has types to build.
+
+`AssetInfo` is defined here too — its previous home in
+`nodetool.packages.package_types` was deleted by the same strip.
+"""
+
+from __future__ import annotations
+
+import importlib
+import inspect
+import json
+import pkgutil
+from enum import Enum
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from nodetool.config.logging_config import get_logger
+from nodetool.metadata.types import OutputSlot
+from nodetool.types.model import ModelPack, UnifiedModel
+from nodetool.workflows.base_node import BaseNode
+from nodetool.workflows.property import Property
+
+logger = get_logger(__name__)
+
+
+class AssetInfo(BaseModel):
+    """Asset information for files shipped by a node package."""
+
+    package_name: str = Field(description="Name of the package providing the asset")
+    name: str = Field(description="Asset file name")
+    path: str = Field(description="Full path to the asset file")
+
+
+class NodeMetadata(BaseModel):
+    """Metadata for a node."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "required": [
+                "title",
+                "description",
+                "namespace",
+                "node_type",
+                "outputs",
+                "properties",
+                "the_model_info",
+                "recommended_models",
+                "basic_fields",
+                "required_settings",
+            ]
+        }
+    )
+
+    title: str = Field(description="UI Title of the node")
+    description: str = Field(description="UI Description of the node")
+    namespace: str = Field(description="Namespace of the node")
+    node_type: str = Field(description="Fully qualified type of the node")
+    layout: str = Field(default="default", description="UI Layout of the node")
+    properties: list[Property] = Field(default_factory=list, description="Properties of the node")
+    outputs: list[OutputSlot] = Field(default_factory=list, description="Outputs of the node")
+    the_model_info: dict[str, Any] = Field(default_factory=dict, description="HF Model info for the node")
+    recommended_models: list[UnifiedModel] = Field(
+        default_factory=list, description="Recommended models for the node"
+    )
+    basic_fields: list[str] = Field(default_factory=list, description="Basic fields of the node")
+    required_settings: list[str] = Field(
+        default_factory=list,
+        description="Environment setting/secret keys required to run the node",
+    )
+    is_dynamic: bool = Field(default=False, description="Whether the node is dynamic")
+    is_streaming_output: bool = Field(default=False, description="Whether the node can stream output")
+    expose_as_tool: bool = Field(default=False, description="Whether the node is exposed as a tool")
+    supports_dynamic_outputs: bool = Field(
+        default=False,
+        description="Whether the node can declare outputs dynamically at runtime (only for dynamic nodes)",
+    )
+    model_packs: list[ModelPack] = Field(
+        default_factory=list, description="Model packs associated with this node"
+    )
+
+
+class ExampleMetadata(BaseModel):
+    """Metadata for an example workflow."""
+
+    id: str
+    name: str
+    description: str
+    tags: list[str]
+
+
+class PackageModel(BaseModel):
+    """Metadata model for a node package."""
+
+    name: str = Field(description="Unique name of the package")
+    description: str = Field(description="Description of the package and its functionality")
+    version: str = Field(description="Version of the package (semver format)")
+    authors: list[str] = Field(description="Authors of the package")
+    namespaces: list[str] = Field(default_factory=list, description="Namespaces provided by this package")
+    repo_id: str | None = Field(default=None, description="Repository ID in the format <owner>/<project>")
+    nodes: list[NodeMetadata] | None = Field(
+        default_factory=list, description="List of nodes provided by this package"
+    )
+    git_hash: str | None = Field(default=None, description="Git commit hash of the package")
+    assets: list[AssetInfo] | None = Field(
+        default_factory=list, description="List of assets provided by this package"
+    )
+    examples: list[ExampleMetadata] | None = Field(
+        default_factory=list, description="List of examples provided by this package"
+    )
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Non-fatal issues encountered during scan (e.g. modules that failed to import).",
+    )
+    source_folder: str | None = Field(default=None, description="Source folder of the package")
+
+
+class EnumEncoder(json.JSONEncoder):
+    def default(self, o):
+        try:
+            if isinstance(o, Enum):
+                return o.value
+            if o == b"":
+                return ""
+            return super().default(o)
+        except TypeError as e:
+            raise TypeError(f"Error encoding {o}: {e}") from e
+
+
+def get_submodules(package_name: str, verbose: bool = False) -> list[str]:
+    """Get all submodules of a package recursively."""
+    try:
+        package = importlib.import_module(package_name)
+        if not hasattr(package, "__path__"):
+            return [package_name]
+
+        submodules = [package_name]
+        for _, name, is_pkg in pkgutil.iter_modules(package.__path__, package.__name__ + "."):
+            if verbose:
+                logger.debug(f"Found submodule: {name}")
+            if is_pkg:
+                submodules.extend(get_submodules(name, verbose))
+            else:
+                submodules.append(name)
+
+        return submodules
+    except ImportError as e:
+        logger.error(f"Error importing package {package_name}: {e}")
+        return []
+
+
+def get_node_classes_from_module(module_name: str, verbose: bool = False) -> list[type[BaseNode]]:
+    """Find all classes in the given module that derive from BaseNode."""
+    module = importlib.import_module(module_name)
+
+    node_classes = []
+    for _name, obj in inspect.getmembers(module):
+        if inspect.isclass(obj):
+            has_abstract_method = any(
+                getattr(member, "__isabstractmethod__", False)
+                for _, member in inspect.getmembers(obj)
+            )
+            if has_abstract_method:
+                continue
+        if (
+            inspect.isclass(obj)
+            and issubclass(obj, BaseNode)
+            and obj is not BaseNode
+            and obj.__module__ == module_name
+        ):
+            node_classes.append(obj)
+            if verbose:
+                logger.debug(f"Found node class: {obj.__name__} in {module_name}")
+
+    return node_classes
+
+
+def get_node_classes_from_namespace(namespace: str, verbose: bool = False) -> list[type[BaseNode]]:
+    """Find all BaseNode subclasses in the given namespace and its submodules."""
+    logger.info(f"Searching for submodules in namespace: {namespace}")
+    submodules = get_submodules(namespace, verbose)
+
+    all_node_classes = []
+    for submodule in submodules:
+        node_classes = get_node_classes_from_module(submodule, verbose)
+        all_node_classes.extend(node_classes)
+        if node_classes:
+            logger.info(f"Found {len(node_classes)} node classes in module {submodule}")
+
+    return all_node_classes

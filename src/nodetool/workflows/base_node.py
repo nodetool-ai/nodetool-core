@@ -1017,11 +1017,8 @@ class BaseNode(BaseModel):
             NodeMetadata: An object containing all metadata about the node,
             including its properties, outputs, and other relevant information.
         """
-        try:
-            # avoid circular import
-            from nodetool.metadata.node_metadata import NodeMetadata
-        except ImportError:
-            raise ImportError("node_metadata module not available — use node_loader.node_to_metadata() instead")
+        # avoid circular import
+        from nodetool.metadata.node_metadata import NodeMetadata
 
         try:
             return NodeMetadata(

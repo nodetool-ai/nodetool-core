@@ -1,0 +1,6 @@
+{
+  "id": "echo-example",
+  "name": "Echo Example",
+  "description": "A tiny workflow that uses EchoNode.",
+  "tags": ["demo"]
+}
