@@ -386,7 +386,7 @@ async def test_dispatch_round_trip_full_session_lifecycle():
                 "session_id": "s-100",
                 "node_type": "test_realtime.IdentityFrameNode",
                 "fields": {"multiplier": 2},
-                "session_info": {
+                "session": {
                     "session_id": "s-100",
                     "workflow_id": "wf-100",
                     "transport": "webrtc",
@@ -407,7 +407,7 @@ async def test_dispatch_round_trip_full_session_lifecycle():
         _request(
             "push_input_frame",
             "r-push-1",
-            {"session_id": "s-100", "handle": "frame", "data": 7},
+            {"session_id": "s-100", "handle": "frame", "payload": 7},
         )
     )
 
@@ -429,9 +429,11 @@ async def test_dispatch_round_trip_full_session_lifecycle():
     out = next(m for m in transport.sent if m["type"] == "realtime_output_frame")
     assert out == {
         "type": "realtime_output_frame",
-        "session_id": "s-100",
-        "handle": "output",
-        "data": 14,
+        "data": {
+            "session_id": "s-100",
+            "handle": "output",
+            "payload": 14,
+        },
     }
 
     await server._dispatch(
@@ -461,7 +463,7 @@ async def test_dispatch_round_trip_full_session_lifecycle():
         _request(
             "push_input_frame",
             "r-after",
-            {"session_id": "s-100", "handle": "frame", "data": 0},
+            {"session_id": "s-100", "handle": "frame", "payload": 0},
         )
     )
     after = next(m for m in transport.sent if m.get("request_id") == "r-after")
@@ -508,3 +510,141 @@ async def test_dispatch_unknown_node_type_returns_error():
     msg = next(m for m in transport.sent if m.get("request_id") == "r-bad")
     assert msg["type"] == "error"
     assert "Unknown node type" in msg["data"]["error"]
+
+
+# ---------------------------------------------------------------------------
+# Wire format contract tests — these are the source of truth for the JSON
+# shape the TypeScript PythonStdioBridge sees on the other end of stdio.
+# Drift here is a breaking protocol change; do not relax these assertions.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_wire_contract_push_and_emit_uses_payload_key():
+    """`push_input_frame` reads `data.payload`; `realtime_output_frame`
+    nests its body under `data` with a `payload` field."""
+    server = StdioWorkerServer()
+    transport = _StubTransport()
+    server._transport = transport
+
+    await server._dispatch(
+        _request(
+            "start_session",
+            "r-start",
+            {
+                "session_id": "s-wire",
+                "node_type": "test_realtime.IdentityFrameNode",
+                "fields": {"multiplier": 1},
+                "session": {
+                    "session_id": "s-wire",
+                    "workflow_id": None,
+                    "transport": "websocket",
+                },
+            },
+        )
+    )
+    await server._dispatch(
+        _request(
+            "push_input_frame",
+            "r-push",
+            {
+                "session_id": "s-wire",
+                "handle": "frame",
+                "payload": 42,
+                "metadata": {"ts": 1000},
+            },
+        )
+    )
+
+    for _ in range(50):
+        if any(m["type"] == "realtime_output_frame" for m in transport.sent):
+            break
+        await asyncio.sleep(0.01)
+
+    out = next(m for m in transport.sent if m["type"] == "realtime_output_frame")
+    assert "request_id" not in out, "output_frame is server-pushed; no request_id"
+    assert set(out.keys()) == {"type", "data"}, (
+        "output_frame must follow the bridge envelope shape "
+        "{type, data} so PythonStdioBridge._handleMessage can dispatch it"
+    )
+    assert out["data"] == {
+        "session_id": "s-wire",
+        "handle": "output",
+        "payload": 42,
+    }
+
+    await server._dispatch(
+        _request("stop_session", "r-stop", {"session_id": "s-wire"})
+    )
+
+
+@pytest.mark.asyncio
+async def test_wire_contract_start_session_response_status_is_running():
+    """The TS bridge surfaces this string verbatim; pin it so a future
+    refactor doesn't silently drift."""
+    server = StdioWorkerServer()
+    transport = _StubTransport()
+    server._transport = transport
+
+    await server._dispatch(
+        _request(
+            "start_session",
+            "r-status",
+            {
+                "session_id": "s-status",
+                "node_type": "test_realtime.IdentityFrameNode",
+                "session": {
+                    "session_id": "s-status",
+                    "workflow_id": None,
+                    "transport": "websocket",
+                },
+            },
+        )
+    )
+    ack = next(m for m in transport.sent if m.get("request_id") == "r-status")
+    assert ack["type"] == "result"
+    assert ack["data"] == {"session_id": "s-status", "status": "running"}
+
+    await server._dispatch(
+        _request("stop_session", "r-stop", {"session_id": "s-status"})
+    )
+
+
+@pytest.mark.asyncio
+async def test_wire_contract_stop_session_honors_optional_timeout():
+    """`data.timeout` is optional but must be honored when the bridge
+    sends it (TS-side `PythonRealtimeSession.stop(timeout)` forwards it)."""
+    server = StdioWorkerServer()
+    transport = _StubTransport()
+    server._transport = transport
+
+    await server._dispatch(
+        _request(
+            "start_session",
+            "r-s",
+            {
+                "session_id": "s-timeout",
+                "node_type": "test_realtime.IdentityFrameNode",
+            },
+        )
+    )
+
+    captured: dict[str, Any] = {}
+    instance = server._realtime_sessions["s-timeout"]
+    real_stop = instance.stop
+
+    async def _capture_stop(timeout: float = 5.0) -> None:
+        captured["timeout"] = timeout
+        await real_stop(timeout=timeout)
+
+    instance.stop = _capture_stop  # type: ignore[method-assign]
+
+    await server._dispatch(
+        _request(
+            "stop_session",
+            "r-stop",
+            {"session_id": "s-timeout", "timeout": 1.5},
+        )
+    )
+
+    assert captured["timeout"] == 1.5

@@ -36,12 +36,15 @@ DEFAULT_INPUT_BUFFER_SIZE = 2
 #: is closed during ``stop()``. Past this, the task is cancelled.
 DEFAULT_STOP_TIMEOUT = 5.0
 
-#: Callback for emitting an output frame back to the bridge. The realtime
-#: worker invokes this every time the node yields an item from
-#: ``gen_process``. Implementations are responsible for wrapping the value
-#: in the bridge's ``realtime_output_frame`` envelope and sending it via
-#: stdio.
-FrameEmitter = Callable[[str, Any], Awaitable[None]]
+#: Callback for emitting an output frame back to the bridge.
+#:
+#: The realtime worker invokes this every time the node yields an item from
+#: ``gen_process``. Arguments are ``(handle, payload, metadata)`` —
+#: implementations wrap them in the bridge's ``realtime_output_frame``
+#: envelope and send the message via stdio. The ``metadata`` argument is
+#: optional so node code can call ``await self.emit_frame(slot, value)``
+#: when no per-frame metadata is needed.
+FrameEmitter = Callable[..., Awaitable[None]]
 
 
 class RealtimeSessionError(Exception):
@@ -219,12 +222,21 @@ class RealtimeNodeInstance:
 
         self._task = asyncio.create_task(_run())
 
-    def push_input_frame(self, handle: str, payload: Any) -> int:
+    def push_input_frame(
+        self,
+        handle: str,
+        payload: Any,
+        metadata: dict[str, Any] | None = None,
+    ) -> int:
         """Enqueue a frame with drop-oldest semantics.
 
         Returns the number of items dropped to make room (``0`` when there
         was space). Non-blocking and safe to call from the bridge dispatch
         coroutine.
+
+        ``metadata`` is attached to the message envelope so downstream
+        ``iter_input_with_metadata`` consumers can read it; ignored by the
+        plain ``iter_input`` consumer that most realtime nodes use.
         """
         if self._stopped:
             return 0
@@ -232,7 +244,7 @@ class RealtimeNodeInstance:
             self.inbox.add_upstream(handle, 1)
             self._known_handles.add(handle)
         return self.inbox.put_nowait_drop_oldest(
-            handle, payload, self.input_buffer_size
+            handle, payload, self.input_buffer_size, metadata=metadata
         )
 
     def update_parameter(self, name: str, value: Any) -> bool:

@@ -227,15 +227,25 @@ class StdioWorkerServer:
             )
             return
 
-        session_payload = data.get("session_info") or {
+        # Wire format: the canonical request payload nests the full
+        # RealtimeSessionInfo snapshot under `data.session`. Top-level
+        # session_id is required and must match `session.session_id` so the
+        # two views can never diverge.
+        session_payload = data.get("session") or {
             "session_id": session_id,
             "workflow_id": data.get("workflow_id"),
             "transport": data.get("transport", "websocket"),
             "parameters": data.get("parameters") or {},
             "media_tracks": data.get("media_tracks") or [],
         }
-        # The bridge may omit session_id from session_info; force it from the
-        # outer envelope so the two views can never diverge.
+        if not isinstance(session_payload, dict):
+            await self._send_realtime_error(
+                transport,
+                request_id,
+                session_id,
+                "Invalid session payload: expected an object",
+            )
+            return
         session_payload["session_id"] = session_id
 
         try:
@@ -245,18 +255,33 @@ class StdioWorkerServer:
                 transport,
                 request_id,
                 session_id,
-                f"Invalid session_info payload: {exc}",
+                f"Invalid session payload: {exc}",
             )
             return
 
-        async def _emit_frame(handle: str, value: Any) -> None:
-            await transport.send_msg({
-                "type": "realtime_output_frame",
+        async def _emit_frame(
+            handle: str,
+            value: Any,
+            metadata: dict[str, Any] | None = None,
+        ) -> None:
+            # Nest the event payload under `data` to match the rest of the
+            # bridge protocol (result / error / chunk / progress all use this
+            # shape). The TS-side bridge dispatches on msg.type and reads
+            # msg.data — matching that convention keeps the dispatcher
+            # uniform.
+            envelope: dict[str, Any] = {
                 "session_id": session_id,
                 "handle": handle,
-                "data": value,
+                "payload": value,
+            }
+            if metadata:
+                envelope["metadata"] = metadata
+            await transport.send_msg({
+                "type": "realtime_output_frame",
+                "data": envelope,
             })
 
+        input_buffer_size = data.get("input_buffer_size")
         try:
             instance = await RealtimeNodeInstance.start(
                 session=session,
@@ -264,6 +289,12 @@ class StdioWorkerServer:
                 fields=data.get("fields") or {},
                 secrets=data.get("secrets") or {},
                 emit_frame=_emit_frame,
+                **(
+                    {"input_buffer_size": int(input_buffer_size)}
+                    if isinstance(input_buffer_size, int)
+                    and input_buffer_size > 0
+                    else {}
+                ),
             )
         except RealtimeSessionError as exc:
             await self._send_realtime_error(
@@ -343,7 +374,14 @@ class StdioWorkerServer:
             )
             return
 
-        dropped = instance.push_input_frame(handle, data.get("data"))
+        # Wire format: payload lives under `data.payload` (named so to avoid
+        # the confusing `data.data` nesting). Optional `data.metadata` is
+        # threaded through to the inbox envelope for nodes that want it.
+        raw_metadata = data.get("metadata")
+        metadata = raw_metadata if isinstance(raw_metadata, dict) else None
+        dropped = instance.push_input_frame(
+            handle, data.get("payload"), metadata=metadata
+        )
         await transport.send_msg({
             "type": "result",
             "request_id": request_id,
@@ -368,8 +406,16 @@ class StdioWorkerServer:
             )
             return
 
+        # Honor the optional client-supplied timeout so a slow node loop can
+        # be bounded explicitly per stop() call. Falls back to
+        # RealtimeNodeInstance's built-in DEFAULT_STOP_TIMEOUT.
+        raw_timeout = data.get("timeout")
+        timeout_kwargs: dict[str, Any] = {}
+        if isinstance(raw_timeout, (int, float)) and raw_timeout > 0:
+            timeout_kwargs["timeout"] = float(raw_timeout)
+
         try:
-            await instance.stop()
+            await instance.stop(**timeout_kwargs)
         except Exception as exc:
             await self._send_realtime_error(
                 transport,
