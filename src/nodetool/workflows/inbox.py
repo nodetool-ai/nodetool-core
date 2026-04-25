@@ -218,6 +218,60 @@ class NodeInbox:
         self._arrival.appendleft(handle)
         self._notify_waiters_threadsafe()
 
+    def put_nowait_drop_oldest(
+        self,
+        handle: str,
+        item: Any,
+        capacity: int,
+        metadata: dict[str, Any] | None = None,
+    ) -> int:
+        """Realtime backpressure: enqueue with drop-oldest, return drop count.
+
+        Non-blocking and safe to call from any thread; producers never wait
+        on a slow consumer. When the per-handle buffer already holds
+        ``capacity`` items, the oldest items are popped to make room for
+        ``item`` and the number of dropped items is returned.
+
+        Designed for the realtime worker session protocol where
+        ``push_input_frame`` must complete fast (frame age has already
+        passed by the time the request is processed). The blocking semantics
+        of :meth:`put` would back-pressure all the way to the WebRTC server
+        and stall the producer, which is the wrong policy for video frames.
+
+        Args:
+            handle: Input handle name.
+            item: The item to enqueue.
+            capacity: Maximum buffered items for this handle. Must be >= 1.
+            metadata: Optional metadata to attach to the message envelope.
+
+        Returns:
+            Number of items dropped to make room. ``0`` when there was room.
+            ``0`` when the inbox is closed.
+
+        Note:
+            The arrival queue may briefly retain stale handle entries from
+            the dropped envelopes. ``iter_any`` consumers encounter empty
+            buffers for those entries and skip past them. ``iter_input`` (the
+            per-handle iterator that realtime media-source nodes use) is
+            unaffected.
+        """
+        if self._closed:
+            return 0
+        if capacity < 1:
+            raise ValueError("capacity must be >= 1")
+
+        buf = self._buffers.setdefault(handle, deque())
+        dropped = 0
+        while len(buf) >= capacity:
+            buf.popleft()
+            dropped += 1
+
+        envelope = MessageEnvelope(data=item, metadata=metadata or {})
+        buf.append(envelope)
+        self._arrival.append(handle)
+        self._notify_waiters_threadsafe()
+        return dropped
+
     def mark_source_done(self, handle: str) -> None:
         """Mark one upstream source for a handle as completed and notify waiters.
 
