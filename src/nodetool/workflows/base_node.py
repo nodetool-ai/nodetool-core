@@ -162,6 +162,7 @@ if TYPE_CHECKING:
     from nodetool.types.model import ModelPack
 
     from .io import NodeInputs, NodeOutputs
+    from .realtime import RealtimeSessionInfo
 
 
 def sanitize_node_name(node_name: str) -> str:
@@ -424,6 +425,12 @@ class BaseNode(BaseModel):
     _required_settings: ClassVar[list[str]] = []
     _supports_dynamic_outputs: ClassVar[bool] = False
     _auto_save_asset: ClassVar[bool] = False
+    # Realtime capability flags (mirror packages/node-sdk/src/base-node.ts).
+    # Surfaced through node_to_metadata() so the TS-side node registry
+    # treats Python and TS realtime nodes uniformly. See PLAN-REALTIME.md.
+    _is_realtime_capable: ClassVar[bool] = False
+    _owns_warm_state: ClassVar[bool] = False
+    _is_media_adapter: ClassVar[bool] = False
     _inbox: NodeInbox | None = PrivateAttr(default=None)
     _sync_mode: str = PrivateAttr(default="on_any")
     _on_input_item: Callable[[str], None] | None = PrivateAttr(default=None)
@@ -631,6 +638,48 @@ class BaseNode(BaseModel):
         if isinstance(attr, bool):
             return attr
         # If it's a Pydantic Field / FieldInfo return its default, else direct.
+        return bool(getattr(attr, "default", False))
+
+    @classmethod
+    def is_realtime_capable(cls) -> bool:
+        """Whether this node opts into the realtime session lifecycle.
+
+        Mirrors ``BaseNode.isRealtimeCapable`` on the TS side. Realtime-capable
+        nodes receive ``on_session_start`` / ``on_session_stop`` hook calls
+        from the runner and may hold warm GPU state across many process
+        invocations within a single session.
+        """
+        attr = getattr(cls, "_is_realtime_capable", False)
+        if isinstance(attr, bool):
+            return attr
+        return bool(getattr(attr, "default", False))
+
+    @classmethod
+    def owns_warm_state(cls) -> bool:
+        """Whether this node owns warm GPU state that must be reset/teardown.
+
+        Mirrors ``BaseNode.ownsWarmState`` on the TS side. When True, the
+        runner calls ``reset_warm_state()`` on session resets and ensures
+        ``on_session_stop`` runs on every termination path so weights are
+        freed deterministically.
+        """
+        attr = getattr(cls, "_owns_warm_state", False)
+        if isinstance(attr, bool):
+            return attr
+        return bool(getattr(attr, "default", False))
+
+    @classmethod
+    def is_media_adapter(cls) -> bool:
+        """Whether this node bridges a transport-level media track.
+
+        Mirrors ``BaseNode.isMediaAdapter`` on the TS side. Media-adapter
+        nodes (sources / sinks for audio or video tracks) are wired up to the
+        WebRTC server by the runner using the ``media_tracks`` field on
+        ``RealtimeSessionInfo``.
+        """
+        attr = getattr(cls, "_is_media_adapter", False)
+        if isinstance(attr, bool):
+            return attr
         return bool(getattr(attr, "default", False))
 
     @classmethod
@@ -1908,6 +1957,52 @@ class BaseNode(BaseModel):
         Default implementation generates a seed for any field named seed.
         """
         pass
+
+    async def on_session_start(
+        self,
+        context: Any,
+        session: "RealtimeSessionInfo",
+    ) -> None:
+        """Realtime lifecycle hook: called once when a session starts.
+
+        Mirrors ``BaseNode.onSessionStart`` on the TS side. Override on
+        nodes with ``_is_realtime_capable = True`` to acquire warm
+        resources (load models onto the device, open codec contexts,
+        subscribe to media tracks, etc.). The runner awaits this hook
+        before promoting the session from ``starting`` to ``running``,
+        so blocking work belongs here rather than in ``process``.
+
+        Default implementation is a no-op so non-realtime nodes can
+        ignore the hook entirely.
+        """
+        return None
+
+    async def on_session_stop(
+        self,
+        context: Any,
+        session: "RealtimeSessionInfo",
+    ) -> None:
+        """Realtime lifecycle hook: called once when a session stops.
+
+        Mirrors ``BaseNode.onSessionStop`` on the TS side. Override to
+        release warm resources acquired in ``on_session_start`` (free GPU
+        memory, close codec contexts, drop track subscriptions). The
+        runner guarantees this is awaited on every termination path —
+        normal stop, error, and cancellation — so cleanup logic placed
+        here cannot be skipped by a misbehaving session.
+        """
+        return None
+
+    def reset_warm_state(self) -> None:
+        """Realtime lifecycle hook: called when warm state must be reset.
+
+        Mirrors ``BaseNode.resetWarmState`` on the TS side. Override on
+        nodes with ``_owns_warm_state = True`` to clear caches without
+        tearing the whole session down — useful for prompt changes,
+        seed resets, or recovering from a transient inference error.
+        Default implementation is a no-op.
+        """
+        return None
 
     async def process(self, context: Any) -> Any:
         """

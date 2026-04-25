@@ -95,6 +95,12 @@ def node_to_metadata(node_class: type[BaseNode]) -> dict[str, Any]:
         "is_streaming_output": _call_or_get(node_class, "is_streaming_output"),
         "is_streaming_input": _call_or_get(node_class, "is_streaming_input"),
         "is_dynamic": _call_or_get(node_class, "is_dynamic"),
+        # Realtime capability flags — keys match the TS-side NodeDescriptor
+        # serialization in packages/node-sdk/src/node-metadata.ts so the
+        # NodeRegistry sees Python and TS realtime nodes uniformly.
+        "is_realtime_capable": _call_or_get(node_class, "is_realtime_capable"),
+        "owns_warm_state": _call_or_get(node_class, "owns_warm_state"),
+        "is_media_adapter": _call_or_get(node_class, "is_media_adapter"),
     }
 
 
