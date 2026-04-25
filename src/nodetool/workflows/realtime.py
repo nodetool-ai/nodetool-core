@@ -13,7 +13,54 @@ the sister ``nodetool-realtime`` package, never here. See
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal, TypeAlias
+
+VideoPixelFormat: TypeAlias = Literal["rgba8", "rgb8", "yuv420p", "nv12"]
+AudioSampleFormat: TypeAlias = Literal["s16le", "f32le"]
+
+
+@dataclass(slots=True)
+class VideoFrame:
+    """Raw realtime video frame routed through the substrate.
+
+    Mirrors ``VideoFrame`` from ``@nodetool/protocol``. The pixel buffer stays
+    CPU-resident and binary; model nodes are responsible for converting it to
+    tensors or any model-specific layout.
+    """
+
+    type: Literal["realtime_video_frame"] = field(
+        default="realtime_video_frame", init=False
+    )
+    data: bytes
+    width: int
+    height: int
+    stride: int
+    pixel_format: VideoPixelFormat
+    timestamp_ns: int
+    sequence: int
+
+
+@dataclass(slots=True)
+class AudioFrame:
+    """Raw realtime audio frame routed through the substrate.
+
+    Mirrors ``AudioFrame`` from ``@nodetool/protocol``. Samples are PCM bytes,
+    interleaved when ``channels`` is greater than one.
+    """
+
+    type: Literal["realtime_audio_frame"] = field(
+        default="realtime_audio_frame", init=False
+    )
+    data: bytes
+    sample_rate: int
+    channels: int
+    sample_format: AudioSampleFormat
+    samples: int
+    timestamp_ns: int
+    sequence: int
+
+
+RealtimeFrame: TypeAlias = VideoFrame | AudioFrame
 
 
 @dataclass(slots=True)
@@ -67,7 +114,7 @@ class RealtimeSessionInfo:
     media_tracks: list[RealtimeMediaTrack] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "RealtimeSessionInfo":
+    def from_dict(cls, payload: dict[str, Any]) -> RealtimeSessionInfo:
         """Construct from the wire format used by the stdio bridge.
 
         Tolerant of missing fields: ``parameters`` and ``media_tracks``

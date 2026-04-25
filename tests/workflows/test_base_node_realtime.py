@@ -15,7 +15,13 @@ import pytest
 
 from nodetool.worker.node_loader import node_to_metadata
 from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
-from nodetool.workflows.realtime import RealtimeMediaTrack, RealtimeSessionInfo
+from nodetool.workflows.realtime import (
+    AudioFrame,
+    RealtimeFrame,
+    RealtimeMediaTrack,
+    RealtimeSessionInfo,
+    VideoFrame,
+)
 
 
 class _DefaultNode(BaseNode):
@@ -199,3 +205,31 @@ def test_realtime_session_info_from_dict_tolerates_missing_optional_fields():
     assert info.workflow_id is None
     assert info.parameters == {}
     assert info.media_tracks == []
+
+
+def test_realtime_frame_dataclasses_match_protocol_shape():
+    """Realtime frames stay substrate-only: raw bytes plus format metadata."""
+    video = VideoFrame(
+        data=b"\xff\x00\x00\xff",
+        width=1,
+        height=1,
+        stride=4,
+        pixel_format="rgba8",
+        timestamp_ns=123_000_000,
+        sequence=7,
+    )
+    audio = AudioFrame(
+        data=b"\x00\x00\xff\x7f",
+        sample_rate=48_000,
+        channels=2,
+        sample_format="s16le",
+        samples=1,
+        timestamp_ns=456_000_000,
+        sequence=8,
+    )
+    frames: list[RealtimeFrame] = [video, audio]
+
+    assert frames[0].type == "realtime_video_frame"
+    assert frames[1].type == "realtime_audio_frame"
+    assert video.data == b"\xff\x00\x00\xff"
+    assert audio.data == b"\x00\x00\xff\x7f"
