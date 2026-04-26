@@ -5,6 +5,8 @@ from typing import Any, Callable, Awaitable
 import msgpack
 from websockets.asyncio.server import serve as ws_serve, ServerConnection
 
+from nodetool.worker import BRIDGE_PROTOCOL_VERSION
+
 
 class WorkerServer:
     def __init__(self):
@@ -34,7 +36,10 @@ class WorkerServer:
                 response = msgpack.packb({
                     "type": "discover",
                     "request_id": request_id,
-                    "data": {"nodes": self._nodes_metadata},
+                    "data": {
+                        "nodes": self._nodes_metadata,
+                        "protocol_version": BRIDGE_PROTOCOL_VERSION,
+                    },
                 })
                 await websocket.send(response)
 

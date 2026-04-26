@@ -145,6 +145,7 @@ tmp/
 
 # Agent
 __plans__/
+.claude/
 
 # Node.js / TypeScript
 node_modules/
