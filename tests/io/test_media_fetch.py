@@ -374,3 +374,15 @@ class TestFetchUriBytesAndMimeAsync:
 
         with pytest.raises(ValueError, match="Unsupported URI scheme"):
             await fetch_uri_bytes_and_mime_async(uri)
+
+@pytest.mark.asyncio
+async def test_ssrf_mitigation_blocks_private_ips() -> None:
+    """Test that SSRF mitigation blocks requests to private/loopback IPs."""
+    with pytest.raises(ValueError, match="Access to private/restricted IP blocked"):
+        await fetch_uri_bytes_and_mime_async("http://127.0.0.1:8888")
+
+    with pytest.raises(ValueError, match="Access to private/restricted IP blocked"):
+        await fetch_uri_bytes_and_mime_async("http://192.168.1.1")
+
+    with pytest.raises(ValueError, match="Access to private/restricted IP blocked"):
+        await fetch_uri_bytes_and_mime_async("http://10.0.0.1")
