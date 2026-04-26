@@ -93,7 +93,7 @@ data = [
     "tiktoken",
 ]
 dev = [
-    "pytest>=8.0.0",
+    "pytest>=9.0.3",
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=7.0.0",
     "pytest-timeout>=2.3.1",
