@@ -5,3 +5,7 @@
 ## 2025-02-12 - AudioSegment Concatenation Optimization
 **Learning:** In pydub, concatenating many `AudioSegment` objects in a loop using `+=` causes O(N^2) byte-copying performance penalties.
 **Action:** Always verify if the audio segments share the same `sample_width`, `frame_rate`, and `channels`. If they do, join their raw bytes directly (`b"".join([a._data for a in audios])`) and initialize a new segment via `first_audio._spawn(raw_data)` to reduce concatenation time from O(N^2) to O(N).
+
+## 2025-04-25 - Optimize file discovery with os.walk
+**Learning:** `os.walk` is drastically faster than custom recursive directory traversal using `os.listdir` and `os.path.isdir`. `os.walk` utilizes `os.scandir` internally to avoid the performance overhead of repeated `stat` system calls.
+**Action:** When writing recursive file discovery utilities, always use `os.walk` instead of custom recursive functions with `os.listdir` and `os.path.isdir`.
