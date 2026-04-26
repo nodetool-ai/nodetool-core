@@ -74,6 +74,14 @@ class NodeMetadata(BaseModel):
     )
     is_dynamic: bool = Field(default=False, description="Whether the node is dynamic")
     is_streaming_output: bool = Field(default=False, description="Whether the node can stream output")
+    is_streaming_input: bool = Field(default=False, description="Whether the node can consume streaming input")
+    is_realtime_capable: bool = Field(default=False, description="Whether the node can execute in a realtime session")
+    owns_warm_state: bool = Field(default=False, description="Whether the node owns warm realtime state")
+    is_media_adapter: bool = Field(default=False, description="Whether the node bridges realtime media transport")
+    realtime_profile: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Opt-in browser/JS realtime inference capability metadata",
+    )
     expose_as_tool: bool = Field(default=False, description="Whether the node is exposed as a tool")
     supports_dynamic_outputs: bool = Field(
         default=False,

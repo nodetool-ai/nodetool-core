@@ -41,6 +41,14 @@ class _RealtimeNode(BaseNode):
     _is_realtime_capable: ClassVar[bool] = True
     _owns_warm_state: ClassVar[bool] = True
     _is_media_adapter: ClassVar[bool] = True
+    _realtime_profile: ClassVar[dict[str, Any]] = {
+        "browser_capable": True,
+        "requires_browser_frame": True,
+        "requires_webgpu": True,
+        "emits_analysis_event": True,
+        "emits_parameter_update": False,
+        "emits_media_frame": False,
+    }
 
     @classmethod
     def get_node_type(cls) -> str:
@@ -166,6 +174,14 @@ def test_node_to_metadata_emits_realtime_flags_for_realtime_node():
     assert meta["is_realtime_capable"] is True
     assert meta["owns_warm_state"] is True
     assert meta["is_media_adapter"] is True
+    assert meta["realtime_profile"] == {
+        "browser_capable": True,
+        "requires_browser_frame": True,
+        "requires_webgpu": True,
+        "emits_analysis_event": True,
+        "emits_parameter_update": False,
+        "emits_media_frame": False,
+    }
 
 
 def test_realtime_session_info_from_dict_round_trip():

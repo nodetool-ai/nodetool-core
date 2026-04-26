@@ -431,6 +431,7 @@ class BaseNode(BaseModel):
     _is_realtime_capable: ClassVar[bool] = False
     _owns_warm_state: ClassVar[bool] = False
     _is_media_adapter: ClassVar[bool] = False
+    _realtime_profile: ClassVar[dict[str, Any]] = {}
     _inbox: NodeInbox | None = PrivateAttr(default=None)
     _sync_mode: str = PrivateAttr(default="on_any")
     _on_input_item: Callable[[str], None] | None = PrivateAttr(default=None)
@@ -681,6 +682,21 @@ class BaseNode(BaseModel):
         if isinstance(attr, bool):
             return attr
         return bool(getattr(attr, "default", False))
+
+    @classmethod
+    def realtime_profile(cls) -> dict[str, Any]:
+        """Opt-in browser/JS realtime inference capability metadata.
+
+        This keeps the coarse realtime booleans stable while allowing browser
+        inference nodes to declare narrower requirements and event surfaces.
+        """
+        attr = getattr(cls, "_realtime_profile", {})
+        if isinstance(attr, dict):
+            return dict(attr)
+        default_value = getattr(attr, "default", {})
+        if isinstance(default_value, dict):
+            return dict(default_value)
+        return {}
 
     @classmethod
     def get_control_actions(cls) -> dict[str, dict[str, Any]]:
@@ -1083,6 +1099,11 @@ class BaseNode(BaseModel):
                 basic_fields=cls.get_basic_fields(),
                 is_dynamic=cls.is_dynamic(),
                 is_streaming_output=cls.is_streaming_output(),
+                is_streaming_input=cls.is_streaming_input(),
+                is_realtime_capable=cls.is_realtime_capable(),
+                owns_warm_state=cls.owns_warm_state(),
+                is_media_adapter=cls.is_media_adapter(),
+                realtime_profile=cls.realtime_profile(),
                 expose_as_tool=cls.expose_as_tool(),
                 required_settings=cls.required_settings(),
                 supports_dynamic_outputs=cls.supports_dynamic_outputs(),

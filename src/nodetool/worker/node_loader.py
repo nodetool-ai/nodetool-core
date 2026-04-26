@@ -101,6 +101,7 @@ def node_to_metadata(node_class: type[BaseNode]) -> dict[str, Any]:
         "is_realtime_capable": _call_or_get(node_class, "is_realtime_capable"),
         "owns_warm_state": _call_or_get(node_class, "owns_warm_state"),
         "is_media_adapter": _call_or_get(node_class, "is_media_adapter"),
+        "realtime_profile": _dict_call_or_get(node_class, "realtime_profile"),
     }
 
 
@@ -113,6 +114,21 @@ def _call_or_get(cls: type, name: str) -> bool:
         except TypeError:
             return False
     return bool(attr)
+
+
+def _dict_call_or_get(cls: type, name: str) -> dict[str, Any]:
+    """Get a dict-valued class attribute/method and return a shallow copy."""
+    attr = getattr(cls, name, {})
+    if callable(attr):
+        try:
+            value = attr()
+        except TypeError:
+            return {}
+    else:
+        value = attr
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
 
 
 def _normalize_default(value: Any) -> Any:
