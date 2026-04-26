@@ -620,57 +620,45 @@ async def _is_file(path: Path) -> bool:
 
 async def _rglob_files_async(root: Path) -> list[Path]:
     """Recursively collect files and symlinks under root without blocking the loop."""
-    results: list[Path] = []
+    import asyncio
+    import os
 
-    async def _walk(dir_path: Path) -> None:
+    # ⚡ Bolt Optimization: Replace thousands of slow async threadpool dispatches
+    # (via recursive aiofiles listdir/stat calls) with a single run_in_executor
+    # wrapping a fast synchronous os.walk. This avoids event loop blocking while
+    # drastically reducing overhead on large cached repos.
+    def _sync_rglob(start_path: str) -> list[Path]:
+        results = []
         try:
-            entries = await aiofiles.os.listdir(str(dir_path))
+            for root_dir, _dirs, files in os.walk(start_path):
+                root_path = Path(root_dir)
+                for f in files:
+                    results.append(root_path / f)
         except OSError:
-            return
+            pass
+        return results
 
-        for name in entries:
-            full = dir_path / name
-            try:
-                if await _is_dir(full):
-                    await _walk(full)
-                    continue
-                is_file = await _is_file(full)
-                is_link = await aiofiles.os.path.islink(str(full))
-            except OSError:
-                continue
-            if is_file or is_link:
-                results.append(full)
-
-    await _walk(root)
-    return results
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _sync_rglob, str(root))
 
 
 async def _count_files_async(root: Path) -> int:
     """Recursively count files and symlinks under root without storing paths."""
-    count = 0
+    import asyncio
+    import os
 
-    async def _walk(dir_path: Path) -> None:
-        nonlocal count
+    # ⚡ Bolt Optimization: Use single run_in_executor with os.walk for fast file counting
+    def _sync_count(start_path: str) -> int:
+        c = 0
         try:
-            entries = await aiofiles.os.listdir(str(dir_path))
+            for _root_dir, _dirs, files in os.walk(start_path):
+                c += len(files)
         except OSError:
-            return
+            pass
+        return c
 
-        for name in entries:
-            full = dir_path / name
-            try:
-                if await _is_dir(full):
-                    await _walk(full)
-                    continue
-                is_file = await _is_file(full)
-                is_link = await aiofiles.os.path.islink(str(full))
-            except OSError:
-                continue
-            if is_file or is_link:
-                count += 1
-
-    await _walk(root)
-    return count
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _sync_count, str(root))
 
 
 def _normalize_relpath(path: str) -> Path:

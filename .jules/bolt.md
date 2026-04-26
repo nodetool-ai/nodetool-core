@@ -9,3 +9,6 @@
 ## 2025-04-25 - Optimize file discovery with os.walk
 **Learning:** `os.walk` is drastically faster than custom recursive directory traversal using `os.listdir` and `os.path.isdir`. `os.walk` utilizes `os.scandir` internally to avoid the performance overhead of repeated `stat` system calls.
 **Action:** When writing recursive file discovery utilities, always use `os.walk` instead of custom recursive functions with `os.listdir` and `os.path.isdir`.
+## 2025-04-26 - Asyncio Directory Traversal Bottleneck
+**Learning:** Deep recursive directory traversal using individual `aiofiles` calls (like `aiofiles.os.listdir` or `aiofiles.os.path.is_file`) causes massive context-switching overhead in `asyncio` applications by dispatching thousands of tasks to the default thread pool.
+**Action:** Optimize deep recursive file system traversals by running a single synchronous C-optimized `os.walk` or `os.scandir` inside a back-referenced `loop.run_in_executor()`. This reduces the async task dispatch count from O(N) down to O(1) while keeping the event loop unblocked.
