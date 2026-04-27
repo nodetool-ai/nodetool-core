@@ -804,7 +804,9 @@ class ProcessingContext:
 
         # Treat empty-scheme inputs as local file paths (supports Windows drive letters)
         if url_parsed.scheme == "" and not url.startswith("data:"):
-            local_path = Path(url).expanduser()
+            # 🛡️ Sentinel Security Fix: Enforce workspace boundaries to prevent Path Traversal
+            safe_url = self.resolve_workspace_path(url)
+            local_path = Path(safe_url)
             if local_path.exists():
                 content = await asyncio.to_thread(local_path.read_bytes)
                 return BytesIO(content)
@@ -841,7 +843,11 @@ class ProcessingContext:
                     # POSIX: netloc is typically empty or localhost; for others, treat as network path
                     path = Path("//" + netloc + path_part) if netloc else Path(path_part)
 
-                resolved_path = path.expanduser()
+                # 🛡️ Sentinel Security Fix: Enforce workspace boundaries to prevent Path Traversal
+                raw_resolved_path = path.expanduser()
+                safe_path_str = self.resolve_workspace_path(str(raw_resolved_path))
+                resolved_path = Path(safe_path_str)
+
                 if not resolved_path.exists():
                     raise FileNotFoundError(f"No such file or directory: '{resolved_path}'")
 

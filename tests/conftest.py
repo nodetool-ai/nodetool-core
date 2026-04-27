@@ -175,12 +175,13 @@ def http_client():
 
 
 @pytest.fixture()
-def context(user_id: str, http_client):
+def context(user_id: str, http_client, tmp_path):
     return ProcessingContext(
         user_id=user_id,
         workflow_id="1",
         auth_token="test_token",
         http_client=http_client,
+        workspace_dir=str(tmp_path),
     )
 
 
