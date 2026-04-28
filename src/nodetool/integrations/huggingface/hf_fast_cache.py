@@ -307,19 +307,27 @@ class HfFastCache:
         type_prefix = f"{repo_type}s" if not repo_type.endswith("s") else repo_type
         repos: list[tuple[str, Path]] = []
 
-        try:
-            for name in await aiofiles.os.listdir(str(self.cache_dir)):
-                item = self.cache_dir / name
-                if not await _is_dir(item):
-                    continue
-                if not item.name.startswith(f"{type_prefix}--"):
-                    continue
+        # ⚡ Bolt Optimization: Use a single run_in_executor with os.scandir
+        # to find matching directories, avoiding N individual aiofiles.os.listdir
+        # and aiofiles.os.stat thread dispatches.
+        def _sync_discover() -> list[tuple[str, Path]]:
+            discovered = []
+            try:
+                for entry in os.scandir(str(self.cache_dir)):
+                    if not entry.is_dir():
+                        continue
+                    if not entry.name.startswith(f"{type_prefix}--"):
+                        continue
 
-                parts = item.name[len(f"{type_prefix}--") :].split("--")
-                repo_id = "/".join(parts) if len(parts) > 1 else parts[0]
-                repos.append((repo_id, item))
-        except OSError:
-            return []
+                    parts = entry.name[len(f"{type_prefix}--") :].split("--")
+                    repo_id = "/".join(parts) if len(parts) > 1 else parts[0]
+                    discovered.append((repo_id, self.cache_dir / entry.name))
+            except OSError:
+                pass
+            return discovered
+
+        loop = asyncio.get_running_loop()
+        repos = await loop.run_in_executor(None, _sync_discover)
 
         return repos
 
@@ -522,19 +530,33 @@ async def _read_current_ref_async(
     if await _exists(main):
         return await _mtime_or_none_async(main), await _read_first_line_async(main)
 
-    newest_mtime: Optional[float] = None
+    # ⚡ Bolt Optimization: Use a single run_in_executor with os.scandir
+    # to find the newest ref file, avoiding N individual aiofiles.os.listdir
+    # and aiofiles.os.stat thread dispatches.
+    def _sync_find_newest_ref() -> tuple[Optional[float], Optional[Path]]:
+        n_mtime: Optional[float] = None
+        n_path: Optional[Path] = None
+        try:
+            for entry in os.scandir(str(refs_dir)):
+                if not entry.is_file():
+                    continue
+                try:
+                    mt = entry.stat().st_mtime
+                    if n_mtime is None or mt > n_mtime:
+                        n_mtime = mt
+                        n_path = refs_dir / entry.name
+                except OSError:
+                    pass
+        except OSError:
+            pass
+        return n_mtime, n_path
+
+    loop = asyncio.get_running_loop()
+    newest_mtime, newest_path = await loop.run_in_executor(None, _sync_find_newest_ref)
+
     newest_commit: Optional[str] = None
-    try:
-        for name in await aiofiles.os.listdir(str(refs_dir)):
-            file = refs_dir / name
-            if not await _is_file(file):
-                continue
-            mt = await _mtime_or_none_async(file)
-            if newest_mtime is None or (mt is not None and mt > newest_mtime):
-                newest_mtime = mt
-                newest_commit = await _read_first_line_async(file)
-    except OSError:
-        return None, None
+    if newest_path is not None:
+        newest_commit = await _read_first_line_async(newest_path)
 
     return (
         (newest_mtime if newest_mtime is not None else await _mtime_or_none_async(refs_dir)),
@@ -555,20 +577,30 @@ async def _pick_latest_snapshot_async(repo_dir: Path) -> Optional[Path]:
     snapshots_dir = repo_dir / "snapshots"
     if not await _exists(snapshots_dir):
         return None
-    newest_path: Optional[Path] = None
-    newest_mtime: Optional[float] = None
-    try:
-        for name in await aiofiles.os.listdir(str(snapshots_dir)):
-            path = snapshots_dir / name
-            if not await _is_dir(path):
-                continue
-            mt = await _mtime_or_none_async(path)
-            if newest_mtime is None or (mt is not None and mt > newest_mtime):
-                newest_mtime = mt
-                newest_path = path
-    except OSError:
-        return None
-    return newest_path
+
+    # ⚡ Bolt Optimization: Use a single run_in_executor with os.scandir
+    # to find the newest snapshot directory, avoiding N individual aiofiles.os.listdir
+    # and aiofiles.os.stat thread dispatches.
+    def _sync_find_newest_snapshot() -> Optional[Path]:
+        n_path: Optional[Path] = None
+        n_mtime: Optional[float] = None
+        try:
+            for entry in os.scandir(str(snapshots_dir)):
+                if not entry.is_dir():
+                    continue
+                try:
+                    mt = entry.stat().st_mtime
+                    if n_mtime is None or mt > n_mtime:
+                        n_mtime = mt
+                        n_path = snapshots_dir / entry.name
+                except OSError:
+                    pass
+        except OSError:
+            pass
+        return n_path
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _sync_find_newest_snapshot)
 
 
 async def _read_first_line_async(path: Path) -> Optional[str]:

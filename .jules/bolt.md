@@ -12,3 +12,7 @@
 ## 2025-04-26 - Asyncio Directory Traversal Bottleneck
 **Learning:** Deep recursive directory traversal using individual `aiofiles` calls (like `aiofiles.os.listdir` or `aiofiles.os.path.is_file`) causes massive context-switching overhead in `asyncio` applications by dispatching thousands of tasks to the default thread pool.
 **Action:** Optimize deep recursive file system traversals by running a single synchronous C-optimized `os.walk` or `os.scandir` inside a back-referenced `loop.run_in_executor()`. This reduces the async task dispatch count from O(N) down to O(1) while keeping the event loop unblocked.
+
+## 2024-05-18 - [Optimize Hugging Face fast cache with os.scandir]
+**Learning:** [In asyncio apps, reading directories with `aiofiles.os.listdir` and then performing individual `aiofiles.os.stat` or `aiofiles.os.path.is_dir` checks for every entry causes massive context-switching overhead because it dispatches thousands of tiny I/O tasks to the default thread pool.]
+**Action:** [Use a single `await asyncio.get_running_loop().run_in_executor()` call wrapping a fast synchronous helper utilizing `os.scandir` to retrieve the directory entries and their stats in a single system call sequence.]
