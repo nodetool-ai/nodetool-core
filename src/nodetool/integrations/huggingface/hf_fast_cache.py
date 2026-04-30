@@ -178,8 +178,6 @@ class HfFastCache:
         rel = _normalize_relpath(relpath)
         candidate = state.snapshot_dir / rel
 
-        # ⚡ Bolt Optimization: Batch exists and islink checks into a single
-        # synchronous os call wrapped in run_in_executor to halve thread pool dispatches
         def _sync_check_exists_and_link() -> tuple[bool, bool]:
             try:
                 return os.path.exists(str(candidate)), os.path.islink(str(candidate))
@@ -623,59 +621,36 @@ async def _mtime_or_none_async(path: Optional[Path]) -> Optional[float]:
     """Return the mtime for a path, or ``None`` on error."""
     if path is None:
         return None
-
-    # ⚡ Bolt Optimization: Use run_in_executor with os.stat directly
-    # to avoid aiofiles.os dispatch overhead
-    def _sync_mtime() -> Optional[float]:
-        try:
-            return os.stat(str(path)).st_mtime
-        except OSError:
-            return None
-
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _sync_mtime)
+    try:
+        stat_result = await aiofiles.os.stat(str(path))
+        return stat_result.st_mtime
+    except OSError:
+        return None
 
 
 async def _exists(path: Optional[Path]) -> bool:
     if path is None:
         return False
-
-    # ⚡ Bolt Optimization: Use run_in_executor with os.path.exists directly
-    # to avoid aiofiles.os dispatch overhead
-    def _sync_exists() -> bool:
-        try:
-            return os.path.exists(str(path))
-        except OSError:
-            return False
-
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _sync_exists)
+    try:
+        return await aiofiles.os.path.exists(str(path))
+    except OSError:
+        return False
 
 
 async def _is_dir(path: Path) -> bool:
-    # ⚡ Bolt Optimization: Use run_in_executor with os.stat directly
-    # to avoid aiofiles.os dispatch overhead
-    def _sync_is_dir() -> bool:
-        try:
-            return stat.S_ISDIR(os.stat(str(path)).st_mode)
-        except OSError:
-            return False
-
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _sync_is_dir)
+    try:
+        st = await aiofiles.os.stat(str(path))
+        return stat.S_ISDIR(st.st_mode)
+    except OSError:
+        return False
 
 
 async def _is_file(path: Path) -> bool:
-    # ⚡ Bolt Optimization: Use run_in_executor with os.stat directly
-    # to avoid aiofiles.os dispatch overhead
-    def _sync_is_file() -> bool:
-        try:
-            return stat.S_ISREG(os.stat(str(path)).st_mode)
-        except OSError:
-            return False
-
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _sync_is_file)
+    try:
+        st = await aiofiles.os.stat(str(path))
+        return stat.S_ISREG(st.st_mode)
+    except OSError:
+        return False
 
 
 async def _rglob_files_async(root: Path) -> list[Path]:
