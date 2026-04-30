@@ -16,3 +16,9 @@
 ## 2024-05-18 - [Optimize Hugging Face fast cache with os.scandir]
 **Learning:** [In asyncio apps, reading directories with `aiofiles.os.listdir` and then performing individual `aiofiles.os.stat` or `aiofiles.os.path.is_dir` checks for every entry causes massive context-switching overhead because it dispatches thousands of tiny I/O tasks to the default thread pool.]
 **Action:** [Use a single `await asyncio.get_running_loop().run_in_executor()` call wrapping a fast synchronous helper utilizing `os.scandir` to retrieve the directory entries and their stats in a single system call sequence.]
+## 2026-04-30 - [Optimize aiofiles.os file operations]
+**Learning:** In asyncio apps, using `aiofiles.os` functions like `stat`, `path.exists`, `path.isdir`, and `path.isfile` dispatches tiny tasks to the default thread pool. When called repeatedly (e.g., during deep file system checks or directory resolution), this causes massive context-switching overhead and can degrade performance significantly compared to synchronous counterparts.
+**Action:** Replace direct `aiofiles.os` calls with their standard synchronous C-optimized `os` equivalents (like `os.stat` or `os.path.exists`) wrapped inside a single `await asyncio.get_running_loop().run_in_executor(None, sync_func, ...)` call. This reduces the number of thread pool dispatches from potentially O(N) to O(1) without blocking the event loop.
+## 2026-04-30 - [Optimize OpenCV video frame sequential read]
+**Learning:** In OpenCV, calling `cap.read()` decodes the frame every time. When skipping frames during a sequential read, decoding every frame causes significant CPU overhead.
+**Action:** Use `cap.grab()` to quickly advance the frame pointer without decoding. Only call `cap.retrieve()` when the frame needs to be processed.
