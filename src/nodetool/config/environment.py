@@ -731,7 +731,7 @@ class Environment:
             return None
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(verify=True) as client:
                 response = await client.get(
                     f"https://api.supabase.com/v1/projects/{project_ref}/connections/uri",
                     headers={"Authorization": f"Bearer {management_token}"},

@@ -298,7 +298,7 @@ async def download_http_uri(uri: str, path: str) -> BytesIO | None:
         BytesIO containing the downloaded data, or None if download failed
     """
     try:
-        async with httpx.AsyncClient(follow_redirects=True) as client:
+        async with httpx.AsyncClient(verify=True, follow_redirects=True) as client:
             response = await client.get(uri)
             response.raise_for_status()
             return BytesIO(response.content)

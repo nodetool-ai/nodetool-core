@@ -136,7 +136,7 @@ async def download_llama_cpp_model(
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    async with httpx.AsyncClient(follow_redirects=True, timeout=None) as client:
+    async with httpx.AsyncClient(verify=True, follow_redirects=True, timeout=None) as client:
         # Get file metadata first
         head_resp = await client.head(hf_url, headers=headers)
         head_resp.raise_for_status()

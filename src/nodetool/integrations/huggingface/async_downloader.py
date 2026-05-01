@@ -417,7 +417,7 @@ async def async_hf_download(
 
     owns_client = client is None
     if client is None:
-        client = httpx.AsyncClient()
+        client = httpx.AsyncClient(verify=True)
 
     try:
         # 1) Build /resolve URL on the Hub

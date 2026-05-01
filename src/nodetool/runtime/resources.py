@@ -125,6 +125,7 @@ class ResourceScope:
         if self._http_client is None:
             # 🛡️ Sentinel: Enforce SSL certificate verification to prevent MITM attacks
             self._http_client = httpx.AsyncClient(
+                verify=True,
                 follow_redirects=True,
                 timeout=600,
                 headers={
