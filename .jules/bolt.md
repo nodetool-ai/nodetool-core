@@ -16,3 +16,6 @@
 ## 2024-05-18 - [Optimize Hugging Face fast cache with os.scandir]
 **Learning:** [In asyncio apps, reading directories with `aiofiles.os.listdir` and then performing individual `aiofiles.os.stat` or `aiofiles.os.path.is_dir` checks for every entry causes massive context-switching overhead because it dispatches thousands of tiny I/O tasks to the default thread pool.]
 **Action:** [Use a single `await asyncio.get_running_loop().run_in_executor()` call wrapping a fast synchronous helper utilizing `os.scandir` to retrieve the directory entries and their stats in a single system call sequence.]
+## 2025-05-02 - [Replace os.listdir with os.scandir for cached fs metadata]
+**Learning:** Using `os.listdir` followed by `os.path.join` and `os.path.isfile` or `os.path.getsize` incurs duplicate system calls. `os.scandir` yields `DirEntry` objects that cache this metadata, significantly speeding up file filtering and inspection logic in Python.
+**Action:** When iterating over a directory and querying file properties (like `is_file()` or `stat().st_size`), default to `os.scandir` instead of `os.listdir`.

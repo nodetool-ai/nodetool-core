@@ -39,10 +39,11 @@ def has_cached_files(repo_id: str) -> bool:
         return False
 
     # Check if any snapshot contains files
-    for revision in os.listdir(snapshots_dir):
-        revision_path = os.path.join(snapshots_dir, revision)
-        if os.path.isdir(revision_path) and any(os.scandir(revision_path)):
-            return True
+    # ⚡ Bolt Optimization: Use os.scandir instead of os.listdir to avoid duplicate stat system calls
+    with os.scandir(snapshots_dir) as entries:
+        for entry in entries:
+            if entry.is_dir() and any(os.scandir(entry.path)):
+                return True
 
     return False
 
