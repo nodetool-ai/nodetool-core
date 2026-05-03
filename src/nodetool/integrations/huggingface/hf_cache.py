@@ -39,7 +39,6 @@ def has_cached_files(repo_id: str) -> bool:
         return False
 
     # Check if any snapshot contains files
-    # ⚡ Bolt Optimization: Use os.scandir instead of os.listdir to avoid duplicate stat system calls
     with os.scandir(snapshots_dir) as entries:
         for entry in entries:
             if entry.is_dir() and any(os.scandir(entry.path)):

@@ -1591,7 +1591,6 @@ def _build_manifest_lookup(cache_dir: str) -> dict[str, tuple[str, str]]:
     import json as _json
 
     lookup: dict[str, tuple[str, str]] = {}
-    # ⚡ Bolt Optimization: Use os.scandir instead of os.listdir to avoid duplicate stat system calls
     with os.scandir(cache_dir) as entries:
         for entry in entries:
             if not entry.name.startswith("manifest=") or not entry.name.endswith(".json"):
@@ -1683,7 +1682,6 @@ async def get_llama_cpp_models_from_cache() -> list[UnifiedModel]:
     manifest_lookup = _build_manifest_lookup(cache_dir)
     models: list[UnifiedModel] = []
 
-    # ⚡ Bolt Optimization: Use os.scandir instead of os.listdir to avoid duplicate stat system calls
     with os.scandir(cache_dir) as entries:
         for entry in entries:
             if not entry.name.lower().endswith(".gguf"):
@@ -1740,7 +1738,6 @@ async def get_llamacpp_language_models_from_llama_cache() -> list[LanguageModel]
     manifest_lookup = _build_manifest_lookup(cache_dir)
     results: list[LanguageModel] = []
 
-    # ⚡ Bolt Optimization: Use os.scandir instead of os.listdir to avoid duplicate stat system calls
     with os.scandir(cache_dir) as entries:
         for entry in entries:
             if not entry.name.lower().endswith(".gguf"):
