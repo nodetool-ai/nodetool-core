@@ -421,7 +421,6 @@ def _legacy_read_video_frames(
             # Fallback to sequential read
             count = 0
             while True:
-                # ⚡ Bolt Optimization: Use cap.grab() to advance frame pointer without decoding, and cap.retrieve() only when necessary.
                 ret = cap.grab()
                 if not ret:
                     break

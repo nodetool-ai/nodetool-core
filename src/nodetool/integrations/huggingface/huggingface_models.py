@@ -52,11 +52,14 @@ from nodetool.metadata.types import (
 )
 from nodetool.security.secret_helper import get_secret
 from nodetool.types.model import UnifiedModel
+
 try:
     from nodetool.workflows.recommended_models import get_recommended_models
 except ImportError:
+
     def get_recommended_models():
         return {}
+
 
 # Extensions that identify repo-root single-file diffusion checkpoints we surface directly.
 SINGLE_FILE_DIFFUSION_EXTENSIONS = (
@@ -1588,20 +1591,20 @@ def _build_manifest_lookup(cache_dir: str) -> dict[str, tuple[str, str]]:
     import json as _json
 
     lookup: dict[str, tuple[str, str]] = {}
-    for entry in os.listdir(cache_dir):
-        if not entry.startswith("manifest=") or not entry.endswith(".json"):
-            continue
-        try:
-            path = os.path.join(cache_dir, entry)
-            with open(path) as f:
-                manifest = _json.load(f)
-            repo_id = manifest.get("metadata", {}).get("repo_id", "")
-            rfilename = manifest.get("ggufFile", {}).get("rfilename", "")
-            if repo_id and rfilename:
-                flat_name = f"{repo_id.replace('/', '_')}_{rfilename}"
-                lookup[flat_name] = (repo_id, rfilename)
-        except (ValueError, OSError):
-            continue
+    with os.scandir(cache_dir) as entries:
+        for entry in entries:
+            if not entry.name.startswith("manifest=") or not entry.name.endswith(".json"):
+                continue
+            try:
+                with open(entry.path) as f:
+                    manifest = _json.load(f)
+                repo_id = manifest.get("metadata", {}).get("repo_id", "")
+                rfilename = manifest.get("ggufFile", {}).get("rfilename", "")
+                if repo_id and rfilename:
+                    flat_name = f"{repo_id.replace('/', '_')}_{rfilename}"
+                    lookup[flat_name] = (repo_id, rfilename)
+            except (ValueError, OSError):
+                continue
     return lookup
 
 
@@ -1679,35 +1682,34 @@ async def get_llama_cpp_models_from_cache() -> list[UnifiedModel]:
     manifest_lookup = _build_manifest_lookup(cache_dir)
     models: list[UnifiedModel] = []
 
-    for entry in os.listdir(cache_dir):
-        if not entry.lower().endswith(".gguf"):
-            continue
-        if entry.endswith(".etag"):
-            continue
+    with os.scandir(cache_dir) as entries:
+        for entry in entries:
+            if not entry.name.lower().endswith(".gguf"):
+                continue
+            if entry.name.endswith(".etag"):
+                continue
+            if not entry.is_file():
+                continue
 
-        file_path = os.path.join(cache_dir, entry)
-        if not os.path.isfile(file_path):
-            continue
+            repo_id, repo, filename = _parse_gguf_flat_filename(entry.name, manifest_lookup)
 
-        repo_id, repo, filename = _parse_gguf_flat_filename(entry, manifest_lookup)
+            try:
+                size = entry.stat().st_size
+            except OSError:
+                size = 0
 
-        try:
-            size = os.path.getsize(file_path)
-        except OSError:
-            size = 0
-
-        models.append(
-            UnifiedModel(
-                id=f"{repo_id}:{filename}" if repo_id else filename,
-                type="llama_cpp_model",
-                name=f"{repo.replace('-', ' ').title()} • {filename}" if repo_id else filename,
-                repo_id=repo_id,
-                path=filename,
-                cache_path=file_path,
-                size_on_disk=size,
-                downloaded=True,
+            models.append(
+                UnifiedModel(
+                    id=f"{repo_id}:{filename}" if repo_id else filename,
+                    type="llama_cpp_model",
+                    name=f"{repo.replace('-', ' ').title()} • {filename}" if repo_id else filename,
+                    repo_id=repo_id,
+                    path=filename,
+                    cache_path=entry.path,
+                    size_on_disk=size,
+                    downloaded=True,
+                )
             )
-        )
 
     # Sort for stability
     models.sort(key=lambda m: (m.repo_id or "", m.path or ""))
@@ -1735,32 +1737,31 @@ async def get_llamacpp_language_models_from_llama_cache() -> list[LanguageModel]
     manifest_lookup = _build_manifest_lookup(cache_dir)
     results: list[LanguageModel] = []
 
-    for entry in os.listdir(cache_dir):
-        if not entry.lower().endswith(".gguf"):
-            continue
-        if entry.endswith(".etag"):
-            continue
+    with os.scandir(cache_dir) as entries:
+        for entry in entries:
+            if not entry.name.lower().endswith(".gguf"):
+                continue
+            if entry.name.endswith(".etag"):
+                continue
+            if not entry.is_file():
+                continue
 
-        file_path = os.path.join(cache_dir, entry)
-        if not os.path.isfile(file_path):
-            continue
+            repo_id, repo, filename = _parse_gguf_flat_filename(entry.name, manifest_lookup)
 
-        repo_id, repo, filename = _parse_gguf_flat_filename(entry, manifest_lookup)
+            # When we cannot recover a repo_id from manifest/filename, use the
+            # absolute cache path as the model id so llama-server can load it
+            # reliably via `-m <path>` regardless of current working directory.
+            model_id = f"{repo_id}:{filename}" if repo_id else entry.path
+            display = f"{repo.replace('-', ' ').title()} • {filename}" if repo_id else filename
 
-        # When we cannot recover a repo_id from manifest/filename, use the
-        # absolute cache path as the model id so llama-server can load it
-        # reliably via `-m <path>` regardless of current working directory.
-        model_id = f"{repo_id}:{filename}" if repo_id else file_path
-        display = f"{repo.replace('-', ' ').title()} • {filename}" if repo_id else filename
-
-        results.append(
-            LanguageModel(
-                id=model_id,
-                name=display,
-                path=filename if repo_id else file_path,
-                provider=Provider.LlamaCpp,
+            results.append(
+                LanguageModel(
+                    id=model_id,
+                    name=display,
+                    path=filename if repo_id else entry.path,
+                    provider=Provider.LlamaCpp,
+                )
             )
-        )
 
     results.sort(key=lambda m: (m.id.split(":", 1)[0], m.id))
     return results
