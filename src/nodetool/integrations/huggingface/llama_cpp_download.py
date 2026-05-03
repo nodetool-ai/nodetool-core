@@ -17,13 +17,12 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 import aiofiles
 import httpx
-
-import sys
 
 from nodetool.config.logging_config import get_logger
 
@@ -37,6 +36,7 @@ def get_llama_cpp_cache_dir() -> str:
         return os.path.join(local_app_data, "llama.cpp")
     else:
         return os.path.expanduser("~/.cache/llama.cpp")
+
 
 if TYPE_CHECKING:
     from typing import Callable
