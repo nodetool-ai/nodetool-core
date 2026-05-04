@@ -30,7 +30,7 @@ dependencies = [
     "tqdm>=4.67.0",
 
     # Media processing (used by nodes via ProcessingContext)
-    "pillow < 11.0.0",
+    "pillow < 13.0.0",
     "numpy>=2.0.0,<2.4",
 
     # HuggingFace integration (used by HF nodes)
