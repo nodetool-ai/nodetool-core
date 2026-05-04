@@ -14,11 +14,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
 if TYPE_CHECKING:
-
     from nodetool.integrations.huggingface.safetensors_inspector import (
         DetectionResult as STFDetectionResult,
     )
-
 
 
 @dataclass
@@ -45,6 +43,7 @@ def inspect_paths(paths: Sequence[str | Path]) -> ArtifactDetection | None:
         from nodetool.integrations.huggingface.safetensors_inspector import (
             detect_model as detect_safetensors_model,
         )
+
         res = _wrap_stf(detect_safetensors_model(safetensors, framework="np", max_shape_reads=6))
 
         if res:
