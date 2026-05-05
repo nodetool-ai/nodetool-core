@@ -12,7 +12,7 @@ aioresponses>=0.7.8
 aiosqlite>=0.20.0
 
 # Linting and formatting
-black>=24.10.0
+black>=26.3.1
 flake8>=7.3.0
 mypy>=1.9.0
 ruff>=0.3.4
