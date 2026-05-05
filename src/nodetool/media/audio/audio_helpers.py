@@ -135,7 +135,9 @@ def remove_silence(
     if len(nonsilent_ranges) == 0:
         return AudioSegment.silent(duration=0)
 
-    result = AudioSegment.empty()
+    # ⚡ Bolt Optimization: Avoid O(N^2) behavior when iteratively appending AudioSegments
+    # by collecting all segments into a list and using a divide-and-conquer merge approach.
+    segments = []
     prev_end = 0
 
     for start, end in nonsilent_ranges:
@@ -144,21 +146,11 @@ def remove_silence(
         if silence_duration > 0:
             reduced_silence = max(silence_duration * (1 - reduction_factor), min_silence_between_parts)
             silence_segment = audio[prev_end : prev_end + int(reduced_silence)]
-            silence_segment = cast("AudioSegment", silence_segment)
-
-            if len(result) > 0:
-                result = result.append(silence_segment, crossfade=min(crossfade, len(silence_segment)))
-            else:
-                result += silence_segment
+            segments.append(cast("AudioSegment", silence_segment))
 
         # Add the non-silent part
         non_silent_segment = audio[start:end]
-        non_silent_segment = cast("AudioSegment", non_silent_segment)
-        if len(result) > 0:
-            result = result.append(non_silent_segment, crossfade=min(crossfade, len(non_silent_segment)))
-        else:
-            result += non_silent_segment
-
+        segments.append(cast("AudioSegment", non_silent_segment))
         prev_end = end
 
     # Process any silence at the end
@@ -166,10 +158,23 @@ def remove_silence(
         silence_duration = len(audio) - prev_end
         reduced_silence = max(silence_duration * (1 - reduction_factor), min_silence_between_parts)
         final_silence = audio[prev_end : prev_end + int(reduced_silence)]
-        final_silence = cast("AudioSegment", final_silence)
-        result = result.append(final_silence, crossfade=min(crossfade, len(final_silence)))
+        segments.append(cast("AudioSegment", final_silence))
 
-    return result
+    if not segments:
+        return AudioSegment.empty()
+
+    def _merge_segments(segs: list[AudioSegment]) -> AudioSegment:
+        if len(segs) == 1:
+            return segs[0]
+        if len(segs) == 2:
+            left, right = segs[0], segs[1]
+            return left.append(right, crossfade=min(crossfade, len(left), len(right)))
+        mid = len(segs) // 2
+        left = _merge_segments(segs[:mid])
+        right = _merge_segments(segs[mid:])
+        return left.append(right, crossfade=min(crossfade, len(left), len(right)))
+
+    return _merge_segments(segments)
 
 
 def segment_audio(audio: AudioSegment) -> list[AudioSegment]:
