@@ -97,11 +97,19 @@ def concatenate_audios(audios: list[AudioSegment]) -> AudioSegment:
         raw_data = b"".join([a._data for a in audios])
         return first_audio._spawn(raw_data)
 
-    # Fallback to slow concatenation if properties differ
-    concatenated_audio = AudioSegment.empty()
-    for audio in audios:
-        concatenated_audio += audio
-    return concatenated_audio
+    # ⚡ Bolt Optimization: Use divide-and-conquer to avoid O(N^2) byte-copying
+    # performance penalties when concatenating many AudioSegments with differing properties.
+    def _merge_segments(segs: list[AudioSegment]) -> AudioSegment:
+        if not segs:
+            return AudioSegment.empty()
+        if len(segs) == 1:
+            return segs[0]
+        if len(segs) == 2:
+            return segs[0] + segs[1]
+        mid = len(segs) // 2
+        return _merge_segments(segs[:mid]) + _merge_segments(segs[mid:])
+
+    return _merge_segments(audios)
 
 
 def remove_silence(
