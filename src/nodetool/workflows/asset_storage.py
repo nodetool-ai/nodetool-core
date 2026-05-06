@@ -309,17 +309,20 @@ async def download_http_uri(uri: str, path: str) -> BytesIO | None:
         return None
 
 
-def read_file_uri(uri: str, path: str) -> BytesIO | None:
+def read_file_uri(uri: str, path: str, workspace_dir: str | None = None) -> BytesIO | None:
     """Read content from a file:// URI.
 
     Args:
         uri: The file:// URI to read
         path: Path in the result hierarchy (for logging)
+        workspace_dir: The workspace directory for resolving relative paths and enforcing boundaries
 
     Returns:
         BytesIO containing the file data, or None if read failed
     """
     try:
+        from nodetool.io.path_utils import resolve_workspace_path
+
         parsed = urlparse(uri)
         raw_netloc = unquote(parsed.netloc or "")
         raw_path = unquote(parsed.path or "")
@@ -339,9 +342,12 @@ def read_file_uri(uri: str, path: str) -> BytesIO | None:
         if len(file_path) >= 3 and file_path[0] == "/" and file_path[2] == ":":
             file_path = file_path[1:]
 
-        with open(file_path, "rb") as f:
+        # 🛡️ Sentinel: Enforce workspace boundary to prevent path traversal/LFI
+        safe_file_path = resolve_workspace_path(workspace_dir, file_path)
+
+        with open(safe_file_path, "rb") as f:
             return BytesIO(f.read())
-    except OSError as file_err:
+    except (OSError, PermissionError, ValueError) as file_err:
         logger.warning("Failed to read file from %s at %s: %s", uri, path, file_err)
         return None
 
@@ -367,7 +373,7 @@ def decode_data_uri(uri: str, path: str) -> BytesIO | None:
 
 
 async def resolve_asset_content(
-    asset_ref: AssetRef, path: str
+    asset_ref: AssetRef, path: str, workspace_dir: str | None = None
 ) -> BytesIO | None:
     """Resolve asset content from data or URI.
 
@@ -381,6 +387,7 @@ async def resolve_asset_content(
     Args:
         asset_ref: The asset reference to resolve
         path: Path in the result hierarchy (for logging)
+        workspace_dir: Workspace directory for resolving local files safely
 
     Returns:
         BytesIO containing the asset data, or None if resolution failed
@@ -400,7 +407,7 @@ async def resolve_asset_content(
     elif uri.startswith("http://") or uri.startswith("https://"):
         return await download_http_uri(uri, path)
     elif uri.startswith("file://"):
-        return read_file_uri(uri, path)
+        return read_file_uri(uri, path, workspace_dir=workspace_dir)
     elif uri.startswith("data:"):
         return decode_data_uri(uri, path)
     else:
@@ -467,7 +474,9 @@ async def auto_save_assets(
 
             # Get content type and resolve content
             content_type = get_content_type_for_asset_ref(asset_ref)
-            content = await resolve_asset_content(asset_ref, path)
+            content = await resolve_asset_content(
+                asset_ref, path, workspace_dir=context.workspace_dir
+            )
 
             if content is None:
                 continue

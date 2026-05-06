@@ -207,18 +207,19 @@ class TestReadFileUri:
         """Test reading a file:// URI."""
         test_file = tmp_path / "test.txt"
         test_file.write_bytes(b"file content")
-        uri = f"file://{test_file}"
+        # Use workspace-relative path
+        uri = f"file:///workspace/test.txt"
 
-        result = read_file_uri(uri, "test.path")
+        result = read_file_uri(uri, "test.path", workspace_dir=str(tmp_path))
 
         assert result is not None
         assert result.getvalue() == b"file content"
 
-    def test_read_nonexistent_file(self):
+    def test_read_nonexistent_file(self, tmp_path):
         """Test reading a non-existent file."""
-        uri = "file:///nonexistent/path/to/file.txt"
+        uri = f"file:///workspace/nonexistent/path/to/file.txt"
 
-        result = read_file_uri(uri, "test.path")
+        result = read_file_uri(uri, "test.path", workspace_dir=str(tmp_path))
 
         assert result is None
 
@@ -226,9 +227,9 @@ class TestReadFileUri:
         """Test reading a file with URL-encoded path."""
         test_file = tmp_path / "test file.txt"
         test_file.write_bytes(b"content with spaces")
-        uri = f"file://{str(test_file).replace(' ', '%20')}"
+        uri = f"file:///workspace/test%20file.txt"
 
-        result = read_file_uri(uri, "test.path")
+        result = read_file_uri(uri, "test.path", workspace_dir=str(tmp_path))
 
         assert result is not None
         assert result.getvalue() == b"content with spaces"
@@ -309,9 +310,9 @@ class TestResolveAssetContent:
         """Test resolving asset with file: URI."""
         test_file = tmp_path / "test.png"
         test_file.write_bytes(b"file content")
-        asset = ImageRef(uri=f"file://{test_file}")
+        asset = ImageRef(uri="file:///workspace/test.png")
 
-        result = await resolve_asset_content(asset, "test.path")
+        result = await resolve_asset_content(asset, "test.path", workspace_dir=str(tmp_path))
 
         assert result is not None
         assert result.getvalue() == b"file content"
