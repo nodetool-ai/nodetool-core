@@ -10,7 +10,18 @@ class FileStorage(AbstractStorage):
         self.base_path.mkdir(parents=True, exist_ok=True)
 
     def _path(self, key: str) -> Path:
-        return self.base_path / key
+        # Prevent absolute path injection by stripping leading slash
+        clean_key = key.lstrip("/")
+
+        # Resolve to absolute paths
+        abs_base_path = self.base_path.resolve()
+        abs_target_path = (abs_base_path / clean_key).resolve()
+
+        # Verify the target path is inside the base path
+        if not abs_target_path.is_relative_to(abs_base_path):
+            raise ValueError("Path traversal attempt detected")
+
+        return abs_target_path
 
     async def upload(self, key: str, data: IO) -> None:
         path = self._path(key)

@@ -31,3 +31,7 @@
 **Vulnerability:** The `read_file_uri` function naively opened arbitrary user-supplied file paths derived from `file://` URIs without validating them against the designated workspace boundary, risking Local File Inclusion (LFI).
 **Learning:** Even internal mechanisms like asset auto-saving can become attack vectors if they resolve user-supplied `file://` URIs without path sanitization.
 **Prevention:** Always pipe file paths derived from user inputs or untrusted URIs through the standard workspace resolution utility (e.g., `resolve_workspace_path`) before accessing the disk.
+## 2024-05-08 - Fix path traversal in FileStorage
+**Vulnerability:** The `FileStorage` class in `src/nodetool/storage/file_storage.py` allowed path traversal via `self.base_path / key`. Using absolute paths (e.g. `/etc/passwd`) or directory traversal (e.g. `../../../file`) allowed unauthorized reads/writes outside the `base_path`.
+**Learning:** Combining a base `pathlib.Path` with an untrusted `key` without stripping leading slashes or resolving to absolute paths to verify boundaries permits out-of-bounds filesystem access. If the second operand of `/` is an absolute path, `pathlib` discards the first operand.
+**Prevention:** Always strip leading slashes from untrusted keys before concatenating them with a base path. Resolve both the base path and the final target path to their absolute representations and verify that the target path is a subpath of the base path (e.g. using `target.is_relative_to(base)`).
