@@ -22,3 +22,7 @@
 ## 2025-02-28 - pydub AudioSegment Concatenation Bottlenecks
 **Learning:** Iteratively appending `AudioSegment` objects in `pydub` using `.append()` or `+=` creates a massive $O(N^2)$ byte-copying bottleneck, especially when crossfades are involved, because each operation creates a brand new `AudioSegment` and recursively copies all bytes. In a test with 2000 segments, iterative appending took 62 seconds, while a divide-and-conquer approach took 2.9 seconds.
 **Action:** When concatenating a large list of `AudioSegment` objects that require crossfading, always collect the segments into a list and use a recursive divide-and-conquer merge function. If no crossfading is needed and segments share identical properties, join their raw `_data` bytes instead.
+
+## 2026-05-10 - pydub AudioSegment get_array_of_samples() Bottlenecks
+**Learning:** `AudioSegment.get_array_of_samples()` creates a massive performance and memory bottleneck by constructing an intermediate Python `array.array` object which is extremely slow and memory intensive, especially for longer audio segments. When creating numpy arrays from an `AudioSegment`, using `np.array(segment.get_array_of_samples())` creates duplicate parsing work.
+**Action:** Always use `np.frombuffer(segment.raw_data, dtype=...)` to create a direct zero-copy view over the underlying audio bytes. Ensure the numpy dtype exactly matches the segment's `sample_width` (e.g., `{1: np.int8, 2: np.int16, 4: np.int32}`). If a mutable array is strictly required immediately, add `.copy()`.

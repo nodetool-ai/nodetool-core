@@ -201,7 +201,13 @@ def _audio_segment_to_numpy(
     segment = segment.set_frame_rate(sample_rate)
     if mono and segment.channels > 1:
         segment = segment.set_channels(1)
-    samples = np.array(segment.get_array_of_samples())
+
+    # ⚡ Bolt Optimization: Use np.frombuffer directly on raw_data to avoid
+    # the massive memory/CPU overhead of get_array_of_samples() intermediate object
+    dtype_map = {1: np.int8, 2: np.int16, 4: np.int32}
+    dtype = dtype_map.get(segment.sample_width, np.int16)
+    samples = np.frombuffer(segment.raw_data, dtype=dtype)
+
     max_value = float(2 ** (8 * segment.sample_width - 1))
     samples = samples.astype(np.float32) / max_value
     return samples, segment.frame_rate, segment.channels
