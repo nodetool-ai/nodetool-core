@@ -311,6 +311,8 @@ def convert_audio_to_standard_format(audio_bytes: bytes, target_sample_rate: int
         audio = audio.set_sample_width(2)
 
     # Convert to numpy array (int16)
-    samples = np.array(audio.get_array_of_samples(), dtype=np.int16)
+    # ⚡ Bolt Optimization: Use np.frombuffer directly on raw_data to avoid
+    # the massive memory/CPU overhead of get_array_of_samples() intermediate object
+    samples = np.frombuffer(audio.raw_data, dtype=np.int16).copy()
 
     return samples
