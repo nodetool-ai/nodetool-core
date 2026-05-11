@@ -169,7 +169,7 @@ def _get_cache_filename(font_name: str, weight: str, url: str = "") -> str:
         # For URL-based fonts, use a hash of the URL
         from urllib.parse import urlsplit
 
-        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+        url_hash = hashlib.sha256(url.encode()).hexdigest()[:8]
         url_path = urlsplit(url).path
         extension = Path(url_path).suffix.lower()
         if extension not in {".ttf", ".otf"}:
