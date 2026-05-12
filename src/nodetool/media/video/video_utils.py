@@ -55,7 +55,8 @@ def _legacy_export_to_video(
 
     for frame in video_frames:
         if isinstance(frame, PIL.Image.Image):
-            frame = np.array(frame)
+            # ⚡ Bolt Optimization: Use np.asarray() instead of np.array() to avoid unnecessary byte-copying
+            frame = np.asarray(frame)
 
         # Convert to uint8 if needed (assume float 0..1 if not uint8)
         if frame.dtype != np.uint8:
@@ -136,7 +137,8 @@ def export_to_video(
     ) as writer:
         for frame in video_frames:
             if isinstance(frame, PIL.Image.Image):
-                frame = np.array(frame)
+                # ⚡ Bolt Optimization: Use np.asarray() instead of np.array() to avoid unnecessary byte-copying
+                frame = np.asarray(frame)
 
             # Convert to uint8 if needed (assume float 0..1 if not uint8)
             if frame.dtype != np.uint8:
@@ -213,7 +215,8 @@ def export_to_video_bytes(
     ) as writer:
         for frame in video_frames:
             if isinstance(frame, PIL.Image.Image):
-                frame = np.array(frame)
+                # ⚡ Bolt Optimization: Use np.asarray() instead of np.array() to avoid unnecessary byte-copying
+                frame = np.asarray(frame)
 
             # Convert to uint8 if needed (assume float 0..1 if not uint8)
             if frame.dtype != np.uint8:
@@ -257,7 +260,8 @@ def _legacy_export_to_video_bytes(
 
         for frame in video_frames:
             if isinstance(frame, PIL.Image.Image):
-                frame = np.array(frame)
+                # ⚡ Bolt Optimization: Use np.asarray() instead of np.array() to avoid unnecessary byte-copying
+                frame = np.asarray(frame)
 
             # Convert to uint8 if needed (assume float 0..1 if not uint8)
             if frame.dtype != np.uint8:
