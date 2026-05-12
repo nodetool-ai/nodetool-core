@@ -35,3 +35,8 @@
 **Vulnerability:** The `FileStorage` class in `src/nodetool/storage/file_storage.py` allowed path traversal via `self.base_path / key`. Using absolute paths (e.g. `/etc/passwd`) or directory traversal (e.g. `../../../file`) allowed unauthorized reads/writes outside the `base_path`.
 **Learning:** Combining a base `pathlib.Path` with an untrusted `key` without stripping leading slashes or resolving to absolute paths to verify boundaries permits out-of-bounds filesystem access. If the second operand of `/` is an absolute path, `pathlib` discards the first operand.
 **Prevention:** Always strip leading slashes from untrusted keys before concatenating them with a base path. Resolve both the base path and the final target path to their absolute representations and verify that the target path is a subpath of the base path (e.g. using `target.is_relative_to(base)`).
+
+## $(date +%Y-%m-%d) - [Replace insecure MD5 with SHA256 for non-cryptographic hashing]
+**Vulnerability:** The `src/nodetool/media/image/web_font_utils.py` file was using `hashlib.md5()` to generate a cache filename from a URL.
+**Learning:** Even though the hash was used non-cryptographically (just for cache filenames) and truncated to 8 characters, automated security tools and linters universally flag MD5 usage as a vulnerability. The repository enforces a policy of using SHA-256 for all hashing operations to maintain a consistent security standard.
+**Prevention:** Always use `hashlib.sha256()` instead of `hashlib.md5()`, even for non-cryptographic purposes like caching, to prevent security linters from flagging the code and to adhere to modern cryptographic standards.
