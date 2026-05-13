@@ -40,3 +40,8 @@
 **Vulnerability:** The `src/nodetool/media/image/web_font_utils.py` file was using `hashlib.md5()` to generate a cache filename from a URL.
 **Learning:** Even though the hash was used non-cryptographically (just for cache filenames) and truncated to 8 characters, automated security tools and linters universally flag MD5 usage as a vulnerability. The repository enforces a policy of using SHA-256 for all hashing operations to maintain a consistent security standard.
 **Prevention:** Always use `hashlib.sha256()` instead of `hashlib.md5()`, even for non-cryptographic purposes like caching, to prevent security linters from flagging the code and to adhere to modern cryptographic standards.
+
+## 2024-05-12 - [CRITICAL] Fix insecure deserialization in joblib load
+**Vulnerability:** In `src/nodetool/workflows/processing_offload.py`, the function `_joblib_load_from_io` verified the data stream using a restricted `SafeUnpickler` but then immediately discarded its result. It subsequently read from the exact same stream using the unsafe default `joblib.load()`, rendering the safety check useless and allowing arbitrary code execution during pickling.
+**Learning:** Security checks that parse data but discard their safe results in favor of re-evaluating the raw data with unsafe functions create a false sense of security (a form of TOCTOU or check-bypass vulnerability).
+**Prevention:** Always directly return or use the object resulting from the safe parser or unpickler instead of relying on a secondary, un-restricted loading mechanism.

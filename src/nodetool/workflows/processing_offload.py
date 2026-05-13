@@ -214,7 +214,7 @@ def _audio_segment_to_numpy(
 
 
 def _joblib_load_from_io(buffer: IO[bytes]) -> Any:
-    joblib = _ensure_joblib()
+    _ensure_joblib()
     from joblib.numpy_pickle import NumpyUnpickler
     from joblib.numpy_pickle_utils import _validate_fileobject_and_memmap
 
@@ -266,13 +266,9 @@ def _joblib_load_from_io(buffer: IO[bytes]) -> Any:
             # Signature: (filename, file_handle, ensure_native_byte_order, mmap_mode=None)
             # Pass empty string as filename if reading from buffer (similar to joblib.load)
             unpickler = SafeUnpickler("", fobj, ensure_native_byte_order=True)
-            unpickler.load()
+            return unpickler.load()
     except Exception as e:
         raise ValueError(f"Unsafe or invalid model data: {e}") from e
-
-    with suppress(Exception):
-        buffer.seek(0)
-    return joblib.load(buffer)
 
 
 def _joblib_dump_to_bytes(estimator: Any) -> bytes:
