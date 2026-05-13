@@ -208,7 +208,7 @@ class TestReadFileUri:
         test_file = tmp_path / "test.txt"
         test_file.write_bytes(b"file content")
         # Use workspace-relative path
-        uri = f"file:///workspace/test.txt"
+        uri = "file:///workspace/test.txt"
 
         result = read_file_uri(uri, "test.path", workspace_dir=str(tmp_path))
 
@@ -217,7 +217,7 @@ class TestReadFileUri:
 
     def test_read_nonexistent_file(self, tmp_path):
         """Test reading a non-existent file."""
-        uri = f"file:///workspace/nonexistent/path/to/file.txt"
+        uri = "file:///workspace/nonexistent/path/to/file.txt"
 
         result = read_file_uri(uri, "test.path", workspace_dir=str(tmp_path))
 
@@ -227,7 +227,7 @@ class TestReadFileUri:
         """Test reading a file with URL-encoded path."""
         test_file = tmp_path / "test file.txt"
         test_file.write_bytes(b"content with spaces")
-        uri = f"file:///workspace/test%20file.txt"
+        uri = "file:///workspace/test%20file.txt"
 
         result = read_file_uri(uri, "test.path", workspace_dir=str(tmp_path))
 
@@ -241,19 +241,22 @@ class TestDownloadHttpUri:
     @pytest.mark.asyncio
     async def test_download_http_success(self):
         """Test successful HTTP download."""
-        import httpx
+        import aiohttp
 
-        mock_response = MagicMock()
-        mock_response.content = b"downloaded content"
+        mock_response = AsyncMock()
+        mock_response.read = AsyncMock(return_value=b"downloaded content")
         mock_response.raise_for_status = MagicMock()
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client = MagicMock()
+        mock_get_context = AsyncMock()
+        mock_get_context.__aenter__.return_value = mock_response
+        mock_client.get.return_value = mock_get_context
 
-        with patch.object(httpx, "AsyncClient") as mock_async_client:
-            mock_async_client.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_async_client.return_value.__aexit__ = AsyncMock(return_value=None)
+        # Make the mock_client itself an async context manager
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
 
+        with patch("aiohttp.ClientSession", return_value=mock_client):
             result = await download_http_uri("http://example.com/file.png", "test.path")
 
             assert result is not None
@@ -262,22 +265,27 @@ class TestDownloadHttpUri:
     @pytest.mark.asyncio
     async def test_download_http_failure(self):
         """Test HTTP download failure."""
-        import httpx
+        import aiohttp
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=httpx.HTTPStatusError(
-            "Not Found",
-            request=MagicMock(),
-            response=MagicMock(status_code=404)
-        ))
+        mock_client = MagicMock()
+        # Mock the context manager to raise an exception when entered
+        mock_get_context = AsyncMock()
+        mock_get_context.__aenter__.side_effect = aiohttp.ClientError("Not Found")
+        mock_client.get.return_value = mock_get_context
 
-        with patch.object(httpx, "AsyncClient") as mock_async_client:
-            mock_async_client.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_async_client.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
 
+        with patch("aiohttp.ClientSession", return_value=mock_client):
             result = await download_http_uri("http://example.com/file.png", "test.path")
 
             assert result is None
+
+    @pytest.mark.asyncio
+    async def test_download_http_ssrf_protection(self):
+        """Test HTTP download explicitly blocks private/loopback IPs."""
+        result = await download_http_uri("http://127.0.0.1/test.png", "test.path")
+        assert result is None
 
 
 class TestResolveAssetContent:
