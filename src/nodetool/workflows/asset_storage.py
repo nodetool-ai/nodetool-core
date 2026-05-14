@@ -16,9 +16,10 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname
 
-import httpx
+import aiohttp
 
 from nodetool.metadata.types import AssetRef
+from nodetool.utils.network import SSRFProtectResolver, is_ip_private
 
 if TYPE_CHECKING:
     from nodetool.workflows.base_node import BaseNode
@@ -278,9 +279,7 @@ def resolve_memory_uri(asset_ref: AssetRef, path: str) -> BytesIO | None:
         if data_bytes:
             return BytesIO(data_bytes)
         else:
-            logger.warning(
-                "Could not convert memory object to bytes for asset at %s", path
-            )
+            logger.warning("Could not convert memory object to bytes for asset at %s", path)
             return None
     else:
         logger.warning("Memory URI not found in cache for asset at %s", path)
@@ -297,15 +296,19 @@ async def download_http_uri(uri: str, path: str) -> BytesIO | None:
     Returns:
         BytesIO containing the downloaded data, or None if download failed
     """
+    parsed = urlparse(uri)
+    if parsed.hostname and is_ip_private(parsed.hostname):
+        logger.warning("Access to private/restricted IP blocked: %s at %s", parsed.hostname, path)
+        return None
+
     try:
-        async with httpx.AsyncClient(verify=True, follow_redirects=True) as client:
-            response = await client.get(uri)
+        connector = aiohttp.TCPConnector(resolver=SSRFProtectResolver())
+        async with aiohttp.ClientSession(connector=connector) as session, session.get(uri) as response:
             response.raise_for_status()
-            return BytesIO(response.content)
-    except httpx.HTTPError as http_err:
-        logger.warning(
-            "Failed to download asset from URL %s at %s: %s", uri, path, http_err
-        )
+            data = await response.read()
+            return BytesIO(data)
+    except aiohttp.ClientError as http_err:
+        logger.warning("Failed to download asset from URL %s at %s: %s", uri, path, http_err)
         return None
 
 
@@ -372,9 +375,7 @@ def decode_data_uri(uri: str, path: str) -> BytesIO | None:
         return None
 
 
-async def resolve_asset_content(
-    asset_ref: AssetRef, path: str, workspace_dir: str | None = None
-) -> BytesIO | None:
+async def resolve_asset_content(asset_ref: AssetRef, path: str, workspace_dir: str | None = None) -> BytesIO | None:
     """Resolve asset content from data or URI.
 
     Supports:
@@ -474,9 +475,7 @@ async def auto_save_assets(
 
             # Get content type and resolve content
             content_type = get_content_type_for_asset_ref(asset_ref)
-            content = await resolve_asset_content(
-                asset_ref, path, workspace_dir=context.workspace_dir
-            )
+            content = await resolve_asset_content(asset_ref, path, workspace_dir=context.workspace_dir)
 
             if content is None:
                 continue
