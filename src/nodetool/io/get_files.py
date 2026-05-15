@@ -47,11 +47,13 @@ def get_content(
         str: The concatenated content of all the files found.
     """
     extensions = extensions or [".py", ".js", ".ts", ".jsx", ".tsx", ".md"]
-    content = ""
+
+    # ⚡ Bolt Optimization: Use list for O(N) string concatenation instead of O(N^2) using `+=`
+    parts = []
     for path in paths:
         for file in get_files(path, extensions):
-            content += "\n\n"
-            content += f"## {file}\n\n"
+            parts.append("\n\n")
+            parts.append(f"## {file}\n\n")
             with open(file, encoding="utf-8") as f:
-                content += f.read()
-    return content
+                parts.append(f.read())
+    return "".join(parts)
