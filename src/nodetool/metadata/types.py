@@ -1493,14 +1493,13 @@ class Task(BaseType):
 
     def to_markdown(self) -> str:
         """Converts task and steps to markdown format with headings and checkboxes."""
-        lines = f"# Task: {self.title}\n"
-        lines += f"Description: {self.description}\n"
+        parts = [f"# Task: {self.title}\n", f"Description: {self.description}\n"]
         if self.description:
-            lines += f"{self.description}\n"
+            parts.append(f"{self.description}\n")
         if self.steps:
             for step in self.steps:
-                lines += f"{step.to_markdown()}\n"
-        return lines
+                parts.append(f"{step.to_markdown()}\n")
+        return "".join(parts)
 
 
 class TaskPlan(BaseType):
@@ -1517,10 +1516,10 @@ class TaskPlan(BaseType):
 
     def to_markdown(self) -> str:
         """Convert all tasks to a markdown string."""
-        lines = f"# Task Plan - {self.title}\n"
+        parts = [f"# Task Plan - {self.title}\n"]
         for task in self.tasks:
-            lines += f"{task.to_markdown()}\n"
-        return lines
+            parts.append(f"{task.to_markdown()}\n")
+        return "".join(parts)
 
 
 class TorchTensor(BaseType):
