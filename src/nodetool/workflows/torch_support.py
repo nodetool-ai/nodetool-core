@@ -267,7 +267,13 @@ def tensor_from_array(array: np.ndarray) -> Any:
     """Create a float tensor in range [0,1] from a numpy array."""
     if not TORCH_AVAILABLE or torch is None:
         raise ImportError("torch is required for tensor conversion")
-    return torch.tensor(array).float() / 255.0
+
+    # ⚡ Bolt Optimization: Use torch.from_numpy() instead of torch.tensor() to avoid unnecessary byte-copying.
+    # We must ensure the array is contiguous and writable because torch.from_numpy requires it.
+    if not array.flags.c_contiguous or not array.flags.writeable:
+        array = np.ascontiguousarray(array) if not array.flags.c_contiguous else array.copy()
+
+    return torch.from_numpy(array).float() / 255.0
 
 
 def tensor_from_pil(image: Image.Image) -> Any:

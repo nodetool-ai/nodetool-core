@@ -29,3 +29,7 @@
 ## 2026-05-12 - [np.array vs np.asarray for PIL Images]
 **Learning:** `np.array(image)` creates a deep copy of a PIL Image, causing unnecessary memory allocation and performance penalties, especially when processing many frames like in video exports. However, `np.asarray()` creates a read-only view. This is safe for strictly reading (like in `video_utils.py`), but unsafe for general APIs (like `ProcessingContext.image_to_numpy()`) where downstream users expect a mutable array.
 **Action:** Use `np.asarray(image)` instead of `np.array(image)` to avoid unnecessary byte-copying when strictly reading from PIL Images to NumPy arrays. Use `.copy()` if mutability is required.
+
+## 2024-05-18 - PyTorch Tensor Creation Memory Copy Optimization
+**Learning:** In PyTorch, using `torch.tensor(numpy_array)` causes a full memory copy of the array's data. For read-only applications like model inference or input conversion, this unnecessary byte-copying adds substantial memory and CPU overhead.
+**Action:** Use `torch.from_numpy(numpy_array)` instead of `torch.tensor()` to create a zero-copy, memory-efficient tensor view of the existing NumPy array data. Keep in mind this creates a shared-memory tensor, so mutations to the tensor will affect the original NumPy array.
