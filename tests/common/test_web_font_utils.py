@@ -171,3 +171,13 @@ class TestCacheManagement:
         count = clear_font_cache()
         assert count >= 1
         assert not test_file.exists()
+
+    def test_ssrf_protection_private_ip(self):
+        """Test that SSRF protection blocks explicit private IPs."""
+        with pytest.raises(ValueError, match="Access to private/restricted IP blocked"):
+            download_font_from_url("http://127.0.0.1:8000/font.ttf")
+
+    def test_ssrf_protection_localhost(self):
+        """Test that SSRF protection blocks internal domains like localhost."""
+        with pytest.raises(ValueError, match="Access to host 'localhost' blocked"):
+            download_font_from_url("http://localhost:8000/font.ttf")

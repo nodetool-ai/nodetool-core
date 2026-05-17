@@ -306,6 +306,26 @@ def download_font_from_url(url: str) -> str:
     if not url.startswith(("http://", "https://")):
         raise ValueError(f"Invalid font URL: {url}. Must be http:// or https://")
 
+    import socket
+    from urllib.parse import urlparse
+
+    from nodetool.utils.network import is_ip_private
+
+    parsed_url = urlparse(url)
+    hostname = parsed_url.hostname
+    if hostname:
+        if is_ip_private(hostname):
+            raise ValueError(f"Access to private/restricted IP blocked: {hostname}")
+        try:
+            for res in socket.getaddrinfo(hostname, None):
+                ip = res[4][0]
+                if is_ip_private(ip):
+                    raise ValueError(
+                        f"Access to host '{hostname}' blocked because it resolved to a private/restricted IP."
+                    )
+        except socket.gaierror:
+            pass
+
     cache_dir = get_font_cache_dir()
     cache_filename = _get_cache_filename("", "", url)
     cache_path = cache_dir / cache_filename
