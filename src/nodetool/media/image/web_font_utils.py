@@ -2,15 +2,17 @@
 Web font utilities for downloading and caching fonts from Google Fonts and custom URLs.
 """
 
+import asyncio
 import hashlib
 import os
 import re
 from pathlib import Path
 from typing import Optional
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+
+import aiohttp
 
 from nodetool.config.logging_config import get_logger
+from nodetool.utils.network import SSRFProtectResolver, is_ip_private
 
 log = get_logger(__name__)
 
@@ -181,6 +183,22 @@ def _get_cache_filename(font_name: str, weight: str, url: str = "") -> str:
         return f"google_{clean_name}_{weight}.ttf"
 
 
+async def _download_font_async(url: str, cache_path: Path) -> bytes:
+    """Asynchronously download font data with SSRF protection."""
+    connector = aiohttp.TCPConnector(resolver=SSRFProtectResolver())
+    async with aiohttp.ClientSession(connector=connector) as session:
+        try:
+            async with session.get(url, timeout=30, headers={"User-Agent": "NodeTool/1.0"}) as response:
+                if response.status == 404:
+                    raise FileNotFoundError(f"Font file not found at {url}")
+                response.raise_for_status()
+                return await response.read()
+        except aiohttp.ClientError as e:
+            raise ConnectionError(f"Failed to download font from {url}: {e}") from e
+        except TimeoutError as e:
+            raise ConnectionError(f"Timeout while downloading font from {url}") from e
+
+
 def download_google_font(font_name: str, weight: str = "regular") -> str:
     """Download a font from Google Fonts and cache it locally.
 
@@ -267,22 +285,18 @@ def download_google_font(font_name: str, weight: str = "regular") -> str:
         log.debug(f"Trying to download font from: {url}")
 
         try:
-            request = Request(url, headers={"User-Agent": "NodeTool/1.0"})
-            with urlopen(request, timeout=30) as response:
-                font_data = response.read()
+            font_data = asyncio.run(_download_font_async(url, cache_path))
 
             # Save to cache
             cache_path.write_bytes(font_data)
             log.info(f"Downloaded and cached Google Font: {font_name} ({weight}) -> {cache_path}")
             return str(cache_path)
 
-        except HTTPError as e:
-            if e.code == 404:
-                log.debug(f"Font file not found at {url}, trying next pattern...")
-                continue
-            raise ConnectionError(f"Failed to download font from {url}: HTTP {e.code}") from e
-        except URLError as e:
-            raise ConnectionError(f"Failed to connect to download font: {e.reason}") from e
+        except FileNotFoundError:
+            log.debug(f"Font file not found at {url}, trying next pattern...")
+            continue
+        except ConnectionError as e:
+            raise e
 
     raise ValueError(
         f"Could not find font file for '{font_name}' weight '{weight}' in Google Fonts. "
@@ -306,25 +320,12 @@ def download_font_from_url(url: str) -> str:
     if not url.startswith(("http://", "https://")):
         raise ValueError(f"Invalid font URL: {url}. Must be http:// or https://")
 
-    import socket
     from urllib.parse import urlparse
-
-    from nodetool.utils.network import is_ip_private
 
     parsed_url = urlparse(url)
     hostname = parsed_url.hostname
-    if hostname:
-        if is_ip_private(hostname):
-            raise ValueError(f"Access to private/restricted IP blocked: {hostname}")
-        try:
-            for res in socket.getaddrinfo(hostname, None):
-                ip = res[4][0]
-                if is_ip_private(ip):
-                    raise ValueError(
-                        f"Access to host '{hostname}' blocked because it resolved to a private/restricted IP."
-                    )
-        except socket.gaierror:
-            pass
+    if hostname and is_ip_private(hostname):
+        raise ValueError(f"Access to private/restricted IP blocked: {hostname}")
 
     cache_dir = get_font_cache_dir()
     cache_filename = _get_cache_filename("", "", url)
@@ -337,35 +338,27 @@ def download_font_from_url(url: str) -> str:
 
     log.info(f"Downloading font from URL: {url}")
 
-    try:
-        request = Request(url, headers={"User-Agent": "NodeTool/1.0"})
-        with urlopen(request, timeout=30) as response:
-            font_data = response.read()
+    font_data = asyncio.run(_download_font_async(url, cache_path))
 
-        # Basic validation - check for TTF/OTF magic bytes
-        if len(font_data) < 4:
-            raise ValueError("Downloaded file is too small to be a valid font")
+    # Basic validation - check for TTF/OTF magic bytes
+    if len(font_data) < 4:
+        raise ValueError("Downloaded file is too small to be a valid font")
 
-        # TTF starts with 0x00010000 or 'OTTO' (for OTF) or 'true' or 'typ1'
-        magic = font_data[:4]
-        valid_signatures = [
-            b"\x00\x01\x00\x00",  # TTF
-            b"OTTO",  # OTF
-            b"true",  # TrueType
-            b"typ1",  # Type1
-        ]
-        if magic not in valid_signatures:
-            log.warning(f"Downloaded file may not be a valid font (magic bytes: {magic.hex()})")
+    # TTF starts with 0x00010000 or 'OTTO' (for OTF) or 'true' or 'typ1'
+    magic = font_data[:4]
+    valid_signatures = [
+        b"\x00\x01\x00\x00",  # TTF
+        b"OTTO",  # OTF
+        b"true",  # TrueType
+        b"typ1",  # Type1
+    ]
+    if magic not in valid_signatures:
+        log.warning(f"Downloaded file may not be a valid font (magic bytes: {magic.hex()})")
 
-        # Save to cache
-        cache_path.write_bytes(font_data)
-        log.info(f"Downloaded and cached font from URL: {cache_path}")
-        return str(cache_path)
-
-    except HTTPError as e:
-        raise ConnectionError(f"Failed to download font from {url}: HTTP {e.code}") from e
-    except URLError as e:
-        raise ConnectionError(f"Failed to connect to download font: {e.reason}") from e
+    # Save to cache
+    cache_path.write_bytes(font_data)
+    log.info(f"Downloaded and cached font from URL: {cache_path}")
+    return str(cache_path)
 
 
 def get_web_font_path(

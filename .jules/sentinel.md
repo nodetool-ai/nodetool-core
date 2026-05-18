@@ -36,7 +36,7 @@
 **Learning:** Combining a base `pathlib.Path` with an untrusted `key` without stripping leading slashes or resolving to absolute paths to verify boundaries permits out-of-bounds filesystem access. If the second operand of `/` is an absolute path, `pathlib` discards the first operand.
 **Prevention:** Always strip leading slashes from untrusted keys before concatenating them with a base path. Resolve both the base path and the final target path to their absolute representations and verify that the target path is a subpath of the base path (e.g. using `target.is_relative_to(base)`).
 
-## $(date +%Y-%m-%d) - [Replace insecure MD5 with SHA256 for non-cryptographic hashing]
+## 2026-05-18 - [Replace insecure MD5 with SHA256 for non-cryptographic hashing]
 **Vulnerability:** The `src/nodetool/media/image/web_font_utils.py` file was using `hashlib.md5()` to generate a cache filename from a URL.
 **Learning:** Even though the hash was used non-cryptographically (just for cache filenames) and truncated to 8 characters, automated security tools and linters universally flag MD5 usage as a vulnerability. The repository enforces a policy of using SHA-256 for all hashing operations to maintain a consistent security standard.
 **Prevention:** Always use `hashlib.sha256()` instead of `hashlib.md5()`, even for non-cryptographic purposes like caching, to prevent security linters from flagging the code and to adhere to modern cryptographic standards.
@@ -53,3 +53,7 @@
 **Vulnerability:** The `download_font_from_url` function was using `urlopen` directly on user-provided URLs without validating whether the hostname or its resolved IP address pointed to private, internal infrastructure, allowing for Server-Side Request Forgery (SSRF) attacks.
 **Learning:** Functions that download resources from URLs provided by the user must always validate the resolved IP against an allowlist/blocklist (e.g. `is_ip_private`). Wait, `urllib.request.urlopen` does not support custom DNS resolvers out of the box, which means it is susceptible to TOCTOU (DNS Rebinding) attacks. The safest method for external HTTP requests is `aiohttp` using `SSRFProtectResolver`.
 **Prevention:** Always use `is_ip_private` on both the explicit hostname and the IPs resolved by `socket.getaddrinfo` prior to a request. If possible, migrate from `urllib.request` to a library that supports custom connection pools and DNS resolvers (like `aiohttp`) to robustly mitigate DNS rebinding.
+## 2026-05-18 - [HIGH] Fix SSRF vulnerability in web_font_utils.py font downloading
+**Vulnerability:** The functions `download_google_font` and `download_font_from_url` in `src/nodetool/media/image/web_font_utils.py` used `urllib.request.urlopen` with DNS checking that was susceptible to DNS rebinding (TOCTOU), allowing for Server-Side Request Forgery (SSRF) vulnerabilities when accessing external font URLs.
+**Learning:** `urllib.request` does not allow custom DNS resolvers, making it inherently vulnerable to DNS rebinding bypass techniques even when pre-flight IP checks (like `is_ip_private`) are implemented.
+**Prevention:** Always replace `urllib.request` with `aiohttp` using a custom connector configured with `SSRFProtectResolver` (`aiohttp.TCPConnector(resolver=SSRFProtectResolver())`) to guarantee robust DNS rebinding SSRF protection when downloading user-provided external URLs.
