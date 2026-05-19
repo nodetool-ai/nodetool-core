@@ -101,27 +101,26 @@ class TestDownloadGoogleFont:
         with pytest.raises(ValueError, match="not found in Google Fonts catalog"):
             download_google_font("NonExistentFontXYZ", "regular")
 
-    @patch("nodetool.media.image.web_font_utils.urlopen")
-    def test_download_font_caches_result(self, mock_urlopen):
+    @patch("nodetool.media.image.web_font_utils._download_font_async")
+    def test_download_font_caches_result(self, mock_download):
         """Test that downloaded fonts are cached."""
-        # Setup mock response
-        mock_response = MagicMock()
-        mock_response.read.return_value = b"\x00\x01\x00\x00" + b"\x00" * 100  # TTF header
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_response
+        # Setup mock response to return TTF header bytes
+        mock_download.return_value = b"\x00\x01\x00\x00" + b"\x00" * 100  # TTF header
 
-        # First download
-        cache_dir = get_font_cache_dir()
-        test_cache_file = cache_dir / "google_roboto_regular.ttf"
+        # Override asyncio.run behavior to bypass coroutines for the mock
+        import asyncio
 
-        # Clean up if exists from previous test
-        if test_cache_file.exists():
-            test_cache_file.unlink()
+        with patch("asyncio.run", side_effect=lambda x: mock_download.return_value):
+            # First download
+            cache_dir = get_font_cache_dir()
+            test_cache_file = cache_dir / "google_roboto_regular.ttf"
 
-        # This would normally download, but we're mocking
-        # Just verify the function signature works
-        assert "roboto" in GOOGLE_FONTS_CATALOG
+            # Clean up if exists from previous test
+            if test_cache_file.exists():
+                test_cache_file.unlink()
+
+            download_google_font("Roboto", "regular")
+            assert test_cache_file.exists()
 
 
 class TestDownloadFontFromUrl:
