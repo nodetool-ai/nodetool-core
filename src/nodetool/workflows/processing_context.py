@@ -804,9 +804,13 @@ class ProcessingContext:
 
         # Treat empty-scheme inputs as local file paths (supports Windows drive letters)
         if url_parsed.scheme == "" and not url.startswith("data:"):
-            # 🛡️ Sentinel Security Fix: Enforce workspace boundaries to prevent Path Traversal
-            safe_url = self.resolve_workspace_path(url)
-            local_path = Path(safe_url)
+            # 🛡️ Sentinel Security Fix: Enforce workspace boundaries to prevent Path Traversal.
+            # When no workspace is configured (desktop mode), the path is a trusted
+            # user selection, so read it directly instead of failing.
+            if self.workspace_dir is None:
+                local_path = Path(url).expanduser()
+            else:
+                local_path = Path(self.resolve_workspace_path(url))
             if local_path.exists():
                 content = await asyncio.to_thread(local_path.read_bytes)
                 return BytesIO(content)
@@ -843,10 +847,14 @@ class ProcessingContext:
                     # POSIX: netloc is typically empty or localhost; for others, treat as network path
                     path = Path("//" + netloc + path_part) if netloc else Path(path_part)
 
-                # 🛡️ Sentinel Security Fix: Enforce workspace boundaries to prevent Path Traversal
+                # 🛡️ Sentinel Security Fix: Enforce workspace boundaries to prevent Path Traversal.
+                # When no workspace is configured (desktop mode), the file:// URI is a
+                # trusted user selection, so read it directly instead of failing.
                 raw_resolved_path = path.expanduser()
-                safe_path_str = self.resolve_workspace_path(str(raw_resolved_path))
-                resolved_path = Path(safe_path_str)
+                if self.workspace_dir is None:
+                    resolved_path = raw_resolved_path
+                else:
+                    resolved_path = Path(self.resolve_workspace_path(str(raw_resolved_path)))
 
                 if not resolved_path.exists():
                     raise FileNotFoundError(f"No such file or directory: '{resolved_path}'")
