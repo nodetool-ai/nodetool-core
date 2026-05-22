@@ -14,7 +14,8 @@ import asyncio
 import struct
 import sys
 import traceback
-from typing import Any, Callable, Awaitable
+from collections.abc import AsyncIterator
+from typing import Any, Awaitable, Callable
 
 import msgpack
 
@@ -67,6 +68,7 @@ class StdioWorkerServer:
         self._nodes_metadata: list[dict] = []
         self._cancel_flags: dict[str, asyncio.Event] = {}
         self._execute_handler: Callable | None = None
+        self._stream_handler: Callable | None = None
         self._transport: StdioTransport | None = None
 
     def set_nodes_metadata(self, metadata: list[dict]) -> None:
@@ -77,6 +79,12 @@ class StdioWorkerServer:
         handler: Callable[[dict, asyncio.Event], Awaitable[dict]],
     ) -> None:
         self._execute_handler = handler
+
+    def set_stream_handler(
+        self,
+        handler: Callable[[dict, asyncio.Event], AsyncIterator[dict]],
+    ) -> None:
+        self._stream_handler = handler
 
     async def run(self) -> None:
         """Main loop: read from stdin, dispatch, write to stdout."""
@@ -143,6 +151,37 @@ class StdioWorkerServer:
             finally:
                 self._cancel_flags.pop(request_id, None)
 
+        elif msg_type == "execute.stream":
+            cancel_event = asyncio.Event()
+            if request_id:
+                self._cancel_flags[request_id] = cancel_event
+            try:
+                if self._stream_handler is None:
+                    raise RuntimeError("No stream handler registered")
+                async for chunk in self._stream_handler(msg["data"], cancel_event):
+                    await transport.send_msg({
+                        "type": "chunk",
+                        "request_id": request_id,
+                        "data": chunk,
+                    })
+                # Final frame closes the stream on the TS side.
+                await transport.send_msg({
+                    "type": "result",
+                    "request_id": request_id,
+                    "data": {"outputs": {}, "blobs": {}},
+                })
+            except Exception as e:
+                await transport.send_msg({
+                    "type": "error",
+                    "request_id": request_id,
+                    "data": {
+                        "error": str(e),
+                        "traceback": traceback.format_exc(),
+                    },
+                })
+            finally:
+                self._cancel_flags.pop(request_id, None)
+
         elif msg_type == "cancel":
             cancel_event = self._cancel_flags.get(request_id)
             if cancel_event:
@@ -161,8 +200,8 @@ class StdioWorkerServer:
 
 async def run_stdio_worker(namespaces: list[str] | None = None) -> None:
     """Entry point for the stdio worker."""
+    from nodetool.worker.executor import execute_node, execute_node_stream
     from nodetool.worker.node_loader import load_nodes
-    from nodetool.worker.executor import execute_node
 
     print("Loading node packages...", file=sys.stderr)
     nodes_metadata = load_nodes(namespaces=namespaces)
@@ -181,6 +220,18 @@ async def run_stdio_worker(namespaces: list[str] | None = None) -> None:
         )
 
     server.set_execute_handler(handle_execute)
+
+    async def handle_execute_stream(data: dict, cancel_event: asyncio.Event):
+        async for chunk in execute_node_stream(
+            node_type=data["node_type"],
+            fields=data.get("fields", {}),
+            secrets=data.get("secrets", {}),
+            input_blobs=data.get("blobs", {}),
+            cancel_event=cancel_event,
+        ):
+            yield chunk
+
+    server.set_stream_handler(handle_execute_stream)
 
     # Signal readiness on stderr (stdout is for protocol only)
     print("NODETOOL_STDIO_READY", file=sys.stderr, flush=True)

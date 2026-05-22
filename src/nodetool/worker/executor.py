@@ -3,7 +3,9 @@ Instantiate a Python BaseNode, execute it, and collect final outputs.
 """
 import asyncio
 import os
+import shutil
 import tempfile
+from collections.abc import AsyncGenerator
 from types import UnionType
 from typing import Any, Union, get_args, get_origin
 
@@ -52,6 +54,66 @@ def _get_asset_ref_type(annotation: Any) -> str:
     return REF_TYPE_BY_CLASS_NAME.get(type_name, "asset")
 
 
+async def _prepare_node(
+    node_class: type[BaseNode],
+    fields: dict[str, Any],
+    input_blobs: dict[str, bytes | list[bytes]],
+    temp_dir: str,
+    ctx: WorkerContext,
+) -> BaseNode:
+    """Instantiate a node, assign fields/blobs, and run its preprocessing lifecycle.
+
+    Shared by both the unary (`execute_node`) and streaming (`execute_node_stream`)
+    entry points so they resolve inputs identically.
+    """
+    # Write input blobs to temp files for URI resolution
+    input_ref_uris: dict[str, str | list[str]] = {}
+    for name, data in input_blobs.items():
+        if isinstance(data, list):
+            uris: list[str] = []
+            for index, item in enumerate(data):
+                path = os.path.join(temp_dir, f"input_{name}_{index}")
+                with open(path, "wb") as f:
+                    f.write(item)
+                uris.append(f"file://{path}")
+            input_ref_uris[name] = uris
+        else:
+            path = os.path.join(temp_dir, f"input_{name}")
+            with open(path, "wb") as f:
+                f.write(data)
+            input_ref_uris[name] = f"file://{path}"
+
+    # Instantiate node
+    node = node_class()
+
+    # Set fields — convert blob references for asset fields
+    resolved_fields = dict(fields)
+    for field_name, field_info in node.__class__.model_fields.items():
+        if field_name in input_blobs:
+            uri = input_ref_uris.get(field_name, f"blob://{field_name}")
+            ref_type = _get_asset_ref_type(field_info.annotation)
+            if isinstance(uri, list):
+                resolved_fields[field_name] = [
+                    {"uri": item, "type": ref_type} for item in uri
+                ]
+            else:
+                resolved_fields[field_name] = {
+                    "uri": uri,
+                    "type": ref_type,
+                }
+
+    for key, value in resolved_fields.items():
+        error = node.assign_property(key, value)
+        if error:
+            raise ValueError(error)
+
+    # Lifecycle: pre_process -> preload_model -> move_to_device
+    await node.pre_process(ctx)
+    await node.preload_model(ctx)
+    await node.move_to_device(ctx.device)
+    return node
+
+
 async def execute_node(
     node_type: str,
     fields: dict[str, Any],
@@ -70,53 +132,9 @@ async def execute_node(
             cancel_event=cancel_event,
         )
 
-        # Write input blobs to temp files for URI resolution
         temp_dir = tempfile.mkdtemp(prefix="nodetool_worker_")
-        input_ref_uris: dict[str, str | list[str]] = {}
         try:
-            for name, data in input_blobs.items():
-                if isinstance(data, list):
-                    uris: list[str] = []
-                    for index, item in enumerate(data):
-                        path = os.path.join(temp_dir, f"input_{name}_{index}")
-                        with open(path, "wb") as f:
-                            f.write(item)
-                        uris.append(f"file://{path}")
-                    input_ref_uris[name] = uris
-                else:
-                    path = os.path.join(temp_dir, f"input_{name}")
-                    with open(path, "wb") as f:
-                        f.write(data)
-                    input_ref_uris[name] = f"file://{path}"
-
-            # Instantiate node
-            node = node_class()
-
-            # Set fields — convert blob references for asset fields
-            resolved_fields = dict(fields)
-            for field_name, field_info in node.__class__.model_fields.items():
-                if field_name in input_blobs:
-                    uri = input_ref_uris.get(field_name, f"blob://{field_name}")
-                    ref_type = _get_asset_ref_type(field_info.annotation)
-                    if isinstance(uri, list):
-                        resolved_fields[field_name] = [
-                            {"uri": item, "type": ref_type} for item in uri
-                        ]
-                    else:
-                        resolved_fields[field_name] = {
-                            "uri": uri,
-                            "type": ref_type,
-                        }
-
-            for key, value in resolved_fields.items():
-                error = node.assign_property(key, value)
-                if error:
-                    raise ValueError(error)
-
-            # Lifecycle: pre_process -> preload_model -> move_to_device -> execute
-            await node.pre_process(ctx)
-            await node.preload_model(ctx)
-            await node.move_to_device(ctx.device)
+            node = await _prepare_node(node_class, fields, input_blobs, temp_dir, ctx)
             if node.is_streaming_output():
                 result = await _collect_streaming_outputs(node, ctx)
                 outputs, blobs = _extract_named_outputs(result, ctx)
@@ -125,7 +143,43 @@ async def execute_node(
                 outputs, blobs = _extract_outputs(result, ctx)
             return {"outputs": outputs, "blobs": blobs}
         finally:
-            import shutil
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+async def execute_node_stream(
+    node_type: str,
+    fields: dict[str, Any],
+    secrets: dict[str, str],
+    input_blobs: dict[str, bytes | list[bytes]],
+    cancel_event: asyncio.Event | None = None,
+) -> AsyncGenerator[dict[str, Any], None]:
+    """Execute a streaming node, yielding {"outputs", "blobs"} for each emitted item.
+
+    Drives the node's ``gen_process`` and serializes every yielded mapping the same
+    way a unary streaming collect would, but emits each one incrementally so the
+    caller can forward it as a `chunk` frame over the stdio bridge.
+    """
+    node_class = NODE_BY_TYPE.get(node_type)
+    if node_class is None:
+        raise ValueError(f"Unknown node type: {node_type}")
+
+    async with ResourceScope():
+        ctx = WorkerContext(
+            secrets=secrets,
+            cancel_event=cancel_event,
+        )
+
+        temp_dir = tempfile.mkdtemp(prefix="nodetool_worker_")
+        try:
+            node = await _prepare_node(node_class, fields, input_blobs, temp_dir, ctx)
+            async for item in node.gen_process(ctx):
+                if not isinstance(item, dict):
+                    raise TypeError(
+                        "Streaming worker nodes must yield dictionaries mapping output names to values."
+                    )
+                outputs, blobs = _extract_named_outputs(item, ctx)
+                yield {"outputs": outputs, "blobs": blobs}
+        finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
 
