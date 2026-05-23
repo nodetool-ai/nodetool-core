@@ -4,9 +4,8 @@ import numpy as np
 import pytest
 from pydantic import Field
 
-from nodetool.metadata.types import AudioRef, Chunk
-from nodetool.metadata.types import ImageRef
-from nodetool.worker.executor import execute_node
+from nodetool.metadata.types import AudioRef, Chunk, ImageRef
+from nodetool.worker.executor import execute_node, execute_node_stream
 from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
 
@@ -82,17 +81,44 @@ class StreamingAudioNode(BaseNode):
         }
 
 
+class MultiChunkStreamingNode(BaseNode):
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "test.MultiChunkStreamingNode"
+
+    async def process(self, context: ProcessingContext) -> str:
+        raise AssertionError("execute_node should use gen_process for streaming nodes")
+
+    async def gen_process(
+        self, context: ProcessingContext
+    ) -> AsyncGenerator[dict[str, str | None | Chunk], None]:
+        accumulated = ""
+        for index in range(3):
+            token = f"tok{index}"
+            accumulated += token
+            yield {
+                "text": None,
+                "chunk": Chunk(content=token, done=False, content_type="text"),
+            }
+        yield {
+            "text": accumulated,
+            "chunk": Chunk(content="", done=True, content_type="text"),
+        }
+
+
 @pytest.fixture(autouse=True)
 def register_echo():
     NODE_BY_TYPE["test.EchoNode"] = EchoNode
     NODE_BY_TYPE["test.ImageListNode"] = ImageListNode
     NODE_BY_TYPE["test.StreamingOnlyNode"] = StreamingOnlyNode
     NODE_BY_TYPE["test.StreamingAudioNode"] = StreamingAudioNode
+    NODE_BY_TYPE["test.MultiChunkStreamingNode"] = MultiChunkStreamingNode
     yield
     NODE_BY_TYPE.pop("test.EchoNode", None)
     NODE_BY_TYPE.pop("test.ImageListNode", None)
     NODE_BY_TYPE.pop("test.StreamingOnlyNode", None)
     NODE_BY_TYPE.pop("test.StreamingAudioNode", None)
+    NODE_BY_TYPE.pop("test.MultiChunkStreamingNode", None)
 
 
 @pytest.mark.asyncio
@@ -181,3 +207,43 @@ async def test_execute_serializes_streaming_audio_refs_with_protocol_type():
     assert result["blobs"]["audio"].startswith(b"RIFF")
     assert result["outputs"]["chunk"]["content_type"] == "audio"
     assert result["outputs"].get("chunk", {}).get("done") is True
+
+
+@pytest.mark.asyncio
+async def test_execute_node_stream_yields_each_chunk():
+    items = [
+        item
+        async for item in execute_node_stream(
+            node_type="test.MultiChunkStreamingNode",
+            fields={},
+            secrets={},
+            input_blobs={},
+        )
+    ]
+
+    # 3 token chunks + 1 final aggregate chunk
+    assert len(items) == 4
+    assert all(item["blobs"] == {} for item in items)
+    assert items[0]["outputs"]["chunk"]["content"] == "tok0"
+    assert items[0]["outputs"]["chunk"]["done"] is False
+    assert items[0]["outputs"]["text"] is None
+    assert items[-1]["outputs"]["text"] == "tok0tok1tok2"
+    assert items[-1]["outputs"]["chunk"]["done"] is True
+
+
+@pytest.mark.asyncio
+async def test_execute_node_stream_extracts_blobs_per_chunk():
+    items = [
+        item
+        async for item in execute_node_stream(
+            node_type="test.StreamingAudioNode",
+            fields={},
+            secrets={},
+            input_blobs={},
+        )
+    ]
+
+    assert len(items) == 1
+    assert "audio" not in items[0]["outputs"]
+    assert items[0]["blobs"]["audio"].startswith(b"RIFF")
+    assert items[0]["outputs"]["chunk"]["content_type"] == "audio"

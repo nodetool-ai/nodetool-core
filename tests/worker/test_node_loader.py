@@ -1,12 +1,14 @@
 import pytest
+
 from nodetool.worker.node_loader import _discover_namespaces, load_nodes, node_to_metadata
 
 
 def test_node_to_metadata_from_mock_node():
     """Test that we can extract metadata from a BaseNode subclass."""
-    from nodetool.workflows.base_node import BaseNode, NODE_BY_TYPE
-    from nodetool.workflows.processing_context import ProcessingContext
     from pydantic import Field
+
+    from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
+    from nodetool.workflows.processing_context import ProcessingContext
 
     class MockTestNode(BaseNode):
         """A test node for unit testing."""
@@ -33,7 +35,7 @@ def test_node_to_metadata_uses_streaming_output_type():
     from typing import AsyncGenerator, TypedDict
 
     from nodetool.metadata.types import AudioRef, Chunk
-    from nodetool.workflows.base_node import BaseNode, NODE_BY_TYPE
+    from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
     from nodetool.workflows.processing_context import ProcessingContext
 
     class StreamingAudioNode(BaseNode):
@@ -109,3 +111,51 @@ def test_discover_namespaces_falls_back_to_namespace_paths(tmp_path, monkeypatch
 
     assert "huggingface" in namespaces
     assert "mlx" in namespaces
+
+
+def test_node_to_metadata_includes_recommended_models():
+    """Recommended models must flow through discover metadata (bridge-only fallback)."""
+    from nodetool.metadata.types import HuggingFaceModel
+    from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
+    from nodetool.workflows.processing_context import ProcessingContext
+
+    class RecModelNode(BaseNode):
+        @classmethod
+        def get_node_type(cls) -> str:
+            return "test_ns.RecModelNode"
+
+        @classmethod
+        def get_recommended_models(cls) -> list[HuggingFaceModel]:
+            return [HuggingFaceModel(repo_id="mlx-community/Qwen3-0.5B-4bit")]
+
+        async def process(self, context: ProcessingContext) -> str:
+            return ""
+
+    NODE_BY_TYPE["test_ns.RecModelNode"] = RecModelNode
+    try:
+        meta = node_to_metadata(RecModelNode)
+        rm = meta["recommended_models"]
+        assert len(rm) == 1
+        assert rm[0]["repo_id"] == "mlx-community/Qwen3-0.5B-4bit"
+        assert rm[0]["id"] == "mlx-community/Qwen3-0.5B-4bit"
+    finally:
+        del NODE_BY_TYPE["test_ns.RecModelNode"]
+
+
+def test_node_to_metadata_recommended_models_empty_for_plain_node():
+    from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
+    from nodetool.workflows.processing_context import ProcessingContext
+
+    class PlainNode(BaseNode):
+        @classmethod
+        def get_node_type(cls) -> str:
+            return "test_ns.PlainNode"
+
+        async def process(self, context: ProcessingContext) -> str:
+            return ""
+
+    NODE_BY_TYPE["test_ns.PlainNode"] = PlainNode
+    try:
+        assert node_to_metadata(PlainNode)["recommended_models"] == []
+    finally:
+        del NODE_BY_TYPE["test_ns.PlainNode"]

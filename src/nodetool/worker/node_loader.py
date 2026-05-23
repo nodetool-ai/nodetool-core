@@ -92,10 +92,46 @@ def node_to_metadata(node_class: type[BaseNode]) -> dict[str, Any]:
         "properties": properties,
         "outputs": outputs,
         "required_settings": list(required_settings),
+        "recommended_models": _recommended_models(node_class),
         "is_streaming_output": _call_or_get(node_class, "is_streaming_output"),
         "is_streaming_input": _call_or_get(node_class, "is_streaming_input"),
         "is_dynamic": _call_or_get(node_class, "is_dynamic"),
     }
+
+
+def _recommended_models(node_class: type[BaseNode]) -> list[dict]:
+    """Serialize a node's recommended models for the discover payload.
+
+    Mirrors ``unified_model(model, model_info=None)`` synchronously — no
+    network, no event loop — so startup discovery is fast. The static
+    package_metadata JSON carries the HF-enriched variant when available;
+    this is the fallback that lets bridge-only nodes (no JSON) still expose
+    recommendations.
+    """
+    from nodetool.types.model import UnifiedModel
+
+    try:
+        models = node_class.get_recommended_models() or []
+    except Exception:
+        return []
+
+    result: list[dict] = []
+    for model in models:
+        model_id = (
+            f"{model.repo_id}:{model.path}" if model.path is not None else model.repo_id
+        )
+        result.append(
+            UnifiedModel(
+                id=model_id,
+                repo_id=model.repo_id,
+                path=model.path,
+                type=model.type,
+                name=model.repo_id,
+                allow_patterns=model.allow_patterns,
+                ignore_patterns=model.ignore_patterns,
+            ).model_dump()
+        )
+    return result
 
 
 def _call_or_get(cls: type, name: str) -> bool:
