@@ -126,16 +126,17 @@ class StdioWorkerServer:
 async def run_stdio_worker(namespaces: list[str] | None = None) -> None:
     """Entry point for the stdio worker."""
     from nodetool.worker.executor import execute_node
-    from nodetool.worker.node_loader import load_nodes
+    from nodetool.worker.node_loader import load_nodes, resolve_namespaces
+
+    resolved_namespaces = resolve_namespaces(namespaces)
 
     print("Loading node packages...", file=sys.stderr)
-    nodes_metadata = load_nodes(namespaces=namespaces)
+    nodes_metadata = load_nodes(resolved_namespaces)
     print(f"Loaded {len(nodes_metadata)} nodes", file=sys.stderr)
 
     server = StdioWorkerServer()
     server.set_nodes_metadata(nodes_metadata)
-    if namespaces is not None:
-        server.set_namespaces(namespaces)
+    server.set_namespaces(resolved_namespaces)
 
     async def handle_execute(
         data: dict,

@@ -134,10 +134,19 @@ class WorkerProtocolServer:
                 result = await self._execute_handler(
                     msg["data"], cancel_event, emit_progress, emit_chunk
                 )
+                # For execute.stream, the per-chunk frames already carried the
+                # outputs/blobs. The result frame is just a terminator so the
+                # bridge can close the stream — keep its data empty to match
+                # the pre-protocol-refactor wire contract.
+                result_data = (
+                    {"outputs": {}, "blobs": {}}
+                    if msg_type == "execute.stream"
+                    else result
+                )
                 await transport.send_msg({
                     "type": "result",
                     "request_id": request_id,
-                    "data": result,
+                    "data": result_data,
                 })
             except Exception as e:
                 await transport.send_msg({

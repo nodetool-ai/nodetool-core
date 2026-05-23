@@ -227,10 +227,10 @@ def _import_node_packages(namespaces: list[str]) -> None:
                 print(f"Warning: failed to import {modname}: {e}", file=sys.stderr)
 
 
-def load_nodes(
+def resolve_namespaces(
     namespaces: list[str] | None = None,
-) -> list[dict[str, Any]]:
-    """Load all registered nodes filtered by namespace allowlist.
+) -> list[str]:
+    """Resolve the effective namespace allowlist.
 
     Fallback chain:
     1. Explicit `namespaces` argument (from --namespaces CLI)
@@ -238,9 +238,19 @@ def load_nodes(
     3. _discover_namespaces() auto-discovery
     4. Empty list (graceful — no Python nodes)
     """
-    if namespaces is None:
-        ns_env = os.environ.get("NODETOOL_WORKER_NAMESPACES")
-        namespaces = ns_env.split(",") if ns_env else _discover_namespaces()
+    if namespaces is not None:
+        return namespaces
+    ns_env = os.environ.get("NODETOOL_WORKER_NAMESPACES")
+    if ns_env:
+        return ns_env.split(",")
+    return _discover_namespaces()
+
+
+def load_nodes(
+    namespaces: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Load all registered nodes filtered by namespace allowlist."""
+    namespaces = resolve_namespaces(namespaces)
 
     _import_node_packages(namespaces)
 

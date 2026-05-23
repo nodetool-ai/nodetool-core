@@ -31,6 +31,11 @@ REF_TYPE_BY_CLASS_NAME = {
     "AssetRef": "asset",
 }
 
+# How often the background pump flushes queued NodeProgress messages while a
+# node's lifecycle / process methods are running. 50ms keeps progress feeling
+# real-time without burning CPU on the queue check.
+_PROGRESS_POLL_INTERVAL = 0.05
+
 
 def _get_asset_ref_type(annotation: Any) -> str:
     """Infer the asset type literal expected by BaseNode.assign_property()."""
@@ -81,18 +86,70 @@ async def _emit_pending_progress(
         })
 
 
+def _start_progress_pump(
+    ctx: WorkerContext,
+    emit_progress: Callable[[dict[str, Any]], Awaitable[None]] | None,
+) -> tuple[asyncio.Task, asyncio.Event]:
+    """Spawn a background task that flushes queued progress in near-real-time.
+
+    Runs concurrently with the node's lifecycle and process methods so progress
+    posted mid-execution doesn't have to wait for a synchronous boundary. The
+    pump also performs a final drain after the stop signal, so progress queued
+    just before completion (or before an exception propagates) isn't lost.
+
+    Caller must invoke ``_stop_progress_pump`` in a ``finally`` block.
+    """
+    stop = asyncio.Event()
+
+    async def pump() -> None:
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=_PROGRESS_POLL_INTERVAL)
+            except TimeoutError:
+                pass
+            try:
+                await _emit_pending_progress(ctx, emit_progress)
+            except Exception:
+                # Don't let a transient transport error kill the pump or mask
+                # the node's own error — just drop this batch.
+                pass
+        # Final drain after stop so anything queued during shutdown still ships.
+        try:
+            await _emit_pending_progress(ctx, emit_progress)
+        except Exception:
+            pass
+
+    task = asyncio.create_task(pump())
+    return task, stop
+
+
+async def _stop_progress_pump(
+    handle: tuple[asyncio.Task, asyncio.Event] | None,
+) -> None:
+    if handle is None:
+        return
+    task, stop = handle
+    stop.set()
+    try:
+        await task
+    except BaseException:
+        # Pump errors must not mask the caller's error path.
+        pass
+
+
 async def _prepare_node(
     node_class: type[BaseNode],
     fields: dict[str, Any],
     input_blobs: dict[str, bytes | list[bytes]],
     temp_dir: str,
     ctx: WorkerContext,
-    emit_progress: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> BaseNode:
     """Instantiate a node, assign fields/blobs, and run its preprocessing lifecycle.
 
     Shared by both the unary (`execute_node`) and streaming (`execute_node_stream`)
-    entry points so they resolve inputs identically.
+    entry points so they resolve inputs identically. Progress messages queued by
+    the lifecycle methods are flushed by the background pump started in
+    ``execute_node`` — no inline drain is needed here.
     """
     # Write input blobs to temp files for URI resolution
     input_ref_uris: dict[str, str | list[str]] = {}
@@ -137,11 +194,8 @@ async def _prepare_node(
 
     # Lifecycle: pre_process -> preload_model -> move_to_device
     await node.pre_process(ctx)
-    await _emit_pending_progress(ctx, emit_progress)
     await node.preload_model(ctx)
-    await _emit_pending_progress(ctx, emit_progress)
     await node.move_to_device(ctx.device)
-    await _emit_pending_progress(ctx, emit_progress)
     return node
 
 
@@ -156,10 +210,14 @@ async def execute_node(
 ) -> dict[str, Any]:
     """Execute a single Python node and return outputs + blobs.
 
-    Streaming nodes (``is_streaming_output() == True``) emit each yielded item
-    via ``emit_chunk`` when provided; the return value still carries the final
-    aggregated outputs so callers that only need the last value can ignore the
-    chunks.
+    For streaming nodes (``is_streaming_output() == True``), each item emitted
+    by ``gen_process`` is forwarded via ``emit_chunk`` when provided; the
+    return value still carries the aggregated final outputs so callers that
+    only need the last value can ignore the chunks.
+
+    Progress posted to ``ctx.message_queue`` is forwarded to ``emit_progress``
+    in near-real-time by a background pump (every 50ms), and one final drain
+    runs after the node finishes — including on exception paths.
     """
     node_class = NODE_BY_TYPE.get(node_type)
     if node_class is None:
@@ -170,26 +228,22 @@ async def execute_node(
             secrets=secrets,
             cancel_event=cancel_event,
         )
-
+        pump_handle = _start_progress_pump(ctx, emit_progress)
         temp_dir = tempfile.mkdtemp(prefix="nodetool_worker_")
         try:
-            node = await _prepare_node(
-                node_class, fields, input_blobs, temp_dir, ctx, emit_progress
-            )
+            node = await _prepare_node(node_class, fields, input_blobs, temp_dir, ctx)
             if node.is_streaming_output():
                 if emit_chunk is not None:
-                    result = await _stream_streaming_outputs(
-                        node, ctx, emit_progress, emit_chunk
-                    )
+                    result = await _stream_streaming_outputs(node, ctx, emit_chunk)
                 else:
-                    result = await _collect_streaming_outputs(node, ctx, emit_progress)
+                    result = await _collect_streaming_outputs(node, ctx)
                 outputs, blobs = _extract_named_outputs(result, ctx)
             else:
                 result = await node.process(ctx)
-                await _emit_pending_progress(ctx, emit_progress)
                 outputs, blobs = _extract_outputs(result, ctx)
             return {"outputs": outputs, "blobs": blobs}
         finally:
+            await _stop_progress_pump(pump_handle)
             shutil.rmtree(temp_dir, ignore_errors=True)
 
 
@@ -200,34 +254,47 @@ async def execute_node_stream(
     input_blobs: dict[str, bytes | list[bytes]],
     cancel_event: asyncio.Event | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
-    """Execute a streaming node, yielding {"outputs", "blobs"} for each emitted item.
+    """Execute a streaming node, yielding each emitted ``{"outputs", "blobs"}``.
 
-    Drives the node's ``gen_process`` and serializes every yielded mapping the same
-    way a unary streaming collect would, but emits each one incrementally so the
-    caller can forward it as a `chunk` frame over the stdio bridge.
+    Thin adapter around ``execute_node`` so the two entry points can never
+    diverge in their chunk semantics: this generator yields exactly what
+    ``execute_node`` would have passed to ``emit_chunk``.
     """
-    node_class = NODE_BY_TYPE.get(node_type)
-    if node_class is None:
-        raise ValueError(f"Unknown node type: {node_type}")
+    queue: asyncio.Queue = asyncio.Queue()
+    sentinel: object = object()
 
-    async with ResourceScope():
-        ctx = WorkerContext(
-            secrets=secrets,
-            cancel_event=cancel_event,
-        )
+    async def emit_chunk(chunk: dict[str, Any]) -> None:
+        await queue.put(chunk)
 
-        temp_dir = tempfile.mkdtemp(prefix="nodetool_worker_")
+    async def runner() -> None:
         try:
-            node = await _prepare_node(node_class, fields, input_blobs, temp_dir, ctx)
-            async for item in node.gen_process(ctx):
-                if not isinstance(item, dict):
-                    raise TypeError(
-                        "Streaming worker nodes must yield dictionaries mapping output names to values."
-                    )
-                outputs, blobs = _extract_named_outputs(item, ctx)
-                yield {"outputs": outputs, "blobs": blobs}
+            await execute_node(
+                node_type=node_type,
+                fields=fields,
+                secrets=secrets,
+                input_blobs=input_blobs,
+                cancel_event=cancel_event,
+                emit_chunk=emit_chunk,
+            )
         finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            queue.put_nowait(sentinel)
+
+    task = asyncio.create_task(runner())
+    try:
+        while True:
+            item = await queue.get()
+            if item is sentinel:
+                break
+            yield item
+        # Propagate any error from execute_node back to the consumer.
+        await task
+    finally:
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except BaseException:
+                pass
 
 
 def _extract_outputs(
@@ -278,12 +345,10 @@ def _extract_outputs(
 async def _collect_streaming_outputs(
     node: BaseNode,
     ctx: WorkerContext,
-    emit_progress: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> dict[str, Any]:
     """Collect the final value emitted for each slot from a streaming node."""
     outputs: dict[str, Any] = {}
     async for item in node.gen_process(ctx):
-        await _emit_pending_progress(ctx, emit_progress)
         if not isinstance(item, dict):
             raise TypeError(
                 "Streaming worker nodes must yield dictionaries mapping output names to values."
@@ -301,19 +366,20 @@ async def _collect_streaming_outputs(
 async def _stream_streaming_outputs(
     node: BaseNode,
     ctx: WorkerContext,
-    emit_progress: Callable[[dict[str, Any]], Awaitable[None]] | None,
     emit_chunk: Callable[[dict[str, Any]], Awaitable[None]],
 ) -> dict[str, Any]:
-    """Emit each streaming item while still collecting final outputs."""
+    """Emit each gen_process item via emit_chunk while collecting final outputs.
+
+    Chunks carry the raw yielded mapping (including ``None`` placeholders for
+    not-yet-final slots), matching the semantics of ``execute_node_stream``.
+    Only non-``None`` values feed the aggregated final result.
+    """
     outputs: dict[str, Any] = {}
     async for item in node.gen_process(ctx):
-        await _emit_pending_progress(ctx, emit_progress)
         if not isinstance(item, dict):
             raise TypeError(
                 "Streaming worker nodes must yield dictionaries mapping output names to values."
             )
-
-        partial: dict[str, Any] = {}
         for slot_name, value in item.items():
             if not isinstance(slot_name, str):
                 raise TypeError(
@@ -321,11 +387,9 @@ async def _stream_streaming_outputs(
                 )
             if value is not None:
                 outputs[slot_name] = value
-                partial[slot_name] = value
 
-        if partial:
-            chunk_outputs, chunk_blobs = _extract_named_outputs(partial, ctx)
-            await emit_chunk({"outputs": chunk_outputs, "blobs": chunk_blobs})
+        chunk_outputs, chunk_blobs = _extract_named_outputs(item, ctx)
+        await emit_chunk({"outputs": chunk_outputs, "blobs": chunk_blobs})
 
     return outputs
 
