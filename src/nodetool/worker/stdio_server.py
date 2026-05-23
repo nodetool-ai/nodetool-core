@@ -13,13 +13,11 @@ to manage from a parent process.
 import asyncio
 import struct
 import sys
-import traceback
-from collections.abc import AsyncIterator
 from typing import Any, Awaitable, Callable
 
 import msgpack
 
-from nodetool.worker import BRIDGE_PROTOCOL_VERSION
+from nodetool.worker.protocol import MAX_BRIDGE_FRAME_SIZE, WorkerProtocolServer
 
 
 class StdioTransport:
@@ -43,6 +41,10 @@ class StdioTransport:
         if len(header) < 4:
             return None
         length = struct.unpack(">I", header)[0]
+        if length > MAX_BRIDGE_FRAME_SIZE:
+            raise ValueError(
+                f"Incoming bridge frame exceeds max size ({length} > {MAX_BRIDGE_FRAME_SIZE})"
+            )
         payload = await loop.run_in_executor(None, sys.stdin.buffer.read, length)
         if len(payload) < length:
             return None
@@ -51,6 +53,10 @@ class StdioTransport:
     async def send(self, data: bytes) -> None:
         """Write a length-prefixed msgpack payload (thread-safe)."""
         loop = asyncio.get_event_loop()
+        if len(data) > MAX_BRIDGE_FRAME_SIZE:
+            raise ValueError(
+                f"Outgoing bridge frame exceeds max size ({len(data)} > {MAX_BRIDGE_FRAME_SIZE})"
+            )
         message = struct.pack(">I", len(data)) + data
         async with self._write_lock:
             await loop.run_in_executor(None, sys.stdout.buffer.write, message)
@@ -65,26 +71,31 @@ class StdioWorkerServer:
     """Drop-in replacement for WorkerServer that uses stdio transport."""
 
     def __init__(self) -> None:
-        self._nodes_metadata: list[dict] = []
-        self._cancel_flags: dict[str, asyncio.Event] = {}
-        self._execute_handler: Callable | None = None
-        self._stream_handler: Callable | None = None
+        self._protocol = WorkerProtocolServer(transport_name="stdio")
         self._transport: StdioTransport | None = None
 
     def set_nodes_metadata(self, metadata: list[dict]) -> None:
-        self._nodes_metadata = metadata
+        self._protocol.set_nodes_metadata(metadata)
+
+    def set_load_errors(self, errors: list[dict[str, Any]]) -> None:
+        self._protocol.set_load_errors(errors)
+
+    def set_namespaces(self, namespaces: list[str]) -> None:
+        self._protocol.set_namespaces(namespaces)
 
     def set_execute_handler(
         self,
-        handler: Callable[[dict, asyncio.Event], Awaitable[dict]],
+        handler: Callable[
+            [
+                dict,
+                asyncio.Event,
+                Callable[[dict[str, Any]], Awaitable[None]],
+                Callable[[dict[str, Any]], Awaitable[None]] | None,
+            ],
+            Awaitable[dict],
+        ],
     ) -> None:
-        self._execute_handler = handler
-
-    def set_stream_handler(
-        self,
-        handler: Callable[[dict, asyncio.Event], AsyncIterator[dict]],
-    ) -> None:
-        self._stream_handler = handler
+        self._protocol.set_execute_handler(handler)
 
     async def run(self) -> None:
         """Main loop: read from stdin, dispatch, write to stdout."""
@@ -99,7 +110,9 @@ class StdioWorkerServer:
                     break
                 if msg is None:
                     break
-                task = asyncio.create_task(self._dispatch(msg))
+                task = asyncio.create_task(
+                    self._protocol.dispatch(msg, self._transport)
+                )
                 self._tasks.add(task)
                 task.add_done_callback(self._tasks.discard)
         except KeyboardInterrupt:
@@ -109,98 +122,10 @@ class StdioWorkerServer:
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
 
-    async def _dispatch(self, msg: dict[str, Any]) -> None:
-        transport = self._transport
-        assert transport is not None
-
-        msg_type = msg.get("type")
-        request_id = msg.get("request_id")
-
-        if msg_type == "discover":
-            await transport.send_msg({
-                "type": "discover",
-                "request_id": request_id,
-                "data": {
-                    "nodes": self._nodes_metadata,
-                    "protocol_version": BRIDGE_PROTOCOL_VERSION,
-                },
-            })
-
-        elif msg_type == "execute":
-            cancel_event = asyncio.Event()
-            if request_id:
-                self._cancel_flags[request_id] = cancel_event
-            try:
-                if self._execute_handler is None:
-                    raise RuntimeError("No execute handler registered")
-                result = await self._execute_handler(msg["data"], cancel_event)
-                await transport.send_msg({
-                    "type": "result",
-                    "request_id": request_id,
-                    "data": result,
-                })
-            except Exception as e:
-                await transport.send_msg({
-                    "type": "error",
-                    "request_id": request_id,
-                    "data": {
-                        "error": str(e),
-                        "traceback": traceback.format_exc(),
-                    },
-                })
-            finally:
-                self._cancel_flags.pop(request_id, None)
-
-        elif msg_type == "execute.stream":
-            cancel_event = asyncio.Event()
-            if request_id:
-                self._cancel_flags[request_id] = cancel_event
-            try:
-                if self._stream_handler is None:
-                    raise RuntimeError("No stream handler registered")
-                async for chunk in self._stream_handler(msg["data"], cancel_event):
-                    await transport.send_msg({
-                        "type": "chunk",
-                        "request_id": request_id,
-                        "data": chunk,
-                    })
-                # Final frame closes the stream on the TS side.
-                await transport.send_msg({
-                    "type": "result",
-                    "request_id": request_id,
-                    "data": {"outputs": {}, "blobs": {}},
-                })
-            except Exception as e:
-                await transport.send_msg({
-                    "type": "error",
-                    "request_id": request_id,
-                    "data": {
-                        "error": str(e),
-                        "traceback": traceback.format_exc(),
-                    },
-                })
-            finally:
-                self._cancel_flags.pop(request_id, None)
-
-        elif msg_type == "cancel":
-            cancel_event = self._cancel_flags.get(request_id)
-            if cancel_event:
-                cancel_event.set()
-
-        elif msg_type and msg_type.startswith("provider."):
-            from nodetool.worker.provider_handler import handle_provider_message_stdio
-            await handle_provider_message_stdio(
-                msg_type=msg_type,
-                request_id=request_id,
-                data=msg.get("data", {}),
-                transport=transport,
-                cancel_flags=self._cancel_flags,
-            )
-
 
 async def run_stdio_worker(namespaces: list[str] | None = None) -> None:
     """Entry point for the stdio worker."""
-    from nodetool.worker.executor import execute_node, execute_node_stream
+    from nodetool.worker.executor import execute_node
     from nodetool.worker.node_loader import load_nodes
 
     print("Loading node packages...", file=sys.stderr)
@@ -209,29 +134,26 @@ async def run_stdio_worker(namespaces: list[str] | None = None) -> None:
 
     server = StdioWorkerServer()
     server.set_nodes_metadata(nodes_metadata)
+    if namespaces is not None:
+        server.set_namespaces(namespaces)
 
-    async def handle_execute(data: dict, cancel_event: asyncio.Event) -> dict:
+    async def handle_execute(
+        data: dict,
+        cancel_event: asyncio.Event,
+        emit_progress: Callable[[dict[str, Any]], Awaitable[None]],
+        emit_chunk: Callable[[dict[str, Any]], Awaitable[None]] | None,
+    ) -> dict:
         return await execute_node(
             node_type=data["node_type"],
             fields=data.get("fields", {}),
             secrets=data.get("secrets", {}),
             input_blobs=data.get("blobs", {}),
             cancel_event=cancel_event,
+            emit_progress=emit_progress,
+            emit_chunk=emit_chunk,
         )
 
     server.set_execute_handler(handle_execute)
-
-    async def handle_execute_stream(data: dict, cancel_event: asyncio.Event):
-        async for chunk in execute_node_stream(
-            node_type=data["node_type"],
-            fields=data.get("fields", {}),
-            secrets=data.get("secrets", {}),
-            input_blobs=data.get("blobs", {}),
-            cancel_event=cancel_event,
-        ):
-            yield chunk
-
-    server.set_stream_handler(handle_execute_stream)
 
     # Signal readiness on stderr (stdout is for protocol only)
     print("NODETOOL_STDIO_READY", file=sys.stderr, flush=True)

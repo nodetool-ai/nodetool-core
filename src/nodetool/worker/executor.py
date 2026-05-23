@@ -7,7 +7,7 @@ import shutil
 import tempfile
 from collections.abc import AsyncGenerator
 from types import UnionType
-from typing import Any, Union, get_args, get_origin
+from typing import Any, Awaitable, Callable, Union, get_args, get_origin
 
 from nodetool.metadata.types import (
     AssetRef,
@@ -54,12 +54,40 @@ def _get_asset_ref_type(annotation: Any) -> str:
     return REF_TYPE_BY_CLASS_NAME.get(type_name, "asset")
 
 
+async def _emit_pending_progress(
+    ctx: WorkerContext,
+    emit_progress: Callable[[dict[str, Any]], Awaitable[None]] | None,
+) -> None:
+    """Forward any NodeProgress messages the node queued during execution."""
+    if emit_progress is None:
+        ctx.drain_progress()
+        return
+
+    for msg in ctx.drain_progress():
+        progress = getattr(msg, "progress", None)
+        total = getattr(msg, "total", None)
+        if progress is None:
+            current = getattr(msg, "current", None)
+            if current is not None:
+                progress = current
+        if progress is None:
+            progress = 0
+        if total is None:
+            total = 100
+        await emit_progress({
+            "progress": progress,
+            "total": total,
+            "message": getattr(msg, "message", None),
+        })
+
+
 async def _prepare_node(
     node_class: type[BaseNode],
     fields: dict[str, Any],
     input_blobs: dict[str, bytes | list[bytes]],
     temp_dir: str,
     ctx: WorkerContext,
+    emit_progress: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> BaseNode:
     """Instantiate a node, assign fields/blobs, and run its preprocessing lifecycle.
 
@@ -109,8 +137,11 @@ async def _prepare_node(
 
     # Lifecycle: pre_process -> preload_model -> move_to_device
     await node.pre_process(ctx)
+    await _emit_pending_progress(ctx, emit_progress)
     await node.preload_model(ctx)
+    await _emit_pending_progress(ctx, emit_progress)
     await node.move_to_device(ctx.device)
+    await _emit_pending_progress(ctx, emit_progress)
     return node
 
 
@@ -120,8 +151,16 @@ async def execute_node(
     secrets: dict[str, str],
     input_blobs: dict[str, bytes | list[bytes]],
     cancel_event: asyncio.Event | None = None,
+    emit_progress: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+    emit_chunk: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> dict[str, Any]:
-    """Execute a single Python node and return outputs + blobs."""
+    """Execute a single Python node and return outputs + blobs.
+
+    Streaming nodes (``is_streaming_output() == True``) emit each yielded item
+    via ``emit_chunk`` when provided; the return value still carries the final
+    aggregated outputs so callers that only need the last value can ignore the
+    chunks.
+    """
     node_class = NODE_BY_TYPE.get(node_type)
     if node_class is None:
         raise ValueError(f"Unknown node type: {node_type}")
@@ -134,12 +173,20 @@ async def execute_node(
 
         temp_dir = tempfile.mkdtemp(prefix="nodetool_worker_")
         try:
-            node = await _prepare_node(node_class, fields, input_blobs, temp_dir, ctx)
+            node = await _prepare_node(
+                node_class, fields, input_blobs, temp_dir, ctx, emit_progress
+            )
             if node.is_streaming_output():
-                result = await _collect_streaming_outputs(node, ctx)
+                if emit_chunk is not None:
+                    result = await _stream_streaming_outputs(
+                        node, ctx, emit_progress, emit_chunk
+                    )
+                else:
+                    result = await _collect_streaming_outputs(node, ctx, emit_progress)
                 outputs, blobs = _extract_named_outputs(result, ctx)
             else:
                 result = await node.process(ctx)
+                await _emit_pending_progress(ctx, emit_progress)
                 outputs, blobs = _extract_outputs(result, ctx)
             return {"outputs": outputs, "blobs": blobs}
         finally:
@@ -228,10 +275,15 @@ def _extract_outputs(
     return {"output": _serialize_value(result)}, output_blobs
 
 
-async def _collect_streaming_outputs(node: BaseNode, ctx: WorkerContext) -> dict[str, Any]:
+async def _collect_streaming_outputs(
+    node: BaseNode,
+    ctx: WorkerContext,
+    emit_progress: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+) -> dict[str, Any]:
     """Collect the final value emitted for each slot from a streaming node."""
     outputs: dict[str, Any] = {}
     async for item in node.gen_process(ctx):
+        await _emit_pending_progress(ctx, emit_progress)
         if not isinstance(item, dict):
             raise TypeError(
                 "Streaming worker nodes must yield dictionaries mapping output names to values."
@@ -243,6 +295,38 @@ async def _collect_streaming_outputs(node: BaseNode, ctx: WorkerContext) -> dict
                 )
             if value is not None:
                 outputs[slot_name] = value
+    return outputs
+
+
+async def _stream_streaming_outputs(
+    node: BaseNode,
+    ctx: WorkerContext,
+    emit_progress: Callable[[dict[str, Any]], Awaitable[None]] | None,
+    emit_chunk: Callable[[dict[str, Any]], Awaitable[None]],
+) -> dict[str, Any]:
+    """Emit each streaming item while still collecting final outputs."""
+    outputs: dict[str, Any] = {}
+    async for item in node.gen_process(ctx):
+        await _emit_pending_progress(ctx, emit_progress)
+        if not isinstance(item, dict):
+            raise TypeError(
+                "Streaming worker nodes must yield dictionaries mapping output names to values."
+            )
+
+        partial: dict[str, Any] = {}
+        for slot_name, value in item.items():
+            if not isinstance(slot_name, str):
+                raise TypeError(
+                    "Streaming worker nodes must use string keys for output names."
+                )
+            if value is not None:
+                outputs[slot_name] = value
+                partial[slot_name] = value
+
+        if partial:
+            chunk_outputs, chunk_blobs = _extract_named_outputs(partial, ctx)
+            await emit_chunk({"outputs": chunk_outputs, "blobs": chunk_blobs})
+
     return outputs
 
 
