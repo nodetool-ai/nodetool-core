@@ -895,3 +895,35 @@ async def test_preview_uses_inbox_items_when_available():
     preview_messages = [m for m in messages if isinstance(m, PreviewUpdate)]
     assert len(preview_messages) == 1
     assert preview_messages[0].value == "streamed_value"
+
+
+class _NodeWithRequiredInputs(BaseNode):
+    image: ImageRef = ImageRef()
+    label: str = ""
+
+    def required_inputs(self) -> list[str]:
+        return ["image"]
+
+    async def process(self, context: ProcessingContext) -> str:
+        return self.label
+
+
+class _NodeWithoutRequiredInputs(BaseNode):
+    image: ImageRef = ImageRef()
+
+    async def process(self, context: ProcessingContext) -> ImageRef:
+        return self.image
+
+
+def test_metadata_input_fields_match_required_inputs():
+    """NodeMetadata.input_fields must be populated from required_inputs()
+    so the web UI can render default input handles for Python nodes."""
+    md = _NodeWithRequiredInputs.get_metadata()
+    assert md.input_fields == ["image"]
+
+
+def test_metadata_input_fields_default_empty_when_unset():
+    """Nodes that don't override required_inputs() get an empty list, not
+    a missing field — keeps the serialized shape stable."""
+    md = _NodeWithoutRequiredInputs.get_metadata()
+    assert md.input_fields == []

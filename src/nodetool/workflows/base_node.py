@@ -1021,6 +1021,15 @@ class BaseNode(BaseModel):
         from nodetool.metadata.node_metadata import NodeMetadata
 
         try:
+            # required_inputs() is declared as an instance method, but every override
+            # in the tree is pure (returns a literal list). Use model_construct to
+            # skip validation and avoid running any node-specific __init__ side effects.
+            try:
+                input_fields = list(cls.model_construct().required_inputs())
+            except Exception as e:
+                log.debug("Failed to derive input_fields for %s: %s", cls.__name__, e)
+                input_fields = []
+
             return NodeMetadata(
                 title=cls.get_title(),
                 description=cls.get_description(),
@@ -1032,6 +1041,7 @@ class BaseNode(BaseModel):
                 layout=cls.layout(),
                 recommended_models=cls.unified_recommended_models(include_model_info=include_model_info),
                 basic_fields=cls.get_basic_fields(),
+                input_fields=input_fields,
                 is_dynamic=cls.is_dynamic(),
                 is_streaming_output=cls.is_streaming_output(),
                 expose_as_tool=cls.expose_as_tool(),

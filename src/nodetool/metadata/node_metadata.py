@@ -68,6 +68,13 @@ class NodeMetadata(BaseModel):
         default_factory=list, description="Recommended models for the node"
     )
     basic_fields: list[str] = Field(default_factory=list, description="Basic fields of the node")
+    input_fields: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Property names that should be rendered as input handles on the node body "
+            "(parity with the TS BaseNode.inputFields). Defaults to required_inputs()."
+        ),
+    )
     required_settings: list[str] = Field(
         default_factory=list,
         description="Environment setting/secret keys required to run the node",
