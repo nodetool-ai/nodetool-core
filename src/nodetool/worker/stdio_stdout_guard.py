@@ -6,14 +6,18 @@ import sys
 from typing import BinaryIO, TextIO
 
 
-class _StdioStdoutGuard(TextIO):
+class _StdioStdoutGuard:
     """Route text writes to stderr while preserving binary stdout for framing."""
 
     def __init__(self, binary_stream: BinaryIO, text_stream: TextIO) -> None:
-        self.buffer = binary_stream
+        self._binary_stream = binary_stream
         self._text = text_stream
 
-    def write(self, data: str) -> int:  # type: ignore[override]
+    @property
+    def buffer(self) -> BinaryIO:
+        return self._binary_stream
+
+    def write(self, data: str) -> int:
         if not data:
             return 0
         return self._text.write(data)
@@ -25,7 +29,7 @@ class _StdioStdoutGuard(TextIO):
         return self._text.isatty()
 
     def fileno(self) -> int:
-        return self.buffer.fileno()
+        return self._binary_stream.fileno()
 
 
 def install_stdio_stdout_guard() -> None:
