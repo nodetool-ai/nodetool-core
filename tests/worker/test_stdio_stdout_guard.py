@@ -1,7 +1,9 @@
-import io
 import sys
 
-from nodetool.worker.stdio_stdout_guard import install_stdio_stdout_guard
+from nodetool.worker.stdio_stdout_guard import (
+    get_protocol_stdout_buffer,
+    install_stdio_stdout_guard,
+)
 
 
 def test_install_stdio_stdout_guard_redirects_text_to_stderr(capsys):
@@ -14,7 +16,7 @@ def test_install_stdio_stdout_guard_redirects_text_to_stderr(capsys):
 
     marker = "stdout-guard-test-marker"
     print(marker)
-    real_stdout.buffer.write(b"binary-protocol-bytes")
+    get_protocol_stdout_buffer().write(b"binary-protocol-bytes")
 
     captured = capsys.readouterr()
     assert marker in captured.err

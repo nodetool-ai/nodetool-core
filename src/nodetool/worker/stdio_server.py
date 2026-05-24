@@ -18,6 +18,7 @@ from typing import Any, Awaitable, Callable
 import msgpack
 
 from nodetool.worker.protocol import MAX_BRIDGE_FRAME_SIZE, WorkerProtocolServer
+from nodetool.worker.stdio_stdout_guard import get_protocol_stdout_buffer
 
 
 class StdioTransport:
@@ -33,6 +34,7 @@ class StdioTransport:
 
     def __init__(self) -> None:
         self._write_lock = asyncio.Lock()
+        self._protocol_stdout = get_protocol_stdout_buffer()
 
     async def read_message(self) -> dict[str, Any] | None:
         """Read one length-prefixed msgpack message. Returns None on EOF."""
@@ -59,8 +61,8 @@ class StdioTransport:
             )
         message = struct.pack(">I", len(data)) + data
         async with self._write_lock:
-            await loop.run_in_executor(None, sys.stdout.buffer.write, message)
-            await loop.run_in_executor(None, sys.stdout.buffer.flush)
+            await loop.run_in_executor(None, self._protocol_stdout.write, message)
+            await loop.run_in_executor(None, self._protocol_stdout.flush)
 
     async def send_msg(self, msg: dict[str, Any]) -> None:
         """Encode and send a dict as msgpack."""
