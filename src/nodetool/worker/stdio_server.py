@@ -125,6 +125,10 @@ class StdioWorkerServer:
 
 async def run_stdio_worker(namespaces: list[str] | None = None) -> None:
     """Entry point for the stdio worker."""
+    from nodetool.worker.stdio_stdout_guard import install_stdio_stdout_guard
+
+    install_stdio_stdout_guard()
+
     from nodetool.worker.executor import execute_node
     from nodetool.worker.node_loader import load_nodes, resolve_namespaces
 
