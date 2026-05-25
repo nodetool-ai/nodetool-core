@@ -162,7 +162,30 @@ async def run_stdio_worker(namespaces: list[str] | None = None) -> None:
 
     server.set_execute_handler(handle_execute)
 
-    # Signal readiness on stderr (stdout is for protocol only)
+    # Signal readiness on stderr (stdout is for protocol only) — BEFORE the
+    # warm-import below, so the TS bridge startup timeout (20s) is satisfied
+    # immediately. The discover request that Node sends next will sit in the
+    # stdin OS buffer until server.run() starts draining it, which is fine.
     print("NODETOOL_STDIO_READY", file=sys.stderr, flush=True)
+
+    # Warm-import heavy ML modules on the MAIN thread before the event loop
+    # starts dispatching work. Importing these from a worker thread (via
+    # asyncio.to_thread / run_in_executor) hangs indefinitely on Windows for
+    # diffusers + nunchaku Flux. Paying ~30s once at startup is far better
+    # than a per-job hang. Must happen AFTER readiness signal but BEFORE
+    # server.run() so the first execute() finds the module cached.
+    if "huggingface" in resolved_namespaces:
+        import time as _time
+        _t0 = _time.perf_counter()
+        print("Warm-importing heavy ML modules...", file=sys.stderr, flush=True)
+        try:
+            from diffusers.pipelines.flux.pipeline_flux import FluxPipeline  # noqa: F401
+            print(
+                f"Warm-imported diffusers.FluxPipeline in {_time.perf_counter()-_t0:.1f}s",
+                file=sys.stderr,
+                flush=True,
+            )
+        except Exception as _e:  # pragma: no cover — best-effort warm-up
+            print(f"Warm-import failed (non-fatal): {_e}", file=sys.stderr, flush=True)
 
     await server.run()
