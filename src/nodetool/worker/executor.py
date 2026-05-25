@@ -21,10 +21,6 @@ from nodetool.runtime.resources import ResourceScope
 from nodetool.worker.context_stub import WorkerContext
 from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
 
-import logging
-
-log = logging.getLogger(__name__)
-
 # Asset ref types that should be extracted as blobs
 ASSET_REF_TYPES = (ImageRef, AudioRef, VideoRef, Model3DRef, AssetRef)
 REF_TYPE_BY_CLASS_NAME = {
@@ -226,8 +222,6 @@ async def execute_node(
     node_class = NODE_BY_TYPE.get(node_type)
     if node_class is None:
         raise ValueError(f"Unknown node type: {node_type}")
-
-    log.info("execute_node start: %s", node_type)
 
     async with ResourceScope():
         ctx = WorkerContext(
