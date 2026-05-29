@@ -68,6 +68,14 @@ class NodeMetadata(BaseModel):
         default_factory=list, description="Recommended models for the node"
     )
     basic_fields: list[str] = Field(default_factory=list, description="Basic fields of the node")
+    input_fields: list[str] = Field(
+        default_factory=list,
+        description="Property names that should expose an input handle on the node",
+    )
+    inline_fields: list[str] = Field(
+        default_factory=list,
+        description="Property names that should render as inline editors inside the node body",
+    )
     required_settings: list[str] = Field(
         default_factory=list,
         description="Environment setting/secret keys required to run the node",

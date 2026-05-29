@@ -158,6 +158,29 @@ class TypeMetadata(BaseModel):
     def is_union_type(self):
         return self.type == "union"
 
+    def is_inline_editable(self) -> bool:
+        """Whether values of this type are reasonable to edit inline in the node body.
+
+        Defaults to True for primitives and enums, False for asset/comfy types and
+        collections of complex types. Optional wrappers and unions are transparent.
+        """
+        if self.type == "any":
+            return False
+        if self.is_asset_type():
+            return False
+        if self.is_comfy_type():
+            return False
+        if self.is_enum_type() or self.is_primitive_type():
+            return True
+        if self.is_union_type():
+            return any(t.is_inline_editable() for t in self.type_args)
+        if self.is_list_type() or self.is_tuple_type():
+            return bool(self.type_args) and self.type_args[0].is_inline_editable()
+        if self.is_dict_type():
+            return False
+        # Unknown/custom types: don't render inline by default.
+        return False
+
     def get_python_type(self):
         from nodetool.metadata.types import NameToType
 

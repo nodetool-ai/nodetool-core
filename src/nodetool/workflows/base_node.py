@@ -948,10 +948,6 @@ class BaseNode(BaseModel):
         Returns:
             List of unified model metadata (without detailed info if called from sync context)
         """
-        from nodetool.integrations.huggingface.huggingface_models import (
-            unified_model,
-        )
-
         recommended_models = cls.get_recommended_models()
         if not recommended_models:
             return []
@@ -964,9 +960,26 @@ class BaseNode(BaseModel):
                 "Model info will not be fetched. Use unified_recommended_models_async() instead."
             )
 
-        # Convert models synchronously (without detailed model info from API)
-        return [  # type: ignore
-            unified_model(model, model_info=None) for model in recommended_models
+        # Convert models synchronously (without detailed model info from API).
+        # `unified_model` is async, so we build the minimal record inline here
+        # to stay in a sync context (matches its model_info=None branch). The
+        # optional `--enrich` scan step decorates these with size/tags/etc.
+        return [
+            UnifiedModel(
+                id=(
+                    f"{model.repo_id}:{model.path}"
+                    if model.path is not None
+                    else model.repo_id
+                ),
+                repo_id=model.repo_id,
+                path=model.path,
+                type=model.type,
+                name=model.repo_id,
+                cache_path=None,
+                allow_patterns=model.allow_patterns,
+                ignore_patterns=model.ignore_patterns,
+            )
+            for model in recommended_models
         ]
 
     @classmethod
@@ -1009,6 +1022,55 @@ class BaseNode(BaseModel):
         return [p.name for p in cls.properties()]
 
     @classmethod
+    def _expose_hint(cls, prop: "Property") -> str | None:
+        """Read the per-field expose hint from json_schema_extra, if any.
+
+        Recognised values: "handle", "inline", "both", "none".
+        """
+        extra = prop.json_schema_extra or {}
+        value = extra.get("expose")
+        if value in ("handle", "inline", "both", "none"):
+            return value
+        return None
+
+    @classmethod
+    def get_input_fields(cls) -> list[str]:
+        """Property names that should expose an input handle on the node.
+
+        Default: every property gets a handle, unless its Pydantic field sets
+        ``json_schema_extra={"expose": "inline" | "none"}``. Subclasses may
+        override this to return an explicit list.
+        """
+        names: list[str] = []
+        for prop in cls.properties():
+            hint = cls._expose_hint(prop)
+            if hint in ("inline", "none"):
+                continue
+            names.append(prop.name)
+        return names
+
+    @classmethod
+    def get_inline_fields(cls) -> list[str]:
+        """Property names that should render an inline editor inside the node body.
+
+        Default: derived from the property type — primitives and enums render
+        inline, asset/complex types do not. Override via
+        ``Field(json_schema_extra={"expose": "handle" | "inline" | "none"})`` or
+        by overriding this classmethod.
+        """
+        names: list[str] = []
+        for prop in cls.properties():
+            hint = cls._expose_hint(prop)
+            if hint == "inline" or hint == "both":
+                names.append(prop.name)
+                continue
+            if hint in ("handle", "none"):
+                continue
+            if prop.type.is_inline_editable():
+                names.append(prop.name)
+        return names
+
+    @classmethod
     def get_metadata(cls: type["BaseNode"], include_model_info: bool = False) -> Any:
         """
         Generate comprehensive metadata for the node class.
@@ -1019,6 +1081,15 @@ class BaseNode(BaseModel):
         """
         # avoid circular import
         from nodetool.metadata.node_metadata import NodeMetadata
+
+        # input_fields (handle-only dots) and inline_fields (editor rows that
+        # already carry a connectable handle) must be disjoint: the frontend
+        # renders the two lists independently, so a field appearing in both is
+        # drawn twice. inline wins — an inline field is connectable already, so
+        # it never needs a separate handle-only dot.
+        inline_fields = cls.get_inline_fields()
+        _inline_set = set(inline_fields)
+        input_fields = [f for f in cls.get_input_fields() if f not in _inline_set]
 
         try:
             return NodeMetadata(
@@ -1032,6 +1103,8 @@ class BaseNode(BaseModel):
                 layout=cls.layout(),
                 recommended_models=cls.unified_recommended_models(include_model_info=include_model_info),
                 basic_fields=cls.get_basic_fields(),
+                input_fields=input_fields,
+                inline_fields=inline_fields,
                 is_dynamic=cls.is_dynamic(),
                 is_streaming_output=cls.is_streaming_output(),
                 expose_as_tool=cls.expose_as_tool(),

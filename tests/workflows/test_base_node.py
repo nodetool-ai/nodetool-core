@@ -133,6 +133,61 @@ def test_node_metadata_includes_required_settings():
     assert ConfigurableDynamicNode.required_settings() == ["OPENAI_API_KEY", "SERPAPI_API_KEY"]
 
 
+class _MixedFieldsNode(BaseNode):
+    """Node mixing primitive, asset, and explicitly-hinted fields."""
+
+    prompt: str = "hello"
+    seed: int = 0
+    image: ImageRef = ImageRef()
+    debug_only: str = Field(default="", json_schema_extra={"expose": "inline"})
+    handle_only_str: str = Field(default="", json_schema_extra={"expose": "handle"})
+    hidden: str = Field(default="", json_schema_extra={"expose": "none"})
+
+    async def process(self, context: ProcessingContext) -> str:
+        return self.prompt
+
+
+def test_input_fields_default_includes_all_except_inline_and_none_hints():
+    inputs = _MixedFieldsNode.get_input_fields()
+    assert "prompt" in inputs
+    assert "seed" in inputs
+    assert "image" in inputs
+    assert "handle_only_str" in inputs
+    assert "debug_only" not in inputs
+    assert "hidden" not in inputs
+
+
+def test_inline_fields_default_derives_from_type_with_per_field_overrides():
+    inline = _MixedFieldsNode.get_inline_fields()
+    # Primitives default to inline.
+    assert "prompt" in inline
+    assert "seed" in inline
+    # Asset refs default to handle-only.
+    assert "image" not in inline
+    # Explicit "inline" hint includes it; "handle" / "none" exclude it.
+    assert "debug_only" in inline
+    assert "handle_only_str" not in inline
+    assert "hidden" not in inline
+
+
+def test_node_metadata_exposes_input_and_inline_fields():
+    meta = _MixedFieldsNode.get_metadata()
+    inline = _MixedFieldsNode.get_inline_fields()
+    # inline_fields pass through unchanged.
+    assert meta.inline_fields == inline
+    # input_fields are the handle-only fields: get_input_fields() minus any that
+    # also render inline. An inline row already carries a connectable handle, so
+    # listing a field in both would draw it twice on the node. The serialized
+    # metadata therefore keeps the two lists disjoint, with inline winning.
+    assert meta.input_fields == [
+        f for f in _MixedFieldsNode.get_input_fields() if f not in set(inline)
+    ]
+    assert set(meta.input_fields).isdisjoint(meta.inline_fields)
+    # Concretely: prompt/seed move to inline-only; image/handle_only_str stay handle-only.
+    assert meta.input_fields == ["image", "handle_only_str"]
+    assert meta.inline_fields == ["prompt", "seed", "debug_only"]
+
+
 def test_node_find_property_method():
     node = DummyClass(prop=123)
     assert isinstance(node.find_property("prop"), Property)
