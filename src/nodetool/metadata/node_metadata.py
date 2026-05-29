@@ -61,6 +61,10 @@ class NodeMetadata(BaseModel):
     namespace: str = Field(description="Namespace of the node")
     node_type: str = Field(description="Fully qualified type of the node")
     layout: str = Field(default="default", description="UI Layout of the node")
+    body: str = Field(
+        default="default",
+        description="Node body renderer; e.g. 'content_card' for a media/text-forward body",
+    )
     properties: list[Property] = Field(default_factory=list, description="Properties of the node")
     outputs: list[OutputSlot] = Field(default_factory=list, description="Outputs of the node")
     the_model_info: dict[str, Any] = Field(default_factory=dict, description="HF Model info for the node")

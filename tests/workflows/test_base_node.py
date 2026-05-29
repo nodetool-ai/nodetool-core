@@ -188,6 +188,31 @@ def test_node_metadata_exposes_input_and_inline_fields():
     assert meta.inline_fields == ["prompt", "seed", "debug_only"]
 
 
+class _ContentCardNode(BaseNode):
+    _body: ClassVar[str] = "content_card"
+    prompt: str = ""
+
+    async def process(self, context: ProcessingContext) -> str:
+        return self.prompt
+
+
+def test_node_body_defaults_to_default():
+    # Nodes render with the generic body unless they opt in.
+    assert _MixedFieldsNode.body() == "default"
+    assert _MixedFieldsNode.get_metadata().body == "default"
+
+
+def test_node_body_opt_in_renders_content_card():
+    # Authors set _body to opt into the content-card body; the frontend derives
+    # the concrete variant (image/audio/text/...) from the primary output type.
+    assert _ContentCardNode.body() == "content_card"
+    meta = _ContentCardNode.get_metadata()
+    assert meta.body == "content_card"
+    # Content-card nodes show no inline editor rows; inputs surface as handles.
+    assert meta.inline_fields == []
+    assert "prompt" in meta.input_fields
+
+
 def test_node_find_property_method():
     node = DummyClass(prop=123)
     assert isinstance(node.find_property("prop"), Property)

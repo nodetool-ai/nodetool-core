@@ -416,6 +416,7 @@ class BaseNode(BaseModel):
     _parent_id: str | None = PrivateAttr(default=None)
     _ui_properties: dict[str, Any] = PrivateAttr(default_factory=dict)
     _layout: ClassVar[str] = "default"
+    _body: ClassVar[str] = "default"
     _dynamic_properties: dict[str, Any] = PrivateAttr(default_factory=dict)
     _dynamic_outputs: dict[str, TypeMetadata] = PrivateAttr(default_factory=dict)
     _is_dynamic: ClassVar[bool] = False
@@ -770,6 +771,17 @@ class BaseNode(BaseModel):
         # If it's a Pydantic Field / FieldInfo return its default, else direct.
         return getattr(attr, "default", attr)  # type: ignore
 
+    @classmethod
+    def body(cls) -> str:
+        """Node body renderer key (e.g. "content_card"). Default "default".
+
+        Authors set ``_body`` (or override this) to opt a node into a
+        content-forward body; the frontend derives the concrete variant
+        (image/audio/video/text/3D) from the node's primary output type.
+        """
+        attr = getattr(cls, "_body", "default")
+        return getattr(attr, "default", attr)  # type: ignore
+
     @property
     def id(self) -> str:
         return self._id
@@ -1082,12 +1094,19 @@ class BaseNode(BaseModel):
         # avoid circular import
         from nodetool.metadata.node_metadata import NodeMetadata
 
+        # Content-card nodes render a media/text-forward body that manages its
+        # own layout and shows no inline editor rows, so suppress inline_fields
+        # entirely for them. Their inputs still surface as left-edge handles via
+        # input_fields.
+        if cls.body() == "content_card":
+            inline_fields: list[str] = []
+        else:
+            inline_fields = cls.get_inline_fields()
         # input_fields (handle-only dots) and inline_fields (editor rows that
         # already carry a connectable handle) must be disjoint: the frontend
         # renders the two lists independently, so a field appearing in both is
         # drawn twice. inline wins — an inline field is connectable already, so
         # it never needs a separate handle-only dot.
-        inline_fields = cls.get_inline_fields()
         _inline_set = set(inline_fields)
         input_fields = [f for f in cls.get_input_fields() if f not in _inline_set]
 
@@ -1101,6 +1120,7 @@ class BaseNode(BaseModel):
                 outputs=cls.outputs(),
                 the_model_info=cls.get_model_info(),
                 layout=cls.layout(),
+                body=cls.body(),
                 recommended_models=cls.unified_recommended_models(include_model_info=include_model_info),
                 basic_fields=cls.get_basic_fields(),
                 input_fields=input_fields,
