@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import BinaryIO
+from typing import BinaryIO, cast
 
 _protocol_stdout_fd: int | None = None
 
@@ -34,7 +34,7 @@ def get_protocol_stdout_buffer() -> BinaryIO:
         raise RuntimeError(
             "Protocol stdout is not initialized; call install_stdio_stdout_guard() first"
         )
-    return _ProtocolStdoutBuffer(_protocol_stdout_fd)
+    return cast(BinaryIO, _ProtocolStdoutBuffer(_protocol_stdout_fd))
 
 
 def install_stdio_stdout_guard() -> None:
