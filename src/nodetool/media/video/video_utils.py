@@ -4,6 +4,7 @@ Vendorized video export utilities from diffusers.
 
 import io
 import tempfile
+from collections.abc import Iterable
 from typing import IO, Any, Optional, cast
 
 import numpy as np
@@ -25,7 +26,7 @@ def _is_opencv_available() -> bool:
 
 
 def _legacy_export_to_video(
-    video_frames: list[np.ndarray] | list[PIL.Image.Image],
+    video_frames: Iterable[np.ndarray | PIL.Image.Image],
     output_video_path: str | None = None,
     fps: int = 10,
 ) -> str:
@@ -41,8 +42,13 @@ def _legacy_export_to_video(
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
             output_video_path = tmp_file.name
 
+    iterator = iter(video_frames)
+    try:
+        first_frame = next(iterator)
+    except StopIteration:
+        raise IndexError("list index out of range") from None
+
     # Initialize writer using dimensions from the first frame
-    first_frame = video_frames[0]
     if isinstance(first_frame, PIL.Image.Image):
         w, h = first_frame.size
     elif isinstance(first_frame, np.ndarray):
@@ -50,17 +56,20 @@ def _legacy_export_to_video(
     else:
         raise ValueError(f"Unsupported frame type: {type(first_frame)}")
 
+    import itertools
+    video_frames_iter = itertools.chain([first_frame], iterator)
+
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
     video_writer = cv2.VideoWriter(output_video_path, fourcc, fps=fps, frameSize=(w, h))
 
-    for frame in video_frames:
+    for frame in video_frames_iter:
         if isinstance(frame, PIL.Image.Image):
             # ⚡ Bolt Optimization: Use np.asarray() instead of np.array() to avoid unnecessary byte-copying
             frame = np.asarray(frame)
 
         # Convert to uint8 if needed (assume float 0..1 if not uint8)
         if frame.dtype != np.uint8:
-            frame = (frame * 255).astype(np.uint8)
+            frame = (frame * 255).astype(np.uint8) if frame.dtype.kind == "f" else frame.astype(np.uint8)
 
         img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         video_writer.write(img)
@@ -70,7 +79,7 @@ def _legacy_export_to_video(
 
 
 def export_to_video(
-    video_frames: list[np.ndarray] | list[PIL.Image.Image],
+    video_frames: Iterable[np.ndarray | PIL.Image.Image],
     output_video_path: str | None = None,
     fps: int = 10,
     quality: float = 5.0,
@@ -124,8 +133,14 @@ def export_to_video(
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
             output_video_path = tmp_file.name
 
-    if not video_frames:
-        raise IndexError("list index out of range")
+    iterator = iter(video_frames)
+    try:
+        first_frame = next(iterator)
+    except StopIteration:
+        raise IndexError("list index out of range") from None
+
+    import itertools
+    video_frames_iter = itertools.chain([first_frame], iterator)
 
     # Export using imageio
     with imageio.get_writer(
@@ -135,14 +150,14 @@ def export_to_video(
         bitrate=bitrate,
         macro_block_size=macro_block_size,
     ) as writer:
-        for frame in video_frames:
+        for frame in video_frames_iter:
             if isinstance(frame, PIL.Image.Image):
                 # ⚡ Bolt Optimization: Use np.asarray() instead of np.array() to avoid unnecessary byte-copying
                 frame = np.asarray(frame)
 
             # Convert to uint8 if needed (assume float 0..1 if not uint8)
             if frame.dtype != np.uint8:
-                frame = (frame * 255).astype(np.uint8)
+                frame = (frame * 255).astype(np.uint8) if frame.dtype.kind == "f" else frame.astype(np.uint8)
 
             writer.append_data(frame)  # type: ignore[attr-defined]
 
@@ -150,7 +165,7 @@ def export_to_video(
 
 
 def export_to_video_bytes(
-    video_frames: list[np.ndarray] | list[PIL.Image.Image],
+    video_frames: Iterable[np.ndarray | PIL.Image.Image],
     fps: int = 10,
     quality: float = 5.0,
     bitrate: Optional[int] = None,
@@ -198,8 +213,14 @@ def export_to_video_bytes(
         )
         return _legacy_export_to_video_bytes(video_frames, fps)
 
-    if not video_frames:
-        raise IndexError("list index out of range")
+    iterator = iter(video_frames)
+    try:
+        first_frame = next(iterator)
+    except StopIteration:
+        raise IndexError("list index out of range") from None
+
+    import itertools
+    video_frames_iter = itertools.chain([first_frame], iterator)
 
     # Export using imageio to bytes
     from io import BytesIO
@@ -213,14 +234,14 @@ def export_to_video_bytes(
         bitrate=bitrate,
         macro_block_size=macro_block_size,
     ) as writer:
-        for frame in video_frames:
+        for frame in video_frames_iter:
             if isinstance(frame, PIL.Image.Image):
                 # ⚡ Bolt Optimization: Use np.asarray() instead of np.array() to avoid unnecessary byte-copying
                 frame = np.asarray(frame)
 
             # Convert to uint8 if needed (assume float 0..1 if not uint8)
             if frame.dtype != np.uint8:
-                frame = (frame * 255).astype(np.uint8)
+                frame = (frame * 255).astype(np.uint8) if frame.dtype.kind == "f" else frame.astype(np.uint8)
 
             writer.append_data(frame)  # type: ignore[attr-defined]
 
@@ -228,7 +249,7 @@ def export_to_video_bytes(
 
 
 def _legacy_export_to_video_bytes(
-    video_frames: list[np.ndarray] | list[PIL.Image.Image],
+    video_frames: Iterable[np.ndarray | PIL.Image.Image],
     fps: int = 10,
 ) -> bytes:
     """Legacy video export to bytes using OpenCV backend."""
@@ -239,14 +260,22 @@ def _legacy_export_to_video_bytes(
 
     import cv2
 
+    iterator = iter(video_frames)
+    try:
+        first_frame = next(iterator)
+    except StopIteration:
+        raise IndexError("list index out of range") from None
+
     # Initialize writer using dimensions from the first frame
-    first_frame = video_frames[0]
     if isinstance(first_frame, PIL.Image.Image):
         w, h = first_frame.size
     elif isinstance(first_frame, np.ndarray):
         h, w = first_frame.shape[:2]
     else:
         raise ValueError(f"Unsupported frame type: {type(first_frame)}")
+
+    import itertools
+    video_frames_iter = itertools.chain([first_frame], iterator)
 
     import os
     import tempfile
@@ -258,14 +287,14 @@ def _legacy_export_to_video_bytes(
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
         video_writer = cv2.VideoWriter(temp_video_path, fourcc, fps=fps, frameSize=(w, h))
 
-        for frame in video_frames:
+        for frame in video_frames_iter:
             if isinstance(frame, PIL.Image.Image):
                 # ⚡ Bolt Optimization: Use np.asarray() instead of np.array() to avoid unnecessary byte-copying
                 frame = np.asarray(frame)
 
             # Convert to uint8 if needed (assume float 0..1 if not uint8)
             if frame.dtype != np.uint8:
-                frame = (frame * 255).astype(np.uint8)
+                frame = (frame * 255).astype(np.uint8) if frame.dtype.kind == "f" else frame.astype(np.uint8)
 
             img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             video_writer.write(img)

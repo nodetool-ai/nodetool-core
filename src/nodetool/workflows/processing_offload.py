@@ -164,8 +164,8 @@ def _numpy_audio_to_wav_bytes(arr: Any, sample_rate: int = DEFAULT_AUDIO_SAMPLE_
 def _numpy_video_to_mp4_bytes(video_arr: Any, fps: int = 30) -> bytes:
     from nodetool.media.video.video_utils import export_to_video_bytes as _exporter
 
-    video_frames = list(video_arr)
-    return _exporter(video_frames, fps=fps, quality=5.0, bitrate=None, macro_block_size=16)
+    # ⚡ Bolt Optimization: Pass video_arr directly instead of list(video_arr) to enable lazy iteration
+    return _exporter(video_arr, fps=fps, quality=5.0, bitrate=None, macro_block_size=16)
 
 
 def _open_image_as_rgb(buffer: IO[bytes]) -> Any:
