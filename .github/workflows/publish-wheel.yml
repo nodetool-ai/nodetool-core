@@ -22,6 +22,15 @@ on:
         required: false
         default: false
         type: boolean
+      publish_pypi:
+        description: "Also publish to PyPI / TestPyPI"
+        required: false
+        default: "none"
+        type: choice
+        options:
+          - none
+          - testpypi
+          - pypi
 
 env:
   PACKAGE_NAME: ${{ github.event.repository.name }} # e.g., "nodetool-base"
@@ -159,3 +168,69 @@ jobs:
             --tag "${{ needs.validate.outputs.tag-name }}" \
             --repository "${{ github.repository }}" \
             --server-url "${{ github.server_url }}"
+
+  # Publish to PyPI via Trusted Publishing (OIDC). No stored tokens.
+  # Runs on every v*.*.* tag push, or on a manual run with publish_pypi=pypi.
+  #
+  # One-time PyPI setup (https://pypi.org/manage/account/publishing/):
+  #   Project: nodetool-core · Repo: nodetool-core
+  #   Workflow: publish-wheel.yml · Environment: pypi
+  publish-pypi:
+    needs: [validate, build-wheel]
+    if: github.event_name == 'push' || github.event.inputs.publish_pypi == 'pypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/nodetool-core/
+    permissions:
+      id-token: write # required for OIDC trusted publishing
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag-name }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      - name: Validate distributions
+        run: uvx twine check dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  # Manual-only TestPyPI dry run (publish_pypi=testpypi).
+  # Needs a matching pending publisher on https://test.pypi.org with
+  # environment name `testpypi`.
+  publish-testpypi:
+    needs: [validate, build-wheel]
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish_pypi == 'testpypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/nodetool-core/
+    permissions:
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag-name }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
