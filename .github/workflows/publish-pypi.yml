@@ -1,0 +1,115 @@
+# .github/workflows/publish-pypi.yml
+# Publishes nodetool-core to PyPI using Trusted Publishing (OIDC).
+# No API tokens are stored — GitHub's OIDC identity is exchanged for a
+# short-lived upload credential by PyPI.
+#
+# One-time setup on PyPI (https://pypi.org/manage/account/publishing/):
+#   - PyPI project name: nodetool-core
+#   - Owner:             <your github org/user>
+#   - Repository:        nodetool-core
+#   - Workflow name:     publish-pypi.yml
+#   - Environment:       pypi
+# For TestPyPI runs, configure the same under https://test.pypi.org and an
+# environment named `testpypi`.
+
+name: Publish to PyPI
+
+on:
+  # Publish to PyPI on version tags (e.g. v0.7.0)
+  push:
+    tags:
+      - "v*.*.*"
+
+  # Manual trigger — defaults to TestPyPI for safe dry runs
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Publish target"
+        required: true
+        default: "testpypi"
+        type: choice
+        options:
+          - testpypi
+          - pypi
+
+jobs:
+  build:
+    name: Build sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify tag matches package version
+        if: github.event_name == 'push'
+        run: |
+          PKG_VERSION="$(uv version --short)"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "pyproject version: $PKG_VERSION"
+          echo "tag version:       $TAG_VERSION"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match pyproject version $PKG_VERSION"
+            exit 1
+          fi
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      - name: Validate distributions
+        run: uvx twine check dist/*
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  publish-pypi:
+    name: Publish to PyPI
+    # Tag pushes -> PyPI. Manual runs -> only when target == pypi.
+    if: github.event_name == 'push' || github.event.inputs.target == 'pypi'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/nodetool-core/
+    permissions:
+      id-token: write # required for OIDC trusted publishing
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    # Only on manual runs targeting testpypi
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/nodetool-core/
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
