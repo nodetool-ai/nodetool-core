@@ -23,6 +23,8 @@ import numpy as np
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     ASRModel,
+    AudioModel,
+    AudioRef,
     EmbeddingModel,
     ImageModel,
     LanguageModel,
@@ -58,7 +60,10 @@ class ProviderCapability(StrEnum):
     TEXT_TO_IMAGE = "text_to_image"  # Text → Image generation
     IMAGE_TO_IMAGE = "image_to_image"  # Image transformation
     TEXT_TO_SPEECH = "text_to_speech"  # Text → Speech/Audio generation
-    AUTOMATIC_SPEECH_RECOGNITION = "automatic_speech_recognition"  # Speech → Text transcription
+    TEXT_TO_AUDIO = "text_to_audio"  # Text → Music/audio generation
+    AUTOMATIC_SPEECH_RECOGNITION = (
+        "automatic_speech_recognition"  # Speech → Text transcription
+    )
     TEXT_TO_VIDEO = "text_to_video"  # Text → Video generation
     IMAGE_TO_VIDEO = "image_to_video"  # Image → Video generation
     TEXT_TO_3D = "text_to_3d"  # Text → 3D model generation
@@ -142,6 +147,7 @@ class BaseProvider:
         ProviderCapability.TEXT_TO_IMAGE: "text_to_image",
         ProviderCapability.IMAGE_TO_IMAGE: "image_to_image",
         ProviderCapability.TEXT_TO_SPEECH: "text_to_speech",
+        ProviderCapability.TEXT_TO_AUDIO: "text_to_audio",
         ProviderCapability.AUTOMATIC_SPEECH_RECOGNITION: "automatic_speech_recognition",
         ProviderCapability.TEXT_TO_VIDEO: "text_to_video",
         ProviderCapability.IMAGE_TO_VIDEO: "image_to_video",
@@ -344,6 +350,21 @@ class BaseProvider:
         """
         return []
 
+    async def get_available_audio_models(self) -> list[AudioModel]:
+        """Get a list of available audio/music generation models for this provider.
+
+        Distinct from TTS (speech): these generate music or sound effects from a
+        text prompt. The implementation may check local cache or other requirements.
+
+        Returns:
+            List of AudioModel instances available for this provider.
+            Returns empty list if provider doesn't support audio generation.
+
+        Raises:
+            Exception: If model discovery fails (should be caught and return empty list)
+        """
+        return []
+
     async def get_available_embedding_models(self) -> list[EmbeddingModel]:
         """Get a list of available embedding models for this provider.
         The implementation may check for API keys, local cache, or other requirements.
@@ -374,7 +395,15 @@ class BaseProvider:
 
     async def get_available_models(
         self,
-    ) -> list[LanguageModel | ImageModel | TTSModel | ASRModel | VideoModel | EmbeddingModel | Model3DModel]:
+    ) -> list[
+        LanguageModel
+        | ImageModel
+        | TTSModel
+        | ASRModel
+        | VideoModel
+        | EmbeddingModel
+        | Model3DModel
+    ]:
         """Get a list of all available models for this provider.
 
         Returns language, image, TTS, ASR, video, embedding, and 3D models combined. Use get_available_language_models(),
@@ -585,7 +614,9 @@ class BaseProvider:
         Raises:
             NotImplementedError: If provider doesn't support GENERATE_MESSAGE capability
         """
-        raise NotImplementedError(f"{self.__class__.__name__} does not support GENERATE_MESSAGE capability")
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support GENERATE_MESSAGE capability"
+        )
 
     def generate_messages(
         self,
@@ -615,7 +646,9 @@ class BaseProvider:
         Raises:
             NotImplementedError: If provider doesn't support GENERATE_MESSAGES capability
         """
-        raise NotImplementedError(f"{self.__class__.__name__} does not support GENERATE_MESSAGES capability")
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support GENERATE_MESSAGES capability"
+        )
 
     async def text_to_image(
         self,
@@ -641,7 +674,9 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If generation fails
         """
-        raise NotImplementedError(f"{self.__class__.__name__} does not support TEXT_TO_IMAGE capability")
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support TEXT_TO_IMAGE capability"
+        )
 
     async def image_to_image(  # type: ignore[override]
         self,
@@ -669,7 +704,9 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If generation fails
         """
-        raise NotImplementedError(f"{self.__class__.__name__} does not support IMAGE_TO_IMAGE capability")
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support IMAGE_TO_IMAGE capability"
+        )
 
     def text_to_speech(
         self,
@@ -706,7 +743,54 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If generation fails
         """
-        raise NotImplementedError(f"{self.__class__.__name__} does not support TEXT_TO_SPEECH capability")
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support TEXT_TO_SPEECH capability"
+        )
+
+    async def text_to_audio(
+        self,
+        prompt: str,
+        model: str,
+        lyrics: str = "",
+        audio_duration: float = 30.0,
+        guidance_scale: float = 7.0,
+        num_inference_steps: int = 8,
+        seed: int | None = None,
+        timeout_s: int | None = None,
+        context: Any = None,  # ProcessingContext, but imported later
+        node_id: str | None = None,
+        **kwargs: Any,
+    ) -> "AudioRef":
+        """Generate music/audio from a text prompt (and optional lyrics).
+
+        Only implemented by providers with TEXT_TO_AUDIO capability. Unlike
+        text_to_speech (which streams spoken audio), this generates full musical
+        or sound-effect tracks and returns them as a single AudioRef.
+
+        Args:
+            prompt: Description of the desired audio (style, instruments, mood, tempo)
+            model: Model identifier for audio generation
+            lyrics: Optional structured lyrics (e.g. with [verse]/[chorus] tags)
+            audio_duration: Duration of the generated audio in seconds
+            guidance_scale: Classifier-free guidance scale
+            num_inference_steps: Number of denoising steps
+            seed: Optional random seed for reproducibility
+            timeout_s: Optional timeout in seconds
+            context: Optional processing context
+            node_id: Optional node id for progress reporting
+            **kwargs: Additional provider-specific parameters
+
+        Returns:
+            AudioRef: Reference to the generated audio track.
+
+        Raises:
+            NotImplementedError: If provider doesn't support TEXT_TO_AUDIO capability
+            ValueError: If required parameters are missing or invalid
+            RuntimeError: If generation fails
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support TEXT_TO_AUDIO capability"
+        )
 
     async def automatic_speech_recognition(
         self,
@@ -744,7 +828,9 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If transcription fails
         """
-        raise NotImplementedError(f"{self.__class__.__name__} does not support AUTOMATIC_SPEECH_RECOGNITION capability")
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support AUTOMATIC_SPEECH_RECOGNITION capability"
+        )
 
     async def text_to_video(
         self,
@@ -777,7 +863,9 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If generation fails
         """
-        raise NotImplementedError(f"{self.__class__.__name__} does not support TEXT_TO_VIDEO capability")
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support TEXT_TO_VIDEO capability"
+        )
 
     async def image_to_video(  # type: ignore[override]
         self,
@@ -813,7 +901,9 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If generation fails
         """
-        raise NotImplementedError(f"{self.__class__.__name__} does not support IMAGE_TO_VIDEO capability")
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support IMAGE_TO_VIDEO capability"
+        )
 
     async def generate_embedding(
         self,
@@ -839,7 +929,9 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If embedding generation fails
         """
-        raise NotImplementedError(f"{self.__class__.__name__} does not support GENERATE_EMBEDDING capability")
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support GENERATE_EMBEDDING capability"
+        )
 
     async def text_to_3d(
         self,
@@ -870,7 +962,9 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If generation fails
         """
-        raise NotImplementedError(f"{self.__class__.__name__} does not support TEXT_TO_3D capability")
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support TEXT_TO_3D capability"
+        )
 
     async def image_to_3d(
         self,
@@ -902,7 +996,9 @@ class BaseProvider:
             ValueError: If required parameters are missing or invalid
             RuntimeError: If generation fails
         """
-        raise NotImplementedError(f"{self.__class__.__name__} does not support IMAGE_TO_3D capability")
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support IMAGE_TO_3D capability"
+        )
 
 
 class MockProvider(BaseProvider):
@@ -955,7 +1051,9 @@ class MockProvider(BaseProvider):
 
         Logs the call and returns the next predefined response.
         """
-        self._log_api_request("generate_message", messages=messages, model=model, tools=tools, **kwargs)
+        self._log_api_request(
+            "generate_message", messages=messages, model=model, tools=tools, **kwargs
+        )
         self.call_log.append(
             {
                 "method": "generate_message",
@@ -985,7 +1083,9 @@ class MockProvider(BaseProvider):
         Currently yields the entire next predefined response. Can be adapted
         to yield individual chunks/tool calls if needed for more granular testing.
         """
-        self._log_api_request("generate_messages", messages=messages, model=model, tools=tools, **kwargs)
+        self._log_api_request(
+            "generate_messages", messages=messages, model=model, tools=tools, **kwargs
+        )
         self.call_log.append(
             {
                 "method": "generate_messages",
@@ -996,7 +1096,9 @@ class MockProvider(BaseProvider):
             }
         )
         response = self._get_next_response()
-        self._log_api_response("generate_messages", response=response)  # Log the full conceptual response
+        self._log_api_response(
+            "generate_messages", response=response
+        )  # Log the full conceptual response
 
         # Simulate streaming behavior
         if response.tool_calls:
