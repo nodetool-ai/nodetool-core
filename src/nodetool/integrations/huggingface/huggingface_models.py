@@ -299,6 +299,11 @@ _CONFIG_MODEL_TYPE_MAPPING = {
     "qwen_3_vl": "hf.image_text_to_text",
     "qwen2_5_vl": "hf.image_text_to_text",
     "glm4v": "hf.image_text_to_text",
+    "timesfm": "hf.time_series_forecast",
+    "timesfm2_5": "hf.time_series_forecast",
+    "slanet": "hf.table_structure_recognition",
+    "audioflamingo3": "hf.audio_text_to_text",
+    "higgs_audio_v2": "hf.text_to_speech",
 }
 
 _CONFIG_MODEL_TYPE_ARCHITECTURE_MAPPING = {}

@@ -1188,6 +1188,18 @@ class HFVoiceActivityDetection(HuggingFaceModel):
     type: Literal["hf.voice_activity_detection"] = "hf.voice_activity_detection"
 
 
+class HFTimeSeriesForecast(HuggingFaceModel):
+    type: Literal["hf.time_series_forecast"] = "hf.time_series_forecast"
+
+
+class HFTableStructureRecognition(HuggingFaceModel):
+    type: Literal["hf.table_structure_recognition"] = "hf.table_structure_recognition"
+
+
+class HFAudioTextToText(HuggingFaceModel):
+    type: Literal["hf.audio_text_to_text"] = "hf.audio_text_to_text"
+
+
 class HFLoraSDConfig(BaseType):
     type: Literal["hf.lora_sd_config"] = "hf.lora_sd_config"
     lora: HFLoraSD = Field(default=HFLoraSD(), description="The LoRA model to use.")
