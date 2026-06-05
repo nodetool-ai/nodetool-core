@@ -10,9 +10,8 @@ import sys
 import traceback
 from typing import Any, AsyncIterator
 
-from websockets.asyncio.server import ServerConnection
 import msgpack
-
+from websockets.asyncio.server import ServerConnection
 
 # Cached provider instances
 _provider_cache: dict[str, Any] = {}
@@ -73,24 +72,38 @@ def get_available_providers() -> list[dict[str, Any]]:
             # Detect capabilities from implemented methods
             capabilities = []
             base_methods = {
-                "generate_message", "generate_messages", "text_to_image",
-                "image_to_image", "text_to_speech", "automatic_speech_recognition",
-                "text_to_video", "image_to_video", "generate_embedding",
+                "generate_message",
+                "generate_messages",
+                "text_to_image",
+                "image_to_image",
+                "text_to_speech",
+                "text_to_audio",
+                "automatic_speech_recognition",
+                "text_to_video",
+                "image_to_video",
+                "generate_embedding",
             }
             for method_name in base_methods:
                 method = getattr(cls, method_name, None)
                 if method is not None:
                     # Check if it's overridden from BaseProvider
                     from nodetool.providers.base import BaseProvider
+
                     base_method = getattr(BaseProvider, method_name, None)
                     if method is not base_method:
                         capabilities.append(method_name)
 
-            result.append({
-                "id": pid,
-                "capabilities": capabilities,
-                "required_secrets": cls.required_secrets() if hasattr(cls, "required_secrets") else [],
-            })
+            result.append(
+                {
+                    "id": pid,
+                    "capabilities": capabilities,
+                    "required_secrets": (
+                        cls.required_secrets()
+                        if hasattr(cls, "required_secrets")
+                        else []
+                    ),
+                }
+            )
     return result
 
 
@@ -133,6 +146,14 @@ async def handle_provider_message(
             result = await _handle_image_to_image(data)
             await _send_result(websocket, request_id, result)
 
+        elif msg_type == "provider.text_to_video":
+            result = await _handle_text_to_video(data)
+            await _send_result(websocket, request_id, result)
+
+        elif msg_type == "provider.text_to_audio":
+            result = await _handle_text_to_audio(data)
+            await _send_result(websocket, request_id, result)
+
         elif msg_type == "provider.tts":
             cancel_event = asyncio.Event()
             if request_id:
@@ -152,7 +173,9 @@ async def handle_provider_message(
             await _send_result(websocket, request_id, result)
 
         else:
-            await _send_error(websocket, request_id, f"Unknown provider message type: {msg_type}")
+            await _send_error(
+                websocket, request_id, f"Unknown provider message type: {msg_type}"
+            )
 
     except Exception as e:
         await _send_error(websocket, request_id, str(e), traceback.format_exc())
@@ -161,28 +184,44 @@ async def handle_provider_message(
 # ── Message helpers ──────────────────────────────────────────────────────
 
 
-async def _send_result(ws: ServerConnection, request_id: str | None, data: dict) -> None:
-    await ws.send(msgpack.packb({
-        "type": "result",
-        "request_id": request_id,
-        "data": data,
-    }))
+async def _send_result(
+    ws: ServerConnection, request_id: str | None, data: dict
+) -> None:
+    await ws.send(
+        msgpack.packb(
+            {
+                "type": "result",
+                "request_id": request_id,
+                "data": data,
+            }
+        )
+    )
 
 
-async def _send_error(ws: ServerConnection, request_id: str | None, error: str, tb: str | None = None) -> None:
-    await ws.send(msgpack.packb({
-        "type": "error",
-        "request_id": request_id,
-        "data": {"error": error, "traceback": tb},
-    }))
+async def _send_error(
+    ws: ServerConnection, request_id: str | None, error: str, tb: str | None = None
+) -> None:
+    await ws.send(
+        msgpack.packb(
+            {
+                "type": "error",
+                "request_id": request_id,
+                "data": {"error": error, "traceback": tb},
+            }
+        )
+    )
 
 
 async def _send_chunk(ws: ServerConnection, request_id: str | None, data: dict) -> None:
-    await ws.send(msgpack.packb({
-        "type": "chunk",
-        "request_id": request_id,
-        "data": data,
-    }))
+    await ws.send(
+        msgpack.packb(
+            {
+                "type": "chunk",
+                "request_id": request_id,
+                "data": data,
+            }
+        )
+    )
 
 
 # ── Handler implementations ─────────────────────────────────────────────
@@ -198,10 +237,11 @@ def _deserialize_messages(raw_messages: list[dict]) -> list[Any]:
         # content can be string, list of content parts, or None
         if isinstance(content, list):
             from nodetool.metadata.types import (
-                MessageTextContent,
-                MessageImageContent,
                 MessageAudioContent,
+                MessageImageContent,
+                MessageTextContent,
             )
+
             parts = []
             for part in content:
                 if part.get("type") == "text":
@@ -218,6 +258,7 @@ def _deserialize_messages(raw_messages: list[dict]) -> list[Any]:
         )
         if m.get("tool_calls"):
             from nodetool.metadata.types import ToolCall
+
             msg.tool_calls = [
                 ToolCall(id=tc["id"], name=tc["name"], args=tc.get("args", {}))
                 for tc in m["tool_calls"]
@@ -241,8 +282,7 @@ def _serialize_message(msg: Any) -> dict:
 
     if msg.tool_calls:
         result["tool_calls"] = [
-            {"id": tc.id, "name": tc.name, "args": tc.args}
-            for tc in msg.tool_calls
+            {"id": tc.id, "name": tc.name, "args": tc.args} for tc in msg.tool_calls
         ]
     return result
 
@@ -284,8 +324,7 @@ async def _handle_models(data: dict) -> dict:
     models = await getter()
     return {
         "models": [
-            m.model_dump() if hasattr(m, "model_dump") else m.__dict__
-            for m in models
+            m.model_dump() if hasattr(m, "model_dump") else m.__dict__ for m in models
         ]
     }
 
@@ -344,12 +383,16 @@ async def _handle_stream(
             break
 
         if isinstance(item, ToolCall):
-            await _send_chunk(websocket, request_id, {
-                "type": "tool_call",
-                "id": item.id,
-                "name": item.name,
-                "args": item.args,
-            })
+            await _send_chunk(
+                websocket,
+                request_id,
+                {
+                    "type": "tool_call",
+                    "id": item.id,
+                    "name": item.name,
+                    "args": item.args,
+                },
+            )
         else:
             # Chunk object
             chunk_data: dict[str, Any] = {
@@ -382,6 +425,73 @@ async def _handle_image_to_image(data: dict) -> dict:
     return {"blobs": {"image": result_bytes}}
 
 
+async def _extract_media_bytes(ctx: Any, ref: Any) -> bytes:
+    """Pull encoded bytes out of a worker context after media generation.
+
+    Audio/image are captured into the WorkerContext's output blobs; file-based
+    refs (e.g. video) are resolved directly via the context.
+    """
+    get_blobs = getattr(ctx, "get_output_blobs", None)
+    blobs = get_blobs() if callable(get_blobs) else {}
+    if blobs:
+        return next(iter(blobs.values()))
+    return await ctx.asset_to_bytes(ref)
+
+
+async def _handle_text_to_video(data: dict) -> dict:
+    """Handle provider.text_to_video."""
+    from nodetool.worker.context_stub import WorkerContext
+
+    provider = _get_provider(data["provider"], data.get("secrets", {}))
+    ctx = WorkerContext(secrets=data.get("secrets", {}))
+    kwargs: dict[str, Any] = {
+        "prompt": data["prompt"],
+        "model": data["model"],
+        "context": ctx,
+    }
+    for key in (
+        "negative_prompt",
+        "num_frames",
+        "guidance_scale",
+        "num_inference_steps",
+        "height",
+        "width",
+        "fps",
+        "seed",
+        "max_sequence_length",
+    ):
+        if key in data:
+            kwargs[key] = data[key]
+
+    video_ref = await provider.text_to_video(**kwargs)
+    return {"blobs": {"video": await _extract_media_bytes(ctx, video_ref)}}
+
+
+async def _handle_text_to_audio(data: dict) -> dict:
+    """Handle provider.text_to_audio."""
+    from nodetool.worker.context_stub import WorkerContext
+
+    provider = _get_provider(data["provider"], data.get("secrets", {}))
+    ctx = WorkerContext(secrets=data.get("secrets", {}))
+    kwargs: dict[str, Any] = {
+        "prompt": data["prompt"],
+        "model": data["model"],
+        "context": ctx,
+    }
+    for key in (
+        "lyrics",
+        "audio_duration",
+        "guidance_scale",
+        "num_inference_steps",
+        "seed",
+    ):
+        if key in data:
+            kwargs[key] = data[key]
+
+    audio_ref = await provider.text_to_audio(**kwargs)
+    return {"blobs": {"audio": await _extract_media_bytes(ctx, audio_ref)}}
+
+
 async def _handle_tts(
     data: dict,
     request_id: str | None,
@@ -403,11 +513,15 @@ async def _handle_tts(
         if cancel_event.is_set():
             break
         # audio_chunk is numpy int16 array
-        await websocket.send(msgpack.packb({
-            "type": "chunk",
-            "request_id": request_id,
-            "data": {"blobs": {"audio": audio_chunk.tobytes()}},
-        }))
+        await websocket.send(
+            msgpack.packb(
+                {
+                    "type": "chunk",
+                    "request_id": request_id,
+                    "data": {"blobs": {"audio": audio_chunk.tobytes()}},
+                }
+            )
+        )
 
     await _send_result(websocket, request_id, {"done": True})
 
@@ -459,7 +573,13 @@ async def handle_provider_message_stdio(
         await transport.send_msg({"type": "result", "request_id": rid, "data": d})
 
     async def send_error(rid: str | None, error: str, tb: str | None = None) -> None:
-        await transport.send_msg({"type": "error", "request_id": rid, "data": {"error": error, "traceback": tb}})
+        await transport.send_msg(
+            {
+                "type": "error",
+                "request_id": rid,
+                "data": {"error": error, "traceback": tb},
+            }
+        )
 
     async def send_chunk(rid: str | None, d: dict) -> None:
         await transport.send_msg({"type": "chunk", "request_id": rid, "data": d})
@@ -494,13 +614,31 @@ async def handle_provider_message_stdio(
                     kwargs["tools"] = tools
 
                 from nodetool.metadata.types import ToolCall
-                async for item in provider.generate_messages(messages=messages, model=model, **kwargs):
+
+                async for item in provider.generate_messages(
+                    messages=messages, model=model, **kwargs
+                ):
                     if cancel_event.is_set():
                         break
                     if isinstance(item, ToolCall):
-                        await send_chunk(request_id, {"type": "tool_call", "id": item.id, "name": item.name, "args": item.args})
+                        await send_chunk(
+                            request_id,
+                            {
+                                "type": "tool_call",
+                                "id": item.id,
+                                "name": item.name,
+                                "args": item.args,
+                            },
+                        )
                     else:
-                        await send_chunk(request_id, {"type": "chunk", "content": getattr(item, "content", str(item)), "done": getattr(item, "done", False)})
+                        await send_chunk(
+                            request_id,
+                            {
+                                "type": "chunk",
+                                "content": getattr(item, "content", str(item)),
+                                "done": getattr(item, "done", False),
+                            },
+                        )
                 await send_result(request_id, {"done": True})
             finally:
                 if request_id:
@@ -514,20 +652,33 @@ async def handle_provider_message_stdio(
             result = await _handle_image_to_image(data)
             await send_result(request_id, result)
 
+        elif msg_type == "provider.text_to_video":
+            result = await _handle_text_to_video(data)
+            await send_result(request_id, result)
+
+        elif msg_type == "provider.text_to_audio":
+            result = await _handle_text_to_audio(data)
+            await send_result(request_id, result)
+
         elif msg_type == "provider.tts":
             cancel_event = asyncio.Event()
             if request_id:
                 cancel_flags[request_id] = cancel_event
             try:
                 provider = _get_provider(data["provider"], data.get("secrets", {}))
-                kwargs_tts: dict[str, Any] = {"text": data["text"], "model": data["model"]}
+                kwargs_tts: dict[str, Any] = {
+                    "text": data["text"],
+                    "model": data["model"],
+                }
                 for key in ("voice", "speed"):
                     if key in data:
                         kwargs_tts[key] = data[key]
                 async for audio_chunk in provider.text_to_speech(**kwargs_tts):
                     if cancel_event.is_set():
                         break
-                    await send_chunk(request_id, {"blobs": {"audio": audio_chunk.tobytes()}})
+                    await send_chunk(
+                        request_id, {"blobs": {"audio": audio_chunk.tobytes()}}
+                    )
                 await send_result(request_id, {"done": True})
             finally:
                 if request_id:

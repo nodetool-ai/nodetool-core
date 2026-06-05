@@ -45,10 +45,12 @@ from nodetool.integrations.huggingface.async_downloader import async_hf_download
 from nodetool.integrations.huggingface.hf_fast_cache import HfFastCache
 from nodetool.metadata.types import (
     CLASSNAME_TO_MODEL_TYPE,
+    AudioModel,
     HuggingFaceModel,
     ImageModel,
     LanguageModel,
     Provider,
+    VideoModel,
 )
 from nodetool.security.secret_helper import get_secret
 from nodetool.types.model import UnifiedModel
@@ -325,10 +327,14 @@ def size_on_disk(
         if not sib.rfilename:
             continue
 
-        if allow_patterns is not None and not any(fnmatch(sib.rfilename, pattern) for pattern in allow_patterns):
+        if allow_patterns is not None and not any(
+            fnmatch(sib.rfilename, pattern) for pattern in allow_patterns
+        ):
             continue
 
-        if ignore_patterns is not None and any(fnmatch(sib.rfilename, pattern) for pattern in ignore_patterns):
+        if ignore_patterns is not None and any(
+            fnmatch(sib.rfilename, pattern) for pattern in ignore_patterns
+        ):
             continue
 
         total_size += sib.size
@@ -401,7 +407,9 @@ def detect_repo_packaging(
     we see multiple quantizations or adapter-style weights that likely represent
     independent choices for the user.
     """
-    weight_entries = [(name, size) for name, size in file_entries if _is_weight_file(name)]
+    weight_entries = [
+        (name, size) for name, size in file_entries if _is_weight_file(name)
+    ]
     weight_files = [name for name, _ in weight_entries]
     lower_weight_files = [name.lower() for name in weight_files]
 
@@ -437,7 +445,9 @@ def _has_bundle_metadata(model_info: ModelInfo | None) -> bool:
     if has_model_index(model_info):
         return True
     library_name = getattr(model_info, "library_name", None)
-    return bool(library_name and str(library_name).lower() in ("diffusers", "transformers"))
+    return bool(
+        library_name and str(library_name).lower() in ("diffusers", "transformers")
+    )
 
 
 def _has_sharded_weights(weight_files: Sequence[str]) -> bool:
@@ -474,7 +484,12 @@ def _has_adapter_candidates(weight_entries: Sequence[tuple[str, int]]) -> bool:
         if any(marker in lower for marker in _ADAPTER_MARKERS):
             adapter_like.append((name, size))
             continue
-        if lower.endswith(".safetensors") and size and size < _SMALL_ADAPTER_MAX_BYTES and len(weight_entries) > 1:
+        if (
+            lower.endswith(".safetensors")
+            and size
+            and size < _SMALL_ADAPTER_MAX_BYTES
+            and len(weight_entries) > 1
+        ):
             adapter_like.append((name, size))
     return len(adapter_like) >= 1
 
@@ -599,13 +614,19 @@ async def unified_model(
     otherwise we return a minimal record so callers can still render choices.
     """
 
-    model_id = f"{model.repo_id}:{model.path}" if model.path is not None else model.repo_id
+    model_id = (
+        f"{model.repo_id}:{model.path}" if model.path is not None else model.repo_id
+    )
 
     # Without hub lookups, size and metadata may be missing; rely on provided info only.
     if model_info is not None and size is None:
         if model.path:
             size = next(
-                (sib.size for sib in (model_info.siblings or []) if sib.rfilename == model.path),
+                (
+                    sib.size
+                    for sib in (model_info.siblings or [])
+                    if sib.rfilename == model.path
+                ),
                 None,
             )
         else:
@@ -694,7 +715,9 @@ class _RecursiveNamespace:
             val = self._data[key]
         except KeyError:
             # Mirror standard object behavior for missing attributes
-            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'") from None
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{key}'"
+            ) from None
 
         if isinstance(val, dict):
             return _RecursiveNamespace(val)
@@ -748,7 +771,11 @@ def model_type_from_model_info(
         return recommended[0].type
     if model_info is None:
         return None
-    if model_info.config and "diffusers" in model_info.config and "_class_name" in model_info.config["diffusers"]:
+    if (
+        model_info.config
+        and "diffusers" in model_info.config
+        and "_class_name" in model_info.config["diffusers"]
+    ):
         return CLASSNAME_TO_MODEL_TYPE.get(
             model_info.config["diffusers"]["_class_name"],
             None,  # type: ignore[no-any-return]
@@ -823,12 +850,16 @@ def _infer_model_type_from_local_configs(
         return None
 
     config_candidates = [
-        rel_path for rel_path, _ in file_entries if rel_path.lower().endswith(("model_index.json", "config.json"))
+        rel_path
+        for rel_path, _ in file_entries
+        if rel_path.lower().endswith(("model_index.json", "config.json"))
     ]
     if not config_candidates:
         return None
 
-    for rel_path in sorted(config_candidates, key=lambda value: (value.count("/"), len(value))):
+    for rel_path in sorted(
+        config_candidates, key=lambda value: (value.count("/"), len(value))
+    ):
         config_path = snapshot_dir / rel_path
         data = _safe_load_json(config_path)
         if not data:
@@ -840,7 +871,9 @@ def _infer_model_type_from_local_configs(
             if mapped:
                 return mapped
 
-        model_type = str(data.get("model_type", "")).lower() if isinstance(data, dict) else ""
+        model_type = (
+            str(data.get("model_type", "")).lower() if isinstance(data, dict) else ""
+        )
         if model_type:
             mapped = _CONFIG_MODEL_TYPE_MAPPING.get(model_type)
             if mapped:
@@ -871,7 +904,9 @@ async def _build_cached_repo_entry(
     size_on_disk = 0
     snapshot_path: Path | None = snapshot_dir
     if snapshot_path is None:
-        resolved_snapshot = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
+        resolved_snapshot = await HF_FAST_CACHE.active_snapshot_dir(
+            repo_id, repo_type="model"
+        )
         snapshot_path = Path(resolved_snapshot) if resolved_snapshot else None
 
     if snapshot_path:
@@ -879,14 +914,17 @@ async def _build_cached_repo_entry(
             file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
 
         # Offload blocking IO loop to thread
-        size_on_disk, file_entries = await asyncio.to_thread(_calculate_repo_stats, snapshot_path, file_list)
+        size_on_disk, file_entries = await asyncio.to_thread(
+            _calculate_repo_stats, snapshot_path, file_list
+        )
 
     if repo_id in recommended_models:
         model = recommended_models[repo_id][0].model_copy(
             update={
                 "downloaded": repo_root is not None or repo_dir.exists(),
                 "cache_path": str(repo_root) if repo_root else str(repo_dir),
-                "size_on_disk": size_on_disk or recommended_models[repo_id][0].size_on_disk,
+                "size_on_disk": size_on_disk
+                or recommended_models[repo_id][0].size_on_disk,
             }
         )
         return model, file_entries
@@ -895,7 +933,9 @@ async def _build_cached_repo_entry(
     if file_entries and snapshot_path:
         artifact_paths = [str(snapshot_path / name) for name, _ in file_entries]
         try:
-            from nodetool.integrations.huggingface.artifact_inspector import inspect_paths
+            from nodetool.integrations.huggingface.artifact_inspector import (
+                inspect_paths,
+            )
 
             artifact_detection = await asyncio.to_thread(inspect_paths, artifact_paths)
 
@@ -922,7 +962,9 @@ async def _build_cached_repo_entry(
         size_on_disk=size_on_disk,
         artifact_family=artifact_detection.family if artifact_detection else None,
         artifact_component=artifact_detection.component if artifact_detection else None,
-        artifact_confidence=(artifact_detection.confidence if artifact_detection else None),
+        artifact_confidence=(
+            artifact_detection.confidence if artifact_detection else None
+        ),
         artifact_evidence=artifact_detection.evidence if artifact_detection else None,
     )
 
@@ -1106,7 +1148,9 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
 for _base, _ckpt in _CHECKPOINT_BASES.items():
     if _base in HF_SEARCH_TYPE_CONFIG and _ckpt not in HF_SEARCH_TYPE_CONFIG:
         _base_cfg = HF_SEARCH_TYPE_CONFIG[_base]
-        HF_SEARCH_TYPE_CONFIG[_ckpt] = {k: (list(v) if isinstance(v, list) else v) for k, v in _base_cfg.items()}
+        HF_SEARCH_TYPE_CONFIG[_ckpt] = {
+            k: (list(v) if isinstance(v, list) else v) for k, v in _base_cfg.items()
+        }
 
 HF_TYPE_STRUCTURAL_RULES: dict[str, dict[str, bool]] = {
     "hf.unet": {"file_only": True},
@@ -1204,14 +1248,19 @@ def _derive_pipeline_tag(normalized_type: str, task: str | None = None) -> str |
     return slug.replace("_", "-")
 
 
-def _matches_repo_for_type(normalized_type: str, repo_id: str, repo_id_from_id: str) -> bool:
+def _matches_repo_for_type(
+    normalized_type: str, repo_id: str, repo_id_from_id: str
+) -> bool:
     """Check if a repo id matches any hard-coded comfy-type mappings for a model type."""
     matchers = KNOWN_TYPE_REPO_MATCHERS.get(normalized_type)
     if not matchers:
         return False
     repo_lower = repo_id.lower()
     repo_from_id_lower = repo_id_from_id.lower()
-    return any(repo_lower == candidate.lower() or repo_from_id_lower == candidate.lower() for candidate in matchers)
+    return any(
+        repo_lower == candidate.lower() or repo_from_id_lower == candidate.lower()
+        for candidate in matchers
+    )
 
 
 def _matches_artifact_detection(
@@ -1236,7 +1285,9 @@ def _matches_artifact_detection(
     }:
         return "flux" in fam
     if normalized_type == "hf.stable_diffusion":
-        return fam.startswith("sd1") or fam.startswith("sd2") or "stable-diffusion" in fam
+        return (
+            fam.startswith("sd1") or fam.startswith("sd2") or "stable-diffusion" in fam
+        )
     if normalized_type == "hf.stable_diffusion_xl":
         return "sdxl" in fam
     if normalized_type == "hf.stable_diffusion_xl_refiner":
@@ -1264,7 +1315,9 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
     def _is_qwen_text_encoder(path: str | None) -> bool:
         if not path:
             return False
-        return "text_encoders" in path or "text_encoder" in path or "qwen_2.5_vl" in path
+        return (
+            "text_encoders" in path or "text_encoder" in path or "qwen_2.5_vl" in path
+        )
 
     def _is_qwen_vae(path: str | None) -> bool:
         if not path:
@@ -1277,7 +1330,9 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
 
     if model_type_lower:
         model_type_base = (
-            model_type_lower[: -len("_checkpoint")] if model_type_lower.endswith("_checkpoint") else model_type_lower
+            model_type_lower[: -len("_checkpoint")]
+            if model_type_lower.endswith("_checkpoint")
+            else model_type_lower
         )
         if model_type_lower in target_types or model_type_base == normalized_type:
             return not (
@@ -1308,13 +1363,18 @@ def _matches_model_type(model: UnifiedModel, model_type: str) -> bool:
     artifact_family = (getattr(model, "artifact_family", None) or "").lower()
     artifact_component = (getattr(model, "artifact_component", None) or "").lower()
     if artifact_family or artifact_component:
-        if _matches_artifact_detection(normalized_type, artifact_family, artifact_component):
+        if _matches_artifact_detection(
+            normalized_type, artifact_family, artifact_component
+        ):
             return True
 
     tags = [(tag or "").lower() for tag in (model.tags or [])]
     keywords = HF_TYPE_KEYWORD_MATCHERS.get(normalized_type, [])
     if keywords:
-        if any(keyword in repo_id or any(keyword in tag for tag in tags) for keyword in keywords):
+        if any(
+            keyword in repo_id or any(keyword in tag for tag in tags)
+            for keyword in keywords
+        ):
             return True
         if path_lower and any(keyword in path_lower for keyword in keywords):
             return True
@@ -1340,7 +1400,9 @@ async def get_models_by_hf_type(
         """Apply type-specific structural rules then semantic matching."""
         rules = HF_TYPE_STRUCTURAL_RULES.get(model_type, {})
         file_only = rules.get("file_only", False)
-        checkpoint = rules.get("checkpoint", False) or model_type in set(_CHECKPOINT_BASES.values())
+        checkpoint = rules.get("checkpoint", False) or model_type in set(
+            _CHECKPOINT_BASES.values()
+        )
         nested_checkpoint = rules.get("nested_checkpoint", False)
         single_file_repo = rules.get("single_file_repo", False)
 
@@ -1362,7 +1424,9 @@ async def get_models_by_hf_type(
                     continue
                 if path_value:
                     path_lower = path_value.lower()
-                    if not _is_single_file_diffusion_weight(path_value) and not path_lower.endswith(".gguf"):
+                    if not _is_single_file_diffusion_weight(
+                        path_value
+                    ) and not path_lower.endswith(".gguf"):
                         continue
 
             if checkpoint:
@@ -1419,17 +1483,23 @@ async def iter_cached_model_files(
     or whose files cannot be listed are skipped.
     """
     repo_list = (
-        list(pre_resolved_repos) if pre_resolved_repos is not None else await HF_FAST_CACHE.discover_repos("model")
+        list(pre_resolved_repos)
+        if pre_resolved_repos is not None
+        else await HF_FAST_CACHE.discover_repos("model")
     )
 
     for repo_id, repo_dir in repo_list:
-        snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(repo_id, repo_type="model")
+        snapshot_dir = await HF_FAST_CACHE.active_snapshot_dir(
+            repo_id, repo_type="model"
+        )
         if not snapshot_dir:
             continue
         try:
             file_list = await HF_FAST_CACHE.list_files(repo_id, repo_type="model")
         except Exception as exc:  # pragma: no cover - defensive guard
-            log.debug("iter_cached_model_files: list_files failed for %s: %s", repo_id, exc)
+            log.debug(
+                "iter_cached_model_files: list_files failed for %s: %s", repo_id, exc
+            )
             continue
 
         yield repo_id, Path(repo_dir), Path(snapshot_dir), file_list
@@ -1674,7 +1744,9 @@ async def get_llama_cpp_models_from_cache() -> list[UnifiedModel]:
     Returns:
         List[UnifiedModel]: Models with type='llama_cpp_model' found in the cache.
     """
-    from nodetool.integrations.huggingface.llama_cpp_download import get_llama_cpp_cache_dir
+    from nodetool.integrations.huggingface.llama_cpp_download import (
+        get_llama_cpp_cache_dir,
+    )
 
     cache_dir = get_llama_cpp_cache_dir()
     if not os.path.isdir(cache_dir):
@@ -1705,7 +1777,11 @@ async def get_llama_cpp_models_from_cache() -> list[UnifiedModel]:
             UnifiedModel(
                 id=f"{repo_id}:{filename}" if repo_id else filename,
                 type="llama_cpp_model",
-                name=f"{repo.replace('-', ' ').title()} • {filename}" if repo_id else filename,
+                name=(
+                    f"{repo.replace('-', ' ').title()} • {filename}"
+                    if repo_id
+                    else filename
+                ),
                 repo_id=repo_id,
                 path=filename,
                 cache_path=entry.path,
@@ -1731,7 +1807,9 @@ async def get_llamacpp_language_models_from_llama_cache() -> list[LanguageModel]
     Returns:
         List[LanguageModel]: Llama.cpp-compatible models discovered in the native cache.
     """
-    from nodetool.integrations.huggingface.llama_cpp_download import get_llama_cpp_cache_dir
+    from nodetool.integrations.huggingface.llama_cpp_download import (
+        get_llama_cpp_cache_dir,
+    )
 
     cache_dir = get_llama_cpp_cache_dir()
     if not os.path.isdir(cache_dir):
@@ -1757,7 +1835,9 @@ async def get_llamacpp_language_models_from_llama_cache() -> list[LanguageModel]
         # absolute cache path as the model id so llama-server can load it
         # reliably via `-m <path>` regardless of current working directory.
         model_id = f"{repo_id}:{filename}" if repo_id else entry.path
-        display = f"{repo.replace('-', ' ').title()} • {filename}" if repo_id else filename
+        display = (
+            f"{repo.replace('-', ' ').title()} • {filename}" if repo_id else filename
+        )
 
         results.append(
             LanguageModel(
@@ -1858,7 +1938,9 @@ async def _get_diffusion_models_from_hf_cache(task: str) -> list[ImageModel]:
             continue
         # Check if this is a component-only repo (e.g., Nunchaku transformers)
         is_component_only = _is_component_only_repo(repo_id)
-        has_diffusion_artifacts = await _repo_has_diffusion_artifacts(repo_id, snapshot_dir, file_list)
+        has_diffusion_artifacts = await _repo_has_diffusion_artifacts(
+            repo_id, snapshot_dir, file_list
+        )
 
         # Skip non-component repos that don't have diffusion artifacts
         if not is_component_only and not has_diffusion_artifacts:
@@ -1913,6 +1995,95 @@ async def get_image_to_image_models_from_hf_cache() -> list[ImageModel]:
     return await _get_diffusion_models_from_hf_cache("image_to_image")
 
 
+# diffusers `_class_name` values that identify text-to-video / text-to-audio repos.
+_VIDEO_PIPELINE_CLASS_NAMES = {
+    "WanPipeline",
+    "WanImageToVideoPipeline",
+    "CogVideoXPipeline",
+    "LTXPipeline",
+    "LTXImageToVideoPipeline",
+    "LTX2Pipeline",
+    "LTX2ImageToVideoPipeline",
+    "Kandinsky5T2VPipeline",
+    "Kandinsky5I2VPipeline",
+    "HunyuanVideoPipeline",
+    "MochiPipeline",
+    "StableVideoDiffusionPipeline",
+}
+_AUDIO_PIPELINE_CLASS_NAMES = {
+    "AceStepPipeline",
+    "LongCatAudioDiTPipeline",
+    "StableAudioPipeline",
+    "MusicLDMPipeline",
+    "AudioLDMPipeline",
+    "AudioLDM2Pipeline",
+}
+
+
+def _read_model_index_class_name(snapshot_dir: str | Path | None) -> str | None:
+    """Read the diffusers ``_class_name`` from a cached repo's model_index.json."""
+    if not snapshot_dir:
+        return None
+    try:
+        path = os.path.join(str(snapshot_dir), "model_index.json")
+        if not os.path.exists(path):
+            return None
+        with open(path) as f:
+            return json.load(f).get("_class_name")
+    except Exception:
+        return None
+
+
+async def get_text_to_video_models_from_hf_cache() -> list[VideoModel]:
+    """Return VideoModel entries for cached text-to-video diffusers repos.
+
+    Classifies repos by the diffusers ``_class_name`` in model_index.json so video
+    models (Wan, LTX, CogVideoX, Kandinsky 5, ...) don't get mixed in with images.
+    """
+    result: dict[str, VideoModel] = {}
+    async for repo_id, _repo_dir, snapshot_dir, file_list in iter_cached_model_files():
+        if not file_list:
+            continue
+        if (
+            _read_model_index_class_name(snapshot_dir)
+            not in _VIDEO_PIPELINE_CLASS_NAMES
+        ):
+            continue
+        result.setdefault(
+            repo_id,
+            VideoModel(
+                id=repo_id,
+                name=repo_id.split("/")[-1],
+                provider=Provider.HuggingFace,
+                supported_tasks=["text_to_video"],
+            ),
+        )
+    return list(result.values())
+
+
+async def get_text_to_audio_models_from_hf_cache() -> list[AudioModel]:
+    """Return AudioModel entries for cached text-to-audio diffusers repos (ACE-Step, ...)."""
+    result: dict[str, AudioModel] = {}
+    async for repo_id, _repo_dir, snapshot_dir, file_list in iter_cached_model_files():
+        if not file_list:
+            continue
+        if (
+            _read_model_index_class_name(snapshot_dir)
+            not in _AUDIO_PIPELINE_CLASS_NAMES
+        ):
+            continue
+        result.setdefault(
+            repo_id,
+            AudioModel(
+                id=repo_id,
+                name=repo_id.split("/")[-1],
+                provider=Provider.HuggingFace,
+                supported_tasks=["text_to_audio"],
+            ),
+        )
+    return list(result.values())
+
+
 async def get_mlx_image_models_from_hf_cache() -> list[ImageModel]:
     """
     Return ImageModel entries for cached Hugging Face repos that are mflux models
@@ -1941,7 +2112,9 @@ async def get_mlx_image_models_from_hf_cache() -> list[ImageModel]:
     return list(result.values())
 
 
-async def _fetch_models_by_author(user_id: str | None = None, **kwargs) -> list[ModelInfo]:
+async def _fetch_models_by_author(
+    user_id: str | None = None, **kwargs
+) -> list[ModelInfo]:
     """Fetch models list from HF API for a given author using HFAPI.
 
     Returns raw model dicts from the public API.
@@ -1964,7 +2137,9 @@ async def _fetch_models_by_author(user_id: str | None = None, **kwargs) -> list[
 
         api = HfApi()
     # Run the blocking call in a thread executor
-    models = await asyncio.get_running_loop().run_in_executor(None, lambda: api.list_models(**kwargs))
+    models = await asyncio.get_running_loop().run_in_executor(
+        None, lambda: api.list_models(**kwargs)
+    )
     return list(models)
 
 
@@ -2030,7 +2205,9 @@ async def get_gguf_language_models_from_authors(
             )
 
     # Execute all unified_model calls in parallel
-    entries = await asyncio.gather(*[unified_model(model, info, size) for model, info, size in tasks])
+    entries = await asyncio.gather(
+        *[unified_model(model, info, size) for model, info, size in tasks]
+    )
 
     # Sort for stability: repo then filename
     entries = [entry for entry in entries if entry is not None]
@@ -2061,13 +2238,21 @@ async def get_mlx_language_models_from_authors(
     # Fetch authors concurrently
     # Note: user_id would need to be passed from caller context
     results = await asyncio.gather(
-        *(_fetch_models_by_author(user_id=None, author=a, limit=limit, sort=sort, tags=tags) for a in authors)
+        *(
+            _fetch_models_by_author(
+                user_id=None, author=a, limit=limit, sort=sort, tags=tags
+            )
+            for a in authors
+        )
     )
     model_infos = [item for sublist in results for item in sublist]
 
     # Execute all unified_model calls in parallel
     entries = await asyncio.gather(
-        *[unified_model(HuggingFaceModel(type="mlx", repo_id=info.id), info) for info in model_infos]
+        *[
+            unified_model(HuggingFaceModel(type="mlx", repo_id=info.id), info)
+            for info in model_infos
+        ]
     )
 
     # Stable order
