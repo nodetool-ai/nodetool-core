@@ -44,12 +44,13 @@ services:
       MEMCACHE_PORT: ${MEMCACHE_PORT:-11211}
       CHROMA_PATH: /chroma-data
     healthcheck:
-      # The worker is a WebSocket server (no HTTP /health route) — check the port.
+      # The worker is a WebSocket server (no HTTP route) — probe with a real
+      # WebSocket handshake so a rejected raw-TCP connect doesn't spam the log.
       test:
         - CMD
         - python
         - -c
-        - import socket; socket.create_connection(('127.0.0.1', 7777), timeout=3).close()
+        - from websockets.sync.client import connect; connect('ws://127.0.0.1:7777', open_timeout=4).close()
       interval: 10s
       timeout: 5s
       retries: 6
