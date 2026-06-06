@@ -1,6 +1,6 @@
 FROM mambaorg/micromamba:jammy AS base
 
-# Install uv
+# Install uv (used to install nodetool-core into the conda base env)
 COPY --from=ghcr.io/astral-sh/uv:0.8.5 /uv /uvx /bin/
 
 # Switch to root for system package installation
@@ -81,75 +81,28 @@ RUN micromamba install -y -n base -c conda-forge python=$PYTHON_VERSION pip && \
 ENV PATH=$VIRTUAL_ENV/bin:$PATH
 
 
-FROM base AS pip-deps
-
-ARG USE_LOCAL_REPO=1
-
-# Copy local repository if using local installation
-COPY --chown=root:root . /tmp/nodetool-core
-
-# Install dependencies - we use uv pip install into the conda environment
-RUN if [ "$USE_LOCAL_REPO" = "1" ]; then \
-        echo "Installing from local repository..." && \
-        uv pip install \
-            --python $VIRTUAL_ENV \
-            --index-strategy unsafe-best-match \
-            --index-url https://pypi.org/simple \
-            --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
-            nodetool-base && \
-        cd /tmp/nodetool-core && \
-        uv pip install \
-            --python $VIRTUAL_ENV \
-            --index-strategy unsafe-best-match \
-            --index-url https://pypi.org/simple \
-            -e . ; \
-    else \
-        echo "Installing from nodetool-registry..." && \
-        uv pip install \
-            --python $VIRTUAL_ENV \
-            --index-strategy unsafe-best-match \
-            --index-url https://pypi.org/simple \
-            --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
-            nodetool-core==0.6.3-rc.47 nodetool-base==0.6.3-rc.47 ; \
-    fi && \
-    # Clean up
-    rm -rf /tmp/nodetool-core && \
-    find /root/.cache -type d -exec rm -rf {} + 2>/dev/null || true && \
-    rm -rf /root/.cache/pip && \
-    rm -rf /tmp/* && \
-    rm -rf /var/tmp/*
-
 FROM base AS final
 
-ARG USE_LOCAL_REPO=1
+# nodetool-core version to install from PyPI. Override at build time:
+#   docker build --build-arg NODETOOL_VERSION=0.7.2 .
+ARG NODETOOL_VERSION=0.7.1
 
-# Micromamba image logic might persist, but we are copying VIRTUAL_ENV
-# Note: copying a conda env between stages can sometimes break absolute paths if location changes
-# But here location $VIRTUAL_ENV (/opt/conda) is kept same
-COPY --from=pip-deps $VIRTUAL_ENV $VIRTUAL_ENV
+# Install nodetool-core (the Python node-runner worker) from PyPI.
+# Node packages are layered separately on top of this image.
+RUN uv pip install \
+        --python $VIRTUAL_ENV \
+        --index-url https://pypi.org/simple \
+        "nodetool-core==${NODETOOL_VERSION}" && \
+    # Clean up caches to keep the image small
+    rm -rf /root/.cache/uv /root/.cache/pip /tmp/* /var/tmp/*
 
-    # Copy source code if using local repo (for editable install)
-COPY --chown=root:root . /app/nodetool-core
-RUN if [ "$USE_LOCAL_REPO" = "1" ]; then \
-        echo "Reinstalling local repository in final image..." && \
-        cd /app/nodetool-core && \
-        uv pip install --python $VIRTUAL_ENV -e . ; \
-    else \
-        rm -rf /app/nodetool-core ; \
-    fi
-
-# Install Playwright browsers and system dependencies
-# Use /var/tmp for browser downloads to avoid /tmp space issues on some systems
-# RUN TMPDIR=/var/tmp python -m playwright install-deps chromium firefox webkit && \
-#    TMPDIR=/var/tmp python -m playwright install && \
-#    rm -rf /var/tmp/* /tmp/*
-
-# Expose port for the server
+# Expose the worker's WebSocket port
 EXPOSE 7777
 
-# Health check
+# Health check — the worker is a WebSocket server (no HTTP /health route),
+# so verify the port is accepting connections rather than curling an endpoint.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:7777/health || exit 1
+    CMD python -c "import socket; socket.create_connection(('127.0.0.1', 7777), timeout=3).close()" || exit 1
 
-# Run the NodeTool server
-CMD ["python", "-m", "nodetool.api.run_server"]
+# Run the NodeTool Python worker (WebSocket transport, reachable from the TS server)
+CMD ["python", "-m", "nodetool.worker", "--host", "0.0.0.0", "--port", "7777"]

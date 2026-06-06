@@ -18,10 +18,10 @@ Usage examples:
   python build.py build-wheel --expected-version 0.6.0
   python build.py validate-wheel
   python build.py sidecar
-  python build.py release-notes --package nodetool-base --version 0.6.0 --tag v0.6.0 \
-      --repository nodetool-ai/nodetool-base --server-url https://github.com
-  REGISTRY_UPDATE_TOKEN=... python build.py notify-registry --package nodetool-base \
-      --version 0.6.0 --tag v0.6.0 --repository nodetool-ai/nodetool-base
+  python build.py release-notes --package nodetool-core --version 0.6.0 --tag v0.6.0 \
+      --repository nodetool-ai/nodetool-core --server-url https://github.com
+  REGISTRY_UPDATE_TOKEN=... python build.py notify-registry --package nodetool-core \
+      --version 0.6.0 --tag v0.6.0 --repository nodetool-ai/nodetool-core
 
 Requirements:
   - Python 3.11+
