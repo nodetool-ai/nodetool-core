@@ -1,89 +1,77 @@
 import asyncio
-import traceback
-from typing import Any, Callable, Awaitable
+from typing import Any, Awaitable, Callable, cast
 
 import msgpack
-from websockets.asyncio.server import serve as ws_serve, ServerConnection
+from websockets.asyncio.server import ServerConnection
+from websockets.asyncio.server import serve as ws_serve
+from websockets.exceptions import ConnectionClosed
 
-from nodetool.worker import BRIDGE_PROTOCOL_VERSION
+from nodetool.worker.protocol import WorkerProtocolServer
+
+
+class WebSocketTransport:
+    """WorkerTransport implementation over a websockets ServerConnection.
+
+    Writes are serialized with a lock so concurrent dispatch tasks cannot
+    interleave their frames (parity with StdioTransport).
+    """
+
+    def __init__(self, websocket: ServerConnection) -> None:
+        self._ws = websocket
+        self._write_lock = asyncio.Lock()
+
+    async def send_msg(self, msg: dict[str, Any]) -> None:
+        """Encode and send a dict as msgpack (thread-safe)."""
+        data = cast("bytes", msgpack.packb(msg))
+        async with self._write_lock:
+            await self._ws.send(data)
 
 
 class WorkerServer:
-    def __init__(self):
-        self._nodes_metadata: list[dict] = []
-        self._cancel_flags: dict[str, asyncio.Event] = {}
-        self._execute_handler: Callable | None = None
+    """WebSocket worker server that delegates to the shared protocol server."""
 
-    def set_nodes_metadata(self, metadata: list[dict]):
-        self._nodes_metadata = metadata
+    def __init__(self) -> None:
+        self._protocol = WorkerProtocolServer(transport_name="websocket")
+
+    def set_nodes_metadata(self, metadata: list[dict]) -> None:
+        self._protocol.set_nodes_metadata(metadata)
+
+    def set_load_errors(self, errors: list[dict[str, Any]]) -> None:
+        self._protocol.set_load_errors(errors)
+
+    def set_namespaces(self, namespaces: list[str]) -> None:
+        self._protocol.set_namespaces(namespaces)
 
     def set_execute_handler(
         self,
         handler: Callable[
-            [dict, asyncio.Event],
+            [
+                dict,
+                asyncio.Event,
+                Callable[[dict[str, Any]], Awaitable[None]],
+                Callable[[dict[str, Any]], Awaitable[None]] | None,
+            ],
             Awaitable[dict],
         ],
-    ):
-        self._execute_handler = handler
+    ) -> None:
+        self._protocol.set_execute_handler(handler)
 
-    async def handle_connection(self, websocket: ServerConnection):
-        async for raw_message in websocket:
-            msg = msgpack.unpackb(raw_message, raw=False)
-            msg_type = msg.get("type")
-            request_id = msg.get("request_id")
+    async def handle_connection(self, websocket: ServerConnection) -> None:
+        transport = WebSocketTransport(websocket)
+        tasks: set[asyncio.Task] = set()
 
-            if msg_type == "discover":
-                response = msgpack.packb({
-                    "type": "discover",
-                    "request_id": request_id,
-                    "data": {
-                        "nodes": self._nodes_metadata,
-                        "protocol_version": BRIDGE_PROTOCOL_VERSION,
-                    },
-                })
-                await websocket.send(response)
-
-            elif msg_type == "execute":
-                cancel_event = asyncio.Event()
-                if request_id:
-                    self._cancel_flags[request_id] = cancel_event
-                try:
-                    if self._execute_handler is None:
-                        raise RuntimeError("No execute handler registered")
-                    result = await self._execute_handler(msg["data"], cancel_event)
-                    response = msgpack.packb({
-                        "type": "result",
-                        "request_id": request_id,
-                        "data": result,
-                    })
-                    await websocket.send(response)
-                except Exception as e:
-                    response = msgpack.packb({
-                        "type": "error",
-                        "request_id": request_id,
-                        "data": {
-                            "error": str(e),
-                            "traceback": traceback.format_exc(),
-                        },
-                    })
-                    await websocket.send(response)
-                finally:
-                    self._cancel_flags.pop(request_id, None)
-
-            elif msg_type == "cancel":
-                cancel_event = self._cancel_flags.get(request_id)
-                if cancel_event:
-                    cancel_event.set()
-
-            elif msg_type and msg_type.startswith("provider."):
-                from nodetool.worker.provider_handler import handle_provider_message
-                await handle_provider_message(
-                    msg_type=msg_type,
-                    request_id=request_id,
-                    data=msg.get("data", {}),
-                    websocket=websocket,
-                    cancel_flags=self._cancel_flags,
-                )
+        try:
+            async for raw_message in websocket:
+                msg = msgpack.unpackb(raw_message, raw=False)
+                task = asyncio.create_task(self._protocol.dispatch(msg, transport))
+                tasks.add(task)
+                task.add_done_callback(tasks.discard)
+        except ConnectionClosed:
+            pass
+        finally:
+            # Wait for in-flight tasks to finish
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def start_server(
