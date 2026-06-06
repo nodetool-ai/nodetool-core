@@ -2,16 +2,15 @@
 Provider bridge handler for the worker server.
 
 Loads Python-only providers (HuggingFace Local, MLX) and handles
-provider operations dispatched from the TS backend via the WebSocket protocol.
+provider operations dispatched from the TS backend. The handler is
+transport-agnostic — it only needs a transport exposing ``send_msg`` —
+so the same code path serves both the WebSocket and stdio workers.
 """
 
 import asyncio
 import sys
 import traceback
-from typing import Any, AsyncIterator
-
-import msgpack
-from websockets.asyncio.server import ServerConnection
+from typing import Any
 
 # Cached provider instances
 _provider_cache: dict[str, Any] = {}
@@ -105,123 +104,6 @@ def get_available_providers() -> list[dict[str, Any]]:
                 }
             )
     return result
-
-
-async def handle_provider_message(
-    msg_type: str,
-    request_id: str | None,
-    data: dict[str, Any],
-    websocket: ServerConnection,
-    cancel_flags: dict[str, asyncio.Event],
-) -> None:
-    """Handle a provider.* message type."""
-    try:
-        if msg_type == "provider.list":
-            providers = get_available_providers()
-            await _send_result(websocket, request_id, {"providers": providers})
-
-        elif msg_type == "provider.models":
-            result = await _handle_models(data)
-            await _send_result(websocket, request_id, result)
-
-        elif msg_type == "provider.generate":
-            result = await _handle_generate(data)
-            await _send_result(websocket, request_id, result)
-
-        elif msg_type == "provider.stream":
-            cancel_event = asyncio.Event()
-            if request_id:
-                cancel_flags[request_id] = cancel_event
-            try:
-                await _handle_stream(data, request_id, websocket, cancel_event)
-            finally:
-                if request_id:
-                    cancel_flags.pop(request_id, None)
-
-        elif msg_type == "provider.text_to_image":
-            result = await _handle_text_to_image(data)
-            await _send_result(websocket, request_id, result)
-
-        elif msg_type == "provider.image_to_image":
-            result = await _handle_image_to_image(data)
-            await _send_result(websocket, request_id, result)
-
-        elif msg_type == "provider.text_to_video":
-            result = await _handle_text_to_video(data)
-            await _send_result(websocket, request_id, result)
-
-        elif msg_type == "provider.text_to_audio":
-            result = await _handle_text_to_audio(data)
-            await _send_result(websocket, request_id, result)
-
-        elif msg_type == "provider.tts":
-            cancel_event = asyncio.Event()
-            if request_id:
-                cancel_flags[request_id] = cancel_event
-            try:
-                await _handle_tts(data, request_id, websocket, cancel_event)
-            finally:
-                if request_id:
-                    cancel_flags.pop(request_id, None)
-
-        elif msg_type == "provider.asr":
-            result = await _handle_asr(data)
-            await _send_result(websocket, request_id, result)
-
-        elif msg_type == "provider.embedding":
-            result = await _handle_embedding(data)
-            await _send_result(websocket, request_id, result)
-
-        else:
-            await _send_error(
-                websocket, request_id, f"Unknown provider message type: {msg_type}"
-            )
-
-    except Exception as e:
-        await _send_error(websocket, request_id, str(e), traceback.format_exc())
-
-
-# ── Message helpers ──────────────────────────────────────────────────────
-
-
-async def _send_result(
-    ws: ServerConnection, request_id: str | None, data: dict
-) -> None:
-    await ws.send(
-        msgpack.packb(
-            {
-                "type": "result",
-                "request_id": request_id,
-                "data": data,
-            }
-        )
-    )
-
-
-async def _send_error(
-    ws: ServerConnection, request_id: str | None, error: str, tb: str | None = None
-) -> None:
-    await ws.send(
-        msgpack.packb(
-            {
-                "type": "error",
-                "request_id": request_id,
-                "data": {"error": error, "traceback": tb},
-            }
-        )
-    )
-
-
-async def _send_chunk(ws: ServerConnection, request_id: str | None, data: dict) -> None:
-    await ws.send(
-        msgpack.packb(
-            {
-                "type": "chunk",
-                "request_id": request_id,
-                "data": data,
-            }
-        )
-    )
 
 
 # ── Handler implementations ─────────────────────────────────────────────
@@ -352,60 +234,6 @@ async def _handle_generate(data: dict) -> dict:
     return {"message": _serialize_message(result_msg)}
 
 
-async def _handle_stream(
-    data: dict,
-    request_id: str | None,
-    websocket: ServerConnection,
-    cancel_event: asyncio.Event,
-) -> None:
-    """Handle provider.stream — streaming message generation."""
-    provider = _get_provider(data["provider"], data.get("secrets", {}))
-    messages = _deserialize_messages(data["messages"])
-    model = data["model"]
-
-    kwargs: dict[str, Any] = {}
-    for key in ("max_tokens", "temperature", "top_p", "response_format"):
-        if key in data:
-            kwargs[key] = data[key]
-
-    tools = data.get("tools")
-    if tools:
-        kwargs["tools"] = tools
-
-    from nodetool.metadata.types import ToolCall
-
-    async for item in provider.generate_messages(
-        messages=messages,
-        model=model,
-        **kwargs,
-    ):
-        if cancel_event.is_set():
-            break
-
-        if isinstance(item, ToolCall):
-            await _send_chunk(
-                websocket,
-                request_id,
-                {
-                    "type": "tool_call",
-                    "id": item.id,
-                    "name": item.name,
-                    "args": item.args,
-                },
-            )
-        else:
-            # Chunk object
-            chunk_data: dict[str, Any] = {
-                "type": "chunk",
-                "content": getattr(item, "content", str(item)),
-                "done": getattr(item, "done", False),
-            }
-            await _send_chunk(websocket, request_id, chunk_data)
-
-    # Signal stream end
-    await _send_result(websocket, request_id, {"done": True})
-
-
 async def _handle_text_to_image(data: dict) -> dict:
     """Handle provider.text_to_image."""
     provider = _get_provider(data["provider"], data.get("secrets", {}))
@@ -492,40 +320,6 @@ async def _handle_text_to_audio(data: dict) -> dict:
     return {"blobs": {"audio": await _extract_media_bytes(ctx, audio_ref)}}
 
 
-async def _handle_tts(
-    data: dict,
-    request_id: str | None,
-    websocket: ServerConnection,
-    cancel_event: asyncio.Event,
-) -> None:
-    """Handle provider.tts — streaming text-to-speech."""
-    provider = _get_provider(data["provider"], data.get("secrets", {}))
-
-    kwargs: dict[str, Any] = {
-        "text": data["text"],
-        "model": data["model"],
-    }
-    for key in ("voice", "speed"):
-        if key in data:
-            kwargs[key] = data[key]
-
-    async for audio_chunk in provider.text_to_speech(**kwargs):
-        if cancel_event.is_set():
-            break
-        # audio_chunk is numpy int16 array
-        await websocket.send(
-            msgpack.packb(
-                {
-                    "type": "chunk",
-                    "request_id": request_id,
-                    "data": {"blobs": {"audio": audio_chunk.tobytes()}},
-                }
-            )
-        )
-
-    await _send_result(websocket, request_id, {"done": True})
-
-
 async def _handle_asr(data: dict) -> dict:
     """Handle provider.asr — automatic speech recognition."""
     provider = _get_provider(data["provider"], data.get("secrets", {}))
@@ -557,17 +351,17 @@ async def _handle_embedding(data: dict) -> dict:
     return {"embeddings": result}
 
 
-# ── Stdio transport adapter ──────────────────────────────────────────────
+# ── Provider message dispatch ─────────────────────────────────────────────
 
 
-async def handle_provider_message_stdio(
+async def handle_provider_message(
     msg_type: str,
     request_id: str | None,
     data: dict[str, Any],
-    transport: Any,  # StdioTransport
+    transport: Any,  # WorkerTransport (exposes async send_msg)
     cancel_flags: dict[str, asyncio.Event],
 ) -> None:
-    """Handle a provider.* message via stdio transport (same logic, different send)."""
+    """Handle a provider.* message via any transport exposing ``send_msg``."""
 
     async def send_result(rid: str | None, d: dict) -> None:
         await transport.send_msg({"type": "result", "request_id": rid, "data": d})

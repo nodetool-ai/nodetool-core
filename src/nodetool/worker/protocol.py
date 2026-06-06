@@ -168,9 +168,9 @@ class WorkerProtocolServer:
             return
 
         if msg_type and str(msg_type).startswith("provider."):
-            from nodetool.worker.provider_handler import handle_provider_message_stdio
+            from nodetool.worker.provider_handler import handle_provider_message
 
-            await handle_provider_message_stdio(
+            await handle_provider_message(
                 msg_type=str(msg_type),
                 request_id=request_id,
                 data=msg.get("data", {}),

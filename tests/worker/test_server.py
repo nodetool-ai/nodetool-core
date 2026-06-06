@@ -81,13 +81,15 @@ async def test_full_execute_with_echo_node():
         worker = WorkerServer()
         worker.set_nodes_metadata(load_nodes(namespaces=["testns"]))
 
-        async def handle(data, cancel):
+        async def handle(data, cancel, emit_progress, emit_chunk):
             return await execute_node(
                 node_type=data["node_type"],
                 fields=data.get("fields", {}),
                 secrets=data.get("secrets", {}),
                 input_blobs=data.get("blobs", {}),
                 cancel_event=cancel,
+                emit_progress=emit_progress,
+                emit_chunk=emit_chunk,
             )
 
         worker.set_execute_handler(handle)
@@ -126,7 +128,7 @@ async def test_execute_accepts_large_blob_payload():
 
     worker = WorkerServer()
 
-    async def handle(data, cancel):
+    async def handle(data, cancel, emit_progress, emit_chunk):
         blobs = data.get("blobs", {})
         image_blob = blobs.get("image", b"")
         return {
