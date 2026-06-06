@@ -22,11 +22,11 @@ def convert_to_float(audio_data: np.ndarray):
     if dtype == np.float32 or dtype == np.float64:
         return audio_data
     if dtype == np.int16:
-        return audio_data / 2**15
+        return audio_data.astype(np.float32) / np.float32(2**15)
     if dtype == np.int32:
-        return audio_data / 2**31
+        return audio_data.astype(np.float32) / np.float32(2**31)
     if dtype == np.int64:
-        return audio_data / 2**63
+        return audio_data.astype(np.float32) / np.float32(2**63)
 
     raise Exception(f"Unsupported dtype: {dtype}")
 
