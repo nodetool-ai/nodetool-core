@@ -9,7 +9,7 @@ services:
     command:
       - python
       - -m
-      - nodetool.api.run_server
+      - nodetool.worker
       - --host
       - 0.0.0.0
       - --port
@@ -44,7 +44,12 @@ services:
       MEMCACHE_PORT: ${MEMCACHE_PORT:-11211}
       CHROMA_PATH: /chroma-data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:7777/health"]
+      # The worker is a WebSocket server (no HTTP /health route) — check the port.
+      test:
+        - CMD
+        - python
+        - -c
+        - import socket; socket.create_connection(('127.0.0.1', 7777), timeout=3).close()
       interval: 10s
       timeout: 5s
       retries: 6

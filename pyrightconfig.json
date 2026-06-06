@@ -3,7 +3,6 @@
   "exclude": ["**/__pycache__", "dist", "build"],
   "extraPaths": [
     "src",
-    "../nodetool-base/src",
     "../nodetool-replicate/src",
     "../nodetool-aime/src",
     "../nodetool-apple/src",

@@ -1,6 +1,6 @@
 # .github/workflows/publish-wheel.yml
 # Template workflow for individual NodeTool package repositories
-# Copy this to each package repository: nodetool-base, nodetool-huggingface, etc.
+# Copy this to each package repository: nodetool-core, nodetool-huggingface, etc.
 
 name: Build and Publish Wheel
 
@@ -33,7 +33,7 @@ on:
           - pypi
 
 env:
-  PACKAGE_NAME: ${{ github.event.repository.name }} # e.g., "nodetool-base"
+  PACKAGE_NAME: ${{ github.event.repository.name }} # e.g., "nodetool-core"
 
 jobs:
   validate:
