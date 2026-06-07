@@ -33,3 +33,7 @@
 ## 2024-05-18 - PyTorch Tensor Creation Memory Copy Optimization
 **Learning:** In PyTorch, using `torch.tensor(numpy_array)` causes a full memory copy of the array's data. For read-only applications like model inference or input conversion, this unnecessary byte-copying adds substantial memory and CPU overhead.
 **Action:** Use `torch.from_numpy(numpy_array)` instead of `torch.tensor()` to create a zero-copy, memory-efficient tensor view of the existing NumPy array data. Keep in mind this creates a shared-memory tensor, so mutations to the tensor will affect the original NumPy array.
+
+## 2025-06-10 - NumPy Implicit Float64 Conversion Bottleneck
+**Learning:** When scaling an integer numpy array by dividing by a Python integer (e.g., `a / 2**15` where `a` is `np.int16` or `np.int32`), NumPy implicitly promotes the result to `np.float64`. This doubles the memory usage and decreases computation speed compared to using `np.float32`, which is completely unnecessary when the target format only requires `np.float32`.
+**Action:** Always explicitly cast the integer array to `np.float32` and divide by a `np.float32` constant (e.g., `a.astype(np.float32) / np.float32(2**15)`) when scaling audio or image data to float format to halve memory footprint and speed up execution.
