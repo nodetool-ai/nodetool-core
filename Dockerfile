@@ -99,10 +99,12 @@ RUN uv pip install \
 # Expose the worker's WebSocket port
 EXPOSE 7777
 
-# Health check — the worker is a WebSocket server (no HTTP /health route),
-# so verify the port is accepting connections rather than curling an endpoint.
+# Health check — the worker is a WebSocket server (no HTTP route), so probe it
+# with a real WebSocket handshake. A raw TCP connect gets rejected mid-handshake
+# and spams the worker log with tracebacks; a proper ws:// connect that closes
+# cleanly verifies liveness without the noise. `websockets` ships with nodetool-core.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import socket; socket.create_connection(('127.0.0.1', 7777), timeout=3).close()" || exit 1
+    CMD python -c "from websockets.sync.client import connect; connect('ws://127.0.0.1:7777', open_timeout=5).close()" || exit 1
 
 # Run the NodeTool Python worker (WebSocket transport, reachable from the TS server)
 CMD ["python", "-m", "nodetool.worker", "--host", "0.0.0.0", "--port", "7777"]
