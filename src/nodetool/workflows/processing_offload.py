@@ -208,7 +208,7 @@ def _audio_segment_to_numpy(
     dtype = dtype_map.get(segment.sample_width, np.int16)
     samples = np.frombuffer(segment.raw_data, dtype=dtype)
 
-    max_value = float(2 ** (8 * segment.sample_width - 1))
+    max_value = np.float32(2 ** (8 * segment.sample_width - 1))
     samples = samples.astype(np.float32) / max_value
     return samples, segment.frame_rate, segment.channels
 
