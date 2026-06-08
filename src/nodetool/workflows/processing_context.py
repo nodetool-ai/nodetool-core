@@ -1458,7 +1458,7 @@ class ProcessingContext:
 
         # Convert to target dtype if needed
         if dtype == "float32" and samples.dtype == np.int16:
-            samples = samples.astype(np.float32) / 32768.0
+            samples = samples.astype(np.float32) / np.float32(32768.0)
         elif dtype == "float64" and samples.dtype == np.int16:
             samples = samples.astype(np.float64) / 32768.0
         elif dtype == "int16" and samples.dtype in (np.float32, np.float64):
