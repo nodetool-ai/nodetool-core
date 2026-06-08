@@ -7,6 +7,7 @@ from websockets.asyncio.server import serve as ws_serve
 from websockets.exceptions import ConnectionClosed
 
 from nodetool.worker.protocol import WorkerProtocolServer
+from nodetool.worker.worker_auth import make_process_request
 
 
 class WebSocketTransport:
@@ -92,6 +93,10 @@ async def start_server(
         # Workflow asset blobs routinely exceed the websockets default 1 MiB limit.
         # Let the bridge transport large execute payloads instead of closing.
         max_size=None,
+        # Enforce the NODETOOL_WORKER_TOKEN bearer handshake (open when unset).
+        # The handshake is rejected before any frame, so an unauthenticated peer
+        # never reaches the executor.
+        process_request=make_process_request(),
     )
 
     # Get the actual port (important when port=0)

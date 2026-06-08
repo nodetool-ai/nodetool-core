@@ -10,8 +10,12 @@ from nodetool.worker.server import WorkerServer, start_server
 
 def main():
     parser = argparse.ArgumentParser(description="NodeTool Python Worker")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=0)
+    parser.add_argument(
+        "--host", default=os.environ.get("NODETOOL_WORKER_HOST", "127.0.0.1")
+    )
+    parser.add_argument(
+        "--port", type=int, default=int(os.environ.get("NODETOOL_WORKER_PORT", "0"))
+    )
     parser.add_argument("--stdio", action="store_true", help="Use stdio transport instead of WebSocket")
     parser.add_argument(
         "--namespaces",
