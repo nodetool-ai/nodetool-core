@@ -10,6 +10,8 @@ Python environment.
 History:
   1 - Initial stdio protocol (msgpack length-prefixed framing,
       discover/execute/result/error/chunk/progress + provider.* messages).
+  2 - Added models.* messages (models.list_cached / models.download /
+      models.delete) for worker-side HuggingFace cache management.
 """
 
-BRIDGE_PROTOCOL_VERSION = 1
+BRIDGE_PROTOCOL_VERSION = 2
