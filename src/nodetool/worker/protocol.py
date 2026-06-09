@@ -179,6 +179,18 @@ class WorkerProtocolServer:
             )
             return
 
+        if msg_type and str(msg_type).startswith("models."):
+            from nodetool.worker.model_handler import handle_models_message
+
+            await handle_models_message(
+                msg_type=str(msg_type),
+                request_id=request_id,
+                data=msg.get("data", {}),
+                transport=transport,
+                cancel_flags=self._cancel_flags,
+            )
+            return
+
         await transport.send_msg({
             "type": "error",
             "request_id": request_id,
