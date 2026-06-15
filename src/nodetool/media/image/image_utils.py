@@ -83,16 +83,16 @@ def numpy_to_pil_image(arr: np.ndarray) -> PIL.Image.Image:
                 a = a * 255.0
             elif amax > 255.0 or amin < 0.0:
                 a = (a - amin) * (255.0 / (amax - amin)) if amax != amin else np.zeros_like(a)
-            a = np.clip(a, 0, 255).astype(np.uint8)
+            a = a.clip(0, 255).astype(np.uint8)
     elif a.dtype == np.uint16:
         a = (a / 257.0).astype(np.uint8)
     elif a.dtype in (np.int16, np.int32, np.int64):
-        a = np.clip(a, 0, 255).astype(np.uint8)
+        a = a.clip(0, 255).astype(np.uint8)
     elif a.dtype == np.bool_:
         a = a.astype(np.uint8) * 255
     elif a.dtype != np.uint8:
         try:
-            a = np.clip(a, 0, 255).astype(np.uint8)
+            a = a.clip(0, 255).astype(np.uint8)
         except Exception:
             a = a.astype(np.uint8)
 
