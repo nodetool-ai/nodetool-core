@@ -70,7 +70,7 @@ ocr = [
 ]
 # Data visualization nodes
 viz = [
-    "matplotlib==3.10.9",
+    "matplotlib==3.11.0",
     "seaborn>=0.13.2",
 ]
 # Audio processing
