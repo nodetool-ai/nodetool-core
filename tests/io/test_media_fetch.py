@@ -93,9 +93,13 @@ class TestFetchFileUri:
         # Initialize mimetypes before tests to prevent hangs when builtins.open is mocked
         mimetypes.init()
 
+    @patch("nodetool.config.environment.Environment.get_asset_folder")
+    @patch("nodetool.io.path_utils.resolve_workspace_path")
     @patch("builtins.open")
-    def test_fetch_file_uri_success(self, mock_open: Mock) -> None:
+    def test_fetch_file_uri_success(self, mock_open: Mock, mock_resolve: Mock, mock_get_folder: Mock) -> None:
         """Test successful file URI fetch."""
+        mock_get_folder.return_value = "/workspace"
+        mock_resolve.return_value = "/workspace/file.txt"
         test_data = b"file content"
         mock_file = MagicMock()
         mock_file.read.return_value = test_data
@@ -107,9 +111,13 @@ class TestFetchFileUri:
         assert mime == "text/plain"
         mock_open.assert_called_once()
 
+    @patch("nodetool.config.environment.Environment.get_asset_folder")
+    @patch("nodetool.io.path_utils.resolve_workspace_path")
     @patch("builtins.open")
-    def test_fetch_file_uri_unknown_extension(self, mock_open: Mock) -> None:
+    def test_fetch_file_uri_unknown_extension(self, mock_open: Mock, mock_resolve: Mock, mock_get_folder: Mock) -> None:
         """Test file URI with unknown extension."""
+        mock_get_folder.return_value = "/workspace"
+        mock_resolve.return_value = "/workspace/file.unknown"
         test_data = b"file content"
         mock_file = MagicMock()
         mock_file.read.return_value = test_data
@@ -354,9 +362,13 @@ class TestFetchUriBytesAndMimeAsync:
     def setup_class(cls):
         mimetypes.init()
 
+    @patch("nodetool.config.environment.Environment.get_asset_folder")
+    @patch("nodetool.io.path_utils.resolve_workspace_path")
     @patch("builtins.open")
-    async def test_fetch_file_uri(self, mock_open: Mock) -> None:
+    async def test_fetch_file_uri(self, mock_open: Mock, mock_resolve: Mock, mock_get_folder: Mock) -> None:
         """Test fetching file URI."""
+        mock_get_folder.return_value = "/workspace"
+        mock_resolve.return_value = "/workspace/test.txt"
         test_data = b"file content"
         mock_file = MagicMock()
         mock_file.read.return_value = test_data

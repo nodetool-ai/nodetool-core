@@ -82,13 +82,33 @@ def _fetch_file_uri(uri: str) -> tuple[str, bytes]:
     Use builtins.open so tests can mock file IO with patch("builtins.open").
     """
     import mimetypes
-    import pathlib
+    from urllib.parse import unquote, urlparse
 
-    path = uri[len("file://") :]
-    # Normalize path
-    p = pathlib.Path(path)
-    with open(p, "rb") as f:  # type: ignore[arg-type]
+    from nodetool.config.environment import Environment
+    from nodetool.io.path_utils import resolve_workspace_path
+
+    parsed = urlparse(uri)
+    raw_netloc = unquote(parsed.netloc or "")
+    raw_path = unquote(parsed.path or "")
+
+    if raw_netloc and raw_netloc.lower() != "localhost":
+        if raw_path:
+            file_path = f"{raw_netloc}{raw_path}" if raw_netloc.endswith(":") else f"//{raw_netloc}{raw_path}"
+        else:
+            file_path = raw_netloc
+    else:
+        file_path = raw_path
+
+    if len(file_path) >= 3 and file_path[0] == "/" and file_path[2] == ":":
+        file_path = file_path[1:]
+
+    # 🛡️ Sentinel: Enforce workspace boundary to prevent path traversal/LFI
+    workspace_dir = Environment.get_asset_folder()
+    safe_file_path = resolve_workspace_path(workspace_dir, file_path)
+
+    with open(safe_file_path, "rb") as f:
         data = f.read()
+
     mime_type, _ = mimetypes.guess_type(uri)
     if not mime_type:
         mime_type = "application/octet-stream"
