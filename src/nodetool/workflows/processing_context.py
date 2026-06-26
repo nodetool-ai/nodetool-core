@@ -1460,7 +1460,7 @@ class ProcessingContext:
         if dtype == "float32" and samples.dtype == np.int16:
             samples = samples.astype(np.float32) / np.float32(32768.0)
         elif dtype == "float64" and samples.dtype == np.int16:
-            samples = samples.astype(np.float64) / 32768.0
+            samples = samples.astype(np.float64) / np.float64(32768.0)
         elif dtype == "int16" and samples.dtype in (np.float32, np.float64):
             samples = (samples * 32768.0).clip(-32768, 32767).astype(np.int16)
         elif dtype != str(samples.dtype):

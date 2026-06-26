@@ -45,3 +45,6 @@
 ## 2025-06-25 - [Optimize uint16 to uint8 downscaling with integer division]
 **Learning:** When downscaling a NumPy `uint16` array to `uint8` by dividing by a Python float (e.g., `a / 257.0`), NumPy implicitly upcasts the array to `float64`, performs floating-point division, and then downcasts back to `uint8`. This implicit conversion introduces significant memory and computation overhead. In benchmarks, processing a 2000x2000 array took ~1.00s with float division compared to ~0.18s with integer division.
 **Action:** Use integer division (`a // 257`) when downscaling integer arrays to avoid implicit float64 conversion and maintain integer arithmetic for better performance.
+## 2026-06-26 - [Optimize float64 array scaling with np.float64 explicit constants]
+**Learning:** When performing arithmetic division on a NumPy `float64` array using a standard Python float literal (e.g., `array / 32768.0`), NumPy handles it relatively efficiently but explicitly specifying the matching numpy type for the scalar (`array / np.float64(32768.0)`) removes implicit dynamic type resolution and slightly speeds up execution in hot paths.
+**Action:** Use explicitly typed scalars like `np.float64(X)` when scaling float64 NumPy arrays inside performance-sensitive loops to avoid implicit promotion and resolution overhead.
