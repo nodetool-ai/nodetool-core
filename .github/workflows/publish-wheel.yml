@@ -31,6 +31,10 @@ on:
           - none
           - testpypi
           - pypi
+      hf_version:
+        description: "nodetool-huggingface version to bundle in Docker image (defaults to same as release version)"
+        required: false
+        type: string
 
 env:
   PACKAGE_NAME: ${{ github.event.repository.name }} # e.g., "nodetool-core"
@@ -42,6 +46,7 @@ jobs:
       version: ${{ steps.get-version.outputs.version }}
       tag-name: ${{ steps.get-version.outputs.tag-name }}
       is-prerelease: ${{ steps.get-version.outputs.is-prerelease }}
+      hf-version: ${{ steps.get-version.outputs.hf-version }}
     steps:
       - name: Get version from tag or input
         id: get-version
@@ -56,13 +61,19 @@ jobs:
             IS_PRERELEASE="false"
           fi
 
+          # HF version defaults to the same version as the release
+          HF_VERSION="${{ github.event.inputs.hf_version }}"
+          HF_VERSION="${HF_VERSION:-$VERSION}"
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag-name=$TAG_NAME" >> $GITHUB_OUTPUT
           echo "is-prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+          echo "hf-version=$HF_VERSION" >> $GITHUB_OUTPUT
 
           echo "📋 Version: $VERSION"
           echo "🏷️ Tag: $TAG_NAME"
           echo "🔄 Prerelease: $IS_PRERELEASE"
+          echo "🤗 HF Version: $HF_VERSION"
 
   build-wheel:
     needs: validate
@@ -205,7 +216,8 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
 
   # Build and push the nodetool-worker Docker image to GHCR.
-  # Runs after publish-pypi because the Dockerfile installs nodetool-core from PyPI.
+  # Runs after publish-pypi because the Dockerfile installs nodetool-core and
+  # nodetool-huggingface from PyPI. Both packages must be published before this runs.
   # Tags: ghcr.io/nodetool-ai/nodetool-worker:<version> and :latest
   build-docker:
     needs: [validate, publish-pypi]
@@ -237,6 +249,7 @@ jobs:
           push: true
           build-args: |
             NODETOOL_VERSION=${{ needs.validate.outputs.version }}
+            HF_VERSION=${{ needs.validate.outputs.hf-version }}
           tags: |
             ghcr.io/nodetool-ai/nodetool-worker:${{ needs.validate.outputs.version }}
             ghcr.io/nodetool-ai/nodetool-worker:latest

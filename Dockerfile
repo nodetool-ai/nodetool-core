@@ -83,17 +83,17 @@ ENV PATH=$VIRTUAL_ENV/bin:$PATH
 
 FROM base AS final
 
-# nodetool-core version to install from PyPI. Override at build time:
-#   docker build --build-arg NODETOOL_VERSION=0.7.2 .
+# Package versions to install from PyPI. Override at build time:
+#   docker build --build-arg NODETOOL_VERSION=0.7.2 --build-arg HF_VERSION=0.7.2 .
 ARG NODETOOL_VERSION=0.7.1
+ARG HF_VERSION=0.7.1
 
-# Install nodetool-core (the Python node-runner worker) from PyPI.
-# Node packages are layered separately on top of this image.
+# Install nodetool-core and nodetool-huggingface from PyPI.
 RUN uv pip install \
         --python $VIRTUAL_ENV \
         --index-url https://pypi.org/simple \
-        "nodetool-core==${NODETOOL_VERSION}" && \
-    # Clean up caches to keep the image small
+        "nodetool-core==${NODETOOL_VERSION}" \
+        "nodetool-huggingface==${HF_VERSION}" && \
     rm -rf /root/.cache/uv /root/.cache/pip /tmp/* /var/tmp/*
 
 # Expose the worker's WebSocket port
