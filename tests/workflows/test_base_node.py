@@ -560,6 +560,33 @@ def test_node_assign_property_uses_from_dict_for_base_types():
     assert node.image.asset_id == "12345"
 
 
+def test_node_assign_property_ignores_msgpack_ext_type():
+    """A raw msgpack ExtType (un-decodable wire value) falls back to default.
+
+    Regression test for the Whisper node failing with:
+        Error converting value for property `model`:
+        Input should be a valid string [input_value=ExtType(code=0, data=b'\\x00')]
+    """
+    import msgpack
+
+    from nodetool.metadata.types import ImageRef
+
+    class ImageNode(BaseNode):
+        image: ImageRef = ImageRef()
+
+        async def process(self, context: ProcessingContext) -> ImageRef:
+            return self.image
+
+    node = ImageNode()
+    default = node.image
+
+    error = node.assign_property("image", msgpack.ExtType(0, b"\x00"))
+
+    # No error, and the property keeps its default instead of crashing.
+    assert error is None
+    assert node.image == default
+
+
 def test_node_from_dict_with_base_type_properties():
     """Test that node deserialization handles BaseType properties correctly"""
     node_dict = {
