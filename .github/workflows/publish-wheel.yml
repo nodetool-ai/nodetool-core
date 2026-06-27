@@ -61,9 +61,16 @@ jobs:
             IS_PRERELEASE="false"
           fi
 
-          # HF version defaults to the same version as the release
+          # HF version: use the explicit input if given, otherwise the latest
+          # nodetool-huggingface published on PyPI. nodetool-huggingface is
+          # versioned independently, so it rarely matches the core release
+          # version — defaulting to $VERSION breaks the Docker build whenever a
+          # matching HF release doesn't exist.
           HF_VERSION="${{ github.event.inputs.hf_version }}"
-          HF_VERSION="${HF_VERSION:-$VERSION}"
+          if [ -z "$HF_VERSION" ]; then
+            HF_VERSION=$(curl -fsSL https://pypi.org/pypi/nodetool-huggingface/json \
+              | python3 -c "import sys, json; print(json.load(sys.stdin)['info']['version'])")
+          fi
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag-name=$TAG_NAME" >> $GITHUB_OUTPUT
