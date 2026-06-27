@@ -6,6 +6,7 @@ from websockets.asyncio.server import ServerConnection
 from websockets.asyncio.server import serve as ws_serve
 from websockets.exceptions import ConnectionClosed
 
+from nodetool.worker.msgpack_codec import decode_message
 from nodetool.worker.protocol import WorkerProtocolServer
 from nodetool.worker.worker_auth import make_process_request
 
@@ -63,7 +64,7 @@ class WorkerServer:
 
         try:
             async for raw_message in websocket:
-                msg = msgpack.unpackb(raw_message, raw=False)
+                msg = decode_message(raw_message)
                 task = asyncio.create_task(self._protocol.dispatch(msg, transport))
                 tasks.add(task)
                 task.add_done_callback(tasks.discard)

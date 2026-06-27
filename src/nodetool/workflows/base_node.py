@@ -1170,6 +1170,14 @@ class BaseNode(BaseModel):
             This method handles type conversion for enums, lists, and objects with 'model_validate' method.
         """
 
+        # A raw msgpack extension type means a value arrived over the wire that
+        # the worker could not decode (e.g. an unset model selection the
+        # frontend encoded with a custom extension). Treat it as "no value" so
+        # the property falls back to its default instead of failing validation
+        # with a confusing ExtType error.
+        if type(value).__name__ == "ExtType" and type(value).__module__.startswith("msgpack"):
+            value = None
+
         prop = self.find_property(name)
         if prop is None:
             if hasattr(self, name):

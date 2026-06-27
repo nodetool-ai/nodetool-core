@@ -17,6 +17,7 @@ from typing import Any, Awaitable, Callable
 
 import msgpack
 
+from nodetool.worker.msgpack_codec import decode_message
 from nodetool.worker.protocol import MAX_BRIDGE_FRAME_SIZE, WorkerProtocolServer
 from nodetool.worker.stdio_stdout_guard import get_protocol_stdout_buffer
 
@@ -50,7 +51,7 @@ class StdioTransport:
         payload = await loop.run_in_executor(None, sys.stdin.buffer.read, length)
         if len(payload) < length:
             return None
-        return msgpack.unpackb(payload, raw=False)
+        return decode_message(payload)
 
     async def send(self, data: bytes) -> None:
         """Write a length-prefixed msgpack payload (thread-safe)."""
