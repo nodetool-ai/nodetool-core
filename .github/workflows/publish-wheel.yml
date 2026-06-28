@@ -226,8 +226,17 @@ jobs:
   # Runs after publish-pypi because the Dockerfile installs nodetool-core and
   # nodetool-huggingface from PyPI. Both packages must be published before this runs.
   # Tags: ghcr.io/nodetool-ai/nodetool-worker:<version> and :latest
+  #
+  # Runs after a successful publish (tag push) OR when publish-pypi was skipped
+  # (manual dispatch to rebuild the image for an already-published version,
+  # which installs the packages straight from PyPI). Skips only if publish-pypi
+  # actually failed.
   build-docker:
     needs: [validate, publish-pypi]
+    if: |
+      always() &&
+      needs.validate.result == 'success' &&
+      (needs.publish-pypi.result == 'success' || needs.publish-pypi.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: read
