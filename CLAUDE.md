@@ -6,7 +6,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 nodetool-core is a **Python library and node runner** for the NodeTool platform. The TypeScript server handles HTTP API, WebSocket, database, auth, agents, chat, storage, deploy, and workflow orchestration. Python remains for two roles:
 
-1. **Node runner subprocess** — TS spawns `python -m nodetool.worker`, connects via WebSocket+MessagePack for `discover`/`execute`/`cancel`/`provider.*`
+1. **Node runner subprocess** — TS spawns `python -m nodetool.worker`, connects via WebSocket+MessagePack for `discover`/`execute`/`cancel`/`provider.*`/`models.*`/`comfy.*` (the `comfy.*` messages proxy a co-located ComfyUI server — see `docs/comfy-proxy.md`)
 2. **Node system and type definitions** — `BaseNode`, `ProcessingContext`, metadata types, used by all Python node packages
 
 Cloud/API providers (OpenAI, Anthropic, Gemini, Ollama, etc.) are implemented in the TS server. Python only has local-compute providers (HuggingFace local, MLX) registered via external packages.
@@ -135,6 +135,8 @@ Storage: `create_asset`, `download_asset`, `asset_storage_url`
 | `DB_PATH` | SQLite database path | `~/.config/nodetool/nodetool.sqlite3` |
 | `FFMPEG_PATH` | Path to ffmpeg | `ffmpeg` |
 | `SECRETS_MASTER_KEY` | Master key for encrypted secrets | auto-generated |
+| `COMFYUI_URL` | ComfyUI server proxied by the worker's `comfy.*` messages | `http://127.0.0.1:8188` |
+| `COMFY_MODELS_DIR` | Model tree for `comfy.models.*` (RunPod network volume) | `/workspace/models` |
 
 ## Testing
 

@@ -24,6 +24,7 @@ class WorkerStatus:
     load_errors: list[dict[str, Any]]
     transport: str
     max_frame_size: int
+    comfy: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -34,6 +35,7 @@ class WorkerStatus:
             "load_errors": self.load_errors,
             "transport": self.transport,
             "max_frame_size": self.max_frame_size,
+            "comfy": self.comfy,
         }
 
 
@@ -88,6 +90,7 @@ class WorkerProtocolServer:
             return
 
         if msg_type == "worker.status":
+            from nodetool.worker.comfy_handler import get_comfy_info
             from nodetool.worker.provider_handler import get_available_providers
 
             status = WorkerStatus(
@@ -98,6 +101,7 @@ class WorkerProtocolServer:
                 load_errors=list(self._load_errors),
                 transport=self._transport_name,
                 max_frame_size=MAX_BRIDGE_FRAME_SIZE,
+                comfy=get_comfy_info(),
             )
             await transport.send_msg({
                 "type": "result",
@@ -183,6 +187,18 @@ class WorkerProtocolServer:
             from nodetool.worker.model_handler import handle_models_message
 
             await handle_models_message(
+                msg_type=str(msg_type),
+                request_id=request_id,
+                data=msg.get("data", {}),
+                transport=transport,
+                cancel_flags=self._cancel_flags,
+            )
+            return
+
+        if msg_type and str(msg_type).startswith("comfy."):
+            from nodetool.worker.comfy_handler import handle_comfy_message
+
+            await handle_comfy_message(
                 msg_type=str(msg_type),
                 request_id=request_id,
                 data=msg.get("data", {}),

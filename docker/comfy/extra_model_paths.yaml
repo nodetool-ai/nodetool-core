@@ -1,0 +1,27 @@
+# Model folders on the persistent volume (RunPod network volume at /workspace).
+# is_default makes ComfyUI save downloaded/derived models there too, so the
+# container filesystem stays disposable. comfy.models.download writes into the
+# same tree (COMFY_MODELS_DIR=/workspace/models).
+nodetool:
+  base_path: /workspace
+  is_default: true
+  checkpoints: models/checkpoints
+  clip: models/clip
+  clip_vision: models/clip_vision
+  configs: models/configs
+  controlnet: models/controlnet
+  diffusers: models/diffusers
+  diffusion_models: models/diffusion_models
+  embeddings: models/embeddings
+  gligen: models/gligen
+  hypernetworks: models/hypernetworks
+  ipadapter: models/ipadapter
+  instantid: models/instantid
+  loras: models/loras
+  photomaker: models/photomaker
+  style_models: models/style_models
+  text_encoders: models/text_encoders
+  unet: models/unet
+  upscale_models: models/upscale_models
+  vae: models/vae
+  vae_approx: models/vae_approx
