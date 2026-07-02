@@ -608,6 +608,51 @@ async def test_models_download_from_url(server, fake_comfy, tmp_path, monkeypatc
 
 
 @pytest.mark.asyncio(loop_scope="function")
+async def test_models_download_progress_is_throttled(server, fake_comfy, tmp_path, monkeypatch):
+    """Progress frames are time-throttled, not one per chunk — per-chunk awaits
+    on the serialized transport would gate download throughput on bridge latency."""
+    monkeypatch.setenv("COMFY_MODELS_DIR", str(tmp_path))
+    fake_comfy.model_files["big.safetensors"] = b"x" * (3 * 1024 * 1024)
+
+    host, port = server
+    async with websockets.connect(f"ws://{host}:{port}") as ws:
+        frames = await _request(ws, {
+            "type": "comfy.models.download",
+            "request_id": "cmd-throttle",
+            "data": {
+                "folder": "checkpoints",
+                "source": {"type": "url", "url": f"{fake_comfy.base_url}/files/big.safetensors"},
+            },
+        })
+
+    assert frames[-1]["data"]["status"] == "completed"
+    assert frames[-1]["data"]["size_bytes"] == 3 * 1024 * 1024
+    assert (tmp_path / "checkpoints" / "big.safetensors").stat().st_size == 3 * 1024 * 1024
+    # A loopback 3 MB body arrives in well under the 0.5s throttle window, so
+    # only the first chunk emits a progress frame — not one per chunk.
+    progress_frames = [f for f in frames if f["type"] == "progress" and f["data"]["status"] == "progress"]
+    assert len(progress_frames) == 1
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_execute_truncates_long_blob_keys_in_filenames(server, fake_comfy):
+    """A pathologically long blob key must not overflow filesystem name limits."""
+    long_key = "k" * 300
+    workflow = {"1": {"class_type": "LoadImage", "inputs": {"image": f"blob:{long_key}"}}}
+    host, port = server
+    async with websockets.connect(f"ws://{host}:{port}") as ws:
+        frames = await _request(ws, {
+            "type": "comfy.execute",
+            "request_id": "ex-longkey",
+            "data": {"workflow": workflow, "blobs": {long_key: PNG_BYTES}},
+        })
+    assert frames[-1]["type"] == "result"
+    uploaded_name = fake_comfy.prompts["prompt-1"]["workflow"]["1"]["inputs"]["image"]
+    assert len(uploaded_name.encode()) < 255
+    assert fake_comfy.uploads[uploaded_name] == PNG_BYTES
+
+
+@pytest.mark.asyncio(loop_scope="function")
 async def test_models_download_existing_is_skipped_without_network(server, tmp_path, monkeypatch):
     """A file already on the volume short-circuits — no ComfyUI/PyPI/HF needed."""
     monkeypatch.setenv("COMFY_MODELS_DIR", str(tmp_path))

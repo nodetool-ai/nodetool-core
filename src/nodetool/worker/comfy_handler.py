@@ -277,7 +277,9 @@ async def _upload_input_blobs(
     for key, data in blobs.items():
         if not isinstance(data, (bytes, bytearray)):
             raise ComfyError(f"Input blob '{key}' must be binary, got {type(data).__name__}")
-        safe_key = _SAFE_NAME_RE.sub("_", str(key)) or "input"
+        # Cap the key segment so the full name stays well under the ~255-byte
+        # filesystem filename limit; uniqueness comes from the uuid prefix.
+        safe_key = (_SAFE_NAME_RE.sub("_", str(key)) or "input")[:64]
         filename = f"nodetool_{uuid.uuid4().hex[:12]}_{safe_key}{_sniff_extension(bytes(data))}"
         info = await client.upload(bytes(data), filename)
         name = info.get("name", filename)
@@ -747,6 +749,8 @@ async def _handle_models_download(
                 target.parent.mkdir(parents=True, exist_ok=True)
                 part_path = target.with_name(target.name + ".part")
                 downloaded = 0
+                last_progress = 0.0
+                loop = asyncio.get_running_loop()
 
                 await send_progress(request_id, frame("start", 0, total))
                 try:
@@ -756,7 +760,14 @@ async def _handle_models_download(
                                 raise asyncio.CancelledError()
                             out.write(chunk)
                             downloaded += len(chunk)
-                            await send_progress(request_id, frame("progress", downloaded, total))
+                            # Throttle to ~2 frames/sec: transport writes are
+                            # serialized, so awaiting a send per chunk would gate
+                            # download throughput on bridge latency (and a
+                            # multi-GB model would emit thousands of frames).
+                            now = loop.time()
+                            if now - last_progress >= 0.5:
+                                last_progress = now
+                                await send_progress(request_id, frame("progress", downloaded, total))
                     os.replace(part_path, target)
                 except asyncio.CancelledError:
                     part_path.unlink(missing_ok=True)
@@ -857,11 +868,11 @@ async def handle_comfy_message(
             await send_result(request_id, {"interrupted": True})
 
         elif msg_type == "comfy.cancel":
-            prompt_id = data.get("prompt_id")
-            if not prompt_id:
+            if not data.get("prompt_id"):
                 raise ComfyError("comfy.cancel requires 'prompt_id'")
+            prompt_id = str(data["prompt_id"])
             async with ComfyClient() as client:
-                await _cancel_prompt(client, str(prompt_id))
+                await _cancel_prompt(client, prompt_id)
             await send_result(request_id, {"cancelled": True, "prompt_id": prompt_id})
 
         elif msg_type == "comfy.upload":
