@@ -89,6 +89,7 @@ Every message is a map: `{"type": string, "request_id": string, "data": object}`
 | `error` | Terminal failure — `data: {error, traceback}` |
 | `progress` | Streamed progress updates (zero or more, before the terminal frame) |
 | `chunk` | Streamed payload items (streaming execution, token streams, TTS audio) |
+| `comfy.event` | ComfyUI execution events streamed during `comfy.execute` — `data: {event, prompt_id, ...}` |
 
 `cancel` (`{type: "cancel", request_id: <id-of-in-flight-request>}`) requests cooperative cancellation of a running request; it produces no reply of its own — the cancelled request emits its own terminal frame.
 
@@ -142,7 +143,7 @@ When a ComfyUI server is co-located (`COMFYUI_URL`, advertised via `worker.statu
 
 | Request | Data | Response |
 |---------|------|----------|
-| `comfy.execute` | `{workflow, blobs?, previews?, include_temp?, timeout?}` | lifecycle `progress` frames (`queued`/`executing`/`progress`/`node_output`/`preview`/…), then `result {prompt_id, status, outputs, blobs}` |
+| `comfy.execute` | `{workflow, blobs?, previews?, include_temp?, timeout?}` | `comfy.event` frames (`queued`/`executing`/`progress`/`node_output`/`preview`/…), then `result {prompt_id, status, outputs, blobs}` |
 | `comfy.queue` | – | `{queue_running, queue_pending}` |
 | `comfy.interrupt` | – | `{interrupted}` |
 | `comfy.cancel` | `{prompt_id}` | `{cancelled, prompt_id}` |
@@ -164,7 +165,7 @@ Input blobs are uploaded to ComfyUI and spliced into the workflow wherever a `"b
 |---------|---------|
 | 1 | Initial protocol: `discover`/`execute`/`cancel` + `provider.*`, msgpack framing |
 | 2 | `models.*` HuggingFace cache management |
-| 3 | `comfy.*` ComfyUI proxy + `comfy` capability block in `worker.status` |
+| 3 | `comfy.*` ComfyUI proxy, `comfy.event` frame type, `comfy` capability block in `worker.status` |
 
 The TS bridge declares the minimum version it can speak; a worker reporting a lower `protocol_version` in `discover`/`worker.status` is rejected.
 

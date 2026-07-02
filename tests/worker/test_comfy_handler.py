@@ -330,11 +330,13 @@ async def test_execute_end_to_end(server, fake_comfy):
     assert uploaded_name.endswith(".png")
     assert fake_comfy.uploads[uploaded_name] == PNG_BYTES
 
-    # Progress stream carries the ComfyUI execution lifecycle.
-    statuses = [f["data"]["status"] for f in frames if f["type"] == "progress"]
-    assert statuses[0] == "queued"
+    # The execution lifecycle streams as dedicated comfy.event frames —
+    # never as generic `progress` frames, whose shape is different.
+    assert not any(f["type"] == "progress" for f in frames)
+    events = [f["data"]["event"] for f in frames if f["type"] == "comfy.event"]
+    assert events[0] == "queued"
     for expected in ("started", "executing", "progress", "node_output", "completed"):
-        assert expected in statuses
+        assert expected in events
 
     # Output management: the SaveImage file came back as a binary blob.
     images = result["data"]["outputs"]["9"]["images"]
@@ -355,7 +357,7 @@ async def test_execute_forwards_previews_when_enabled(server, fake_comfy):
             "request_id": "ex-prev",
             "data": {"workflow": workflow, "previews": True},
         })
-    previews = [f["data"] for f in frames if f["type"] == "progress" and f["data"]["status"] == "preview"]
+    previews = [f["data"] for f in frames if f["type"] == "comfy.event" and f["data"]["event"] == "preview"]
     assert len(previews) == 1
     assert previews[0]["format"] == "png"
     assert previews[0]["image"] == b"preview-bytes"
@@ -374,7 +376,7 @@ async def test_execute_skips_previews_by_default(server, fake_comfy):
         })
     assert frames[-1]["type"] == "result"
     assert not any(
-        f["type"] == "progress" and f["data"]["status"] == "preview" for f in frames
+        f["type"] == "comfy.event" and f["data"]["event"] == "preview" for f in frames
     )
 
 
@@ -446,7 +448,7 @@ async def test_execute_cancel_interrupts_running_prompt(server, fake_comfy):
         # Wait until the prompt is executing, then cancel it.
         while True:
             frame = msgpack.unpackb(await asyncio.wait_for(ws.recv(), timeout=10), raw=False)
-            if frame["type"] == "progress" and frame["data"]["status"] == "executing":
+            if frame["type"] == "comfy.event" and frame["data"]["event"] == "executing":
                 break
         await ws.send(msgpack.packb({"type": "cancel", "request_id": "ex-cancel"}))
         while True:

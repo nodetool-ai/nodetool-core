@@ -52,10 +52,13 @@ unique `nodetool_*` filename (extension sniffed from the bytes), and every
 string value `"blob:<key>"` in the workflow is replaced with the uploaded
 filename before `POST /prompt`.
 
-Progress frames (`type: "progress"`), in submission order:
+Execution events stream back as dedicated `comfy.event` frames
+(`{"type": "comfy.event", "request_id": ..., "data": {"event": ..., "prompt_id": ..., ...}}`) —
+a separate frame type from `progress`, whose generic `{progress, total, message}`
+shape doesn't fit ComfyUI's lifecycle. In submission order:
 
-| `status` | Fields | Source |
-|----------|--------|--------|
+| `event` | Fields | Source |
+|---------|--------|--------|
 | `queued` | `prompt_id`, `queue_position` | `POST /prompt` response |
 | `queue` | `queue_remaining` | ws `status` event |
 | `started` / `cached` | `nodes` (cached) | ws `execution_start` / `execution_cached` |

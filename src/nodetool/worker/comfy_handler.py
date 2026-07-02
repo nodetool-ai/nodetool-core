@@ -7,9 +7,10 @@ worker protocol so the TS server never talks to ComfyUI directly:
 - ``comfy.execute``      — submit a workflow (API-format prompt JSON) with clean
   input/output management: input blobs are uploaded via ``POST /upload/image``
   and spliced into the workflow (``"blob:<key>"`` placeholders), execution
-  events stream back as ``progress`` frames over the prompt's own
-  ``client_id``-scoped WebSocket, and file outputs from ``GET /history`` are
-  fetched via ``GET /view`` and returned as binary blobs in the result frame.
+  events stream back as dedicated ``comfy.event`` frames (``{event, prompt_id,
+  ...}``) over the prompt's own ``client_id``-scoped WebSocket, and file
+  outputs from ``GET /history`` are fetched via ``GET /view`` and returned as
+  binary blobs in the result frame.
 - ``comfy.queue`` / ``comfy.interrupt`` / ``comfy.cancel`` — queue introspection
   and cancellation (delete pending, interrupt running).
 - ``comfy.upload`` / ``comfy.view`` — stage inputs / fetch files standalone.
@@ -405,7 +406,7 @@ async def _handle_execute(
     data: dict[str, Any],
     request_id: str | None,
     cancel_flags: dict[str, asyncio.Event],
-    send_progress: Callable,
+    send_event: Callable,
     send_result: Callable,
 ) -> None:
     workflow = data.get("workflow")
@@ -438,8 +439,8 @@ async def _handle_execute(
                 if not prompt_id:
                     raise ComfyError(f"ComfyUI POST /prompt returned no prompt_id: {submit}")
 
-                await send_progress(request_id, {
-                    "status": "queued",
+                await send_event(request_id, {
+                    "event": "queued",
                     "prompt_id": prompt_id,
                     "queue_position": submit.get("number"),
                 })
@@ -452,11 +453,11 @@ async def _handle_execute(
                     cancel_event=cancel_event,
                     deadline=deadline,
                     forward_previews=forward_previews,
-                    send_progress=send_progress,
+                    send_event=send_event,
                 )
 
             if status == "cancelled":
-                await send_progress(request_id, {"status": "cancelled", "prompt_id": prompt_id})
+                await send_event(request_id, {"event": "cancelled", "prompt_id": prompt_id})
                 await send_result(request_id, {"prompt_id": prompt_id, "status": "cancelled"})
                 return
 
@@ -468,7 +469,7 @@ async def _handle_execute(
             outputs, output_blobs = await _collect_outputs(
                 client, entry.get("outputs", {}) or {}, include_temp=include_temp
             )
-            await send_progress(request_id, {"status": "completed", "prompt_id": prompt_id})
+            await send_event(request_id, {"event": "completed", "prompt_id": prompt_id})
             await send_result(request_id, {
                 "prompt_id": prompt_id,
                 "status": "completed",
@@ -489,7 +490,7 @@ async def _stream_events(
     cancel_event: asyncio.Event,
     deadline: float | None,
     forward_previews: bool,
-    send_progress: Callable,
+    send_event: Callable,
 ) -> str:
     """Forward execution events until the prompt completes.
 
@@ -533,38 +534,38 @@ async def _stream_events(
                         event_data.get("status", {}).get("exec_info", {}).get("queue_remaining")
                     )
                     if remaining is not None:
-                        await send_progress(request_id, {
-                            "status": "queue",
+                        await send_event(request_id, {
+                            "event": "queue",
                             "prompt_id": prompt_id,
                             "queue_remaining": remaining,
                         })
                 elif event_type == "execution_start" and event_prompt == prompt_id:
-                    await send_progress(request_id, {"status": "started", "prompt_id": prompt_id})
+                    await send_event(request_id, {"event": "started", "prompt_id": prompt_id})
                 elif event_type == "execution_cached" and event_prompt == prompt_id:
-                    await send_progress(request_id, {
-                        "status": "cached",
+                    await send_event(request_id, {
+                        "event": "cached",
                         "prompt_id": prompt_id,
                         "nodes": event_data.get("nodes", []),
                     })
                 elif event_type == "executing" and event_prompt == prompt_id:
                     if event_data.get("node") is None:
                         return "completed"
-                    await send_progress(request_id, {
-                        "status": "executing",
+                    await send_event(request_id, {
+                        "event": "executing",
                         "prompt_id": prompt_id,
                         "node": event_data.get("node"),
                     })
                 elif event_type == "progress":
-                    await send_progress(request_id, {
-                        "status": "progress",
+                    await send_event(request_id, {
+                        "event": "progress",
                         "prompt_id": prompt_id,
                         "node": event_data.get("node"),
                         "value": event_data.get("value"),
                         "max": event_data.get("max"),
                     })
                 elif event_type == "executed" and event_prompt == prompt_id:
-                    await send_progress(request_id, {
-                        "status": "node_output",
+                    await send_event(request_id, {
+                        "event": "node_output",
                         "prompt_id": prompt_id,
                         "node": event_data.get("node"),
                         "outputs": event_data.get("output"),
@@ -586,8 +587,8 @@ async def _stream_events(
                 if event_code != _BINARY_EVENT_PREVIEW_IMAGE:
                     continue
                 image_format = struct.unpack(">I", msg.data[4:8])[0]
-                await send_progress(request_id, {
-                    "status": "preview",
+                await send_event(request_id, {
+                    "event": "preview",
                     "prompt_id": prompt_id,
                     "format": _PREVIEW_FORMATS.get(image_format, "unknown"),
                     "image": msg.data[8:],
@@ -838,9 +839,16 @@ async def handle_comfy_message(
     async def send_progress(rid: str | None, d: dict) -> None:
         await transport.send_msg({"type": "progress", "request_id": rid, "data": d})
 
+    async def send_event(rid: str | None, d: dict) -> None:
+        # ComfyUI execution events get their own frame type: their shape
+        # ({event, prompt_id, ...}) is nothing like the generic progress
+        # frames ({progress, total, message}), so overloading `progress`
+        # would force every consumer to sniff the payload.
+        await transport.send_msg({"type": "comfy.event", "request_id": rid, "data": d})
+
     try:
         if msg_type == "comfy.execute":
-            await _handle_execute(data, request_id, cancel_flags, send_progress, send_result)
+            await _handle_execute(data, request_id, cancel_flags, send_event, send_result)
 
         elif msg_type == "comfy.status":
             info = get_comfy_info()
