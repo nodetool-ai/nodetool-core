@@ -12,8 +12,8 @@ from nodetool.worker import BRIDGE_PROTOCOL_VERSION
 from nodetool.worker.server import WorkerServer, start_server
 
 
-def test_protocol_version_is_2():
-    assert BRIDGE_PROTOCOL_VERSION == 2
+def test_protocol_version_is_3():
+    assert BRIDGE_PROTOCOL_VERSION == 3
 
 
 @pytest_asyncio.fixture(loop_scope="function")
