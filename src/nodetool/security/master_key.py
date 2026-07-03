@@ -23,19 +23,21 @@ KEYRING_USERNAME = "secrets_master_key"
 
 # Serializes the keychain-lookup/generate section of get_master_key so that
 # concurrent callers that all miss the cache do not each generate a different
-# master key. Created lazily to bind to the running event loop.
-_master_key_lock: Optional[asyncio.Lock] = None
-_master_key_lock_guard = threading.Lock()
+# master key. asyncio.Lock is bound to the event loop it is created in, so keep
+# one lock per running loop (keyed by loop id), matching the provider caches.
+_master_key_locks: dict[int, asyncio.Lock] = {}
+_master_key_locks_guard = threading.Lock()
 
 
 def _get_master_key_lock() -> asyncio.Lock:
-    """Return the shared asyncio lock, creating it on first use."""
-    global _master_key_lock
-    if _master_key_lock is None:
-        with _master_key_lock_guard:
-            if _master_key_lock is None:
-                _master_key_lock = asyncio.Lock()
-    return _master_key_lock
+    """Return the asyncio lock for the running event loop, creating it on first use."""
+    loop_id = id(asyncio.get_running_loop())
+    with _master_key_locks_guard:
+        lock = _master_key_locks.get(loop_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _master_key_locks[loop_id] = lock
+        return lock
 
 
 class MasterKeyManager:

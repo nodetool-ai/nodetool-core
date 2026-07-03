@@ -420,7 +420,9 @@ def msgpack_default(obj: Any) -> Any:
     import uuid
 
     if isinstance(obj, decimal.Decimal):
-        return float(obj)
+        # Encode as string, not float, so the TS side can parse it losslessly
+        # (float() would silently drop precision for cost/token accounting).
+        return str(obj)
     if isinstance(obj, uuid.UUID):
         return str(obj)
     if isinstance(obj, (set, frozenset)):

@@ -65,8 +65,8 @@ def _parse_data_uri(uri: str) -> tuple[str, bytes]:
     """
     try:
         header, payload = uri.split(",", 1)
-        # RFC 2397 default mime is text/plain when none is supplied.
-        mime_type = "text/plain"
+        # Default mime when none is supplied in the URI.
+        mime_type = "application/octet-stream"
         # header looks like "data:[<mime>][;<param>...][;base64]"
         meta = header[len("data:") :]
         params = meta.split(";")

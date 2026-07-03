@@ -851,18 +851,40 @@ class ProcessingContext:
             log.debug(f"Failed to get from URI cache: {e}")
 
         # 🛡️ SSRF protection: block private/restricted hosts and resolve via a
-        # guarded resolver, mirroring asset_storage.download_http_uri.
+        # guarded resolver, mirroring asset_storage.download_http_uri. Redirects
+        # are followed manually so each hop's hostname is re-validated — aiohttp's
+        # automatic redirects (and the connector's IP-literal short-circuit) would
+        # otherwise let a redirect to an IP literal such as http://169.254.169.254/
+        # bypass the SSRF check.
         import aiohttp
+        from urllib.parse import urljoin, urlparse
 
         from nodetool.utils.network import SSRFProtectResolver, is_ip_private
 
-        if url_parsed.hostname and is_ip_private(url_parsed.hostname):
-            raise ValueError(f"Access to private/restricted IP blocked: {url_parsed.hostname}")
+        def _block_private(target: str) -> None:
+            host = urlparse(target).hostname
+            if host and is_ip_private(host):
+                raise ValueError(f"Access to private/restricted IP blocked: {host}")
 
+        max_redirects = 5
+        current_url = url
         connector = aiohttp.TCPConnector(resolver=SSRFProtectResolver())
-        async with aiohttp.ClientSession(connector=connector) as session, session.get(url) as response:
-            response.raise_for_status()
-            content = await response.read()
+        async with aiohttp.ClientSession(connector=connector) as session:
+            for _ in range(max_redirects + 1):
+                _block_private(current_url)
+                async with session.get(current_url, allow_redirects=False) as response:
+                    if response.status in (301, 302, 303, 307, 308):
+                        location = response.headers.get("Location")
+                        if not location:
+                            response.raise_for_status()
+                            raise ValueError(f"Redirect with no Location header: {current_url}")
+                        current_url = urljoin(current_url, location)
+                        continue
+                    response.raise_for_status()
+                    content = await response.read()
+                    break
+            else:
+                raise ValueError(f"Too many redirects while fetching: {url}")
 
         # Store downloaded bytes in URI cache for 5 minutes
         with suppress(Exception):
