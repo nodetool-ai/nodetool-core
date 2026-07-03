@@ -58,18 +58,30 @@ def _normalize_image_like_to_png_bytes(obj: object) -> bytes:
 
 
 def _parse_data_uri(uri: str) -> tuple[str, bytes]:
-    """Parse a data: URI and return (mime, bytes)."""
-    try:
-        header, b64data = uri.split(",", 1)
-        mime_type = "application/octet-stream"
-        if ";" in header:
-            meta = header[5:]
-            parts = meta.split(";")
-            if parts and "/" in parts[0]:
-                mime_type = parts[0]
-        import base64
+    """Parse a data: URI and return (mime, bytes).
 
-        raw = base64.b64decode(b64data.encode("utf-8") if not isinstance(b64data, bytes) else b64data)
+    Supports both base64-encoded payloads (``data:...;base64,...``) and
+    URL-encoded text payloads (``data:text/plain,Hello%20World``) per RFC 2397.
+    """
+    try:
+        header, payload = uri.split(",", 1)
+        # RFC 2397 default mime is text/plain when none is supplied.
+        mime_type = "text/plain"
+        # header looks like "data:[<mime>][;<param>...][;base64]"
+        meta = header[len("data:") :]
+        params = meta.split(";")
+        is_base64 = any(p.strip().lower() == "base64" for p in params)
+        if params and "/" in params[0]:
+            mime_type = params[0]
+
+        if is_base64:
+            import base64
+
+            raw = base64.b64decode(payload.encode("utf-8") if not isinstance(payload, bytes) else payload)
+        else:
+            from urllib.parse import unquote_to_bytes
+
+            raw = unquote_to_bytes(payload)
         return mime_type, raw
     except Exception as e:
         # Tests expect the phrase "Invalid data URI" to appear
@@ -95,28 +107,57 @@ def _fetch_file_uri(uri: str) -> tuple[str, bytes]:
     return mime_type, data
 
 
-async def _fetch_http_uri_async(uri: str) -> tuple[str, bytes]:
-    """Fetch content from an HTTP/HTTPS URL. Local storage URLs are handled by the caller."""
+def _validate_uri_host(uri: str) -> None:
+    """Raise if the URI's hostname resolves to a private/restricted IP.
 
+    Also guards against redirect targets that use an IP literal to bypass the
+    connector's SSRF resolver.
+    """
     parsed = urlparse(uri)
     if parsed.hostname and is_ip_private(parsed.hostname):
         raise ValueError(f"Access to private/restricted IP blocked: {parsed.hostname}")
 
-    connector = aiohttp.TCPConnector(resolver=SSRFProtectResolver())
-    async with aiohttp.ClientSession(connector=connector) as session, session.get(uri) as response:
-        response.raise_for_status()
-        data = await response.read()
-        content_type = response.headers.get("Content-Type")
-        mime_type: str | None = None
-        if content_type:
-            mime_type = content_type.split(";", 1)[0]
-        if not mime_type:
-            import mimetypes
 
-            mime_type, _ = mimetypes.guess_type(uri)
-        if not mime_type:
-            mime_type = "application/octet-stream"
-        return mime_type, data
+async def _fetch_http_uri_async(uri: str) -> tuple[str, bytes]:
+    """Fetch content from an HTTP/HTTPS URL. Local storage URLs are handled by the caller.
+
+    Redirects are followed manually so that each hop's hostname is re-validated
+    against ``is_ip_private``. aiohttp's automatic redirects (and the connector's
+    IP-literal short-circuit) would otherwise let a redirect to an IP literal
+    such as ``http://169.254.169.254/`` bypass the SSRF check.
+    """
+    from urllib.parse import urljoin
+
+    max_redirects = 5
+    current_uri = uri
+    connector = aiohttp.TCPConnector(resolver=SSRFProtectResolver())
+    async with aiohttp.ClientSession(connector=connector) as session:
+        for _ in range(max_redirects + 1):
+            _validate_uri_host(current_uri)
+            async with session.get(current_uri, allow_redirects=False) as response:
+                if response.status in (301, 302, 303, 307, 308):
+                    location = response.headers.get("Location")
+                    if not location:
+                        raise ValueError(f"Redirect response without Location header from {current_uri}")
+                    # Resolve relative redirects against the current URL.
+                    current_uri = urljoin(current_uri, location)
+                    continue
+
+                response.raise_for_status()
+                data = await response.read()
+                content_type = response.headers.get("Content-Type")
+                mime_type: str | None = None
+                if content_type:
+                    mime_type = content_type.split(";", 1)[0]
+                if not mime_type:
+                    import mimetypes
+
+                    mime_type, _ = mimetypes.guess_type(current_uri)
+                if not mime_type:
+                    mime_type = "application/octet-stream"
+                return mime_type, data
+
+    raise ValueError(f"Too many redirects while fetching {uri}")
 
 
 def _is_local_storage_url(uri: str) -> bool:
@@ -204,7 +245,7 @@ def _parse_asset_id_from_uri(uri: str) -> str:
         raise ValueError(f"Invalid asset URI: {uri}")
 
     # Remove the asset:// prefix
-    path = uri[len("asset://"):]
+    path = uri[len("asset://") :]
 
     # Remove extension if present (everything after the first dot)
     asset_id = path.split(".")[0] if "." in path else path

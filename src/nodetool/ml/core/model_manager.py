@@ -101,6 +101,22 @@ class ModelManager:
         logger.debug(f"Model cache status - Total models: {len(cls._models)}, Key searched: {cache_key}")
         return model
 
+    @staticmethod
+    def _make_cache_key(model_id: str, task: str | None = None, path: str | None = None) -> str:
+        """Build a cache key consistently across set_model/get_model/unload_model.
+
+        The key is ``model_id`` optionally suffixed with ``_task`` and ``_path``.
+        Only non-empty ``task``/``path`` segments are appended so that, e.g.,
+        ``unload_model(model_id, task)`` produces the same key that the legacy
+        ``set_model(node_id, model_id, task, model)`` signature stores.
+        """
+        key = model_id
+        if task:
+            key = f"{key}_{task}"
+        if path:
+            key = f"{key}_{path}"
+        return key
+
     @classmethod
     def set_model(
         cls,
@@ -122,7 +138,7 @@ class ModelManager:
             model_instance = task_or_model
         else:
             task = str(task_or_model)
-            cache_key = f"{model_id_or_cache_key}_{task}" if task else model_id_or_cache_key
+            cache_key = cls._make_cache_key(model_id_or_cache_key, task)
             model_instance = model
 
         cls._ensure_memory_capacity(reason=f"Preparing to cache model {cache_key}")
@@ -327,9 +343,7 @@ class ModelManager:
             keys = cls._models_by_node.pop(node_id, None)
             if keys:
                 for key in list(keys):
-                    is_still_referenced = any(
-                        key in mapped_keys for mapped_keys in cls._models_by_node.values()
-                    )
+                    is_still_referenced = any(key in mapped_keys for mapped_keys in cls._models_by_node.values())
                     if is_still_referenced:
                         continue
 
@@ -377,7 +391,7 @@ class ModelManager:
     @classmethod
     def unload_model(cls, model_id: str, task: str, path: str | None = None) -> bool:
         """Explicitly remove a cached model and free associated VRAM."""
-        key = f"{model_id}_{task}_{path}"
+        key = cls._make_cache_key(model_id, task, path)
         model = cls._models.pop(key, None)
         if model is None:
             return False
@@ -625,15 +639,17 @@ class ModelManager:
 
         snapshot = cls._capture_vram_snapshot()
         if snapshot is None:
-            if aggressive:
-                logger.warning(
-                    "VRAM cleanup requested (%s) but telemetry unavailable. Clearing cached models.",
-                    reason,
-                )
-                cls.clear()
-                gc.collect()
-                cls._try_empty_cuda_cache()
-                cls._last_vram_cleanup = time.monotonic()
+            # Telemetry is genuinely unavailable here (e.g. no CUDA device, or an
+            # Apple/MLX machine). There is no VRAM-pressure signal to act on, and
+            # wiping the entire model cache in this case is destructive for no
+            # benefit (there is no GPU memory to reclaim). Do nothing. Callers
+            # that truly want to drop everything should use free_memory_if_needed
+            # / clear() explicitly.
+            logger.debug(
+                "VRAM cleanup requested (%s) but telemetry is unavailable; "
+                "skipping cache clear (no CUDA telemetry to act on).",
+                reason,
+            )
             return
 
         if not aggressive and not cls._needs_vram_cleanup(snapshot, required_free_gb):
@@ -820,33 +836,44 @@ class ModelManager:
 
     @classmethod
     def _capture_vram_snapshot_via_system_stats(cls) -> VramSnapshot | None:
-        """Fallback VRAM telemetry using NVML via SystemStats, if available."""
+        """Fallback VRAM telemetry.
 
-        try:
-            from nodetool.system.system_stats import get_system_stats
-        except Exception:  # pragma: no cover - avoid hard dependency
+        The previous NVML-via-``nodetool.system.system_stats`` fallback was
+        removed along with that module (it now lives in the TypeScript server),
+        so this method no longer depends on it. As a best-effort fallback it
+        tries ``torch.cuda.mem_get_info`` directly; when torch/CUDA is not
+        available it cleanly returns ``None`` so callers treat VRAM telemetry as
+        unavailable (rather than crashing on a dead import).
+        """
+
+        try:  # pragma: no cover - optional dependency
+            import torch  # type: ignore
+        except Exception:
             return None
 
         try:
-            stats = get_system_stats()
-            if stats.vram_total_gb is None or stats.vram_used_gb is None or stats.vram_percent is None:
+            if not hasattr(torch, "cuda") or not torch.cuda.is_available():  # type: ignore[attr-defined]
                 return None
 
-            available_gb = max(float(stats.vram_total_gb - stats.vram_used_gb), 0.0)
+            free_bytes, total_bytes = torch.cuda.mem_get_info()  # type: ignore[attr-defined]
+            available_gb = float(free_bytes) / (1024**3)
+            total_gb = float(total_bytes) / (1024**3)
+            used_percent = ((total_gb - available_gb) / total_gb) * 100.0 if total_gb > 0 else 0.0
+
             snapshot = VramSnapshot(
-                percent=float(stats.vram_percent),
+                percent=used_percent,
                 available_gb=available_gb,
-                total_gb=float(stats.vram_total_gb),
+                total_gb=total_gb,
                 process_allocated_gb=0.0,
             )
             logger.debug(
-                "VRAM snapshot captured via NVML: %.2f%% used, %.2f GB available",
+                "VRAM snapshot captured via torch.cuda.mem_get_info: %.2f%% used, %.2f GB available",
                 snapshot.percent,
                 snapshot.available_gb,
             )
             return snapshot
         except Exception as exc:  # pragma: no cover - defensive
-            logger.debug("Unable to capture VRAM stats via NVML/SystemStats: %s", exc)
+            logger.debug("Unable to capture VRAM stats via torch fallback: %s", exc)
             return None
 
     @classmethod

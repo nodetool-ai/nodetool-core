@@ -47,7 +47,7 @@ def configure_logging(
     """
     from nodetool.config.environment import Environment
 
-    global _current_config
+    global _current_config, _configured
 
     if isinstance(level, str):
         level = level.upper()
@@ -65,7 +65,7 @@ def configure_logging(
         "console_output": console_output,
     }
 
-    if _current_config == new_config:
+    if _configured and _current_config == new_config:
         return level
 
     _current_config = new_config
@@ -80,6 +80,18 @@ def configure_logging(
     datefmt = datefmt if datefmt is not None else _DEFAULT_DATEFMT
 
     root = logging.getLogger()
+
+    # As a library, nodetool must not destroy a host application's logging
+    # configuration on import (get_logger() triggers this lazily). If the host
+    # has already installed root handlers and we have not configured logging
+    # ourselves, respect their setup: only tame noisy third-party loggers and
+    # record that we've run, without touching the root handlers or level.
+    host_owns_logging = bool(root.handlers) and not _configured
+    if host_owns_logging:
+        _set_third_party_levels()
+        _configured = True
+        return level
+
     root.setLevel(level)
     root.propagate = propagate_root
 
@@ -121,7 +133,14 @@ def configure_logging(
         file_handler.setFormatter(logging.Formatter(fmt=_DEFAULT_FORMAT, datefmt=datefmt))
         root.addHandler(file_handler)
 
-    # Ensure noisy third-party loggers stay at INFO regardless of root level
+    _set_third_party_levels()
+
+    _configured = True
+    return level
+
+
+def _set_third_party_levels() -> None:
+    """Tame noisy third-party loggers regardless of the root level."""
     logging.getLogger("aiosqlite").setLevel(logging.INFO)
     logging.getLogger("hpack").setLevel(logging.INFO)
     logging.getLogger("httpcore").setLevel(logging.INFO)
@@ -133,8 +152,6 @@ def configure_logging(
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("opentelemetry").setLevel(logging.WARNING)
     logging.getLogger("transformers").setLevel(logging.WARNING)
-
-    return level
 
 
 def get_logger(name: str) -> logging.Logger:

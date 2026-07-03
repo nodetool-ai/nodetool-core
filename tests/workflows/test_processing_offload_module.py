@@ -38,7 +38,10 @@ def test_joblib_dump_load_roundtrip():
 
 
 def _has_ffmpeg() -> bool:
-    from pydub.utils import which
+    try:
+        from pydub.utils import which
+    except ImportError:
+        return False
 
     return which("ffmpeg") is not None
 
@@ -70,4 +73,3 @@ def test_numpy_audio_mp3_export_and_import_without_mocking():
 
     decoded = _audio_segment_from_file(BytesIO(mp3_bytes))
     assert 50 <= len(decoded) <= 500
-

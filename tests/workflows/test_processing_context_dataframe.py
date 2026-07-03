@@ -1,5 +1,8 @@
-import pandas as pd
 import pytest
+
+pytest.importorskip("pandas")
+
+import pandas as pd
 
 from nodetool.metadata.types import ColumnDef, DataframeRef
 from nodetool.workflows.processing_context import ProcessingContext

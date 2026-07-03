@@ -178,6 +178,15 @@ class HfFastCache:
         rel = _normalize_relpath(relpath)
         candidate = state.snapshot_dir / rel
 
+        # Defense-in-depth: ensure the lexical join stays within the snapshot
+        # directory. We intentionally do NOT resolve symlinks here because HF
+        # cache files legitimately symlink out to the shared blobs/ directory;
+        # `_normalize_relpath` already rejects ".." so this guards odd joins.
+        snapshot_root = os.path.normpath(str(state.snapshot_dir))
+        normalized = os.path.normpath(str(candidate))
+        if normalized != snapshot_root and not normalized.startswith(snapshot_root + os.sep):
+            return None
+
         try:
             exists = await aiofiles.os.path.exists(str(candidate))
             is_link = await aiofiles.os.path.islink(str(candidate))
@@ -694,9 +703,16 @@ async def _count_files_async(root: Path) -> int:
 
 
 def _normalize_relpath(path: str) -> Path:
-    """Normalize a repo-relative path into a :class:`Path`."""
+    """Normalize a repo-relative path into a :class:`Path`.
+
+    Rejects absolute paths and parent-directory (``..``) traversal so a
+    caller-supplied relpath cannot escape the snapshot directory.
+    """
     path = path.replace("\\", "/").lstrip("/")
-    return Path(path)
+    rel = Path(path)
+    if rel.is_absolute() or any(part == ".." for part in rel.parts):
+        raise ValueError(f"Unsafe relative path: {path!r}")
+    return rel
 
 
 def _changed(now: Optional[float], old: Optional[float]) -> bool:

@@ -162,9 +162,9 @@ class NodeOutputs:
         # Lazy imports to avoid cycles
         from .base_node import BaseNode
         from .processing_context import ProcessingContext
-        from .workflow_runner import WorkflowRunner
 
-        assert isinstance(runner, WorkflowRunner)
+        # ``runner`` is duck-typed (WorkflowRunner lives in the TS server now);
+        # it only needs to expose send_messages/node_inboxes/outputs.
         assert isinstance(node, BaseNode)
         assert isinstance(context, ProcessingContext)
 
@@ -271,11 +271,10 @@ class NodeOutputs:
         """
         from .base_node import BaseNode
         from .processing_context import ProcessingContext
-        from .workflow_runner import WorkflowRunner
 
+        # ``self.runner`` is duck-typed (WorkflowRunner lives in the TS server now).
         assert isinstance(self.node, BaseNode)
         assert isinstance(self.context, ProcessingContext)
-        assert isinstance(self.runner, WorkflowRunner)
 
         if self.capture_only:
             return

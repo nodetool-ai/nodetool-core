@@ -87,7 +87,7 @@ class SecretCrypto:
             The decrypted plaintext value.
 
         Raises:
-            cryptography.fernet.InvalidToken: If the master key is incorrect or the data is corrupted.
+            ValueError: If the master key is incorrect or the data is corrupted.
         """
         fernet = SecretCrypto.derive_encryption_key(master_key, user_id)
         try:
@@ -112,8 +112,8 @@ class SecretCrypto:
         try:
             SecretCrypto.decrypt(test_encrypted_value, master_key, user_id)
             return True
-        except (InvalidToken, ValueError, UnicodeDecodeError):
-            # InvalidToken: Wrong key or corrupted data
-            # ValueError: Decryption failed (raised by decrypt())
+        except (ValueError, UnicodeDecodeError):
+            # ValueError: Wrong key or corrupted data (decrypt() converts
+            #   Fernet's InvalidToken into ValueError)
             # UnicodeDecodeError: Decrypted bytes are not valid UTF-8
             return False

@@ -65,7 +65,7 @@ def resize_audio(audio: AudioSegment, duration: float) -> AudioSegment:
     if len(audio) > duration:
         return cast("AudioSegment", audio[:duration])
     elif len(audio) < duration:
-        padding = AudioSegment.silent(duration=int(len(audio) - duration))
+        padding = AudioSegment.silent(duration=int(duration - len(audio)))
         return audio + padding
     else:
         return audio

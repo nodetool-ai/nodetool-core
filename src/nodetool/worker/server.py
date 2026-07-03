@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import os
 from typing import Any, Awaitable, Callable, cast
 
 import msgpack
@@ -6,9 +8,12 @@ from websockets.asyncio.server import ServerConnection
 from websockets.asyncio.server import serve as ws_serve
 from websockets.exceptions import ConnectionClosed
 
+from nodetool.worker.executor import msgpack_default
 from nodetool.worker.msgpack_codec import decode_message
 from nodetool.worker.protocol import WorkerProtocolServer
 from nodetool.worker.worker_auth import make_process_request
+
+log = logging.getLogger(__name__)
 
 
 class WebSocketTransport:
@@ -24,7 +29,7 @@ class WebSocketTransport:
 
     async def send_msg(self, msg: dict[str, Any]) -> None:
         """Encode and send a dict as msgpack (thread-safe)."""
-        data = cast("bytes", msgpack.packb(msg))
+        data = cast("bytes", msgpack.packb(msg, default=msgpack_default, datetime=True))
         async with self._write_lock:
             await self._ws.send(data)
 
@@ -84,6 +89,20 @@ async def start_server(
     """Start the WebSocket server. Returns (host, port, stop_event, task)."""
     if worker is None:
         worker = WorkerServer()
+
+    # Security: warn loudly when the worker is reachable off-host without a token.
+    # An open bind on a non-loopback interface exposes arbitrary node execution,
+    # model file writes, and worker env vars to any peer that can reach the port.
+    if host not in ("127.0.0.1", "::1", "localhost") and not os.environ.get("NODETOOL_WORKER_TOKEN"):
+        log.warning(
+            "Worker bound to non-loopback host %r with no NODETOOL_WORKER_TOKEN set: "
+            "the bridge is UNAUTHENTICATED and any peer that can reach %s:%s can execute "
+            "nodes, write model files, and read worker environment variables. "
+            "Set NODETOOL_WORKER_TOKEN (on both worker and the TS server) or bind to 127.0.0.1.",
+            host,
+            host,
+            port,
+        )
 
     stop_event = asyncio.Event()
 

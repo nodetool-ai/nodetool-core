@@ -115,40 +115,76 @@ def detect_gguf(paths: Sequence[str | Path]) -> ArtifactDetection | None:
     )
 
 
+# GGUF metadata value-type enum (v2/v3). Fixed-width scalar sizes in bytes.
+# String(8) and Array(9) are variable-length and handled separately.
+_GGUF_TYPE_SIZES = {
+    0: 1,  # uint8
+    1: 1,  # int8
+    2: 2,  # uint16
+    3: 2,  # int16
+    4: 4,  # uint32
+    5: 4,  # int32
+    6: 4,  # float32
+    7: 1,  # bool
+    10: 8,  # uint64
+    11: 8,  # int64
+    12: 8,  # float64
+}
+_GGUF_TYPE_STRING = 8
+_GGUF_TYPE_ARRAY = 9
+
+
+def _read_gguf_string(f) -> str:
+    """Read a GGUF string: uint64 length prefix followed by UTF-8 bytes."""
+    (length,) = struct.unpack("<Q", f.read(8))
+    return f.read(length).decode("utf-8", errors="replace")
+
+
+def _read_gguf_value(f, value_type: int) -> str | None:
+    """Consume a single GGUF metadata value, keeping the stream aligned.
+
+    Returns the decoded string for STRING values, otherwise ``None`` after
+    skipping the value's bytes (we only need string values to reach the
+    ``general.*`` keys ``detect_gguf`` cares about).
+    """
+    if value_type == _GGUF_TYPE_STRING:
+        return _read_gguf_string(f)
+    if value_type == _GGUF_TYPE_ARRAY:
+        (elem_type,) = struct.unpack("<I", f.read(4))
+        (count,) = struct.unpack("<Q", f.read(8))
+        for _ in range(count):
+            _read_gguf_value(f, elem_type)
+        return None
+    size = _GGUF_TYPE_SIZES.get(value_type)
+    if size is None:
+        raise ValueError(f"Unknown GGUF value type: {value_type}")
+    f.read(size)
+    return None
+
+
 def _read_gguf_header(path: Path) -> dict[str, str]:
-    """Minimal GGUF header reader."""
+    """Minimal GGUF (v2/v3) header reader.
+
+    Follows the real GGUF layout so the stream stays aligned across all value
+    types and we can reach the ``general.*`` keys used for detection. Only
+    string-valued metadata entries are recorded.
+    """
     with path.open("rb") as f:
         magic = f.read(4)
-        if magic not in (b"GGUF",):
+        if magic != b"GGUF":
             raise ValueError("Not a GGUF file")
-        struct.unpack("<I", f.read(4))[0]
-        # Skip tensor_count (uint64) and kv_count (uint64)
-        f.read(8)  # tensor_count
-        kv_count = struct.unpack("<Q", f.read(8))[0]
+        struct.unpack("<I", f.read(4))  # version (uint32)
+        struct.unpack("<Q", f.read(8))  # tensor_count (uint64)
+        (kv_count,) = struct.unpack("<Q", f.read(8))  # kv_count (uint64)
+
         info: dict[str, str] = {}
         for _ in range(kv_count):
-            key_len = struct.unpack("<I", f.read(4))[0]
-            key = f.read(key_len).decode("utf-8")
-            value_type = struct.unpack("<I", f.read(4))[0]
-            if value_type == 2:  # string
-                str_len = struct.unpack("<I", f.read(4))[0]
-                value = f.read(str_len).decode("utf-8")
+            key = _read_gguf_string(f)
+            (value_type,) = struct.unpack("<I", f.read(4))
+            value = _read_gguf_value(f, value_type)
+            if value is not None:
                 info[key] = value
-            else:
-                # Skip other types
-                _skip_gguf_value(f, value_type)
         return info
-
-
-def _skip_gguf_value(f, value_type: int) -> None:
-    if value_type == 0 or value_type == 1:  # uint8
-        f.read(1)
-    elif value_type in (3, 4):  # array of bytes/ints: skip length + payload
-        length = struct.unpack("<Q", f.read(8))[0]
-        f.read(length)
-    else:
-        # Fallback: skip 8 bytes to avoid misalignment
-        f.read(8)
 
 
 # ---- Torch bin detection ----------------------------------------------------

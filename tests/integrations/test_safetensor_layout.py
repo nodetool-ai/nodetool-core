@@ -4,6 +4,10 @@ from pathlib import Path
 from typing import Iterable
 
 import numpy as np
+import pytest
+
+pytest.importorskip("safetensors")
+
 from safetensors.numpy import save_file
 
 from nodetool.integrations.huggingface.safetensor_layout import (

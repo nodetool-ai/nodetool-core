@@ -87,7 +87,9 @@ class Graph(BaseModel):
         """
         Find edges by their source and source_handle.
         """
-        if getattr(self, '_outgoing_edges_cache', None) is None or getattr(self, '_cached_edges_len', -1) != len(self.edges):
+        if getattr(self, "_outgoing_edges_cache", None) is None or getattr(self, "_cached_edges_len", -1) != len(
+            self.edges
+        ):
             self._outgoing_edges_cache = defaultdict(list)
             for edge in self.edges:
                 self._outgoing_edges_cache[(edge.source, edge.sourceHandle)].append(edge)
@@ -148,6 +150,10 @@ class Graph(BaseModel):
 
         # Process nodes, collecting valid ones
         for node_data in graph["nodes"]:
+            # Safe defaults so the except handlers below never raise NameError
+            # if node_data is not a dict (the .get calls would fail before assignment).
+            node_id = None
+            node_type = "<unknown>"
             try:
                 # Filter out properties that have incoming edges
                 node_id = node_data.get("id")
@@ -185,7 +191,7 @@ class Graph(BaseModel):
 
         # Process edges, filtering out invalid ones
         valid_edges = []
-        for edge_data in graph["edges"]:
+        for edge_data in graph.get("edges", []):
             try:
                 # Check if edge has required fields
                 if (

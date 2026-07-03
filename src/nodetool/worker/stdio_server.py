@@ -17,6 +17,7 @@ from typing import Any, Awaitable, Callable
 
 import msgpack
 
+from nodetool.worker.executor import msgpack_default
 from nodetool.worker.msgpack_codec import decode_message
 from nodetool.worker.protocol import MAX_BRIDGE_FRAME_SIZE, WorkerProtocolServer
 from nodetool.worker.stdio_stdout_guard import get_protocol_stdout_buffer
@@ -45,9 +46,7 @@ class StdioTransport:
             return None
         length = struct.unpack(">I", header)[0]
         if length > MAX_BRIDGE_FRAME_SIZE:
-            raise ValueError(
-                f"Incoming bridge frame exceeds max size ({length} > {MAX_BRIDGE_FRAME_SIZE})"
-            )
+            raise ValueError(f"Incoming bridge frame exceeds max size ({length} > {MAX_BRIDGE_FRAME_SIZE})")
         payload = await loop.run_in_executor(None, sys.stdin.buffer.read, length)
         if len(payload) < length:
             return None
@@ -57,9 +56,7 @@ class StdioTransport:
         """Write a length-prefixed msgpack payload (thread-safe)."""
         loop = asyncio.get_event_loop()
         if len(data) > MAX_BRIDGE_FRAME_SIZE:
-            raise ValueError(
-                f"Outgoing bridge frame exceeds max size ({len(data)} > {MAX_BRIDGE_FRAME_SIZE})"
-            )
+            raise ValueError(f"Outgoing bridge frame exceeds max size ({len(data)} > {MAX_BRIDGE_FRAME_SIZE})")
         message = struct.pack(">I", len(data)) + data
         async with self._write_lock:
             await loop.run_in_executor(None, self._protocol_stdout.write, message)
@@ -67,7 +64,7 @@ class StdioTransport:
 
     async def send_msg(self, msg: dict[str, Any]) -> None:
         """Encode and send a dict as msgpack."""
-        await self.send(msgpack.packb(msg))
+        await self.send(msgpack.packb(msg, default=msgpack_default, datetime=True))
 
 
 class StdioWorkerServer:
@@ -113,9 +110,7 @@ class StdioWorkerServer:
                     break
                 if msg is None:
                     break
-                task = asyncio.create_task(
-                    self._protocol.dispatch(msg, self._transport)
-                )
+                task = asyncio.create_task(self._protocol.dispatch(msg, self._transport))
                 self._tasks.add(task)
                 task.add_done_callback(self._tasks.discard)
         except KeyboardInterrupt:
@@ -177,12 +172,14 @@ async def run_stdio_worker(namespaces: list[str] | None = None) -> None:
     # server.run() so the first execute() finds the module cached.
     if "huggingface" in resolved_namespaces:
         import time as _time
+
         _t0 = _time.perf_counter()
         print("Warm-importing heavy ML modules...", file=sys.stderr, flush=True)
         try:
             from diffusers.pipelines.flux.pipeline_flux import FluxPipeline  # noqa: F401
+
             print(
-                f"Warm-imported diffusers.FluxPipeline in {_time.perf_counter()-_t0:.1f}s",
+                f"Warm-imported diffusers.FluxPipeline in {_time.perf_counter() - _t0:.1f}s",
                 file=sys.stderr,
                 flush=True,
             )

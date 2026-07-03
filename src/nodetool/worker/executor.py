@@ -1,6 +1,7 @@
 """
 Instantiate a Python BaseNode, execute it, and collect final outputs.
 """
+
 import asyncio
 import os
 import shutil
@@ -79,11 +80,13 @@ async def _emit_pending_progress(
             progress = 0
         if total is None:
             total = 100
-        await emit_progress({
-            "progress": progress,
-            "total": total,
-            "message": getattr(msg, "message", None),
-        })
+        await emit_progress(
+            {
+                "progress": progress,
+                "total": total,
+                "message": getattr(msg, "message", None),
+            }
+        )
 
 
 def _start_progress_pump(
@@ -178,9 +181,7 @@ async def _prepare_node(
             uri = input_ref_uris.get(field_name, f"blob://{field_name}")
             ref_type = _get_asset_ref_type(field_info.annotation)
             if isinstance(uri, list):
-                resolved_fields[field_name] = [
-                    {"uri": item, "type": ref_type} for item in uri
-                ]
+                resolved_fields[field_name] = [{"uri": item, "type": ref_type} for item in uri]
             else:
                 resolved_fields[field_name] = {
                     "uri": uri,
@@ -309,14 +310,13 @@ def _extract_outputs(
     output_blobs = ctx.get_output_blobs()
 
     if isinstance(result, ASSET_REF_TYPES) and result.uri and result.uri.startswith("blob://"):
-        blob_key = result.uri[len("blob://"):]
+        blob_key = result.uri[len("blob://") :]
         return {}, {"output": output_blobs.get(blob_key, b"")}
 
     # Check if result is a dict with blob values that need extraction
     if isinstance(result, dict):
         has_blobs = any(
-            isinstance(v, ASSET_REF_TYPES) and v.uri and v.uri.startswith("blob://")
-            for v in result.values()
+            isinstance(v, ASSET_REF_TYPES) and v.uri and v.uri.startswith("blob://") for v in result.values()
         )
         if has_blobs:
             # Multi-output with blobs: each key is a separate output slot
@@ -324,7 +324,7 @@ def _extract_outputs(
             blobs = {}
             for key, value in result.items():
                 if isinstance(value, ASSET_REF_TYPES) and value.uri and value.uri.startswith("blob://"):
-                    blob_key = value.uri[len("blob://"):]
+                    blob_key = value.uri[len("blob://") :]
                     if blob_key in output_blobs:
                         blobs[key] = output_blobs[blob_key]
                 else:
@@ -350,14 +350,10 @@ async def _collect_streaming_outputs(
     outputs: dict[str, Any] = {}
     async for item in node.gen_process(ctx):
         if not isinstance(item, dict):
-            raise TypeError(
-                "Streaming worker nodes must yield dictionaries mapping output names to values."
-            )
+            raise TypeError("Streaming worker nodes must yield dictionaries mapping output names to values.")
         for slot_name, value in item.items():
             if not isinstance(slot_name, str):
-                raise TypeError(
-                    "Streaming worker nodes must use string keys for output names."
-                )
+                raise TypeError("Streaming worker nodes must use string keys for output names.")
             if value is not None:
                 outputs[slot_name] = value
     return outputs
@@ -377,14 +373,10 @@ async def _stream_streaming_outputs(
     outputs: dict[str, Any] = {}
     async for item in node.gen_process(ctx):
         if not isinstance(item, dict):
-            raise TypeError(
-                "Streaming worker nodes must yield dictionaries mapping output names to values."
-            )
+            raise TypeError("Streaming worker nodes must yield dictionaries mapping output names to values.")
         for slot_name, value in item.items():
             if not isinstance(slot_name, str):
-                raise TypeError(
-                    "Streaming worker nodes must use string keys for output names."
-                )
+                raise TypeError("Streaming worker nodes must use string keys for output names.")
             if value is not None:
                 outputs[slot_name] = value
 
@@ -404,12 +396,8 @@ def _extract_named_outputs(
     blobs: dict[str, bytes] = {}
 
     for key, value in result.items():
-        if (
-            isinstance(value, ASSET_REF_TYPES)
-            and value.uri
-            and value.uri.startswith("blob://")
-        ):
-            blob_key = value.uri[len("blob://"):]
+        if isinstance(value, ASSET_REF_TYPES) and value.uri and value.uri.startswith("blob://"):
+            blob_key = value.uri[len("blob://") :]
             if blob_key in output_blobs:
                 blobs[key] = output_blobs[blob_key]
             continue
@@ -417,6 +405,33 @@ def _extract_named_outputs(
         outputs[key] = _serialize_value(value)
 
     return outputs, blobs
+
+
+def msgpack_default(obj: Any) -> Any:
+    """Fallback encoder for ``msgpack.packb``.
+
+    ``_serialize_value`` preserves ``datetime``/``Decimal``/``UUID`` and similar
+    types as native Python objects (python-mode ``model_dump``), but msgpack
+    cannot pack them. Transports call ``packb(msg, default=msgpack_default,
+    datetime=True)`` so ``datetime`` becomes a msgpack timestamp ext type and
+    this hook converts the rest to msgpack-native equivalents.
+    """
+    import decimal
+    import uuid
+
+    if isinstance(obj, decimal.Decimal):
+        return float(obj)
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
+    if isinstance(obj, (set, frozenset)):
+        return list(obj)
+    if isinstance(obj, (bytes, bytearray)):
+        return bytes(obj)
+    # date/time/datetime and any object exposing isoformat().
+    isoformat = getattr(obj, "isoformat", None)
+    if callable(isoformat):
+        return isoformat()
+    raise TypeError(f"Object of type {type(obj).__name__} is not msgpack-serializable")
 
 
 def _serialize_value(value: Any) -> Any:
@@ -427,9 +442,11 @@ def _serialize_value(value: Any) -> Any:
             "type": TypeToName.get(type(value), type(value).__name__),
         }
     from enum import Enum
+
     if isinstance(value, Enum):
         return value.value
     from pydantic import BaseModel
+
     if isinstance(value, BaseModel):
         return value.model_dump()
     if isinstance(value, list):

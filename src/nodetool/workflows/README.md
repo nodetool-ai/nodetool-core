@@ -13,6 +13,5 @@ This directory contains the node execution primitives. Workflow orchestration (D
 - `processing_offload.py` — `asyncio.to_thread` wrappers for CPU-bound work
 - `torch_support.py` — PyTorch device selection and VRAM management
 - `property.py` — Node property descriptors
-- `recommended_models.py` — Model recommendations per node type
 - `asset_storage.py` — Asset ref content-type detection and auto-save helpers
 - `io.py` — `NodeInputs` / `NodeOutputs` helpers

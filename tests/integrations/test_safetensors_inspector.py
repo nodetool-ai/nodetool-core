@@ -3,6 +3,10 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
+
+pytest.importorskip("safetensors")
+
 from safetensors.numpy import save_file
 
 from nodetool.integrations.huggingface.safetensors_inspector import (

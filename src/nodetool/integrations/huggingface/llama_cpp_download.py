@@ -44,6 +44,19 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 
 
+def _validate_component(value: str, *, name: str) -> str:
+    """Reject path separators, traversal and NUL bytes in a single component.
+
+    Used to sanitize server/caller-controlled values (``filename``, ``tag``)
+    before they are joined into cache/manifest paths.
+    """
+    if not value:
+        raise ValueError(f"Empty {name}")
+    if "\x00" in value or "/" in value or "\\" in value or value in (".", ".."):
+        raise ValueError(f"Unsafe {name}: {value!r}")
+    return value
+
+
 def get_llama_cpp_model_filename(repo_id: str, filename: str) -> str:
     """Get the llama.cpp cache filename for a model.
 
@@ -116,12 +129,21 @@ async def download_llama_cpp_model(
     Returns:
         Path to the downloaded model file
     """
+    # Sanitize caller-controlled values before joining into cache paths.
+    filename = _validate_component(filename, name="filename")
+    tag = _validate_component(tag, name="tag")
+
     cache_dir = get_llama_cpp_cache_dir()
     os.makedirs(cache_dir, exist_ok=True)
 
     flat_filename = get_llama_cpp_model_filename(repo_id, filename)
     output_path = Path(cache_dir) / flat_filename
     etag_path = Path(cache_dir) / f"{flat_filename}.etag"
+
+    # Defense-in-depth: ensure the final output stays inside the cache dir.
+    cache_root = Path(cache_dir).resolve()
+    if not output_path.resolve().is_relative_to(cache_root):
+        raise ValueError(f"Output path escapes cache dir: {output_path}")
 
     # Manifest path: manifest={org}={repo}={tag}.json
     org, repo = repo_id.split("/", 1) if "/" in repo_id else ("", repo_id)
@@ -174,8 +196,9 @@ async def download_llama_cpp_model(
                     if progress_callback:
                         progress_callback(len(chunk), total_size)
 
-        # Rename temp file to final location
-        temp_path.rename(output_path)
+        # Move temp file to final location (replace: avoids FileExistsError on
+        # Windows when the target already exists).
+        temp_path.replace(output_path)
         log.info(f"Moved {temp_path} to {output_path}")
 
         # Write etag file (keep quotes for llama-server compatibility)

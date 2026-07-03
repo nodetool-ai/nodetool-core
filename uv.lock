@@ -2536,6 +2536,7 @@ dev = [
     { name = "pytest-timeout" },
     { name = "pytest-xdist" },
     { name = "ruff" },
+    { name = "safetensors" },
     { name = "ty" },
 ]
 documents = [
@@ -2627,6 +2628,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.15.17" },
+    { name = "safetensors", marker = "extra == 'dev'", specifier = ">=0.4.0" },
     { name = "seaborn", marker = "extra == 'viz'", specifier = ">=0.13.2" },
     { name = "tiktoken", marker = "extra == 'data'" },
     { name = "tqdm", specifier = ">=4.67.0" },

@@ -5,8 +5,11 @@ These tests use a real ChromaDB instance (on-disk persistent client) to ensure
 all functionality works correctly with actual data storage and retrieval.
 """
 
-import chromadb.errors
 import pytest
+
+pytest.importorskip("chromadb")
+
+import chromadb.errors
 
 from nodetool.integrations.vectorstores.chroma.chroma_client import (
     DEFAULT_SEPARATORS,

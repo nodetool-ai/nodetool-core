@@ -2,6 +2,8 @@ import inspect
 
 import pytest
 
+pytest.importorskip("chromadb")
+
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     AsyncChromaClient,
 )

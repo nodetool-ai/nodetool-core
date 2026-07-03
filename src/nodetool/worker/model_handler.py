@@ -99,14 +99,24 @@ async def _handle_download(
             if ignore:
                 files = [(f, s) for f, s in files if not _matches(f, ignore)]
 
+        # No matching files means the requested model/path does not exist in
+        # the repo. Report it as an error instead of falsely completing — the
+        # loop below would otherwise never run and we'd emit status "completed"
+        # for a download that never happened.
+        if not files:
+            if single:
+                raise ValueError(f"No file matching path {single!r} found in repo {repo_id}")
+            raise ValueError(
+                f"No files in repo {repo_id} matched the requested patterns "
+                f"(allow_patterns={allow}, ignore_patterns={ignore})"
+            )
+
         total_files = len(files)
         total_bytes = sum(s for _, s in files)
         done_bytes = 0
         done_files = 0
 
-        await send_progress(
-            request_id, frame("start", 0, total_bytes, 0, total_files, [])
-        )
+        await send_progress(request_id, frame("start", 0, total_bytes, 0, total_files, []))
 
         # Track in-flight progress sends so the terminal frames cannot race
         # ahead of the per-byte updates fired from the sync callback.
@@ -122,13 +132,15 @@ async def _handle_download(
                 await send_progress(
                     request_id,
                     frame(
-                        "cancelled", done_bytes, total_bytes, done_files,
-                        total_files, [],
+                        "cancelled",
+                        done_bytes,
+                        total_bytes,
+                        done_files,
+                        total_files,
+                        [],
                     ),
                 )
-                await send_result(
-                    request_id, {"repo_id": repo_id, "status": "cancelled"}
-                )
+                await send_result(request_id, {"repo_id": repo_id, "status": "cancelled"})
                 return
 
             file_base = done_bytes
@@ -151,9 +163,7 @@ async def _handle_download(
             ):
                 nonlocal done_bytes
                 _acc["bytes"] += delta
-                progressed = (
-                    min(_acc["bytes"], _fsize) if _fsize else _acc["bytes"]
-                )
+                progressed = min(_acc["bytes"], _fsize) if _fsize else _acc["bytes"]
                 done_bytes = _base + progressed
                 # fire-and-forget; ordering is preserved by the transport
                 # write-lock. Schedule on the running loop captured above so
@@ -162,8 +172,12 @@ async def _handle_download(
                     send_progress(
                         request_id,
                         frame(
-                            "progress", done_bytes, total_bytes, done_files,
-                            total_files, [_filename],
+                            "progress",
+                            done_bytes,
+                            total_bytes,
+                            done_files,
+                            total_files,
+                            [_filename],
                         ),
                     )
                 )
@@ -172,8 +186,11 @@ async def _handle_download(
 
             try:
                 await async_hf_download(
-                    repo_id, filename, token=token,
-                    progress_callback=on_bytes, cancel_event=cancel_event,
+                    repo_id,
+                    filename,
+                    token=token,
+                    progress_callback=on_bytes,
+                    cancel_event=cancel_event,
                 )
             except asyncio.CancelledError:
                 # Cooperative app-level cancel: async_hf_download raises
@@ -187,13 +204,15 @@ async def _handle_download(
                 await send_progress(
                     request_id,
                     frame(
-                        "cancelled", done_bytes, total_bytes, done_files,
-                        total_files, [],
+                        "cancelled",
+                        done_bytes,
+                        total_bytes,
+                        done_files,
+                        total_files,
+                        [],
                     ),
                 )
-                await send_result(
-                    request_id, {"repo_id": repo_id, "status": "cancelled"}
-                )
+                await send_result(request_id, {"repo_id": repo_id, "status": "cancelled"})
                 return
 
             # Snap to the exact file size so the next file's base is correct
@@ -206,9 +225,7 @@ async def _handle_download(
         await drain()
 
         if cancel_event.is_set():
-            await send_result(
-                request_id, {"repo_id": repo_id, "status": "cancelled"}
-            )
+            await send_result(request_id, {"repo_id": repo_id, "status": "cancelled"})
             return
 
         await send_progress(
@@ -241,9 +258,7 @@ async def handle_models_message(
         await transport.send_msg({"type": "result", "request_id": rid, "data": d})
 
     async def send_error(rid: str | None, error: str, tb: str | None = None) -> None:
-        await transport.send_msg(
-            {"type": "error", "request_id": rid, "data": {"error": error, "traceback": tb}}
-        )
+        await transport.send_msg({"type": "error", "request_id": rid, "data": {"error": error, "traceback": tb}})
 
     async def send_progress(rid: str | None, d: dict) -> None:
         await transport.send_msg({"type": "progress", "request_id": rid, "data": d})
@@ -260,9 +275,7 @@ async def handle_models_message(
             await send_result(request_id, {"models": payload})
 
         elif msg_type == "models.download":
-            await _handle_download(
-                data, request_id, cancel_flags, send_progress, send_result
-            )
+            await _handle_download(data, request_id, cancel_flags, send_progress, send_result)
 
         elif msg_type == "models.delete":
             deleted = await delete_cached_hf_model(data["repo_id"])
