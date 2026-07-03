@@ -286,7 +286,8 @@ def tensor_to_image_array(tensor: Any) -> np.ndarray:
     if not is_torch_tensor(tensor):
         raise ImportError("torch is required for tensor conversion")
     data = tensor.detach().cpu().numpy()
-    return (255.0 * data).clip(0, 255).astype(np.uint8)
+    scale = np.float32(255.0) if data.dtype == np.float32 else 255.0
+    return (data * scale).clip(0, 255).astype(np.uint8)
 
 
 def torch_tensor_to_metadata(tensor: Any) -> TorchTensor | Any:
