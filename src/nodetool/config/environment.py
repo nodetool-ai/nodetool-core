@@ -104,21 +104,38 @@ def load_dotenv_files():
 
     logger.debug(f"Loading environment: {env_name}")
 
-    # Load .env files in order of precedence (later files override earlier ones)
+    # Load .env files in order of increasing specificity. Later (more specific)
+    # files override earlier ones, but genuine process/shell environment
+    # variables always take precedence over any .env file value.
+    #
+    # dotenv semantics:
+    #   - override=False -> existing os.environ wins over the file
+    #   - override=True  -> the file wins over previously-loaded values
+    # To honor documented precedence (base first, local overrides last) while
+    # preserving real OS env vars, we snapshot the original os.environ and load
+    # the base with override=False and the more-specific files with
+    # override=True, then restore the snapshot so real env vars stay authoritative.
     env_files = [
-        project_root / ".env",  # Base .env file
-        project_root / f".env.{env_name}",  # Environment-specific file
-        project_root / f".env.{env_name}.local",  # Local overrides (gitignored)
+        (project_root / ".env", False),  # Base .env file
+        (project_root / f".env.{env_name}", True),  # Environment-specific file
+        (project_root / f".env.{env_name}.local", True),  # Local overrides (gitignored)
     ]
 
+    original_env = dict(os.environ)
+
     loaded_files = []
-    for env_file in env_files:
+    for env_file, override in env_files:
         if env_file.exists():
             logger.info(f"Loading environment file: {env_file}")
             loaded_files.append(str(env_file))
-            load_dotenv(env_file, override=False)  # type: ignore[arg-type]
+            load_dotenv(env_file, override=override)  # type: ignore[arg-type]
         else:
             logger.debug(f"Environment file not found: {env_file}")
+
+    # Genuine process env vars (e.g. real shell exports) must win over any
+    # .env file, so restore their original values after loading.
+    for key, value in original_env.items():
+        os.environ[key] = value
 
     if loaded_files:
         logger.info(f"Loaded {len(loaded_files)} environment file(s): {loaded_files}")
@@ -207,12 +224,15 @@ class Environment:
     def get_environment(cls) -> dict[str, Any]:
         settings = cls.get_settings()
 
+        # Precedence (lowest to highest): defaults < settings.yaml < environment.
+        # Environment variables take priority, so they are applied last.
         env = DEFAULT_ENV.copy()
-        env.update(get_system_env())
 
         for k, v in settings.items():
             if v is not None:
                 env[k] = v
+
+        env.update(get_system_env())
 
         return env
 
@@ -615,7 +635,6 @@ class Environment:
         # Default to system-specific path
         return str(get_system_data_path("assets"))
 
-    @classmethod
     @classmethod
     def get_logger(cls):
         """Return the shared nodetool logger using centralized config."""

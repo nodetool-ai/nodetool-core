@@ -183,20 +183,77 @@ def _get_cache_filename(font_name: str, weight: str, url: str = "") -> str:
         return f"google_{clean_name}_{weight}.ttf"
 
 
+def _validate_font_host(url: str) -> None:
+    """Raise if the URL's hostname resolves to a private/restricted IP.
+
+    Also guards against redirect targets that use an IP literal to bypass the
+    connector's SSRF resolver.
+    """
+    from urllib.parse import urlparse
+
+    hostname = urlparse(url).hostname
+    if hostname and is_ip_private(hostname):
+        raise ValueError(f"Access to private/restricted IP blocked: {hostname}")
+
+
 async def _download_font_async(url: str, cache_path: Path) -> bytes:
-    """Asynchronously download font data with SSRF protection."""
+    """Asynchronously download font data with SSRF protection.
+
+    Redirects are followed manually so each hop's hostname is re-validated with
+    ``is_ip_private``. aiohttp's automatic redirects (and the connector's
+    IP-literal short-circuit) would otherwise let a redirect to an IP literal
+    such as ``http://169.254.169.254/`` bypass the SSRF check.
+    """
+    from urllib.parse import urljoin
+
+    max_redirects = 5
+    current_url = url
     connector = aiohttp.TCPConnector(resolver=SSRFProtectResolver())
     async with aiohttp.ClientSession(connector=connector) as session:
         try:
-            async with session.get(url, timeout=30, headers={"User-Agent": "NodeTool/1.0"}) as response:
-                if response.status == 404:
-                    raise FileNotFoundError(f"Font file not found at {url}")
-                response.raise_for_status()
-                return await response.read()
+            for _ in range(max_redirects + 1):
+                _validate_font_host(current_url)
+                async with session.get(
+                    current_url,
+                    timeout=30,
+                    headers={"User-Agent": "NodeTool/1.0"},
+                    allow_redirects=False,
+                ) as response:
+                    if response.status in (301, 302, 303, 307, 308):
+                        location = response.headers.get("Location")
+                        if not location:
+                            raise ConnectionError(f"Redirect response without Location header from {current_url}")
+                        current_url = urljoin(current_url, location)
+                        continue
+                    if response.status == 404:
+                        raise FileNotFoundError(f"Font file not found at {current_url}")
+                    response.raise_for_status()
+                    return await response.read()
+            raise ConnectionError(f"Too many redirects while downloading font from {url}")
         except aiohttp.ClientError as e:
             raise ConnectionError(f"Failed to download font from {url}: {e}") from e
         except TimeoutError as e:
             raise ConnectionError(f"Timeout while downloading font from {url}") from e
+
+
+def _run_font_coroutine(coro) -> bytes:
+    """Run a font-download coroutine from either sync or async contexts.
+
+    ``download_google_font`` / ``download_font_from_url`` keep sync signatures but
+    are reachable from within a running event loop (async node execution via
+    ``ProcessingContext.get_font_path``). ``asyncio.run`` raises there, so when a
+    loop is already running we execute the coroutine on a separate thread.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop in this thread — safe to drive one directly.
+        return asyncio.run(coro)
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(lambda: asyncio.run(coro)).result()
 
 
 def download_google_font(font_name: str, weight: str = "regular") -> str:
@@ -285,7 +342,7 @@ def download_google_font(font_name: str, weight: str = "regular") -> str:
         log.debug(f"Trying to download font from: {url}")
 
         try:
-            font_data = asyncio.run(_download_font_async(url, cache_path))
+            font_data = _run_font_coroutine(_download_font_async(url, cache_path))
 
             # Save to cache
             cache_path.write_bytes(font_data)
@@ -338,7 +395,7 @@ def download_font_from_url(url: str) -> str:
 
     log.info(f"Downloading font from URL: {url}")
 
-    font_data = asyncio.run(_download_font_async(url, cache_path))
+    font_data = _run_font_coroutine(_download_font_async(url, cache_path))
 
     # Basic validation - check for TTF/OTF magic bytes
     if len(font_data) < 4:

@@ -171,8 +171,11 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
             return is_assignable(element_type, value)
         return False
 
-    # Handle dictionary values
-    if python_type is dict and "type" in value:
+    # Handle dictionary values that carry their own "type" tag.
+    # Skip for union/enum types, whose members are expanded further below.
+    # Otherwise a typed payload like {"type": "image", ...} would be compared
+    # against the container's own type ("union"/"enum") and never match a member.
+    if python_type is dict and "type" in value and type_meta.type not in ("union", "enum"):
         return value["type"] == type_meta.type
 
     # Handle dict values without explicit 'type' field - check if they validate

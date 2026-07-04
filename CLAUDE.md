@@ -15,24 +15,22 @@ Cloud/API providers (OpenAI, Anthropic, Gemini, Ollama, etc.) are implemented in
 
 ```
 src/nodetool/
-├── config/          # Environment, logging, settings
-├── dsl/             # DSL for graph construction (codegen, handles)
-├── integrations/    # HuggingFace models, vector stores
-├── io/              # URI utilities, media fetch
-├── media/           # Audio, image, video processing helpers
-├── metadata/        # Type definitions, node metadata, tool_types
-├── ml/              # Model management, TTS/ASR/image model lists
-├── models/          # Database models (Asset, Job, Secret, etc.)
-├── nodes/           # Built-in node implementations
-├── packages/        # Package registry and scanning
-├── providers/       # Provider base classes, registry, fake provider
-├── runtime/         # ResourceScope, DB connection pools
-├── security/        # Crypto, master key, secret helper, auth providers
-├── storage/         # Abstract storage, memory/file/S3 backends
-├── types/           # API graph types, prediction types
-├── utils/           # Misc utilities
-├── worker/          # Worker subprocess (WebSocket server, executor)
-└── workflows/       # Node execution core (see below)
+├── config/            # Environment, logging, settings
+├── integrations/      # HuggingFace models, vector stores
+├── io/                # URI utilities, media fetch
+├── media/             # Audio, image, video processing helpers
+├── metadata/          # Type definitions, node metadata, tool_types
+├── ml/                # Model management, TTS/ASR/image model lists
+├── package_metadata/  # Package metadata JSON (nodetool-core.json)
+├── package_tools/     # Package registry scanning (nodetool-pkg CLI)
+├── providers/         # Provider base classes, registry
+├── runtime/           # ResourceScope, DB connection pools
+├── security/          # Crypto, master key, secret helper
+├── storage/           # Abstract storage, memory/file/S3 backends
+├── types/             # API graph types, prediction types
+├── utils/             # Misc utilities
+├── worker/            # Worker subprocess (WebSocket server, executor)
+└── workflows/         # Node execution core (see below)
 ```
 
 ### workflows/ — Node Execution Core
@@ -48,7 +46,6 @@ These files support node execution. There is no workflow runner or orchestration
 - `processing_offload.py` — Thread offloading for CPU-bound work
 - `torch_support.py` — PyTorch device management
 - `property.py` — Node property descriptors
-- `recommended_models.py` — Model recommendations per node
 - `asset_storage.py` — Asset ref utilities (content type, auto-save)
 - `io.py` — Node input/output helpers
 
@@ -67,7 +64,7 @@ The following were moved to the TypeScript server and deleted from Python:
 conda create -n nodetool python=3.11 pandoc ffmpeg -c conda-forge
 conda activate nodetool
 uv sync
-uv sync --group dev
+uv sync --extra dev
 ```
 
 ## Common Commands
@@ -144,8 +141,8 @@ Tests are in `tests/` mirroring `src/` structure. Key test directories:
 
 - `tests/worker/` — Worker subprocess tests
 - `tests/workflows/` — Node execution, processing context, graph tests
-- `tests/models/` — Database model tests
 - `tests/security/` — Crypto, secret helper tests
-- `tests/providers/` — Cost calculator, provider infrastructure tests
+- `tests/integrations/` — HuggingFace model detection, safetensors, vector stores
+- `tests/storage/` — Storage backend tests
 
 Note: `tests/io/test_media_fetch.py` has a pre-existing mock recursion timeout — skip with `--ignore=tests/io/test_media_fetch.py` if needed.

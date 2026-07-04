@@ -412,22 +412,9 @@ register_setting(
     ),
 )
 
-register_setting(
-    package_name="nodetool",
-    env_var="SERVER_AUTH_TOKEN",
-    group="Deployment",
-    description=(
-        "Bearer auth token for securing NodeTool server endpoints in deployment. "
-        "Set this environment variable on the server to enable auth. "
-        "If unset, bearer auth is disabled. "
-        "When enabled, all API endpoints except /health and /ping require "
-        "Authorization: Bearer <SERVER_AUTH_TOKEN>. "
-        "On clients (curl, nodetool workflow_runner auth_token, or custom SDK), "
-        "send this header with every request. "
-        "Recommended for Docker and production deployments. "
-        "Generate with: openssl rand -base64 32"
-    ),
-)
+# NOTE: SERVER_AUTH_TOKEN is intentionally registered only as a secret (above),
+# not as a setting, to avoid persisting the bearer token in plaintext
+# settings.yaml.
 
 
 # ---------------------------------------------------------------------------
@@ -540,12 +527,12 @@ def get_value(
     3. Default environment values
     4. Default parameter
     """
-    # Check settings (non-secrets from settings.yaml)
-    value = settings.get(key)
-
     # Environment variables take priority
+    value = get_system_env_value(key)
+
+    # Fall back to settings (non-secrets from settings.yaml)
     if value is None or str(value) == "":
-        value = get_system_env_value(key)
+        value = settings.get(key)
 
     # Fall back to default environment values
     if value is None:

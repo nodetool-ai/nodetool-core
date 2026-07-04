@@ -6,8 +6,10 @@ in the system keychain (macOS Keychain, Windows Credential Manager, Linux Secret
 or AWS Secrets Manager.
 """
 
+import asyncio
 import logging
 import os
+import threading
 from typing import Optional
 
 import keyring
@@ -18,6 +20,24 @@ from nodetool.security.crypto import SecretCrypto
 # Keyring service name for storing the master key
 KEYRING_SERVICE = "nodetool"
 KEYRING_USERNAME = "secrets_master_key"
+
+# Serializes the keychain-lookup/generate section of get_master_key so that
+# concurrent callers that all miss the cache do not each generate a different
+# master key. asyncio.Lock is bound to the event loop it is created in, so keep
+# one lock per running loop (keyed by loop id), matching the provider caches.
+_master_key_locks: dict[int, asyncio.Lock] = {}
+_master_key_locks_guard = threading.Lock()
+
+
+def _get_master_key_lock() -> asyncio.Lock:
+    """Return the asyncio lock for the running event loop, creating it on first use."""
+    loop_id = id(asyncio.get_running_loop())
+    with _master_key_locks_guard:
+        lock = _master_key_locks.get(loop_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _master_key_locks[loop_id] = lock
+        return lock
 
 
 class MasterKeyManager:
@@ -61,6 +81,7 @@ class MasterKeyManager:
             # Create Secrets Manager client
             import boto3
             from botocore.exceptions import ClientError
+
             session = boto3.session.Session()
             client = session.client(service_name="secretsmanager", region_name=region)
 
@@ -102,8 +123,6 @@ class MasterKeyManager:
         Raises:
             RuntimeError: If the master key cannot be retrieved or generated.
         """
-        import asyncio
-
         # Return cached key if available
         if cls._cached_master_key is not None:
             return cls._cached_master_key
@@ -119,42 +138,57 @@ class MasterKeyManager:
         aws_secret_name = os.environ.get("AWS_SECRETS_MASTER_KEY_NAME")
         if aws_secret_name:
             cls._get_logger().info(f"Attempting to retrieve master key from AWS Secrets Manager: {aws_secret_name}")
-            aws_key = cls._get_from_aws_secrets(aws_secret_name)
+            # boto3 IO is blocking, so run it off the event loop.
+            aws_key = await asyncio.to_thread(cls._get_from_aws_secrets, aws_secret_name)
             if aws_key:
                 cls._get_logger().info("Using master key from AWS Secrets Manager")
                 cls._cached_master_key = aws_key
                 return aws_key
-            else:
-                cls._get_logger().warning(
-                    "Failed to retrieve master key from AWS Secrets Manager, falling back to keychain"
-                )
-
-        # 3. Try to get from system keychain (using asyncio.to_thread to avoid blocking event loop)
-        try:
-            stored_key = await asyncio.to_thread(keyring.get_password, KEYRING_SERVICE, KEYRING_USERNAME)
-            if stored_key:
-                cls._get_logger().info("Using master key from system keychain")
-                cls._cached_master_key = stored_key
-                return stored_key
-        except KeyringError as e:
-            cls._get_logger().warning(f"Could not access system keychain: {e}")
-
-        # 4. Generate new master key and store in keychain
-        cls._get_logger().info("Generating new master key and storing in system keychain")
-        new_key = SecretCrypto.generate_master_key()
-
-        try:
-            await asyncio.to_thread(keyring.set_password, KEYRING_SERVICE, KEYRING_USERNAME, new_key)
-            cls._get_logger().info("Master key successfully stored in system keychain")
-        except KeyringError as e:
-            cls._get_logger().error(f"Failed to store master key in system keychain: {e}")
+            # AWS is explicitly configured but retrieval failed. Fail closed
+            # instead of falling through to the keychain/generate path, which
+            # would silently create a NEW key and make existing AWS-encrypted
+            # secrets permanently undecryptable.
             raise RuntimeError(
-                "Failed to store master key in system keychain. "
-                "Please set SECRETS_MASTER_KEY environment variable manually or configure AWS_SECRETS_MASTER_KEY_NAME."
-            ) from e
+                f"AWS_SECRETS_MASTER_KEY_NAME is set to '{aws_secret_name}' but the master key "
+                "could not be retrieved from AWS Secrets Manager. Refusing to generate a new key "
+                "to avoid making existing secrets undecryptable. Check AWS credentials, region, "
+                "and that the secret exists."
+            )
 
-        cls._cached_master_key = new_key
-        return new_key
+        # Serialize the keychain-lookup/generate section so that concurrent
+        # callers that all miss the cache generate at most one master key.
+        async with _get_master_key_lock():
+            # Double-checked locking: another task may have populated the cache
+            # while we were waiting to acquire the lock.
+            if cls._cached_master_key is not None:
+                return cls._cached_master_key
+
+            # 3. Try to get from system keychain (using asyncio.to_thread to avoid blocking event loop)
+            try:
+                stored_key = await asyncio.to_thread(keyring.get_password, KEYRING_SERVICE, KEYRING_USERNAME)
+                if stored_key:
+                    cls._get_logger().info("Using master key from system keychain")
+                    cls._cached_master_key = stored_key
+                    return stored_key
+            except KeyringError as e:
+                cls._get_logger().warning(f"Could not access system keychain: {e}")
+
+            # 4. Generate new master key and store in keychain
+            cls._get_logger().info("Generating new master key and storing in system keychain")
+            new_key = SecretCrypto.generate_master_key()
+
+            try:
+                await asyncio.to_thread(keyring.set_password, KEYRING_SERVICE, KEYRING_USERNAME, new_key)
+                cls._get_logger().info("Master key successfully stored in system keychain")
+            except KeyringError as e:
+                cls._get_logger().error(f"Failed to store master key in system keychain: {e}")
+                raise RuntimeError(
+                    "Failed to store master key in system keychain. "
+                    "Please set SECRETS_MASTER_KEY environment variable manually or configure AWS_SECRETS_MASTER_KEY_NAME."
+                ) from e
+
+            cls._cached_master_key = new_key
+            return new_key
 
     @classmethod
     def set_master_key(cls, master_key: str) -> None:

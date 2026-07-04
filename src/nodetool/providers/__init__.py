@@ -6,8 +6,8 @@ caching) used by Python-only providers (HuggingFace Local, MLX).
 Cloud/API providers (OpenAI, Anthropic, Gemini, etc.) are implemented
 in the TypeScript server.
 """
+
 import asyncio
-import sys
 import threading
 import traceback
 from typing import Optional
@@ -75,9 +75,9 @@ def import_providers():
         log.warning(f"Unexpected error importing HuggingFace local provider: {e}")
 
 
-# Provider instance cache
-_provider_cache: dict[ProviderEnum, BaseProvider] = {}
-_provider_cache_lock: asyncio.Lock | None = None
+# Provider instance cache, keyed by (provider type, user id) so one user's
+# secrets are never reused for another user's provider instance.
+_provider_cache: dict[tuple[ProviderEnum, str], BaseProvider] = {}
 _provider_cache_locks: dict[int, asyncio.Lock] = {}
 _provider_cache_locks_lock = threading.Lock()
 
@@ -92,11 +92,7 @@ def clear_provider_cache() -> int:
 
 
 def _get_provider_cache_lock() -> asyncio.Lock:
-    """Get or create the provider cache lock lazily."""
-    global _provider_cache_lock
-    if _provider_cache_lock is None:
-        _provider_cache_lock = asyncio.Lock()
-
+    """Get or create the per-event-loop provider cache lock lazily."""
     loop_id = id(asyncio.get_running_loop())
 
     with _provider_cache_locks_lock:
@@ -110,9 +106,10 @@ async def get_provider(provider_type: ProviderEnum, user_id: str = "1", **kwargs
     Get a provider instance based on the provider type.
     Providers are cached after first creation.
     """
+    cache_key = (provider_type, user_id)
     async with _get_provider_cache_lock():
-        if provider_type in _provider_cache:
-            return _provider_cache[provider_type]
+        if cache_key in _provider_cache:
+            return _provider_cache[cache_key]
 
         import_providers()
 
@@ -129,8 +126,8 @@ async def get_provider(provider_type: ProviderEnum, user_id: str = "1", **kwargs
         for secret in required_secrets:
             secrets[secret] = await get_secret(secret, user_id)
 
-        _provider_cache[provider_type] = provider_cls(secrets=secrets, **kwargs)
-        return _provider_cache[provider_type]
+        _provider_cache[cache_key] = provider_cls(secrets=secrets, **kwargs)
+        return _provider_cache[cache_key]
 
 
 async def list_providers(user_id: str) -> list["BaseProvider"]:

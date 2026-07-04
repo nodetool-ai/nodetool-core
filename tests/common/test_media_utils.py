@@ -2,9 +2,12 @@ import os
 import shutil
 from io import BytesIO
 
-import cv2
 import numpy as np
 import pytest
+
+pytest.importorskip("cv2")
+
+import cv2
 
 from nodetool.media.common.media_utils import (
     create_image_thumbnail,

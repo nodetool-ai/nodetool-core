@@ -8,13 +8,26 @@ so the same code path serves both the WebSocket and stdio workers.
 """
 
 import asyncio
+import hashlib
 import sys
 import traceback
 from typing import Any
 
-# Cached provider instances
-_provider_cache: dict[str, Any] = {}
+# Cached provider instances, keyed by (provider_id, secrets hash) so a
+# different / rotated secret set never reuses another caller's instance.
+_provider_cache: dict[tuple[str, str], Any] = {}
 _providers_imported = False
+
+
+def _hash_secrets(secrets: dict[str, str]) -> str:
+    """Stable hash of a secrets dict for cache keying (never logs values)."""
+    h = hashlib.sha256()
+    for key, value in sorted((secrets or {}).items()):
+        h.update(key.encode("utf-8"))
+        h.update(b"\x00")
+        h.update(str(value).encode("utf-8"))
+        h.update(b"\x00")
+    return h.hexdigest()
 
 
 def _ensure_providers_imported() -> None:
@@ -45,13 +58,14 @@ def _get_provider(provider_id: str, secrets: dict[str, str]) -> Any:
 
     _ensure_providers_imported()
 
-    if provider_id in _provider_cache:
-        return _provider_cache[provider_id]
+    cache_key = (provider_id, _hash_secrets(secrets))
+    if cache_key in _provider_cache:
+        return _provider_cache[cache_key]
 
     provider_enum = Provider(provider_id)
     cls, kwargs = get_registered_provider(provider_enum)
     instance = cls(secrets=secrets, **kwargs)
-    _provider_cache[provider_id] = instance
+    _provider_cache[cache_key] = instance
     return instance
 
 
@@ -96,11 +110,7 @@ def get_available_providers() -> list[dict[str, Any]]:
                 {
                     "id": pid,
                     "capabilities": capabilities,
-                    "required_secrets": (
-                        cls.required_secrets()
-                        if hasattr(cls, "required_secrets")
-                        else []
-                    ),
+                    "required_secrets": (cls.required_secrets() if hasattr(cls, "required_secrets") else []),
                 }
             )
     return result
@@ -141,10 +151,7 @@ def _deserialize_messages(raw_messages: list[dict]) -> list[Any]:
         if m.get("tool_calls"):
             from nodetool.metadata.types import ToolCall
 
-            msg.tool_calls = [
-                ToolCall(id=tc["id"], name=tc["name"], args=tc.get("args", {}))
-                for tc in m["tool_calls"]
-            ]
+            msg.tool_calls = [ToolCall(id=tc["id"], name=tc["name"], args=tc.get("args", {})) for tc in m["tool_calls"]]
         if m.get("tool_call_id"):
             msg.tool_call_id = m["tool_call_id"]
         messages.append(msg)
@@ -163,9 +170,7 @@ def _serialize_message(msg: Any) -> dict:
         result["content"] = str(msg.content)
 
     if msg.tool_calls:
-        result["tool_calls"] = [
-            {"id": tc.id, "name": tc.name, "args": tc.args} for tc in msg.tool_calls
-        ]
+        result["tool_calls"] = [{"id": tc.id, "name": tc.name, "args": tc.args} for tc in msg.tool_calls]
     return result
 
 
@@ -204,11 +209,7 @@ async def _handle_models(data: dict) -> dict:
         return {"models": []}
 
     models = await getter()
-    return {
-        "models": [
-            m.model_dump() if hasattr(m, "model_dump") else m.__dict__ for m in models
-        ]
-    }
+    return {"models": [m.model_dump() if hasattr(m, "model_dump") else m.__dict__ for m in models]}
 
 
 async def _handle_generate(data: dict) -> dict:
@@ -409,9 +410,7 @@ async def handle_provider_message(
 
                 from nodetool.metadata.types import ToolCall
 
-                async for item in provider.generate_messages(
-                    messages=messages, model=model, **kwargs
-                ):
+                async for item in provider.generate_messages(messages=messages, model=model, **kwargs):
                     if cancel_event.is_set():
                         break
                     if isinstance(item, ToolCall):
@@ -470,9 +469,7 @@ async def handle_provider_message(
                 async for audio_chunk in provider.text_to_speech(**kwargs_tts):
                     if cancel_event.is_set():
                         break
-                    await send_chunk(
-                        request_id, {"blobs": {"audio": audio_chunk.tobytes()}}
-                    )
+                    await send_chunk(request_id, {"blobs": {"audio": audio_chunk.tobytes()}})
                 await send_result(request_id, {"done": True})
             finally:
                 if request_id:

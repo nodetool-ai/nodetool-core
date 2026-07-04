@@ -12,6 +12,7 @@ from contextlib import suppress
 from datetime import datetime
 from enum import Enum, StrEnum
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -509,10 +510,6 @@ class ProcessingContext:
             value (Any): The value to set.
         """
         self.variables[key] = value
-        self._persist_variable_if_needed(key, value)
-
-
-
 
     def _workspace_path(self, filename: str) -> Path:
         if not self.workspace_dir:
@@ -575,18 +572,6 @@ class ProcessingContext:
         """
         return await require_scope().get_asset_storage().get_url(key)
 
-
-
-
-
-
-
-
-
-
-
-
-
     async def refresh_uri(self, asset: AssetRef):
         """
         Refreshes the URI of the asset.
@@ -613,7 +598,6 @@ class ProcessingContext:
             extension = get_extension_for_content_type(content_type)
             asset.uri = f"asset://{asset.asset_id}{extension}"
 
-
     async def create_asset(
         self,
         name: str,
@@ -622,11 +606,13 @@ class ProcessingContext:
         parent_id: str | None = None,
         instructions: IO | None = None,
         node_id: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> SimpleNamespace:
         """
         Creates an asset and uploads it to storage.
 
-        Returns a dict with asset metadata (id, name, content_type, file_name, size).
+        Returns a lightweight object exposing attribute access to the asset
+        metadata (id, name, content_type, file_name, size, user_id,
+        workflow_id, node_id).
         """
         from nodetool.types.content_types import CONTENT_TYPE_TO_EXTENSION
 
@@ -645,16 +631,16 @@ class ProcessingContext:
         storage = require_scope().get_asset_storage()
         await storage.upload(file_name, BytesIO(content_bytes))
 
-        return {
-            "id": asset_id,
-            "name": name,
-            "content_type": content_type,
-            "file_name": file_name,
-            "size": len(content_bytes),
-            "user_id": self.user_id,
-            "workflow_id": self.workflow_id,
-            "node_id": node_id,
-        }
+        return SimpleNamespace(
+            id=asset_id,
+            name=name,
+            content_type=content_type,
+            file_name=file_name,
+            size=len(content_bytes),
+            user_id=self.user_id,
+            workflow_id=self.workflow_id,
+            node_id=node_id,
+        )
 
     async def download_asset(self, asset_id: str) -> IO:
         """
@@ -864,8 +850,41 @@ class ProcessingContext:
         except Exception as e:
             log.debug(f"Failed to get from URI cache: {e}")
 
-        response = await self.http_get(url)
-        content = response.content
+        # 🛡️ SSRF protection: block private/restricted hosts and resolve via a
+        # guarded resolver, mirroring asset_storage.download_http_uri. Redirects
+        # are followed manually so each hop's hostname is re-validated — aiohttp's
+        # automatic redirects (and the connector's IP-literal short-circuit) would
+        # otherwise let a redirect to an IP literal such as http://169.254.169.254/
+        # bypass the SSRF check.
+        import aiohttp
+        from urllib.parse import urljoin, urlparse
+
+        from nodetool.utils.network import SSRFProtectResolver, is_ip_private
+
+        def _block_private(target: str) -> None:
+            host = urlparse(target).hostname
+            if host and is_ip_private(host):
+                raise ValueError(f"Access to private/restricted IP blocked: {host}")
+
+        max_redirects = 5
+        current_url = url
+        connector = aiohttp.TCPConnector(resolver=SSRFProtectResolver())
+        async with aiohttp.ClientSession(connector=connector) as session:
+            for _ in range(max_redirects + 1):
+                _block_private(current_url)
+                async with session.get(current_url, allow_redirects=False) as response:
+                    if response.status in (301, 302, 303, 307, 308):
+                        location = response.headers.get("Location")
+                        if not location:
+                            response.raise_for_status()
+                            raise ValueError(f"Redirect with no Location header: {current_url}")
+                        current_url = urljoin(current_url, location)
+                        continue
+                    response.raise_for_status()
+                    content = await response.read()
+                    break
+            else:
+                raise ValueError(f"Too many redirects while fetching: {url}")
 
         # Store downloaded bytes in URI cache for 5 minutes
         with suppress(Exception):
@@ -939,7 +958,13 @@ class ProcessingContext:
                         return BytesIO(await _in_thread(_numpy_image_to_png_bytes, obj))
                     elif isinstance(asset_ref, AudioRef):
                         # Encode numpy audio array as WAV/PCM bytes
-                        return BytesIO(await _in_thread(_numpy_audio_to_wav_bytes, obj, asset_ref.metadata.get("sample_rate", 44100)))
+                        return BytesIO(
+                            await _in_thread(
+                                _numpy_audio_to_wav_bytes,
+                                obj,
+                                asset_ref.metadata.get("sample_rate", 44100) if asset_ref.metadata else 44100,
+                            )
+                        )
                     elif isinstance(asset_ref, VideoRef):
                         # Encode numpy video array as MP4 using shared utility (T,H,W,C)
                         try:
@@ -2263,7 +2288,6 @@ class ProcessingContext:
         else:
             return value
 
-
     async def is_huggingface_model_cached(self, repo_id: str):
         """
         Check if a Hugging Face model is already cached locally.
@@ -2311,9 +2335,6 @@ class ProcessingContext:
             return MODEL_3D_FORMAT_MAPPING.get(asset.format or "glb", ("model/gltf-binary", "glb"))
         return "application/octet-stream", "bin"
 
-
-
-
     async def _asset_to_workspace_file(self, asset: AssetRef) -> dict[str, Any] | AssetRef:
         """Persist asset to local workspace and return file path reference."""
         if isinstance(asset, DataframeRef):
@@ -2334,8 +2355,6 @@ class ProcessingContext:
             "asset_id": asset.asset_id,
         }
 
-
-
     async def assets_to_workspace_files(self, value: Any) -> Any:
         """Recursively persist AssetRefs to the workspace directory."""
         if isinstance(value, AssetRef):
@@ -2353,7 +2372,27 @@ class ProcessingContext:
         else:
             return value
 
+    async def assets_to_data_uri(self, value: Any) -> Any:
+        """Encode AssetRefs as base64 data URIs (DATA_URI output mode)."""
+        raise NotImplementedError(
+            f"asset_output_mode {AssetOutputMode.DATA_URI} is not supported in the Python node runner"
+        )
 
+    async def upload_assets_to_temp(self, value: Any) -> Any:
+        """Upload AssetRefs to temporary storage (TEMP_URL output mode)."""
+        raise NotImplementedError(
+            f"asset_output_mode {AssetOutputMode.TEMP_URL} is not supported in the Python node runner"
+        )
+
+    async def assets_to_storage_url(self, value: Any) -> Any:
+        """Persist AssetRefs to storage and return URLs (STORAGE_URL output mode)."""
+        raise NotImplementedError(
+            f"asset_output_mode {AssetOutputMode.STORAGE_URL} is not supported in the Python node runner"
+        )
+
+    async def embed_assets_in_data(self, value: Any) -> Any:
+        """Embed asset bytes inline in the value (RAW output mode)."""
+        raise NotImplementedError(f"asset_output_mode {AssetOutputMode.RAW} is not supported in the Python node runner")
 
     async def normalize_output_value(self, value: Any) -> Any:
         """
@@ -2450,9 +2489,6 @@ class ProcessingContext:
 
         return resolve_workspace_path(self.workspace_dir, path)
 
-
-
-
     def clear_memory(self, pattern: str | None = None):
         """
         Clear memory objects, optionally matching a pattern.
@@ -2473,7 +2509,6 @@ class ProcessingContext:
         # Node cache interface does not expose iteration over items.
         # Return an empty summary to avoid leaking implementation details.
         return {"total_objects": 0, "types": {}}
-
 
     async def cleanup(self):
         """

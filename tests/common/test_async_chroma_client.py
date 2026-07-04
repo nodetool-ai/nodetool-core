@@ -5,11 +5,14 @@ These tests use a real ChromaDB instance (on-disk persistent client) to ensure
 all functionality works correctly with actual data storage and retrieval.
 """
 
-import chromadb
-import chromadb.errors
 import pytest
 import pytest_asyncio
 from packaging import version
+
+pytest.importorskip("chromadb")
+
+import chromadb
+import chromadb.errors
 
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     AsyncChromaClient,

@@ -101,9 +101,7 @@ class BaseType(BaseModel):
         if type_name is None:
             raise ValueError("Type name is missing. Types must derive from BaseType")
         if type_name not in NameToType:
-            raise ValueError(
-                f"Unknown type name: {type_name}. Types must derive from BaseType. Data: {data}"
-            )
+            raise ValueError(f"Unknown type name: {type_name}. Types must derive from BaseType. Data: {data}")
         return NameToType[type_name](**data)
 
 
@@ -116,9 +114,7 @@ class ImageSize(BaseType):
     type: Literal["image_size"] = "image_size"
     width: int = Field(default=1024, description="Image width")
     height: int = Field(default=1024, description="Image height")
-    preset: Optional[str] = Field(
-        None, description="Aspect ratio preset name (e.g. 'square_hd')"
-    )
+    preset: Optional[str] = Field(None, description="Aspect ratio preset name (e.g. 'square_hd')")
 
     def __str__(self):
         if self.preset:
@@ -181,11 +177,7 @@ class Datetime(BaseType):
             minute=self.minute,
             second=self.second,
             microsecond=self.microsecond,
-            tzinfo=(
-                timezone(timedelta(seconds=self.utc_offset), self.tzinfo)
-                if self.utc_offset
-                else UTC
-            ),
+            tzinfo=(timezone(timedelta(seconds=self.utc_offset), self.tzinfo) if self.utc_offset else UTC),
         )
 
     @staticmethod
@@ -415,12 +407,7 @@ class AudioStream(BaseType):
 
     def duration_seconds(self) -> float:
         """Calculate duration in seconds based on data length and format."""
-        if (
-            not self.data
-            or self.sample_rate == 0
-            or self.channels == 0
-            or self.sample_width == 0
-        ):
+        if not self.data or self.sample_rate == 0 or self.channels == 0 or self.sample_width == 0:
             return 0.0
         num_samples = len(self.data) // (self.sample_width * self.channels)
         return num_samples / self.sample_rate
@@ -453,13 +440,9 @@ class Model3DRef(AssetRef):
     """
 
     type: Literal["model_3d"] = "model_3d"
-    format: Optional[str] = (
-        None  # The 3D format (glb, gltf, obj, mtl, fbx, stl, ply, usdz)
-    )
+    format: Optional[str] = None  # The 3D format (glb, gltf, obj, mtl, fbx, stl, ply, usdz)
     material_file: Optional["AssetRef"] = None  # Material file (e.g., MTL for OBJ)
-    texture_files: list["ImageRef"] = Field(
-        default_factory=list
-    )  # Associated texture images
+    texture_files: list["ImageRef"] = Field(default_factory=list)  # Associated texture images
 
 
 class RSSEntry(BaseType):
@@ -587,9 +570,7 @@ class InferenceProvider(enum.StrEnum):
 
 
 class InferenceProviderAudioClassificationModel(BaseType):
-    type: Literal["inference_provider_audio_classification_model"] = (
-        "inference_provider_audio_classification_model"
-    )
+    type: Literal["inference_provider_audio_classification_model"] = "inference_provider_audio_classification_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
@@ -603,89 +584,67 @@ class InferenceProviderAutomaticSpeechRecognitionModel(BaseType):
 
 
 class InferenceProviderImageClassificationModel(BaseType):
-    type: Literal["inference_provider_image_classification_model"] = (
-        "inference_provider_image_classification_model"
-    )
+    type: Literal["inference_provider_image_classification_model"] = "inference_provider_image_classification_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderImageToImageModel(BaseType):
-    type: Literal["inference_provider_image_to_image_model"] = (
-        "inference_provider_image_to_image_model"
-    )
+    type: Literal["inference_provider_image_to_image_model"] = "inference_provider_image_to_image_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderImageSegmentationModel(BaseType):
-    type: Literal["inference_provider_image_segmentation_model"] = (
-        "inference_provider_image_segmentation_model"
-    )
+    type: Literal["inference_provider_image_segmentation_model"] = "inference_provider_image_segmentation_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderTextClassificationModel(BaseType):
-    type: Literal["inference_provider_text_classification_model"] = (
-        "inference_provider_text_classification_model"
-    )
+    type: Literal["inference_provider_text_classification_model"] = "inference_provider_text_classification_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderSummarizationModel(BaseType):
-    type: Literal["inference_provider_summarization_model"] = (
-        "inference_provider_summarization_model"
-    )
+    type: Literal["inference_provider_summarization_model"] = "inference_provider_summarization_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderTextToImageModel(BaseType):
-    type: Literal["inference_provider_text_to_image_model"] = (
-        "inference_provider_text_to_image_model"
-    )
+    type: Literal["inference_provider_text_to_image_model"] = "inference_provider_text_to_image_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderTranslationModel(BaseType):
-    type: Literal["inference_provider_translation_model"] = (
-        "inference_provider_translation_model"
-    )
+    type: Literal["inference_provider_translation_model"] = "inference_provider_translation_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderTextToTextModel(BaseType):
-    type: Literal["inference_provider_text_to_text_model"] = (
-        "inference_provider_text_to_text_model"
-    )
+    type: Literal["inference_provider_text_to_text_model"] = "inference_provider_text_to_text_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderTextToSpeechModel(BaseType):
-    type: Literal["inference_provider_text_to_speech_model"] = (
-        "inference_provider_text_to_speech_model"
-    )
+    type: Literal["inference_provider_text_to_speech_model"] = "inference_provider_text_to_speech_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderTextToAudioModel(BaseType):
-    type: Literal["inference_provider_text_to_audio_model"] = (
-        "inference_provider_text_to_audio_model"
-    )
+    type: Literal["inference_provider_text_to_audio_model"] = "inference_provider_text_to_audio_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
 
 class InferenceProviderTextGenerationModel(BaseType):
-    type: Literal["inference_provider_text_generation_model"] = (
-        "inference_provider_text_generation_model"
-    )
+    type: Literal["inference_provider_text_generation_model"] = "inference_provider_text_generation_model"
     provider: InferenceProvider = InferenceProvider.hf_inference
     model_id: str = ""
 
@@ -893,9 +852,7 @@ class HFStableDiffusionXL(HuggingFaceModel):
 
 
 class HFStableDiffusionXLCheckpoint(HuggingFaceModel):
-    type: Literal["hf.stable_diffusion_xl_checkpoint"] = (
-        "hf.stable_diffusion_xl_checkpoint"
-    )
+    type: Literal["hf.stable_diffusion_xl_checkpoint"] = "hf.stable_diffusion_xl_checkpoint"
 
 
 class HFStableDiffusion3(HuggingFaceModel):
@@ -903,9 +860,7 @@ class HFStableDiffusion3(HuggingFaceModel):
 
 
 class HFStableDiffusion3Checkpoint(HuggingFaceModel):
-    type: Literal["hf.stable_diffusion_3_checkpoint"] = (
-        "hf.stable_diffusion_3_checkpoint"
-    )
+    type: Literal["hf.stable_diffusion_3_checkpoint"] = "hf.stable_diffusion_3_checkpoint"
 
 
 class HFStableDiffusionXLRefiner(HuggingFaceModel):
@@ -913,9 +868,7 @@ class HFStableDiffusionXLRefiner(HuggingFaceModel):
 
 
 class HFStableDiffusionXLRefinerCheckpoint(HuggingFaceModel):
-    type: Literal["hf.stable_diffusion_xl_refiner_checkpoint"] = (
-        "hf.stable_diffusion_xl_refiner_checkpoint"
-    )
+    type: Literal["hf.stable_diffusion_xl_refiner_checkpoint"] = "hf.stable_diffusion_xl_refiner_checkpoint"
 
 
 class HFFlux(HuggingFaceModel):
@@ -1035,9 +988,7 @@ class HFImageToVideo(HuggingFaceModel):
 
 
 class HFUnconditionalImageGeneration(HuggingFaceModel):
-    type: Literal["hf.unconditional_image_generation"] = (
-        "hf.unconditional_image_generation"
-    )
+    type: Literal["hf.unconditional_image_generation"] = "hf.unconditional_image_generation"
 
 
 class HFUnet(HuggingFaceModel):
@@ -1073,9 +1024,7 @@ class HFTextToVideo(HuggingFaceModel):
 
 
 class HFZeroShotImageClassification(HuggingFaceModel):
-    type: Literal["hf.zero_shot_image_classification"] = (
-        "hf.zero_shot_image_classification"
-    )
+    type: Literal["hf.zero_shot_image_classification"] = "hf.zero_shot_image_classification"
 
 
 class HFMaskGeneration(HuggingFaceModel):
@@ -1175,9 +1124,7 @@ class HFAudioClassification(HuggingFaceModel):
 
 
 class HFZeroShotAudioClassification(HuggingFaceModel):
-    type: Literal["hf.zero_shot_audio_classification"] = (
-        "hf.zero_shot_audio_classification"
-    )
+    type: Literal["hf.zero_shot_audio_classification"] = "hf.zero_shot_audio_classification"
 
 
 class HFRealESRGAN(HuggingFaceModel):
@@ -1314,19 +1261,29 @@ class StyleModelFile(ModelFile):
 
 
 def comfy_model_to_folder(type_name: str) -> str:
-    folder_mapping = {
-        "comfy.checkpoint_file": "checkpoints",
-        "comfy.vae_file": "vae",
-        "comfy.clip": "clip",
-        "comfy.clip_vision": "clip_vision",
-        "comfy.control_net": "controlnet",
-        "comfy.ip_adapter": "ipadapter",
-        "comfy.gligen": "gligen",
-        "comfy.upscale_model": "upscale_models",
-        "comfy.lora": "loras",
-        "comfy.unet": "unet",
-        "comfy.instant_id_file": "instantid",
+    # Base ComfyUI folder per model family. Callers pass either the ComfyModel
+    # type ("comfy.lora") or its ModelFile variant ("comfy.lora_file"); both
+    # resolve to the same folder. Values that are already folder names (e.g.
+    # "checkpoints") pass through unchanged.
+    base_folders = {
+        "checkpoint": "checkpoints",
+        "unet": "unet",
+        "vae": "vae",
+        "clip": "clip",
+        "unclip": "checkpoints",
+        "clip_vision": "clip_vision",
+        "control_net": "controlnet",
+        "ip_adapter": "ipadapter",
+        "gligen": "gligen",
+        "upscale_model": "upscale_models",
+        "lora": "loras",
+        "instant_id": "instantid",
+        "style_model": "style_models",
     }
+    folder_mapping: dict[str, str] = {}
+    for base, folder in base_folders.items():
+        folder_mapping[f"comfy.{base}"] = folder
+        folder_mapping[f"comfy.{base}_file"] = folder
     return folder_mapping.get(type_name, type_name)
 
 
@@ -1513,9 +1470,7 @@ class Step(BaseType):
     completed: bool = Field(default=False, description="Whether the step is completed")
     start_time: int = Field(default=0, description="The start time of the step")
     end_time: int = Field(default=0, description="The end time of the step")
-    depends_on: list[str] = Field(
-        default=[], description="The IDs of steps this step depends on"
-    )
+    depends_on: list[str] = Field(default=[], description="The IDs of steps this step depends on")
     tools: list[str] | None = Field(
         default=None,
         description="Optional list of allowed tool names for this step (None = no restriction).",
@@ -1532,12 +1487,8 @@ class Step(BaseType):
     def to_markdown(self) -> str:
         """Convert the step to markdown format."""
         checkbox = "[x]" if self.completed else "[*]" if self.is_running() else "[ ]"
-        deps_str = (
-            f" (depends on {', '.join(self.depends_on)})" if self.depends_on else ""
-        )
-        output_schema_str = (
-            f" (output schema: {self.output_schema})" if self.output_schema else ""
-        )
+        deps_str = f" (depends on {', '.join(self.depends_on)})" if self.depends_on else ""
+        output_schema_str = f" (output schema: {self.output_schema})" if self.output_schema else ""
         return f"- {checkbox} {self.instructions}{deps_str}{output_schema_str}"
 
     def is_running(self) -> bool:
@@ -1552,7 +1503,7 @@ class Step(BaseType):
         Returns:
             bool: True if the step is currently running, False otherwise
         """
-        return self.start_time > 0 and not self.completed
+        return self.start_time > 0 and self.end_time == 0 and not self.completed
 
 
 class Task(BaseType):
@@ -1566,12 +1517,8 @@ class Task(BaseType):
     type: Literal["task"] = "task"
 
     title: str = Field(default="", description="The title of the task")
-    description: str = Field(
-        default="", description="A description of the task, not used for execution"
-    )
-    steps: list[Step] = Field(
-        default=[], description="The steps of the task, a list of step IDs"
-    )
+    description: str = Field(default="", description="A description of the task, not used for execution")
+    steps: list[Step] = Field(default=[], description="The steps of the task, a list of step IDs")
 
     def is_completed(self) -> bool:
         """Returns True if all steps are marked as completed."""
@@ -1579,7 +1526,7 @@ class Task(BaseType):
 
     def to_markdown(self) -> str:
         """Converts task and steps to markdown format with headings and checkboxes."""
-        parts = [f"# Task: {self.title}\n", f"Description: {self.description}\n"]
+        parts = [f"# Task: {self.title}\n"]
         if self.description:
             parts.append(f"{self.description}\n")
         if self.steps:
@@ -1712,9 +1659,7 @@ class NPArray(BaseType):
 
     @staticmethod
     def from_numpy(arr: "np.ndarray", **kwargs):
-        return NPArray(
-            value=arr.tobytes(), dtype=arr.dtype.str, shape=arr.shape, **kwargs
-        )
+        return NPArray(value=arr.tobytes(), dtype=arr.dtype.str, shape=arr.shape, **kwargs)
 
     @staticmethod
     def from_list(arr: list, **_kwargs):
@@ -1734,13 +1679,7 @@ def to_numpy(num: float | int | NPArray) -> "np.ndarray":
         raise ValueError()
 
 
-ColumnType = (
-    Literal["int"]
-    | Literal["float"]
-    | Literal["datetime"]
-    | Literal["string"]
-    | Literal["object"]
-)
+ColumnType = Literal["int"] | Literal["float"] | Literal["datetime"] | Literal["string"] | Literal["object"]
 
 
 class ColumnDef(BaseModel):
@@ -2355,19 +2294,11 @@ class PlotlySeries(BaseType):
         default=None,
         description="Column name for y-axis (optional for some charts like histogram)",
     )
-    color: str | None = Field(
-        default=None, description="Column name for color encoding"
-    )
+    color: str | None = Field(default=None, description="Column name for color encoding")
     size: str | None = Field(default=None, description="Column name for size encoding")
-    symbol: str | None = Field(
-        default=None, description="Column name for symbol encoding"
-    )
-    line_dash: str | None = Field(
-        default=None, description="Column name for line dash pattern encoding"
-    )
-    chart_type: str = Field(
-        description="The type of chart to create (scatter, line, bar, histogram, box, violin)"
-    )
+    symbol: str | None = Field(default=None, description="Column name for symbol encoding")
+    line_dash: str | None = Field(default=None, description="Column name for line dash pattern encoding")
+    chart_type: str = Field(description="The type of chart to create (scatter, line, bar, histogram, box, violin)")
 
 
 class PlotlyConfig(BaseType):
@@ -2567,9 +2498,7 @@ class EmailSearchCriteria(BaseType):
     cc: Optional[str] = None
     label: Optional[str] = None
     date_query: Optional[DateSearchCondition] = None
-    date_condition: Optional[DateSearchCondition] = (
-        None  # Alias for date_query for backwards compatibility
-    )
+    date_condition: Optional[DateSearchCondition] = None  # Alias for date_query for backwards compatibility
     flags: list[EmailFlag] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
     folder: Optional[str] = None

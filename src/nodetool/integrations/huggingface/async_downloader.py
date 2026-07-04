@@ -33,6 +33,34 @@ class HfFileMeta:
     original_url: str  # original /resolve url
 
 
+def _validate_path_component(component: str, *, allow_subdirs: bool = False) -> str:
+    """Validate a server/listing-controlled value used to build a cache path.
+
+    Rejects absolute paths, parent-directory traversal (``..``), NUL bytes and
+    (unless ``allow_subdirs``) embedded path separators. Returns the normalized
+    (forward-slash) value. Mirrors the ``_validate_relpath`` guard used by the
+    worker's comfy handler.
+
+    Args:
+        component: Raw value (e.g. an ETag, commit hash or filename).
+        allow_subdirs: When True, forward-slash subpaths such as
+            ``"onnx/model.onnx"`` are permitted (but ``..`` segments are not).
+    """
+    if not component:
+        raise ValueError("Empty path component")
+    if "\x00" in component:
+        raise ValueError(f"Invalid NUL byte in path component: {component!r}")
+    candidate = component.replace("\\", "/")
+    p = Path(candidate)
+    if p.is_absolute():
+        raise ValueError(f"Absolute path not allowed: {component!r}")
+    if any(seg in ("..", "") for seg in p.parts):
+        raise ValueError(f"Unsafe path component: {component!r}")
+    if not allow_subdirs and len(p.parts) > 1:
+        raise ValueError(f"Path separators not allowed in component: {component!r}")
+    return candidate
+
+
 def _env_bool(name: str) -> bool:
     v = os.getenv(name)
     if v is None:
@@ -441,8 +469,21 @@ async def async_hf_download(
         repo_cache = _hf_repo_cache_dir(repo_id, repo_type=repo_type, cache_dir=cache_dir)
         blobs_dir = repo_cache / "blobs"
         commit_or_rev = meta.commit_hash or revision
-        snapshot_path = repo_cache / "snapshots" / commit_or_rev / filename
-        blob_path = blobs_dir / meta.etag
+
+        # Sanitize server/listing-controlled values before joining them into
+        # cache paths (etag + commit from response headers, filename from hub
+        # listing) so they cannot traverse outside the intended directories.
+        safe_etag = _validate_path_component(meta.etag)
+        safe_commit = _validate_path_component(commit_or_rev)
+        safe_filename = _validate_path_component(filename, allow_subdirs=True)
+
+        snapshot_root = repo_cache / "snapshots" / safe_commit
+        snapshot_path = snapshot_root / safe_filename
+        # filename may legitimately contain subdirs; assert the resolved path
+        # stays within the snapshot commit directory.
+        if not snapshot_path.resolve().is_relative_to(snapshot_root.resolve()):
+            raise ValueError(f"Filename escapes snapshot directory: {filename!r}")
+        blob_path = blobs_dir / safe_etag
 
         # Blob already cached and looks complete
         if blob_path.exists() and (meta.size is None or blob_path.stat().st_size == meta.size):

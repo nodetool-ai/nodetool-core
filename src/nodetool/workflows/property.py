@@ -112,9 +112,9 @@ class Property(BaseModel):
         schema = self.type.get_json_schema()
         if self.description and self.description != "":
             schema["description"] = self.description
-        if self.min:
+        if self.min is not None:
             schema["minimum"] = self.min if self.type.type != "int" else int(self.min)
-        if self.max:
+        if self.max is not None:
             schema["maximum"] = self.max if self.type.type != "int" else int(self.max)
         return schema
 
