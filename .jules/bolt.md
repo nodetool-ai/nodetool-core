@@ -45,3 +45,10 @@
 ## 2025-06-25 - [Optimize uint16 to uint8 downscaling with integer division]
 **Learning:** When downscaling a NumPy `uint16` array to `uint8` by dividing by a Python float (e.g., `a / 257.0`), NumPy implicitly upcasts the array to `float64`, performs floating-point division, and then downcasts back to `uint8`. This implicit conversion introduces significant memory and computation overhead. In benchmarks, processing a 2000x2000 array took ~1.00s with float division compared to ~0.18s with integer division.
 **Action:** Use integer division (`a // 257`) when downscaling integer arrays to avoid implicit float64 conversion and maintain integer arithmetic for better performance.
+
+## 2025-07-06 - [Avoid Implicit Float64 Upcasting During Array Scaling]
+**Learning:** [When multiplying a `float32` NumPy array by a standard Python float literal (e.g., `255.0` or `32768.0`) in older numpy versions, NumPy implicitly upcasts the array to `float64` before the operation. Even though the result is later cast back to an integer type like `uint8` or `int16`, this intermediate `float64` array consumes double the memory and significantly slows down execution, particularly for large image and audio arrays.]
+**Action:** [Always use an explicitly typed NumPy float constant (e.g., `np.float32(255.0)` or `np.float32(32768.0)`) when scaling `float32` arrays to prevent implicit upcasting to `float64` and maintain optimal performance and memory footprint.]
+## 2025-07-06 - [Avoid Implicit Float64 Upcasting During Array Subtracts]
+**Learning:** [A similar issue happens with array subtractions `a - amin` when `amin` is explicitly cast to a Python `float` before subtracting. It causes the array to be implicitly promoted to `float64`. This is particularly prevalent in NumPy 2.0+.]
+**Action:** [Ensure explicitly cast scalar variables used in mathematical array operations are typed appropriately matching the array, e.g. `amin = np.float32(np.nanmin(a))` instead of `amin = float(np.nanmin(a))` to keep calculations fast and efficient.]
