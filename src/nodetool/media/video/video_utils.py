@@ -57,6 +57,7 @@ def _legacy_export_to_video(
         raise ValueError(f"Unsupported frame type: {type(first_frame)}")
 
     import itertools
+
     video_frames_iter = itertools.chain([first_frame], iterator)
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
@@ -69,7 +70,11 @@ def _legacy_export_to_video(
 
         # Convert to uint8 if needed (assume float 0..1 if not uint8)
         if frame.dtype != np.uint8:
-            frame = (frame * 255).astype(np.uint8) if frame.dtype.kind == "f" else frame.astype(np.uint8)
+            frame = (
+                (frame * frame.dtype.type(255.0)).astype(np.uint8)
+                if frame.dtype.kind == "f"
+                else frame.astype(np.uint8)
+            )
 
         img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         video_writer.write(img)
@@ -140,6 +145,7 @@ def export_to_video(
         raise IndexError("list index out of range") from None
 
     import itertools
+
     video_frames_iter = itertools.chain([first_frame], iterator)
 
     # Export using imageio
@@ -157,7 +163,11 @@ def export_to_video(
 
             # Convert to uint8 if needed (assume float 0..1 if not uint8)
             if frame.dtype != np.uint8:
-                frame = (frame * 255).astype(np.uint8) if frame.dtype.kind == "f" else frame.astype(np.uint8)
+                frame = (
+                    (frame * frame.dtype.type(255.0)).astype(np.uint8)
+                    if frame.dtype.kind == "f"
+                    else frame.astype(np.uint8)
+                )
 
             writer.append_data(frame)  # type: ignore[attr-defined]
 
@@ -220,6 +230,7 @@ def export_to_video_bytes(
         raise IndexError("list index out of range") from None
 
     import itertools
+
     video_frames_iter = itertools.chain([first_frame], iterator)
 
     # Export using imageio to bytes
@@ -241,7 +252,11 @@ def export_to_video_bytes(
 
             # Convert to uint8 if needed (assume float 0..1 if not uint8)
             if frame.dtype != np.uint8:
-                frame = (frame * 255).astype(np.uint8) if frame.dtype.kind == "f" else frame.astype(np.uint8)
+                frame = (
+                    (frame * frame.dtype.type(255.0)).astype(np.uint8)
+                    if frame.dtype.kind == "f"
+                    else frame.astype(np.uint8)
+                )
 
             writer.append_data(frame)  # type: ignore[attr-defined]
 
@@ -275,6 +290,7 @@ def _legacy_export_to_video_bytes(
         raise ValueError(f"Unsupported frame type: {type(first_frame)}")
 
     import itertools
+
     video_frames_iter = itertools.chain([first_frame], iterator)
 
     import os
@@ -294,7 +310,11 @@ def _legacy_export_to_video_bytes(
 
             # Convert to uint8 if needed (assume float 0..1 if not uint8)
             if frame.dtype != np.uint8:
-                frame = (frame * 255).astype(np.uint8) if frame.dtype.kind == "f" else frame.astype(np.uint8)
+                frame = (
+                    (frame * frame.dtype.type(255.0)).astype(np.uint8)
+                    if frame.dtype.kind == "f"
+                    else frame.astype(np.uint8)
+                )
 
             img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             video_writer.write(img)
