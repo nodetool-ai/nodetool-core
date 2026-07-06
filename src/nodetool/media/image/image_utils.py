@@ -77,12 +77,13 @@ def numpy_to_pil_image(arr: np.ndarray) -> PIL.Image.Image:
         if a.size == 0:
             a = a.astype(np.uint8)
         else:
-            amin = float(np.nanmin(a))
-            amax = float(np.nanmax(a))
+            dt = a.dtype.type
+            amin = dt(np.nanmin(a))
+            amax = dt(np.nanmax(a))
             if amin >= 0.0 and amax <= 1.0:
-                a = a * 255.0
+                a = a * dt(255.0)
             elif amax > 255.0 or amin < 0.0:
-                a = (a - amin) * (255.0 / (amax - amin)) if amax != amin else np.zeros_like(a)
+                a = (a - amin) * dt(255.0 / (amax - amin)) if amax != amin else np.zeros_like(a)
             a = a.clip(0, 255).astype(np.uint8)
     elif a.dtype == np.uint16:
         a = (a // 257).astype(np.uint8)
