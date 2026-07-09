@@ -286,6 +286,8 @@ def tensor_to_image_array(tensor: Any) -> np.ndarray:
     if not is_torch_tensor(tensor):
         raise ImportError("torch is required for tensor conversion")
     data = tensor.detach().cpu().numpy()
+    if data.dtype in (np.float32, np.float64, np.float16):
+        return (data.dtype.type(255.0) * data).clip(0, 255).astype(np.uint8)
     return (255.0 * data).clip(0, 255).astype(np.uint8)
 
 
