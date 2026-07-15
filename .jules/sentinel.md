@@ -57,3 +57,7 @@
 **Vulnerability:** The functions `download_google_font` and `download_font_from_url` in `src/nodetool/media/image/web_font_utils.py` used `urllib.request.urlopen` with DNS checking that was susceptible to DNS rebinding (TOCTOU), allowing for Server-Side Request Forgery (SSRF) vulnerabilities when accessing external font URLs.
 **Learning:** `urllib.request` does not allow custom DNS resolvers, making it inherently vulnerable to DNS rebinding bypass techniques even when pre-flight IP checks (like `is_ip_private`) are implemented.
 **Prevention:** Always replace `urllib.request` with `aiohttp` using a custom connector configured with `SSRFProtectResolver` (`aiohttp.TCPConnector(resolver=SSRFProtectResolver())`) to guarantee robust DNS rebinding SSRF protection when downloading user-provided external URLs.
+## YYYY-MM-DD - SSRF bypass in HTTP URI asset downloading
+**Vulnerability:** `aiohttp.ClientSession` was instantiated with `SSRFProtectResolver`, but redirects were not manually handled and `is_ip_private` was only checked on the initial URL. This allowed SSRF attacks where a public URL redirected to a private IP, bypassing the protection.
+**Learning:** When using `aiohttp` for SSRF protection, `allow_redirects=False` must be set, and redirects must be followed manually to ensure the hostname at every hop is validated against private/restricted IPs.
+**Prevention:** Use the pattern established in `_fetch_http_uri_async` and `download_google_font` when creating a new HTTP download function.
