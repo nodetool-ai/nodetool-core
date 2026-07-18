@@ -13,7 +13,7 @@ import logging
 import os
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 from urllib.request import url2pathname
 
 import aiohttp
@@ -33,7 +33,7 @@ def _asset_type_name(asset_ref: AssetRef) -> str:
     return str(getattr(asset_ref, "type", "") or "")
 
 
-def _derive_asset_name(node: "BaseNode", path: str, asset_ref: AssetRef) -> str:
+def _derive_asset_name(node: "BaseNode", path: str, asset_ref: AssetRef) -> str:  # noqa: UP037
     """Prefer a readable filename from the source URI when available."""
     uri = getattr(asset_ref, "uri", "") or ""
     if uri.startswith(("http://", "https://", "file://")):
@@ -296,17 +296,39 @@ async def download_http_uri(uri: str, path: str) -> BytesIO | None:
     Returns:
         BytesIO containing the downloaded data, or None if download failed
     """
-    parsed = urlparse(uri)
-    if parsed.hostname and is_ip_private(parsed.hostname):
-        logger.warning("Access to private/restricted IP blocked: %s at %s", parsed.hostname, path)
-        return None
+
+    def _block_private(target: str) -> bool:
+        parsed = urlparse(target)
+        if parsed.hostname and is_ip_private(parsed.hostname):
+            logger.warning("Access to private/restricted IP blocked: %s at %s", parsed.hostname, path)
+            return True
+        return False
+
+    max_redirects = 5
+    current_uri = uri
 
     try:
         connector = aiohttp.TCPConnector(resolver=SSRFProtectResolver())
-        async with aiohttp.ClientSession(connector=connector) as session, session.get(uri) as response:
-            response.raise_for_status()
-            data = await response.read()
-            return BytesIO(data)
+        async with aiohttp.ClientSession(connector=connector) as session:
+            for _ in range(max_redirects + 1):
+                if _block_private(current_uri):
+                    return None
+
+                async with session.get(current_uri, allow_redirects=False) as response:
+                    if response.status in (301, 302, 303, 307, 308):
+                        location = response.headers.get("Location")
+                        if not location:
+                            logger.warning("Redirect response without Location header from %s at %s", current_uri, path)
+                            return None
+                        current_uri = urljoin(current_uri, location)
+                        continue
+
+                    response.raise_for_status()
+                    data = await response.read()
+                    return BytesIO(data)
+            else:
+                logger.warning("Too many redirects while fetching asset from URL %s at %s", uri, path)
+                return None
     except aiohttp.ClientError as http_err:
         logger.warning("Failed to download asset from URL %s at %s: %s", uri, path, http_err)
         return None

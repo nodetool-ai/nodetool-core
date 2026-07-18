@@ -1,0 +1,15 @@
+## What
+Fixed an SSRF bypass vulnerability in `download_http_uri` where `aiohttp` was configured to follow HTTP redirects automatically, circumventing custom resolver IP validation.
+
+## Why
+When `aiohttp` follows redirects automatically (`allow_redirects=True`), it skips custom resolvers (`SSRFProtectResolver`) for explicit IP literals. An attacker could host a server that redirects to `http://169.254.169.254/` (or another internal IP). The initial DNS resolution passes the SSRF check, but the subsequent redirect fetches data from the restricted IP, leading to a Server-Side Request Forgery.
+
+## Impact
+Prevents High/Critical SSRF attacks that could access private/restricted internal services (e.g. cloud metadata endpoints, internal APIs) through the asset storage downloader.
+
+## Verification
+- Modified `download_http_uri` to use a manual redirect loop (`allow_redirects=False`) for up to 5 hops.
+- Re-validated the hostname using `is_ip_private()` at each redirect hop before fetching.
+- Handled relative redirects safely via `urljoin()`.
+- Verified that all unit tests pass (`uv run pytest tests/`).
+- Verified code passes linting without breaking runtime typing references (`uv run ruff check`).
