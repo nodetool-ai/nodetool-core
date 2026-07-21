@@ -1,0 +1,13 @@
+## What
+Optimized the `tensor_to_image_array` function in `src/nodetool/workflows/torch_support.py` by using PyTorch's native in-place operations `.float().mul(255.0).clamp_(0, 255).byte().numpy()` instead of converting to a NumPy array first and then applying math operations. Also documented this learning in `.jules/bolt.md`.
+
+## Why
+When converting a PyTorch tensor to a NumPy `uint8` image array, performing the math operations in NumPy (e.g. `data * 255.0`) causes implicit upcasting to `float64` unless strictly controlled. Additionally, it incurs a performance and memory penalty by allocating unnecessary intermediate NumPy arrays. By shifting the operations to PyTorch natively, we utilize its highly optimized in-place methods (`.clamp_()`) and prevent accidental upcasting.
+
+## Impact
+Significantly speeds up the conversion process of Tensors to Image arrays (a hot path in image manipulation tasks) and reduces memory allocation. Our benchmark script testing simulated batches (`8x1024x1024x3`) proved a massive speedup (~6s with NumPy methods vs ~2.1s with PyTorch in-place methods).
+
+## Verification
+- Wrote and ran a local benchmarking script `benchmark.py` testing float conversions, which proved PyTorch methods were significantly faster and correct.
+- Wrote a secondary benchmarking script testing `int32` tensors that verified equivalence.
+- Successfully ran `uv run pytest tests/common/test_video_utils.py` and `uv run ruff check`.

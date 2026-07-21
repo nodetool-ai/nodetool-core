@@ -285,10 +285,8 @@ def tensor_to_image_array(tensor: Any) -> np.ndarray:
     """Convert a torch tensor into a uint8 numpy image array."""
     if not is_torch_tensor(tensor):
         raise ImportError("torch is required for tensor conversion")
-    data = tensor.detach().cpu().numpy()
-    if data.dtype in (np.float32, np.float64, np.float16):
-        return (data.dtype.type(255.0) * data).clip(0, 255).astype(np.uint8)
-    return (255.0 * data).clip(0, 255).astype(np.uint8)
+    # ⚡ Bolt Optimization: perform math in-place on tensor before numpy conversion
+    return tensor.detach().cpu().float().mul(255.0).clamp_(0, 255).byte().numpy()
 
 
 def torch_tensor_to_metadata(tensor: Any) -> TorchTensor | Any:
