@@ -285,10 +285,15 @@ def tensor_to_image_array(tensor: Any) -> np.ndarray:
     """Convert a torch tensor into a uint8 numpy image array."""
     if not is_torch_tensor(tensor):
         raise ImportError("torch is required for tensor conversion")
-    data = tensor.detach().cpu().numpy()
-    if data.dtype in (np.float32, np.float64, np.float16):
-        return (data.dtype.type(255.0) * data).clip(0, 255).astype(np.uint8)
-    return (255.0 * data).clip(0, 255).astype(np.uint8)
+
+    # ⚡ Bolt Optimization: Use PyTorch's optimized C++ backend to scale and clip tensors
+    # before converting to NumPy to avoid memory-intensive intermediate allocations.
+    if tensor.is_floating_point():
+        return tensor.detach().cpu().mul(255.0).clamp_(0, 255).byte().numpy()
+
+    # Non-floating point tensors were historically multiplied by 255.0 and clipped.
+    # To preserve correctness while avoiding OOM, we convert to float first, scale, clip, and byte.
+    return tensor.detach().cpu().float().mul(255.0).clamp_(0, 255).byte().numpy()
 
 
 def torch_tensor_to_metadata(tensor: Any) -> TorchTensor | Any:
