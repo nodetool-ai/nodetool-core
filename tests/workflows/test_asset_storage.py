@@ -244,6 +244,7 @@ class TestDownloadHttpUri:
         import aiohttp
 
         mock_response = AsyncMock()
+        mock_response.status = 200
         mock_response.read = AsyncMock(return_value=b"downloaded content")
         mock_response.raise_for_status = MagicMock()
 
