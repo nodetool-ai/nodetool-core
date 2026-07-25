@@ -41,8 +41,11 @@ import traceback
 import uuid
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urljoin, urlparse
 
 import aiohttp
+
+from nodetool.utils.network import SSRFProtectResolver, is_ip_private
 
 DEFAULT_COMFYUI_URL = "http://127.0.0.1:8188"
 DEFAULT_MODELS_DIR = "/workspace/models"
@@ -677,7 +680,37 @@ async def _open_model_source(
     else:
         raise ComfyError(f"Unknown model source type: {source_type!r} (expected 'huggingface' or 'url')")
 
-    resp = await session.get(url, headers=headers, allow_redirects=True)
+    max_redirects = 5
+    current_url = url
+    resp = None
+    for _ in range(max_redirects + 1):
+        parsed = urlparse(current_url)
+        if parsed.hostname and is_ip_private(parsed.hostname):
+            if resp:
+                resp.release()
+            raise ComfyError(f"Access to private/restricted IP blocked: {parsed.hostname}")
+
+        resp = await session.get(current_url, headers=headers, allow_redirects=False)
+        if resp.status in (301, 302, 303, 307, 308):
+            location = resp.headers.get("Location")
+            if not location:
+                resp.release()
+                raise ComfyError(f"Redirect without Location header for URL {current_url}")
+            current_url = urljoin(current_url, location)
+            # Remove Authorization header on redirect to avoid leaking credentials
+            if "Authorization" in headers:
+                del headers["Authorization"]
+            resp.release()
+            continue
+
+        break
+
+    if not resp:
+        raise ComfyError(f"Failed to fetch model from URL: {url}")
+    elif resp.status in (301, 302, 303, 307, 308):
+        resp.release()
+        raise ComfyError(f"Too many redirects while downloading URL {url}")
+
     if resp.status >= 400:
         body = (await resp.text())[:1000]
         resp.release()
@@ -735,7 +768,8 @@ async def _handle_models_download(
                 return
 
         timeout = aiohttp.ClientTimeout(total=None, sock_connect=30)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        connector = aiohttp.TCPConnector(resolver=SSRFProtectResolver())
+        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
             resp, default_name = await _open_model_source(session, source)
             async with resp:
                 filename = filename or default_name

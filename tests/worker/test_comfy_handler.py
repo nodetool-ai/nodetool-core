@@ -10,6 +10,7 @@ exactly like the TS bridge would.
 import asyncio
 import json
 import struct
+from unittest.mock import patch
 
 import msgpack
 import pytest
@@ -220,7 +221,8 @@ async def fake_comfy(monkeypatch):
     host, port = runner.addresses[0][:2]
     fake.base_url = f"http://{host}:{port}"
     monkeypatch.setenv("COMFYUI_URL", fake.base_url)
-    yield fake
+    with patch("nodetool.worker.comfy_handler.is_ip_private", return_value=False):
+        yield fake
     await runner.cleanup()
 
 
