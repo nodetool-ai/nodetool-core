@@ -138,9 +138,16 @@ def _get_embedding_function_for_metadata(metadata: dict | None, name: str):
         )
 
     log.debug(f"No embedding model specified for collection '{name}', using SentenceTransformer")
-    return SentenceTransformerEmbeddingFunction(
-        model_name=DEFAULT_SENTENCE_TRANSFORMER_MODEL,
-    )
+    try:
+        return SentenceTransformerEmbeddingFunction(
+            model_name=DEFAULT_SENTENCE_TRANSFORMER_MODEL,
+        )
+    except Exception as e:
+        # sentence_transformers is an optional dependency. Without it the
+        # default embedder cannot be built, so leave the choice to Chroma
+        # rather than failing to hand back the collection at all.
+        log.warning(f"Could not build the default embedding function for collection '{name}': {e}")
+        return None
 
 
 def get_collection(name: str) -> chromadb.Collection:
@@ -161,6 +168,8 @@ def get_collection(name: str) -> chromadb.Collection:
     client = get_chroma_client()
     collection = client.get_collection(name=name)
     embedding_function = _get_embedding_function_for_metadata(collection.metadata, name)
+    if embedding_function is None:
+        return collection
     return client.get_collection(name=name, embedding_function=embedding_function)  # type: ignore
 
 

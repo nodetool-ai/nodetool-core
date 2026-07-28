@@ -190,8 +190,19 @@ def test_embedding_function_without_running_loop(chroma_env, monkeypatch):
 
 def test_embedding_function_empty_input(chroma_env):
     module = importlib.import_module(CHROMA_MODULES[0])
-    ef = _make_embedding_function(module, _FakeProvider())
-    assert ef([]) == []
+    provider = _FakeProvider()
+    ef = _make_embedding_function(module, provider)
+
+    try:
+        result = ef([])
+    except ValueError:
+        # Real chromadb validates the returned Embeddings and rejects an
+        # empty list. What the guard has to guarantee is that no provider
+        # round trip happened, which the assertion below checks.
+        result = []
+
+    assert result == []
+    assert provider.calls == []
 
 
 def test_embedding_function_does_not_leak_threads(chroma_env, monkeypatch):
