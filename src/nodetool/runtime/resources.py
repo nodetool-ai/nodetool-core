@@ -90,12 +90,13 @@ class ResourceScope:
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self._closed = True
         if self._token is not None:
+            token, self._token = self._token, None
             try:
-                _current_scope.reset(self._token)
-            except ValueError:
+                _current_scope.reset(token)
+            except (ValueError, RuntimeError) as e:
                 log.warning(
-                    "ResourceScope exited in a different context than it was entered; "
-                    "the current scope contextvar was left untouched."
+                    "ResourceScope exited in a different context than it was entered "
+                    f"({e}); the current scope contextvar was left untouched."
                 )
         if self._http_client is not None and self._owns_http_client:
             try:
