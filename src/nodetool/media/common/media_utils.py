@@ -105,17 +105,19 @@ async def create_video_thumbnail(input_io: IO, width: int, height: int) -> Bytes
     Generate a thumbnail image from a video file using OpenCV.
     """
     # Create a temporary file to store the video
-    temp_file = tempfile.NamedTemporaryFile(delete=False)
-    temp_file_path = temp_file.name  # Store the temporary file path
-
-    try:
-        with temp_file:
+    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+        temp_file_path = temp_file.name  # Store the temporary file path
+        try:
             # Write the input BytesIO object to the temporary file
             input_io.seek(0)
             temp_file.write(input_io.read())
             temp_file.flush()
-        input_io.seek(0)
+            input_io.seek(0)
+        except BaseException:
+            os.remove(temp_file_path)
+            raise
 
+    try:
         # Use ffmpeg to generate thumbnail
         # select the most representative frame in a given sequence of consecutive frames
         # automatically from the video.
@@ -160,17 +162,19 @@ async def get_video_duration(input_io: BytesIO) -> float | None:
     Returns:
         float: The duration of the media file in seconds.
     """
-    temp_file = tempfile.NamedTemporaryFile(delete=False)
-    temp_file_path = temp_file.name  # Store the temporary file path
-
-    try:
-        with temp_file:
+    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+        temp_file_path = temp_file.name  # Store the temporary file path
+        try:
             # write the input bytes to the temporary file
             input_io.seek(0)
             temp_file.write(input_io.read())
             temp_file.flush()
-        input_io.seek(0)
+            input_io.seek(0)
+        except BaseException:
+            os.remove(temp_file_path)
+            raise
 
+    try:
         cmd = [
             FFPROBE_PATH,
             "-v",

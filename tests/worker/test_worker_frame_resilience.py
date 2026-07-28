@@ -18,6 +18,7 @@ from typing import Any, Awaitable, Callable, cast
 
 import msgpack
 import pytest
+import pytest_asyncio
 import websockets
 
 import nodetool.worker.stdio_server as stdio_server_mod
@@ -157,11 +158,11 @@ def test_salvage_request_id():
 # ── websocket: malformed frames ──────────────────────────────────────────
 
 
-@pytest.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def ws_server():
     worker = WorkerServer()
     worker.set_nodes_metadata([{"node_type": "fake.Node", "properties": []}])
-    host, port, stop_event, task = await start_server(port=0, worker=worker)
+    host, port, stop_event, task = await start_server(host="127.0.0.1", port=0, worker=worker)
     yield host, port
     stop_event.set()
     await task
@@ -172,6 +173,7 @@ async def _ws_recv(ws) -> dict:
     return msgpack.unpackb(raw, raw=False)
 
 
+@pytest.mark.asyncio(loop_scope="function")
 async def test_websocket_survives_malformed_binary_frame(ws_server):
     host, port = ws_server
     async with websockets.connect(f"ws://{host}:{port}") as ws:
@@ -187,6 +189,7 @@ async def test_websocket_survives_malformed_binary_frame(ws_server):
         assert reply["request_id"] == "req-2"
 
 
+@pytest.mark.asyncio(loop_scope="function")
 async def test_websocket_survives_text_frame(ws_server):
     host, port = ws_server
     async with websockets.connect(f"ws://{host}:{port}") as ws:
@@ -199,6 +202,7 @@ async def test_websocket_survives_text_frame(ws_server):
         assert reply["type"] == "discover"
 
 
+@pytest.mark.asyncio(loop_scope="function")
 async def test_websocket_rejects_non_map_frame(ws_server):
     host, port = ws_server
     async with websockets.connect(f"ws://{host}:{port}") as ws:
@@ -243,3 +247,38 @@ async def test_stdio_transport_send_rejects_short_write(monkeypatch):
     transport = StdioTransport()
     with pytest.raises(OSError, match="Short write"):
         await transport.send(b"payload")
+
+
+# ── provider cache: bounded LRU ──────────────────────────────────────────
+
+
+def test_provider_cache_is_bounded_and_releases_evicted_instances(monkeypatch):
+    import nodetool.providers.base as providers_base
+    from nodetool.worker import provider_handler
+
+    closed: list[Any] = []
+
+    class _FakeProvider:
+        def __init__(self, secrets: dict[str, str], **_kwargs: Any) -> None:
+            self.secrets = secrets
+
+        def close(self) -> None:
+            closed.append(self)
+
+    monkeypatch.setattr(provider_handler, "_providers_imported", True)
+    monkeypatch.setattr(
+        providers_base, "get_registered_provider", lambda _enum: (_FakeProvider, {}), raising=False
+    )
+    monkeypatch.setattr(provider_handler, "PROVIDER_CACHE_MAX_SIZE", 2)
+    monkeypatch.setattr(provider_handler, "_provider_cache", provider_handler.OrderedDict())
+
+    a = provider_handler._get_provider("huggingface", {"HF_TOKEN": "a"})
+    b = provider_handler._get_provider("huggingface", {"HF_TOKEN": "b"})
+    # Cache hit keeps the same instance and refreshes recency for "a".
+    assert provider_handler._get_provider("huggingface", {"HF_TOKEN": "a"}) is a
+    c = provider_handler._get_provider("huggingface", {"HF_TOKEN": "c"})
+
+    assert len(provider_handler._provider_cache) == 2
+    assert closed == [b]  # least-recently-used was evicted and released
+    assert provider_handler._get_provider("huggingface", {"HF_TOKEN": "c"}) is c
+    assert provider_handler._get_provider("huggingface", {"HF_TOKEN": "a"}) is a

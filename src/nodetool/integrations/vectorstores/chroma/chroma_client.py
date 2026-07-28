@@ -114,6 +114,35 @@ def get_chroma_client(
         return chromadb.PersistentClient(persist_directory, settings)
 
 
+def _get_embedding_function_for_metadata(metadata: dict | None, name: str):
+    """
+    Build the embedding function configured in a collection's metadata.
+
+    Falls back to SentenceTransformer when the collection does not record an
+    embedding model.
+    """
+    from nodetool.integrations.vectorstores.chroma.provider_embedding_function import (
+        DEFAULT_SENTENCE_TRANSFORMER_MODEL,
+        get_provider_embedding_function,
+    )
+
+    metadata = metadata or {}
+    model = metadata.get("embedding_model")
+    provider = metadata.get("embedding_provider")
+
+    if model:
+        log.debug(f"Getting embedding function for collection '{name}' with model '{model}'")
+        return get_provider_embedding_function(
+            embedding_model=model,
+            provider=provider,
+        )
+
+    log.debug(f"No embedding model specified for collection '{name}', using SentenceTransformer")
+    return SentenceTransformerEmbeddingFunction(
+        model_name=DEFAULT_SENTENCE_TRANSFORMER_MODEL,
+    )
+
+
 def get_collection(name: str) -> chromadb.Collection:
     """
     Get a collection by name.
@@ -130,7 +159,9 @@ def get_collection(name: str) -> chromadb.Collection:
         raise ValueError("Collection name cannot be empty")
 
     client = get_chroma_client()
-    return client.get_collection(name=name)
+    collection = client.get_collection(name=name)
+    embedding_function = _get_embedding_function_for_metadata(collection.metadata, name)
+    return client.get_collection(name=name, embedding_function=embedding_function)  # type: ignore
 
 
 DEFAULT_SEPARATORS = [
@@ -195,32 +226,13 @@ def get_all_collections() -> list[chromadb.Collection]:
     Returns:
         List[Collection]: List of ChromaDB collections with appropriate embedding functions
     """
-    from nodetool.integrations.vectorstores.chroma.provider_embedding_function import (
-        DEFAULT_SENTENCE_TRANSFORMER_MODEL,
-        get_provider_embedding_function,
-    )
-
     client = get_chroma_client()
     collections = client.list_collections()
 
     result = []
 
     for collection in collections:
-        metadata = collection.metadata or {}
-        model = metadata.get("embedding_model")
-        provider = metadata.get("embedding_provider")
-
-        if model:
-            log.debug(f"Getting embedding function for collection '{collection.name}' with model '{model}'")
-            embedding_function = get_provider_embedding_function(
-                embedding_model=model,
-                provider=provider,
-            )
-        else:
-            log.debug(f"No embedding model specified for collection '{collection.name}', using SentenceTransformer")
-            embedding_function = SentenceTransformerEmbeddingFunction(
-                model_name=DEFAULT_SENTENCE_TRANSFORMER_MODEL,
-            )
+        embedding_function = _get_embedding_function_for_metadata(collection.metadata, collection.name)
 
         result.append(
             client.get_collection(name=collection.name, embedding_function=embedding_function)  # type: ignore

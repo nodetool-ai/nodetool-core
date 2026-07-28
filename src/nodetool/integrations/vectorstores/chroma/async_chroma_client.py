@@ -58,7 +58,7 @@ class AsyncChromaCollection:
         self,
         collection: Any,
         executor: _SingleThreadExecutor,
-        client: "AsyncChromaClient | None" = None,
+        client: AsyncChromaClient | None = None,
     ) -> None:
         self._collection = collection
         self._executor = executor

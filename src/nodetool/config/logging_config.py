@@ -51,6 +51,20 @@ def configure_logging(
     if level is None:
         level = Environment.get_log_level()
 
+    # Resolve format and datefmt. The environment is read here rather than at
+    # import time because `.env` files are only loaded lazily by
+    # Environment.load_settings(), long after this module is imported.
+    use_color = _supports_color() and console_output
+    env_fmt = os.getenv("NODETOOL_LOG_FORMAT")
+    plain_fmt = env_fmt if env_fmt is not None else _DEFAULT_FORMAT
+    if fmt is None:
+        if env_fmt is None and use_color:
+            fmt = "\x1b[90m%(asctime)s\x1b[0m | %(levelname_color)s | \x1b[36m%(name)s\x1b[0m | %(message)s"
+        else:
+            fmt = plain_fmt
+    if datefmt is None:
+        datefmt = os.getenv("NODETOOL_LOG_DATEFMT", _DEFAULT_DATEFMT)
+
     # Determine if configuration needs to change
     new_config = {
         "level": level,
@@ -65,15 +79,6 @@ def configure_logging(
         return level
 
     _current_config = new_config
-
-    # Resolve format and datefmt
-    use_color = _supports_color() and console_output
-    if fmt is None:
-        if os.getenv("NODETOOL_LOG_FORMAT") is None and use_color:
-            fmt = "\x1b[90m%(asctime)s\x1b[0m | %(levelname_color)s | \x1b[36m%(name)s\x1b[0m | %(message)s"
-        else:
-            fmt = _DEFAULT_FORMAT
-    datefmt = datefmt if datefmt is not None else _DEFAULT_DATEFMT
 
     root = logging.getLogger()
 
@@ -126,7 +131,7 @@ def configure_logging(
         log_file_path = Path(log_file)
         log_file_path.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(log_file_path)
-        file_handler.setFormatter(logging.Formatter(fmt=_DEFAULT_FORMAT, datefmt=datefmt))
+        file_handler.setFormatter(logging.Formatter(fmt=plain_fmt, datefmt=datefmt))
         root.addHandler(file_handler)
 
     _set_third_party_levels()
