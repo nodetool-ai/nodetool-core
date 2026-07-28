@@ -101,7 +101,7 @@ class TestFetchFileUri:
         mock_file.read.return_value = test_data
         mock_open.return_value.__enter__.return_value = mock_file
 
-        mime, data = _fetch_file_uri("file:///path/to/file.txt")
+        mime, data = _fetch_file_uri("file:///path/to/file.txt", workspace_dir="/workspace")
 
         assert data == test_data
         assert mime == "text/plain"
@@ -115,7 +115,7 @@ class TestFetchFileUri:
         mock_file.read.return_value = test_data
         mock_open.return_value.__enter__.return_value = mock_file
 
-        mime, data = _fetch_file_uri("file:///path/to/file.unknown")
+        mime, data = _fetch_file_uri("file:///path/to/file.unknown", workspace_dir="/workspace")
 
         assert data == test_data
         assert mime == "application/octet-stream"
@@ -363,7 +363,7 @@ class TestFetchUriBytesAndMimeAsync:
         mock_open.return_value.__enter__.return_value = mock_file
 
         uri = "file:///tmp/test.txt"
-        mime, result = await fetch_uri_bytes_and_mime_async(uri)
+        mime, result = await fetch_uri_bytes_and_mime_async(uri, workspace_dir="/workspace")
 
         assert result == test_data
         assert mime == "text/plain"

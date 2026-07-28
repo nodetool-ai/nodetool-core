@@ -164,12 +164,21 @@ class Channel(Generic[T]):
         """
         self._closed = True
         async with self._lock:
-            for q in self._subscribers.values():
+            for q in list(self._subscribers.values()):
                 try:
-                    await q.put(_STOP_SIGNAL)
+                    # Never await here: a blocking put on a full queue would hang
+                    # close() forever while holding the lock, which in turn wedges
+                    # subscriber cleanup and ChannelManager teardown.
+                    q.put_nowait(_STOP_SIGNAL)
                 except asyncio.QueueFull:
-                    # Queue is full; subscriber will see closed flag on next iteration
-                    log.debug(f"Queue full when closing channel {self.name}, subscriber will exit on next poll")
+                    # Queue is full; drop the oldest item to make room so the stop
+                    # signal is always delivered and the subscriber is woken up.
+                    log.debug(f"Queue full when closing channel {self.name}, dropping oldest item for stop signal")
+                    try:
+                        q.get_nowait()
+                        q.put_nowait(_STOP_SIGNAL)
+                    except (asyncio.QueueEmpty, asyncio.QueueFull) as e:
+                        log.debug(f"Could not deliver stop signal on channel {self.name}: {type(e).__name__}")
                 except RuntimeError as e:
                     # Queue might be closed or event loop issues
                     log.debug(f"RuntimeError closing channel {self.name}: {e}")

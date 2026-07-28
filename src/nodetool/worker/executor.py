@@ -229,9 +229,13 @@ async def execute_node(
             secrets=secrets,
             cancel_event=cancel_event,
         )
-        pump_handle = _start_progress_pump(ctx, emit_progress)
-        temp_dir = tempfile.mkdtemp(prefix="nodetool_worker_")
+        temp_dir: str | None = None
+        pump_handle: tuple[asyncio.Task, asyncio.Event] | None = None
         try:
+            # Both inside the try so a failure here (e.g. mkdtemp on a
+            # read-only FS) still runs the cleanup in `finally`.
+            temp_dir = tempfile.mkdtemp(prefix="nodetool_worker_")
+            pump_handle = _start_progress_pump(ctx, emit_progress)
             node = await _prepare_node(node_class, fields, input_blobs, temp_dir, ctx)
             if node.is_streaming_output():
                 if emit_chunk is not None:
@@ -245,7 +249,8 @@ async def execute_node(
             return {"outputs": outputs, "blobs": blobs}
         finally:
             await _stop_progress_pump(pump_handle)
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            if temp_dir is not None:
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 async def execute_node_stream(
@@ -380,7 +385,9 @@ async def _stream_streaming_outputs(
             if value is not None:
                 outputs[slot_name] = value
 
-        chunk_outputs, chunk_blobs = _extract_named_outputs(item, ctx)
+        # Drain the blobs captured for this chunk: once emitted they are on the
+        # wire, so holding them would grow the context for the whole request.
+        chunk_outputs, chunk_blobs = _extract_named_outputs(item, ctx, drain=True)
         await emit_chunk({"outputs": chunk_outputs, "blobs": chunk_blobs})
 
     return outputs
@@ -389,9 +396,15 @@ async def _stream_streaming_outputs(
 def _extract_named_outputs(
     result: dict[str, Any],
     ctx: WorkerContext,
+    drain: bool = False,
 ) -> tuple[dict[str, Any], dict[str, bytes]]:
-    """Serialize a named-output mapping and extract blob-backed asset refs."""
-    output_blobs = ctx.get_output_blobs()
+    """Serialize a named-output mapping and extract blob-backed asset refs.
+
+    With ``drain=True`` the context's captured blobs are consumed, releasing
+    their memory. Callers that need the full set at the end (the non-streaming
+    and collect-only paths) must leave it ``False``.
+    """
+    output_blobs = ctx.take_output_blobs() if drain else ctx.get_output_blobs()
     outputs: dict[str, Any] = {}
     blobs: dict[str, bytes] = {}
 

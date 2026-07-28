@@ -1,8 +1,8 @@
 import inspect
-from collections.abc import AsyncGenerator, AsyncIterator, Generator
+from collections.abc import AsyncGenerator, AsyncIterator, Generator, Sequence
 from enum import EnumMeta
 from types import UnionType
-from typing import Any, Callable, Sequence, Union, get_args, get_origin, get_type_hints
+from typing import Any, Callable, Union, get_args, get_origin, get_type_hints
 
 
 def get_return_annotation(func: Callable[..., Any]) -> Any | None:
@@ -53,6 +53,9 @@ def is_optional_type(t):
     """
     Check if a type is an optional type.
 
+    Any union containing ``NoneType`` is optional, regardless of how many
+    other members it has (e.g. ``Optional[Union[str, int]]``).
+
     Args:
         t: The type to check.
 
@@ -62,8 +65,20 @@ def is_optional_type(t):
     if not is_union_type(t):
         return False
 
-    args = get_args(t)
-    return len(args) == 2 and type(None) in args
+    return type(None) in get_args(t)
+
+
+def non_none_union_args(t):
+    """
+    Return the members of a union type excluding ``NoneType``.
+
+    Args:
+        t: The union type to inspect.
+
+    Returns:
+        A tuple of the union members that are not ``NoneType``.
+    """
+    return tuple(a for a in get_args(t) if a is not type(None))
 
 
 def is_enum_type(t):

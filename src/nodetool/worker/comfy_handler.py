@@ -39,6 +39,7 @@ import re
 import struct
 import traceback
 import uuid
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any, Callable
 
@@ -685,6 +686,36 @@ async def _open_model_source(
     return resp, default_name
 
 
+_download_locks: dict[str, asyncio.Lock] = {}
+_download_lock_users: dict[str, int] = {}
+
+
+@asynccontextmanager
+async def _target_download_lock(target: Path):
+    """Serialize downloads writing to the same target file.
+
+    Concurrent requests for one model would otherwise share a single `.part`
+    path and interleave writes at independent offsets, installing a scrambled
+    file. Waiters re-check `target.exists()` afterwards, so they take the fast
+    path when the first download succeeded and retry it when it failed.
+    """
+    key = str(target)
+    lock = _download_locks.get(key)
+    if lock is None:
+        lock = _download_locks[key] = asyncio.Lock()
+    _download_lock_users[key] = _download_lock_users.get(key, 0) + 1
+    try:
+        async with lock:
+            yield
+    finally:
+        remaining = _download_lock_users[key] - 1
+        if remaining > 0:
+            _download_lock_users[key] = remaining
+        else:
+            _download_lock_users.pop(key, None)
+            _download_locks.pop(key, None)
+
+
 async def _handle_models_download(
     data: dict[str, Any],
     request_id: str | None,
@@ -725,75 +756,94 @@ async def _handle_models_download(
         })
 
     try:
-        # With an explicit filename the existence check needs no network —
-        # keeps warm restarts on a populated volume instant and offline-safe.
-        filename = data.get("filename")
-        if filename and not data.get("force"):
-            target = _resolve_model_path(str(folder), str(filename))
-            if target.exists():
-                await report_exists(target, str(filename))
-                return
-
-        timeout = aiohttp.ClientTimeout(total=None, sock_connect=30)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            resp, default_name = await _open_model_source(session, source)
-            async with resp:
-                filename = filename or default_name
-                data["filename"] = filename
+        async with AsyncExitStack() as stack:
+            # With an explicit filename the existence check needs no network —
+            # keeps warm restarts on a populated volume instant and offline-safe.
+            filename = data.get("filename")
+            target: Path | None = None
+            if filename:
                 target = _resolve_model_path(str(folder), str(filename))
-                total = int(resp.headers.get("Content-Length") or 0)
-
+                # Taken before the network round-trip so a duplicate request waits
+                # here and then sees the finished file instead of re-downloading.
+                await stack.enter_async_context(_target_download_lock(target))
                 if target.exists() and not data.get("force"):
                     await report_exists(target, str(filename))
                     return
 
-                target.parent.mkdir(parents=True, exist_ok=True)
-                part_path = target.with_name(target.name + ".part")
-                downloaded = 0
-                last_progress = 0.0
-                loop = asyncio.get_running_loop()
+            timeout = aiohttp.ClientTimeout(total=None, sock_connect=30)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                resp, default_name = await _open_model_source(session, source)
+                async with resp:
+                    filename = filename or default_name
+                    data["filename"] = filename
+                    if target is None:
+                        target = _resolve_model_path(str(folder), str(filename))
+                        await stack.enter_async_context(_target_download_lock(target))
+                    total = int(resp.headers.get("Content-Length") or 0)
 
-                await send_progress(request_id, frame("start", 0, total))
-                try:
-                    with open(part_path, "wb") as out:
-                        async for chunk in resp.content.iter_chunked(1024 * 1024):
-                            if cancel_event.is_set():
-                                raise asyncio.CancelledError()
-                            out.write(chunk)
-                            downloaded += len(chunk)
-                            # Throttle to ~2 frames/sec: transport writes are
-                            # serialized, so awaiting a send per chunk would gate
-                            # download throughput on bridge latency (and a
-                            # multi-GB model would emit thousands of frames).
-                            now = loop.time()
-                            if now - last_progress >= 0.5:
-                                last_progress = now
-                                await send_progress(request_id, frame("progress", downloaded, total))
-                    os.replace(part_path, target)
-                except asyncio.CancelledError:
-                    part_path.unlink(missing_ok=True)
-                    await send_progress(request_id, frame("cancelled", downloaded, total))
+                    if target.exists() and not data.get("force"):
+                        await report_exists(target, str(filename))
+                        return
+
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    part_path = target.with_name(target.name + ".part")
+                    downloaded = 0
+                    last_progress = 0.0
+                    loop = asyncio.get_running_loop()
+
+                    await send_progress(request_id, frame("start", 0, total))
+                    try:
+                        with open(part_path, "wb") as out:
+                            async for chunk in resp.content.iter_chunked(1024 * 1024):
+                                if cancel_event.is_set():
+                                    raise asyncio.CancelledError()
+                                out.write(chunk)
+                                downloaded += len(chunk)
+                                # Throttle to ~2 frames/sec: transport writes are
+                                # serialized, so awaiting a send per chunk would gate
+                                # download throughput on bridge latency (and a
+                                # multi-GB model would emit thousands of frames).
+                                now = loop.time()
+                                if now - last_progress >= 0.5:
+                                    last_progress = now
+                                    await send_progress(request_id, frame("progress", downloaded, total))
+                        # Never install a short read: a truncated body would be
+                        # trusted forever by the exists fast path.
+                        if total and downloaded != total:
+                            raise ComfyError(
+                                f"Model download incomplete: expected {total} bytes, got {downloaded}"
+                            )
+                        os.replace(part_path, target)
+                    except asyncio.CancelledError:
+                        part_path.unlink(missing_ok=True)
+                        await send_progress(request_id, frame("cancelled", downloaded, total))
+                        await send_result(request_id, {
+                            "status": "cancelled",
+                            "folder": folder,
+                            "filename": filename,
+                        })
+                        return
+                    except BaseException:
+                        part_path.unlink(missing_ok=True)
+                        raise
+
+                    await send_progress(request_id, frame("completed", downloaded, downloaded or total))
                     await send_result(request_id, {
-                        "status": "cancelled",
+                        "status": "completed",
                         "folder": folder,
                         "filename": filename,
+                        "path": str(target),
+                        "size_bytes": downloaded,
                     })
-                    return
-                except BaseException:
-                    part_path.unlink(missing_ok=True)
-                    raise
-
-                await send_progress(request_id, frame("completed", downloaded, downloaded or total))
-                await send_result(request_id, {
-                    "status": "completed",
-                    "folder": folder,
-                    "filename": filename,
-                    "path": str(target),
-                    "size_bytes": downloaded,
-                })
     except ComfyError as e:
         await send_progress(request_id, frame("error", 0, 0, error=str(e)))
         raise
+    except Exception as e:
+        # Filesystem/transport failures must surface as an "error" progress
+        # frame too, not just via the generic handler's error message.
+        detail = f"{type(e).__name__}: {e}"
+        await send_progress(request_id, frame("error", 0, 0, error=detail))
+        raise ComfyError(f"Model download failed: {detail}") from e
     finally:
         if request_id:
             cancel_flags.pop(request_id, None)

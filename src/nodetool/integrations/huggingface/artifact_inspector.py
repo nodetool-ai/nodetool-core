@@ -27,6 +27,23 @@ class ArtifactDetection:
     evidence: list[str]
 
 
+# Inspectors report low-confidence "unknown" results instead of giving up, so
+# results are only accepted when they actually identify something. Weaker
+# results are kept as a last-resort fallback.
+_MIN_ACCEPTED_CONFIDENCE = 0.1
+
+
+def _is_identified(result: ArtifactDetection | None) -> bool:
+    """Return True when a detection actually names a family and component."""
+    if result is None:
+        return False
+    if not result.family or result.family == "unknown":
+        return False
+    if not result.component or result.component == "unknown":
+        return False
+    return (result.confidence or 0.0) >= _MIN_ACCEPTED_CONFIDENCE
+
+
 def inspect_paths(paths: Sequence[str | Path]) -> ArtifactDetection | None:
     """Inspect a collection of cached artifact files and return the strongest signal."""
     if not paths:
@@ -39,32 +56,41 @@ def inspect_paths(paths: Sequence[str | Path]) -> ArtifactDetection | None:
     config_files = [p for p in paths if str(p).lower().endswith("config.json")]
     model_index_files = [p for p in paths if str(p).lower().endswith("model_index.json")]
 
+    fallback: ArtifactDetection | None = None
+
+    def consider(res: ArtifactDetection | None) -> ArtifactDetection | None:
+        nonlocal fallback
+        if _is_identified(res):
+            return res
+        if res is not None and fallback is None:
+            fallback = res
+        return None
+
     if safetensors:
         from nodetool.integrations.huggingface.safetensors_inspector import (
             detect_model as detect_safetensors_model,
         )
 
-        res = _wrap_stf(detect_safetensors_model(safetensors, framework="np", max_shape_reads=6))
-
+        res = consider(_wrap_stf(detect_safetensors_model(safetensors, framework="np", max_shape_reads=6)))
         if res:
             return res
 
     if ggufs:
-        res = detect_gguf(ggufs)
+        res = consider(detect_gguf(ggufs))
         if res:
             return res
 
     if torch_bins:
-        res = detect_torch_bin(torch_bins)
+        res = consider(detect_torch_bin(torch_bins))
         if res:
             return res
 
     if config_files or model_index_files:
-        res = detect_from_json(config_files, model_index_files)
+        res = consider(detect_from_json(config_files, model_index_files))
         if res:
             return res
 
-    return None
+    return fallback
 
 
 def _wrap_stf(result: STFDetectionResult | None) -> ArtifactDetection | None:
@@ -230,12 +256,8 @@ def detect_torch_bin(paths: Sequence[str | Path]) -> ArtifactDetection | None:
             evidence=evidence,
         )
 
-    return ArtifactDetection(
-        family=None,
-        component=None,
-        confidence=None,
-        evidence=[],
-    )
+    # No signature matched: report no detection so other inspectors can run.
+    return None
 
 
 def _sample_torch_keys(path: Path, limit: int = 200) -> list[str]:

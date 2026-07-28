@@ -6,6 +6,8 @@ allowing collections to use OpenAI, Ollama, or other provider APIs for embedding
 """
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable, Coroutine
 
 from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
 
@@ -17,6 +19,48 @@ log = get_logger(__name__)
 
 # Default fallback model for SentenceTransformer
 DEFAULT_SENTENCE_TRANSFORMER_MODEL = "all-MiniLM-L6-v2"
+
+
+def _run_coroutine_sync(make_coro: Callable[[], Coroutine[Any, Any, Any]]) -> Any:
+    """Run a coroutine to completion from synchronous code.
+
+    Chroma's `EmbeddingFunction` interface is synchronous, so it may be invoked
+    from inside a running event loop. In that case we first try `nest_asyncio`
+    (cheap, and preserves the current context such as ResourceScope). If it is
+    unavailable or refuses to re-enter the loop, we run the coroutine on a
+    dedicated worker thread with its own event loop and block on the result.
+
+    Args:
+        make_coro: Factory returning a fresh coroutine. A factory is required
+            because a coroutine object cannot be awaited more than once.
+
+    Returns:
+        The coroutine's result.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running event loop, safe to use asyncio.run()
+        return asyncio.run(make_coro())
+
+    # We're in an async context - try nest_asyncio to preserve ResourceScope
+    coro = make_coro()
+    try:
+        import nest_asyncio
+
+        nest_asyncio.apply()
+        return loop.run_until_complete(coro)
+    except (ImportError, RuntimeError) as e:
+        coro.close()
+        log.warning(
+            f"Running in async context but the running loop cannot be re-entered ({e}). "
+            "Embeddings will be generated on a separate thread without ResourceScope. "
+            "Install nest_asyncio for proper context propagation."
+        )
+
+    # Run on a separate thread with its own event loop and block on the result.
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="chroma-embed") as executor:
+        return executor.submit(lambda: asyncio.run(make_coro())).result()
 
 
 class ProviderEmbeddingFunction(EmbeddingFunction[Documents]):
@@ -76,43 +120,13 @@ class ProviderEmbeddingFunction(EmbeddingFunction[Documents]):
         provider = self._get_provider()
 
         # Run the async generate_embedding in a sync context
-        try:
-            loop = asyncio.get_running_loop()
-            # We're in an async context - try nest_asyncio to preserve ResourceScope
-            try:
-                import nest_asyncio
-                nest_asyncio.apply()
-                # Use the running loop with nest_asyncio to preserve context
-                embeddings = loop.run_until_complete(
-                    provider.generate_embedding(
-                        text=list(input),
-                        model=self._model,
-                        **self._kwargs,
-                    )
-                )
-            except ImportError:
-                log.warning(
-                    "Running in async context but nest_asyncio not available. "
-                    "Embeddings will be generated in a new loop without ResourceScope. "
-                    "Install nest_asyncio for proper context propagation."
-                )
-                # Fall back to new loop (loses ResourceScope but works)
-                embeddings = asyncio.run(
-                    provider.generate_embedding(
-                        text=list(input),
-                        model=self._model,
-                        **self._kwargs,
-                    )
-                )
-        except RuntimeError:
-            # No running event loop, safe to use asyncio.run()
-            embeddings = asyncio.run(
-                provider.generate_embedding(
-                    text=list(input),
-                    model=self._model,
-                    **self._kwargs,
-                )
+        embeddings = _run_coroutine_sync(
+            lambda: provider.generate_embedding(
+                text=list(input),
+                model=self._model,
+                **self._kwargs,
             )
+        )
 
         return list(embeddings)  # type: ignore[return-value]
 

@@ -9,13 +9,18 @@ so the same code path serves both the WebSocket and stdio workers.
 
 import asyncio
 import hashlib
+import os
 import sys
 import traceback
+from collections import OrderedDict
 from typing import Any
 
 # Cached provider instances, keyed by (provider_id, secrets hash) so a
 # different / rotated secret set never reuses another caller's instance.
-_provider_cache: dict[tuple[str, str], Any] = {}
+# Bounded LRU: each instance can pin loaded model weights, so an unbounded
+# cache would leak a full model copy per rotated token / per user secrets set.
+PROVIDER_CACHE_MAX_SIZE = max(1, int(os.environ.get("NODETOOL_PROVIDER_CACHE_SIZE", "4")))
+_provider_cache: "OrderedDict[tuple[str, str], Any]" = OrderedDict()
 _providers_imported = False
 
 
@@ -28,6 +33,24 @@ def _hash_secrets(secrets: dict[str, str]) -> str:
         h.update(str(value).encode("utf-8"))
         h.update(b"\x00")
     return h.hexdigest()
+
+
+def _release_provider(instance: Any) -> None:
+    """Best-effort release of an evicted provider's resources (model weights)."""
+    for hook_name in ("close", "unload", "unload_model"):
+        hook = getattr(instance, hook_name, None)
+        if not callable(hook):
+            continue
+        try:
+            result = hook()
+            if asyncio.iscoroutine(result):
+                try:
+                    asyncio.get_running_loop().create_task(result)
+                except RuntimeError:
+                    result.close()
+        except Exception as e:  # pragma: no cover — release is best-effort
+            print(f"Warning: failed to release provider via {hook_name}(): {e}", file=sys.stderr)
+        return
 
 
 def _ensure_providers_imported() -> None:
@@ -59,13 +82,19 @@ def _get_provider(provider_id: str, secrets: dict[str, str]) -> Any:
     _ensure_providers_imported()
 
     cache_key = (provider_id, _hash_secrets(secrets))
-    if cache_key in _provider_cache:
-        return _provider_cache[cache_key]
+    cached = _provider_cache.get(cache_key)
+    if cached is not None:
+        _provider_cache.move_to_end(cache_key)
+        return cached
 
     provider_enum = Provider(provider_id)
     cls, kwargs = get_registered_provider(provider_enum)
     instance = cls(secrets=secrets, **kwargs)
     _provider_cache[cache_key] = instance
+    _provider_cache.move_to_end(cache_key)
+    while len(_provider_cache) > PROVIDER_CACHE_MAX_SIZE:
+        _, evicted = _provider_cache.popitem(last=False)
+        _release_provider(evicted)
     return instance
 
 

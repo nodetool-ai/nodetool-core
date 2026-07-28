@@ -21,6 +21,12 @@ except Exception as exc:  # pragma: no cover
 
 PathLike = str | os.PathLike
 
+# OpenAI-CLIP checkpoints prefix the text tower with ``transformer.`` while
+# OpenCLIP does not. The lookbehind keeps the OpenCLIP pattern from also
+# matching ``transformer.text_model.*`` through its ``\.`` alternative.
+_OPENAI_CLIP_TE_PATTERN = r"(?:^|\.)transformer\.text_model\.encoder\.layers\.0\.self_attn\.q_proj\.weight$"
+_OPENCLIP_TE_PATTERN = r"(?:^|\.)(?<!transformer\.)text_model\.encoder\.layers\.0\.self_attn\.q_proj\.weight$"
+
 
 @dataclass
 class DetectionResult:
@@ -284,20 +290,14 @@ def _classify_diffusion(index: _Index, framework: str, max_shape_reads: int) -> 
             keys,
             r"(?:^|\.)(text_model|transformer\.text_model)\.encoder\.layers\.0\.self_attn\.q_proj\.weight$",
         ):
-            if _has_regex(
-                keys,
-                r"(^|\.)(text_model)\.encoder\.layers\.0\.self_attn\.q_proj\.weight$",
-            ):
+            if _has_regex(keys, _OPENCLIP_TE_PATTERN):
                 if family == "unknown":
                     family = "sd2"
                     confidence = 0.92
                 else:
                     confidence = max(confidence, 0.92)
                 evidence.append("Found OpenCLIP naming: text_model.encoder.layers.0.self_attn.q_proj.weight")
-            if _has_regex(
-                keys,
-                r"(^|\.)(transformer\.text_model)\.encoder\.layers\.0\.self_attn\.q_proj\.weight$",
-            ):
+            if _has_regex(keys, _OPENAI_CLIP_TE_PATTERN):
                 if family == "unknown":
                     family = "sd1"
                     confidence = 0.92
@@ -345,25 +345,20 @@ def _classify_diffusion(index: _Index, framework: str, max_shape_reads: int) -> 
         )
 
     if component == "text_encoder":
-        if _has_regex(
-            keys,
-            r"(^|\.)(text_model)\.encoder\.layers\.0\.self_attn\.q_proj\.weight$",
-        ):
-            return DetectionResult(
-                family="openclip-text-encoder",
-                component=component,
-                confidence=0.95,
-                evidence=["OpenCLIP text encoder naming convention detected"],
-            )
-        if _has_regex(
-            keys,
-            r"(^|\.)(transformer\.text_model)\.encoder\.layers\.0\.self_attn\.q_proj\.weight$",
-        ):
+        # Check the more specific ``transformer.``-prefixed naming first.
+        if _has_regex(keys, _OPENAI_CLIP_TE_PATTERN):
             return DetectionResult(
                 family="clip-text-encoder",
                 component=component,
                 confidence=0.95,
                 evidence=["OpenAI CLIP text encoder naming convention detected"],
+            )
+        if _has_regex(keys, _OPENCLIP_TE_PATTERN):
+            return DetectionResult(
+                family="openclip-text-encoder",
+                component=component,
+                confidence=0.95,
+                evidence=["OpenCLIP text encoder naming convention detected"],
             )
         return DetectionResult(
             family="text-encoder-unknown",

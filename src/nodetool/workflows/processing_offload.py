@@ -122,7 +122,7 @@ def _numpy_audio_to_mp3_bytes(arr: Any, sample_rate: int = DEFAULT_AUDIO_SAMPLE_
     if audio_arr.dtype == np.int16:
         raw = audio_arr.tobytes()
     elif audio_arr.dtype in (np.float32, np.float64, np.float16):
-        raw = (audio_arr * (2**14)).astype(np.int16).tobytes()
+        raw = (np.clip(audio_arr, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
     else:
         raise ValueError(f"Unsupported audio ndarray dtype {audio_arr.dtype}")
 
@@ -148,7 +148,7 @@ def _numpy_audio_to_wav_bytes(arr: Any, sample_rate: int = DEFAULT_AUDIO_SAMPLE_
     if audio_arr.dtype == np.int16:
         raw = audio_arr.tobytes()
     elif audio_arr.dtype in (np.float32, np.float64, np.float16):
-        raw = (audio_arr * (2**14)).astype(np.int16).tobytes()
+        raw = (np.clip(audio_arr, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
     else:
         raise ValueError(f"Unsupported audio ndarray dtype {audio_arr.dtype}")
 
@@ -205,10 +205,26 @@ def _audio_segment_to_numpy(
     # ⚡ Bolt Optimization: Use np.frombuffer directly on raw_data to avoid
     # the massive memory/CPU overhead of get_array_of_samples() intermediate object
     dtype_map = {1: np.int8, 2: np.int16, 4: np.int32}
-    dtype = dtype_map.get(segment.sample_width, np.int16)
-    samples = np.frombuffer(segment.raw_data, dtype=dtype)
+    sample_width = int(segment.sample_width)
+    raw_data = segment.raw_data
+    if sample_width == 3:
+        # 24-bit PCM has no numpy dtype: widen each packed little-endian 3-byte
+        # sample into the high bytes of an int32 (this also scales it to the
+        # full int32 range, matching max_value below).
+        packed = np.frombuffer(raw_data, dtype=np.uint8)
+        if packed.size % 3 != 0:
+            raise ValueError("24-bit audio data length is not a multiple of 3 bytes")
+        widened = np.zeros((packed.size // 3, 4), dtype=np.uint8)
+        widened[:, 1:] = packed.reshape(-1, 3)
+        samples = widened.view(np.int32).reshape(-1)
+        max_value = np.float32(2**31)
+    else:
+        dtype = dtype_map.get(sample_width)
+        if dtype is None:
+            raise ValueError(f"Unsupported audio sample width: {sample_width} bytes")
+        samples = np.frombuffer(raw_data, dtype=dtype)
+        max_value = np.float32(2 ** (8 * sample_width - 1))
 
-    max_value = np.float32(2 ** (8 * segment.sample_width - 1))
     samples = samples.astype(np.float32) / max_value
     return samples, segment.frame_rate, segment.channels
 

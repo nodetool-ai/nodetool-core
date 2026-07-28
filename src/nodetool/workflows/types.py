@@ -31,7 +31,7 @@ class JobUpdate(BaseModel):
     duration: float | None = None
 
 
-def sanitize_memory_uris_for_client(value: Any) -> Any:
+def sanitize_memory_uris_for_client(value: Any, _seen: set[int] | None = None) -> Any:
     """
     Recursively sanitize memory:// URIs from values before sending to clients.
 
@@ -43,6 +43,8 @@ def sanitize_memory_uris_for_client(value: Any) -> Any:
 
     Args:
         value: Any Python value that might contain AssetRef objects with memory:// URIs
+        _seen: Internal set of object ids already being sanitized, used to guard
+            against infinite recursion on cyclic structures.
 
     Returns:
         The value with all memory:// URIs sanitized
@@ -64,30 +66,48 @@ def sanitize_memory_uris_for_client(value: Any) -> Any:
                     # No data or asset_id, clear the URI
                     sanitized["uri"] = ""
                 # Recursively sanitize other fields
-                return {k: sanitize_memory_uris_for_client(v) if k not in ("uri", "data", "asset_id") else v
+                return {k: sanitize_memory_uris_for_client(v, _seen) if k not in ("uri", "data", "asset_id") else v
                         for k, v in sanitized.items()}
             else:
                 # Recursively sanitize nested values
-                return {k: sanitize_memory_uris_for_client(v) for k, v in value.items()}
+                return {k: sanitize_memory_uris_for_client(v, _seen) for k, v in value.items()}
         else:
             # Regular dict, recursively sanitize all values
-            return {k: sanitize_memory_uris_for_client(v) for k, v in value.items()}
+            return {k: sanitize_memory_uris_for_client(v, _seen) for k, v in value.items()}
     elif isinstance(value, list):
-        return [sanitize_memory_uris_for_client(item) for item in value]
+        return [sanitize_memory_uris_for_client(item, _seen) for item in value]
     elif isinstance(value, tuple):
-        return tuple(sanitize_memory_uris_for_client(item) for item in value)
-    elif hasattr(value, "model_copy") and hasattr(value, "uri"):
-        # Handle Pydantic model AssetRef objects
+        return tuple(sanitize_memory_uris_for_client(item, _seen) for item in value)
+    elif hasattr(value, "model_copy") and hasattr(value, "model_fields"):
+        # Handle Pydantic models: sanitize an own memory:// uri and recurse into
+        # all other fields so nested AssetRefs are sanitized as well.
+        if _seen is None:
+            _seen = set()
+        if id(value) in _seen:
+            # Cyclic structure, stop descending
+            return value
+        _seen = _seen | {id(value)}
+
+        updates: dict[str, Any] = {}
         uri = getattr(value, "uri", None)
         if isinstance(uri, str) and uri.startswith("memory://"):
             data = getattr(value, "data", None)
             asset_id = getattr(value, "asset_id", None)
-            if data is not None:
-                return value.model_copy(update={"uri": ""})
-            elif asset_id:
-                return value.model_copy(update={"uri": f"asset://{asset_id}"})
+            if data is None and asset_id:
+                updates["uri"] = f"asset://{asset_id}"
             else:
-                return value.model_copy(update={"uri": ""})
+                updates["uri"] = ""
+
+        for field_name in type(value).model_fields:
+            if field_name in ("uri", "data", "asset_id"):
+                continue
+            field_value = getattr(value, field_name, None)
+            sanitized_field = sanitize_memory_uris_for_client(field_value, _seen)
+            if sanitized_field is not field_value:
+                updates[field_name] = sanitized_field
+
+        if updates:
+            return value.model_copy(update=updates)
         return value
     else:
         return value

@@ -23,6 +23,51 @@ from nodetool.worker.protocol import MAX_BRIDGE_FRAME_SIZE, WorkerProtocolServer
 from nodetool.worker.stdio_stdout_guard import get_protocol_stdout_buffer
 
 
+class FrameDecodeError(Exception):
+    """An inbound frame could not be turned into a message.
+
+    ``recoverable`` is True when the whole frame was consumed and the stream is
+    still in sync, so the server can answer with an ``error`` frame and keep
+    serving. It is False when framing itself is broken (e.g. an oversized length
+    prefix), where resynchronizing is impossible and the connection must end.
+    """
+
+    def __init__(self, message: str, *, recoverable: bool, request_id: str | None = None) -> None:
+        super().__init__(message)
+        self.recoverable = recoverable
+        self.request_id = request_id
+
+
+def salvage_request_id(payload: bytes) -> str | None:
+    """Best-effort extraction of ``request_id`` from an undecodable msgpack frame.
+
+    Scans for the literal map key and reads the string that follows it, so a
+    malformed frame can still be answered with a targeted ``error`` frame
+    instead of leaving the bridge's promise hanging. Returns None when the id
+    cannot be recovered.
+    """
+    idx = payload.find(b"request_id")
+    if idx < 0:
+        return None
+    pos = idx + len(b"request_id")
+    if pos >= len(payload):
+        return None
+    head = payload[pos]
+    if 0xA0 <= head <= 0xBF:  # fixstr
+        size, start = head - 0xA0, pos + 1
+    elif head == 0xD9 and pos + 1 < len(payload):  # str8
+        size, start = payload[pos + 1], pos + 2
+    else:
+        return None
+    raw = payload[start : start + size]
+    if len(raw) < size:
+        return None
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
 class StdioTransport:
     """Async reader/writer for length-prefixed msgpack over stdin/stdout.
 
@@ -46,11 +91,23 @@ class StdioTransport:
             return None
         length = struct.unpack(">I", header)[0]
         if length > MAX_BRIDGE_FRAME_SIZE:
-            raise ValueError(f"Incoming bridge frame exceeds max size ({length} > {MAX_BRIDGE_FRAME_SIZE})")
+            # Framing is broken: there is no safe way to find the next frame.
+            raise FrameDecodeError(
+                f"Incoming bridge frame exceeds max size ({length} > {MAX_BRIDGE_FRAME_SIZE})",
+                recoverable=False,
+            )
         payload = await loop.run_in_executor(None, sys.stdin.buffer.read, length)
         if len(payload) < length:
             return None
-        return decode_message(payload)
+        try:
+            return decode_message(payload)
+        except Exception as e:
+            # The frame was fully consumed, so the stream stays in sync.
+            raise FrameDecodeError(
+                f"Malformed msgpack frame: {e}",
+                recoverable=True,
+                request_id=salvage_request_id(payload),
+            ) from e
 
     async def send(self, data: bytes) -> None:
         """Write a length-prefixed msgpack payload (thread-safe)."""
@@ -59,7 +116,11 @@ class StdioTransport:
             raise ValueError(f"Outgoing bridge frame exceeds max size ({len(data)} > {MAX_BRIDGE_FRAME_SIZE})")
         message = struct.pack(">I", len(data)) + data
         async with self._write_lock:
-            await loop.run_in_executor(None, self._protocol_stdout.write, message)
+            written = await loop.run_in_executor(None, self._protocol_stdout.write, message)
+            # A short write would desynchronize the length-prefixed stream for
+            # good; surface it instead of silently truncating the frame.
+            if written is not None and written != len(message):
+                raise OSError(f"Short write on protocol stdout ({written}/{len(message)} bytes)")
             await loop.run_in_executor(None, self._protocol_stdout.flush)
 
     async def send_msg(self, msg: dict[str, Any]) -> None:
@@ -106,19 +167,52 @@ class StdioWorkerServer:
             while True:
                 try:
                     msg = await self._transport.read_message()
-                except (asyncio.IncompleteReadError, ConnectionError):
+                except FrameDecodeError as e:
+                    # Answer the peer at the protocol level instead of dying:
+                    # a single bad frame must not take down the worker.
+                    await self._send_frame_error(e.request_id, str(e))
+                    if e.recoverable:
+                        continue
+                    break
+                except (asyncio.IncompleteReadError, ConnectionError, OSError):
                     break
                 if msg is None:
                     break
+                if not isinstance(msg, dict):
+                    await self._send_frame_error(None, f"Expected a msgpack map, got {type(msg).__name__}")
+                    continue
                 task = asyncio.create_task(self._protocol.dispatch(msg, self._transport))
                 self._tasks.add(task)
                 task.add_done_callback(self._tasks.discard)
         except KeyboardInterrupt:
             pass
+        finally:
+            # Always give in-flight tasks a definitive end, so the bridge never
+            # waits on promises for work that was silently destroyed.
+            await self._drain_tasks()
 
-        # Wait for in-flight tasks to finish
-        if self._tasks:
-            await asyncio.gather(*self._tasks, return_exceptions=True)
+    async def _send_frame_error(self, request_id: str | None, error: str) -> None:
+        """Emit a protocol-level error frame; ignore failures on a dead pipe."""
+        assert self._transport is not None
+        print(f"stdio worker: {error}", file=sys.stderr, flush=True)
+        try:
+            await self._transport.send_msg(
+                {"type": "error", "request_id": request_id, "data": {"error": error}}
+            )
+        except Exception:  # pragma: no cover — pipe already gone
+            pass
+
+    async def _drain_tasks(self) -> None:
+        tasks = list(getattr(self, "_tasks", ()))
+        if not tasks:
+            return
+        try:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        except asyncio.CancelledError:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
 
 
 async def run_stdio_worker(namespaces: list[str] | None = None) -> None:
