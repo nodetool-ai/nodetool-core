@@ -39,6 +39,10 @@ def _get_master_key_lock() -> asyncio.Lock:
     """Return the asyncio lock for the running event loop, creating it on first use."""
     loop = asyncio.get_running_loop()
     with _master_key_locks_guard:
+        # An asyncio.Lock keeps a strong reference to the loop it bound itself
+        # to, so weak keys alone cannot reclaim closed loops: drop them here.
+        for dead_loop in [entry for entry in _master_key_locks if entry.is_closed()]:
+            del _master_key_locks[dead_loop]
         lock = _master_key_locks.get(loop)
         if lock is None:
             lock = asyncio.Lock()

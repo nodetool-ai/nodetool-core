@@ -40,5 +40,5 @@ def test_settings_and_env_still_take_priority(monkeypatch):
 
 def test_unknown_key_without_default_raises(monkeypatch):
     monkeypatch.delenv("TOTALLY_UNKNOWN_SETTING", raising=False)
-    with pytest.raises(Exception):
+    with pytest.raises(Exception, match="TOTALLY_UNKNOWN_SETTING"):
         get_value("TOTALLY_UNKNOWN_SETTING", {}, DEFAULT_ENV_SAMPLE)

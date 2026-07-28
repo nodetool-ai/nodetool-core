@@ -84,7 +84,8 @@ def test_registry_does_not_grow_across_loops():
         cwd=str(Path(__file__).resolve().parents[2]),
     )
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "0", result.stdout + result.stderr
+    # At most the final (not yet pruned) loop may still have an entry.
+    assert int(result.stdout.strip()) <= 1, result.stdout + result.stderr
 
 
 @pytest.mark.no_setup

@@ -538,10 +538,8 @@ def get_value(
     # dict.get's sentinel: many DEFAULT_ENV keys are explicitly mapped to None,
     # and those must not shadow a caller-supplied default.
     if value is None:
-        if key in default_env and default_env[key] is not None:
-            value = default_env[key]
-        else:
-            value = default
+        default_value = default_env.get(key)
+        value = default_value if default_value is not None else default
 
     if value is not NOT_GIVEN:
         return value
