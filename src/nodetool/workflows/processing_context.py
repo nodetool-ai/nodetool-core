@@ -192,12 +192,15 @@ HTTP_HEADERS = {
 }
 
 
-def _resolve_default_device(explicit_device: str | None = None) -> str | None:
+def _resolve_default_device(explicit_device: str | None = None) -> str:
     """
     Pick the default execution device for workflows.
 
     Prefers Apple Metal (MPS) when available so that HuggingFace workloads run on
     the GPU by default, otherwise falls back to CUDA (if available) or CPU.
+
+    Always resolves to a concrete device name — "cpu" is the final fallback — so
+    callers such as ``BaseNode.move_to_device(device: str)`` never see ``None``.
     """
     if explicit_device:
         return explicit_device
@@ -298,7 +301,7 @@ class ProcessingContext:
         self.job_id = job_id
         self.graph = graph or Graph()
         self.message_queue = message_queue if message_queue else queue.Queue()
-        self.device = _resolve_default_device(device)
+        self.device: str = _resolve_default_device(device)
         self.variables: dict[str, Any] = variables if variables else {}
         self.environment: dict[str, str] = Environment.get_environment()
         if environment:

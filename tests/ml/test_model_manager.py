@@ -83,3 +83,61 @@ def test_free_memory_if_snapshot_unavailable_triggers_cleanup(monkeypatch):
 
     assert ModelManager._models == {}
     assert ModelManager._models_by_node == {}
+
+
+class TestLockEviction:
+    """Evicting a model must not hand out a second lock for the same key.
+
+    Dropping a held lock lets the next ``get_model_lock`` mint a fresh
+    ``asyncio.Lock``, so two coroutines could enter the same critical section
+    (e.g. both loading the same model into VRAM) at once.
+    """
+
+    def setup_method(self):
+        ModelManager.clear()
+
+    def teardown_method(self):
+        ModelManager.clear()
+
+    @pytest.mark.asyncio
+    async def test_unload_keeps_a_held_lock(self):
+        ModelManager.set_model("node1", "m", "task", object())
+        key = ModelManager._make_cache_key("m", "task")
+
+        async with ModelManager.lock_model(key):
+            assert ModelManager.unload_model("m", "task") is True
+            # Same lock object, still held — a concurrent waiter blocks.
+            same_lock = await ModelManager.get_model_lock(key)
+            assert same_lock.locked()
+
+        # Released; a later eviction can now collect it.
+        assert ModelManager._discard_lock(key) is True
+        assert key not in ModelManager._locks
+
+    @pytest.mark.asyncio
+    async def test_unload_drops_an_idle_lock(self):
+        ModelManager.set_model("node1", "m", "task", object())
+        key = ModelManager._make_cache_key("m", "task")
+        await ModelManager.get_model_lock(key)
+
+        assert ModelManager.unload_model("m", "task") is True
+        assert key not in ModelManager._locks
+
+    @pytest.mark.asyncio
+    async def test_clear_keeps_a_held_lock(self):
+        ModelManager.set_model("node1", "m", "task", object())
+        key = ModelManager._make_cache_key("m", "task")
+
+        async with ModelManager.lock_model(key):
+            ModelManager.clear()
+            assert key in ModelManager._locks
+
+    @pytest.mark.asyncio
+    async def test_clear_unused_keeps_a_held_lock(self):
+        ModelManager.set_model("node1", "m", "task", object())
+        key = ModelManager._make_cache_key("m", "task")
+
+        async with ModelManager.lock_model(key):
+            ModelManager.clear_unused(["node1"])
+            assert key in ModelManager._locks
+            assert ModelManager._models == {}

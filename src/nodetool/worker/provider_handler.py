@@ -13,7 +13,12 @@ import os
 import sys
 import traceback
 from collections import OrderedDict
+from functools import lru_cache
 from typing import Any
+
+from nodetool.config.logging_config import get_logger
+
+log = get_logger(__name__)
 
 # Cached provider instances, keyed by (provider_id, secrets hash) so a
 # different / rotated secret set never reuses another caller's instance.
@@ -148,29 +153,55 @@ def get_available_providers() -> list[dict[str, Any]]:
 # ── Handler implementations ─────────────────────────────────────────────
 
 
-def _deserialize_messages(raw_messages: list[dict]) -> list[Any]:
+@lru_cache(maxsize=1)
+def _content_part_types() -> dict[str, tuple[type[Any], str]]:
+    """Map wire content-part ``type`` values to (model class, payload field).
+
+    The wire protocol names the image part ``"image"`` while
+    :class:`MessageImageContent` declares ``Literal["image_url"]``, so the
+    discriminator can never be forwarded verbatim — only the payload field is.
+    """
+    from nodetool.metadata.types import (
+        MessageAudioContent,
+        MessageImageContent,
+        MessageTextContent,
+        MessageVideoContent,
+    )
+
+    return {
+        "text": (MessageTextContent, "text"),
+        "image": (MessageImageContent, "image"),
+        "image_url": (MessageImageContent, "image"),
+        "audio": (MessageAudioContent, "audio"),
+        "video": (MessageVideoContent, "video"),
+    }
+
+
+def _deserialize_messages(raw_messages: list[dict[str, Any]]) -> list[Any]:
     """Convert wire-format messages to Python Message objects."""
     from nodetool.metadata.types import Message
 
-    messages = []
+    messages: list[Any] = []
     for m in raw_messages:
-        content = m.get("content")
+        content: Any = m.get("content")
         # content can be string, list of content parts, or None
         if isinstance(content, list):
-            from nodetool.metadata.types import (
-                MessageAudioContent,
-                MessageImageContent,
-                MessageTextContent,
-            )
-
-            parts = []
+            parts: list[Any] = []
             for part in content:
-                if part.get("type") == "text":
-                    parts.append(MessageTextContent(type="text", text=part["text"]))
-                elif part.get("type") == "image":
-                    parts.append(MessageImageContent(type="image", image=part["image"]))
-                elif part.get("type") == "audio":
-                    parts.append(MessageAudioContent(type="audio", audio=part["audio"]))
+                # Note: the discriminator is never passed explicitly — the wire
+                # names ("image") differ from the model's own Literal defaults
+                # ("image_url"), and passing the wire name raises a pydantic
+                # ValidationError.
+                wire_type = part.get("type")
+                factory = _content_part_types().get(wire_type)
+                if factory is None:
+                    log.warning("Dropping message content part with unknown type %r", wire_type)
+                    continue
+                model_cls, field = factory
+                if field not in part:
+                    log.warning("Dropping %r content part with no %r field", wire_type, field)
+                    continue
+                parts.append(model_cls(**{field: part[field]}))
             content = parts
 
         msg = Message(
@@ -203,14 +234,20 @@ def _serialize_message(msg: Any) -> dict:
     return result
 
 
-def _serialize_content_part(part: Any) -> dict:
-    """Serialize a MessageContent part."""
-    if hasattr(part, "text"):
-        return {"type": "text", "text": part.text}
-    if hasattr(part, "image"):
-        return {"type": "image", "image": part.image}
-    if hasattr(part, "audio"):
-        return {"type": "audio", "audio": part.audio}
+def _serialize_content_part(part: Any) -> dict[str, Any]:
+    """Serialize a MessageContent part to the wire format.
+
+    Mirrors :func:`_content_part_types` so a round-trip through the bridge is
+    lossless — including video parts, which previously degraded to ``str(part)``
+    text because they were not recognised here.
+    """
+    for wire_type, (_model_cls, field) in _content_part_types().items():
+        # "image_url" is only accepted on the way in; emit the canonical "image".
+        if wire_type == "image_url":
+            continue
+        value = getattr(part, field, None)
+        if value is not None:
+            return {"type": wire_type, field: value}
     return {"type": "text", "text": str(part)}
 
 

@@ -155,12 +155,12 @@ async def _handle_download(
 
             def on_bytes(
                 delta: int,
-                _file_total=None,
-                _filename=filename,
-                _base=file_base,
-                _fsize=_size,
-                _acc=file_acc,
-            ):
+                _file_total: int | None = None,
+                _filename: str = filename,
+                _base: int = file_base,
+                _fsize: int | None = _size,
+                _acc: dict[str, int] = file_acc,
+            ) -> None:
                 nonlocal done_bytes
                 _acc["bytes"] += delta
                 progressed = min(_acc["bytes"], _fsize) if _fsize else _acc["bytes"]
@@ -175,7 +175,11 @@ async def _handle_download(
                             "progress",
                             done_bytes,
                             total_bytes,
-                            done_files,
+                            # Deliberately late-bound, unlike the per-file
+                            # values above: this must report how many files
+                            # have completed *now*, not when the callback was
+                            # defined (which is always 0 for the current file).
+                            done_files,  # noqa: B023
                             total_files,
                             [_filename],
                         ),
@@ -219,7 +223,10 @@ async def _handle_download(
             # even if the callback under-reported (e.g. size metadata missing).
             if _size:
                 done_bytes = file_base + _size
-            done_files += 1
+            # Not enumerate(): on_bytes closes over this and must observe the
+            # count as it advances, and the early-return paths above report it
+            # mid-loop.
+            done_files += 1  # noqa: SIM113
 
         # Drain any in-flight progress frames before the terminal frames.
         await drain()

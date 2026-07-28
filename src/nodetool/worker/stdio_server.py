@@ -270,7 +270,7 @@ async def run_stdio_worker(namespaces: list[str] | None = None) -> None:
         _t0 = _time.perf_counter()
         print("Warm-importing heavy ML modules...", file=sys.stderr, flush=True)
         try:
-            from diffusers.pipelines.flux.pipeline_flux import FluxPipeline  # noqa: F401
+            from diffusers.pipelines.flux.pipeline_flux import FluxPipeline
 
             print(
                 f"Warm-imported diffusers.FluxPipeline in {_time.perf_counter() - _t0:.1f}s",
