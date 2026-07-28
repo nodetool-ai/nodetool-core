@@ -880,11 +880,22 @@ class ProcessingContext:
                 return BytesIO(content)
 
         if url_parsed.scheme == "data":
-            fname, data = url.split(",", 1)
-            image_bytes = await _in_thread(_b64decode_to_bytes, data)
-            file = BytesIO(image_bytes)
-            # parse file ext from data uri
-            ext = fname.split(";")[0].split("/")[1]
+            # Format: data:[<mediatype>][;base64],<data>
+            if "," not in url:
+                raise ValueError(f"Malformed data URI (no comma): {url[:64]}")
+            header, data = url.split(",", 1)
+            # Only base64-decode when the URI says so; a percent-encoded
+            # payload (e.g. "data:text/plain,hi") is not valid base64 and
+            # previously raised binascii.Error here.
+            if ";base64" in header:
+                payload = await _in_thread(_b64decode_to_bytes, data)
+            else:
+                payload = urllib.parse.unquote(data).encode("utf-8")
+            file = BytesIO(payload)
+            # Derive an extension from the media type when there is one;
+            # "data:,hi" and "data:;base64,aGk=" carry no media type.
+            media_type = header[len("data:") :].split(";")[0]
+            ext = media_type.split("/")[1] if "/" in media_type else "bin"
             file.name = f"{uuid.uuid4()}.{ext}"
             return file
 
