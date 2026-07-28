@@ -75,7 +75,10 @@ class WorkerProtocolServer:
 
     async def dispatch(self, msg: dict[str, Any], transport: WorkerTransport) -> None:
         msg_type = msg.get("type")
-        request_id = msg.get("request_id")
+        raw_request_id = msg.get("request_id")
+        # A peer can send any msgpack value here; coerce to the str the
+        # _cancel_flags map and the downstream handlers are typed for.
+        request_id: str | None = raw_request_id if isinstance(raw_request_id, str) else None
 
         if msg_type == "discover":
             await transport.send_msg({
@@ -162,11 +165,12 @@ class WorkerProtocolServer:
                     },
                 })
             finally:
-                self._cancel_flags.pop(request_id, None)
+                if request_id:
+                    self._cancel_flags.pop(request_id, None)
             return
 
         if msg_type == "cancel":
-            cancel_event = self._cancel_flags.get(request_id)
+            cancel_event = self._cancel_flags.get(request_id) if request_id else None
             if cancel_event:
                 cancel_event.set()
             return

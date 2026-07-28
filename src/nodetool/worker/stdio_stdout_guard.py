@@ -50,7 +50,7 @@ def get_protocol_stdout_buffer() -> BinaryIO:
         raise RuntimeError(
             "Protocol stdout is not initialized; call install_stdio_stdout_guard() first"
         )
-    return cast(BinaryIO, _ProtocolStdoutBuffer(_protocol_stdout_fd))
+    return cast("BinaryIO", _ProtocolStdoutBuffer(_protocol_stdout_fd))
 
 
 def install_stdio_stdout_guard() -> None:

@@ -38,10 +38,14 @@ def _ext_hook(code: int, data: bytes) -> Any:
     return None
 
 
-def decode_message(payload: bytes) -> Any:
+def decode_message(payload: bytes | bytearray | memoryview | str) -> Any:
     """Decode a msgpack payload from a worker transport.
 
     Uses :func:`_ext_hook` so unknown extension types become ``None`` instead
     of raw ``ExtType`` objects.
+
+    ``str`` is accepted in the signature only because the websockets transport
+    hands text frames straight through; ``msgpack.unpackb`` rejects them, and
+    the caller answers the resulting error with an ``error`` frame.
     """
     return msgpack.unpackb(payload, raw=False, ext_hook=_ext_hook)

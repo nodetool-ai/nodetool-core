@@ -170,6 +170,10 @@ ignore = [
 "tests/**/*.py" = ["ARG", "S101", "F401"]  # Allow unused args, assert, and unused imports in tests
 "**/__init__.py" = ["F401"]  # Allow unused imports in __init__
 "**/conftest.py" = ["F401"]  # Allow unused imports in conftest
+# Pydantic models need their field types importable at runtime, so TC001's
+# "move into a type-checking block" would break model construction.
+"src/nodetool/metadata/node_metadata.py" = ["TC001"]
+"src/nodetool/package_tools/enrich.py" = ["TC001"]
 
 [tool.ruff.format]
 # Use double quotes for strings

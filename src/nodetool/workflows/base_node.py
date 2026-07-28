@@ -163,6 +163,7 @@ if TYPE_CHECKING:
     from nodetool.types.model import ModelPack
 
     from .io import NodeInputs, NodeOutputs
+    from .property import Property
 
 
 def sanitize_node_name(node_name: str) -> str:

@@ -197,7 +197,12 @@ def object_to_bytes(obj: Any, asset_ref: AssetRef) -> bytes | None:
 
             if isinstance(obj, AudioSegment):
                 buf = BytesIO()
-                obj.export(buf, format="mp3")
+                # Must match get_content_type_for_asset_ref(), which reports
+                # "audio/wav" for audio assets — auto_save_assets() derives both
+                # the stored content type and the ``asset://…`` extension from
+                # it, so exporting mp3 here mislabels the bytes. wav also
+                # encodes via the stdlib, so it works without ffmpeg.
+                obj.export(buf, format="wav")
                 return buf.getvalue()
         except Exception as e:
             logger.debug(f"Failed to convert audio object: {e}")

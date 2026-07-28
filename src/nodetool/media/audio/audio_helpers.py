@@ -94,7 +94,9 @@ def concatenate_audios(audios: list[AudioSegment]) -> AudioSegment:
         and a.channels == first_audio.channels
         for a in audios
     ):
-        raw_data = b"".join([a._data for a in audios])
+        # ``raw_data`` is pydub's public accessor for the same buffer as the
+        # private ``_data``, and is typed as bytes.
+        raw_data = b"".join(a.raw_data for a in audios)
         return first_audio._spawn(raw_data)
 
     # ⚡ Bolt Optimization: Use divide-and-conquer to avoid O(N^2) byte-copying

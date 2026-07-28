@@ -94,6 +94,11 @@ class NodeInbox:
         self._closed: bool = False
         # Buffer limit for backpressure (None = unlimited)
         self._buffer_limit: int | None = buffer_limit
+        # Strong references to in-flight notify tasks. asyncio only keeps weak
+        # references to running tasks, so a fire-and-forget notify task can be
+        # garbage-collected before it ever runs — which would silently drop an
+        # EOS/arrival wakeup and hang every consumer blocked in iter_input.
+        self._notify_tasks: set[asyncio.Task[None]] = set()
         assert self._loop is not None, "Event loop is not running"
 
     def _notify_waiters_threadsafe(self) -> None:
@@ -115,7 +120,10 @@ class NodeInbox:
                 async with self._cond:
                     self._cond.notify_all()
 
-            self._loop.create_task(_notify())
+            task = self._loop.create_task(_notify())
+            # Retain until done so the task cannot be collected mid-flight.
+            self._notify_tasks.add(task)
+            task.add_done_callback(self._notify_tasks.discard)
 
         self._loop.call_soon_threadsafe(_schedule_notify)
 

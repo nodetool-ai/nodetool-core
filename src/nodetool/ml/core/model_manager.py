@@ -194,6 +194,28 @@ class ModelManager:
             return cls._locks[cache_key]
 
     @classmethod
+    def _discard_lock(cls, cache_key: str) -> bool:
+        """Drop a per-model lock, but only when nobody is holding it.
+
+        Evicting a held lock would let the next ``get_model_lock`` hand out a
+        brand-new :class:`asyncio.Lock` for the same key, so two coroutines
+        could enter the same critical section at once — e.g. both loading the
+        model into VRAM. A still-held lock is left in place; whichever eviction
+        runs next (or :meth:`clear`) collects it.
+
+        Returns:
+            True if the lock was removed.
+        """
+        lock = cls._locks.get(cache_key)
+        if lock is None:
+            return False
+        if lock.locked():
+            logger.debug("🔒 Keeping in-use lock for evicted model: %s", cache_key)
+            return False
+        del cls._locks[cache_key]
+        return True
+
+    @classmethod
     @asynccontextmanager
     async def lock_model(cls, cache_key: str) -> AsyncIterator[None]:
         """Context manager for acquiring exclusive access to a model.
@@ -361,8 +383,7 @@ class ModelManager:
                         logger.debug(f"- Cleared cached model for node {node_id}: {model_id}")
 
                         # Clean up associated lock
-                        if key in cls._locks:
-                            del cls._locks[key]
+                        if cls._discard_lock(key):
                             cleared_locks += 1
                             logger.debug(f"🔒 Removed lock for cleared model: {key}")
 
@@ -397,7 +418,7 @@ class ModelManager:
             return False
 
         cls._move_model_to_cpu(model)
-        cls._locks.pop(key, None)
+        cls._discard_lock(key)
         cls._model_last_used.pop(key, None)
         cls._model_device.pop(key, None)
         cls._model_size_bytes.pop(key, None)
@@ -447,7 +468,10 @@ class ModelManager:
 
         cls._models.clear()
         cls._models_by_node.clear()
-        cls._locks.clear()
+        # Locks currently held survive the purge — see _discard_lock().
+        for key in list(cls._locks):
+            cls._discard_lock(key)
+        lock_count -= len(cls._locks)
         cls._model_last_used.clear()
         cls._node_last_used.clear()
         cls._model_device.clear()
