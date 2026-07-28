@@ -12,4 +12,9 @@ class AbstractStorage(ABC):
     @abstractmethod
     async def file_exists(self, key: str) -> bool: ...
     def get_url(self, key: str) -> str:
+        """Return the public URL for a stored key.
+
+        This is intentionally synchronous: implementations only format a URL and
+        must not perform I/O. Callers must not await the result.
+        """
         return ""

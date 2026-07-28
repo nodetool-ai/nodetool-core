@@ -208,7 +208,7 @@ class TorchWorkflowSupport(BaseTorchSupport):
                 self.max_retries,
             )
             await asyncio.sleep(delay)
-            return await self.process_with_gpu(runner, context, node, retries + 1)
+            return await self.process_with_gpu(runner, context, node, retries)
 
     def is_cuda_oom_exception(self, exc: Exception) -> bool:
         if not TORCH_AVAILABLE or torch is None:

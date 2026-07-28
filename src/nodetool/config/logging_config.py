@@ -5,12 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import ClassVar, Optional
 
-_DEFAULT_LEVEL = os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper()
-_DEFAULT_FORMAT = os.getenv(
-    "NODETOOL_LOG_FORMAT",
-    "%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-)
-_DEFAULT_DATEFMT = os.getenv("NODETOOL_LOG_DATEFMT", "%Y-%m-%d %H:%M:%S")
+_DEFAULT_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+_DEFAULT_DATEFMT = "%Y-%m-%d %H:%M:%S"
 _configured = False
 _current_config: dict = {}
 

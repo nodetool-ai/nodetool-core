@@ -14,7 +14,7 @@ from enum import Enum, StrEnum
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -95,6 +95,10 @@ from nodetool.workflows.torch_support import (
 )
 
 log = get_logger(__name__)
+
+# HTTP status codes that indicate a redirect; followed manually so each hop can
+# be validated against the SSRF guard.
+_REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 
 
 async def _read_buffer(buffer: IO) -> bytes:
@@ -367,6 +371,34 @@ class ProcessingContext:
             # No scope bound - log warning
             log.warning(f"Memory SET '{key}' failed: no ResourceScope bound")
 
+    async def _validate_http_target(self, url: str) -> None:
+        """
+        Raise if the URL points at a private/restricted address (SSRF guard).
+
+        Mirrors the protection applied to the aiohttp download paths: IP literals
+        are rejected outright and hostnames must resolve to at least one public
+        address.
+        """
+        import socket
+
+        from nodetool.utils.network import is_ip_private
+
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        if not hostname:
+            raise ValueError(f"Refusing request to URL without hostname: {url}")
+        if is_ip_private(hostname):
+            raise ValueError(f"Access to private/restricted IP blocked: {hostname}")
+
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        try:
+            infos = await asyncio.get_running_loop().getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+        except socket.gaierror as e:
+            raise ValueError(f"Could not resolve host '{hostname}': {e}") from e
+
+        if not any(not is_ip_private(info[4][0]) for info in infos):
+            raise ValueError(f"Access to host '{hostname}' blocked because it resolved to a private/restricted IP.")
+
     async def _http_request_with_retries(
         self,
         method: str,
@@ -379,8 +411,52 @@ class ProcessingContext:
         """
         Perform an HTTP request with basic retries for transient transport errors.
 
+        Redirects are followed manually so that every hop is re-validated against
+        the SSRF guard; httpx's automatic redirect handling would otherwise allow
+        a redirect to an internal address such as ``http://169.254.169.254/``.
+        """
+        max_redirects = 5
+        current_url = url
+        current_method = method
+        for _ in range(max_redirects + 1):
+            await self._validate_http_target(current_url)
+            response = await self._http_request_once(
+                current_method,
+                current_url,
+                max_retries=max_retries,
+                backoff_seconds=backoff_seconds,
+                **kwargs,
+            )
+            if response.status_code in _REDIRECT_STATUSES:
+                location = response.headers.get("Location")
+                if not location:
+                    raise ValueError(f"Redirect response without Location header from {current_url}")
+                current_url = urljoin(current_url, location)
+                if response.status_code in (301, 302, 303) and current_method.upper() not in ("GET", "HEAD"):
+                    current_method = "GET"
+                    for body_key in ("content", "data", "files", "json"):
+                        kwargs.pop(body_key, None)
+                continue
+            return response
+
+        raise ValueError(f"Too many redirects while requesting {url}")
+
+    async def _http_request_once(
+        self,
+        method: str,
+        url: str,
+        *,
+        max_retries: int = 3,
+        backoff_seconds: float = 0.5,
+        **kwargs,
+    ) -> httpx.Response:
+        """
+        Perform a single (non-redirect-following) HTTP request with basic retries
+        for transient transport errors.
+
         Retries are applied primarily to GET/HEAD requests where it is safe to do so.
         """
+        kwargs["follow_redirects"] = False
         _headers = HTTP_HEADERS.copy()
         _headers.update(kwargs.get("headers", {}))
         kwargs["headers"] = _headers
@@ -408,6 +484,9 @@ class ProcessingContext:
                     )
                     await asyncio.sleep(delay)
                     continue
+                # Redirects are handled by the caller so each hop can be validated
+                if status in _REDIRECT_STATUSES:
+                    return response
                 # Success and non-retry statuses
                 response.raise_for_status()
                 return response
@@ -570,7 +649,7 @@ class ProcessingContext:
         Args:
             key (str): The key of the asset.
         """
-        return await require_scope().get_asset_storage().get_url(key)
+        return require_scope().get_asset_storage().get_url(key)
 
     async def refresh_uri(self, asset: AssetRef):
         """
@@ -979,6 +1058,9 @@ class ProcessingContext:
                     # Convert string to UTF-8 bytes
                     return BytesIO(obj.encode("utf-8"))
                 elif hasattr(obj, "read"):  # Already an IO object
+                    # Rewind so repeated reads of the cached object are idempotent
+                    with suppress(Exception):
+                        obj.seek(0)
                     return obj
                 else:
                     raise ValueError(f"Unsupported memory object type {type(obj)}")
@@ -1046,7 +1128,7 @@ class ProcessingContext:
             bytes: The asset content as bytes.
         """
         io = await self.asset_to_io(asset_ref)
-        return await _in_thread(io.read)
+        return await _in_thread(_read_all_bytes_from_start, io)
 
     async def asset_to_base64(self, asset_ref: AssetRef) -> str:
         """
@@ -1250,7 +1332,7 @@ class ProcessingContext:
                 parent_id=parent_id,
             )
             storage = require_scope().get_asset_storage()
-            url = await storage.get_url(asset.file_name)
+            url = storage.get_url(asset.file_name)
             return AudioRef(asset_id=asset.id, uri=url)
         else:
             return AudioRef(data=await _read_buffer(buffer))
@@ -1315,7 +1397,8 @@ class ProcessingContext:
             if data.dtype == np.int16:
                 data_bytes = data.tobytes()
             elif data.dtype in (np.float32, np.float64, np.float16):
-                data_bytes = (data * (2**14)).astype(np.int16).tobytes()
+                # Full-scale conversion: clip to [-1.0, 1.0] then scale to int16
+                data_bytes = (np.clip(data, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
             else:
                 raise ValueError(f"Unsupported dtype {data.dtype}")
             return AudioSegment(
@@ -1472,18 +1555,35 @@ class ProcessingContext:
         """
         np = _ensure_numpy()
 
-        # Decode bytes to numpy array based on sample width
-        if audio_stream.sample_width == 2:
-            # int16 PCM
-            samples = np.frombuffer(audio_stream.data, dtype=np.int16)
-        elif audio_stream.sample_width == 4:
-            # float32 PCM
-            samples = np.frombuffer(audio_stream.data, dtype=np.float32)
-        else:
-            raise ValueError(f"Unsupported sample_width {audio_stream.sample_width}")
+        # Decode bytes to numpy array based on the declared format. sample_width
+        # alone is ambiguous: 4 bytes per sample can be int32 (pcm_s32le, emitted
+        # by audio_stream_from_segment) or float32 (pcm_f32le).
+        format_dtypes = {
+            "pcm_s16le": np.int16,
+            "pcm_s32le": np.int32,
+            "pcm_f32le": np.float32,
+            "pcm_f64le": np.float64,
+        }
+        source_dtype = format_dtypes.get((audio_stream.format or "").lower())
+        if source_dtype is None:
+            # Fall back to sample width when the format is unknown
+            if audio_stream.sample_width == 2:
+                source_dtype = np.int16
+            elif audio_stream.sample_width == 4:
+                source_dtype = np.float32
+            else:
+                raise ValueError(f"Unsupported sample_width {audio_stream.sample_width}")
+        samples = np.frombuffer(audio_stream.data, dtype=source_dtype)
 
         # Convert to target dtype if needed
-        if dtype == "float32" and samples.dtype == np.int16:
+        if samples.dtype == np.int32:
+            if dtype in ("float32", "float64"):
+                samples = samples.astype(dtype) / np.dtype(dtype).type(2147483648.0)
+            elif dtype == "int16":
+                samples = (samples // 65536).astype(np.int16)
+            elif dtype != str(samples.dtype):
+                samples = samples.astype(dtype)
+        elif dtype == "float32" and samples.dtype == np.int16:
             samples = samples.astype(np.float32) / np.float32(32768.0)
         elif dtype == "float64" and samples.dtype == np.int16:
             samples = samples.astype(np.float64) / 32768.0
@@ -1599,7 +1699,7 @@ class ProcessingContext:
         if name:
             asset = await self.create_asset(name=name, content_type="image/png", content=buffer, parent_id=parent_id)
             storage = require_scope().get_asset_storage()
-            url = await storage.get_url(asset.file_name)
+            url = storage.get_url(asset.file_name)
             return ImageRef(asset_id=asset.id, uri=url, metadata=metadata)
         else:
             data_bytes = await _read_buffer(buffer)
@@ -1823,7 +1923,7 @@ class ProcessingContext:
             buffer = BytesIO(s.encode("utf-8"))
             asset = await self.create_asset(name, content_type, buffer, parent_id=parent_id)
             storage = require_scope().get_asset_storage()
-            url = await storage.get_url(asset.file_name)
+            url = storage.get_url(asset.file_name)
             return TextRef(asset_id=asset.id, uri=url)
 
     async def video_from_frames(
@@ -2036,7 +2136,7 @@ class ProcessingContext:
         if name:
             asset = await self.create_asset(name, "video/mpeg", buffer, parent_id=parent_id)
             storage = require_scope().get_asset_storage()
-            url = await storage.get_url(asset.file_name)
+            url = storage.get_url(asset.file_name)
             return VideoRef(asset_id=asset.id, uri=url, metadata=metadata)
         else:
             return VideoRef(data=await _read_buffer(buffer), metadata=metadata)
@@ -2108,7 +2208,7 @@ class ProcessingContext:
         if name:
             asset = await self.create_asset(name, mime_type, buffer, parent_id=parent_id)
             storage = require_scope().get_asset_storage()
-            url = await storage.get_url(asset.file_name)
+            url = storage.get_url(asset.file_name)
             return Model3DRef(asset_id=asset.id, uri=url, format=format, metadata=metadata)
         else:
             data_bytes = await _read_buffer(buffer)
@@ -2239,7 +2339,7 @@ class ProcessingContext:
             asset = await self.create_asset(name, "application/model", BytesIO(payload))
 
             storage = require_scope().get_asset_storage()
-            url = await storage.get_url(asset.file_name)
+            url = storage.get_url(asset.file_name)
             return ModelRef(uri=url, asset_id=asset.id, **kwargs)
 
     async def convert_value_for_prediction(

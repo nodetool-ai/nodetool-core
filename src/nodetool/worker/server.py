@@ -11,6 +11,7 @@ from websockets.exceptions import ConnectionClosed
 from nodetool.worker.executor import msgpack_default
 from nodetool.worker.msgpack_codec import decode_message
 from nodetool.worker.protocol import WorkerProtocolServer
+from nodetool.worker.stdio_server import salvage_request_id
 from nodetool.worker.worker_auth import make_process_request
 
 log = logging.getLogger(__name__)
@@ -67,9 +68,30 @@ class WorkerServer:
         transport = WebSocketTransport(websocket)
         tasks: set[asyncio.Task] = set()
 
+        async def send_frame_error(request_id: str | None, error: str) -> None:
+            log.warning("worker websocket: %s", error)
+            await transport.send_msg({"type": "error", "request_id": request_id, "data": {"error": error}})
+
         try:
             async for raw_message in websocket:
-                msg = decode_message(raw_message)
+                try:
+                    msg = decode_message(raw_message)
+                except Exception as e:
+                    # Malformed msgpack — or a text frame, which arrives as str
+                    # and makes msgpack.unpackb raise TypeError. Answer the
+                    # request instead of tearing down the connection silently.
+                    payload = (
+                        raw_message
+                        if isinstance(raw_message, (bytes, bytearray))
+                        else str(raw_message).encode("utf-8", "replace")
+                    )
+                    await send_frame_error(
+                        salvage_request_id(bytes(payload)), f"Malformed msgpack frame: {e}"
+                    )
+                    continue
+                if not isinstance(msg, dict):
+                    await send_frame_error(None, f"Expected a msgpack map, got {type(msg).__name__}")
+                    continue
                 task = asyncio.create_task(self._protocol.dispatch(msg, transport))
                 tasks.add(task)
                 task.add_done_callback(tasks.discard)

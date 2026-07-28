@@ -11,7 +11,9 @@ Key classes:
     - AsyncChromaCollection: wraps a Chroma Collection
 
 Helpers:
-    - get_async_chroma_client(user_id): wraps `get_chroma_client`
+    - get_async_chroma_client(user_id): wraps `get_chroma_client` (caller owns it)
+    - get_shared_async_chroma_client(user_id): module-owned shared client
+    - shutdown_async_chroma_clients(): shuts down the shared clients
     - get_async_collection(name): wraps `get_collection` with embedding config
 """
 
@@ -52,9 +54,16 @@ class AsyncChromaCollection:
     the owning client's executor.
     """
 
-    def __init__(self, collection: Any, executor: _SingleThreadExecutor) -> None:
+    def __init__(
+        self,
+        collection: Any,
+        executor: _SingleThreadExecutor,
+        client: "AsyncChromaClient | None" = None,
+    ) -> None:
         self._collection = collection
         self._executor = executor
+        # Keep the owning client reachable so callers can shut it down.
+        self.client = client
 
         # Cache simple metadata for quick access without roundtrips
         self.name: str = collection.name
@@ -180,7 +189,7 @@ class AsyncChromaClient:
         self,
     ) -> list[AsyncChromaCollection]:
         collections = await self._executor.run(self._client.list_collections)
-        return [AsyncChromaCollection(collection, self._executor) for collection in collections]
+        return [AsyncChromaCollection(collection, self._executor, self) for collection in collections]
 
     async def count_collections(self) -> int:
         collections = await self.list_collections()
@@ -192,17 +201,17 @@ class AsyncChromaClient:
             name=name,
             embedding_function=embedding_function,
         )
-        return AsyncChromaCollection(collection, self._executor)
+        return AsyncChromaCollection(collection, self._executor, self)
 
     async def get_or_create_collection(
         self, name: str, metadata: Optional[dict[str, Any]] = None
     ) -> AsyncChromaCollection:
         collection = await self._executor.run(self._client.get_or_create_collection, name=name, metadata=metadata)
-        return AsyncChromaCollection(collection, self._executor)
+        return AsyncChromaCollection(collection, self._executor, self)
 
     async def create_collection(self, name: str, metadata: Optional[dict[str, Any]] = None) -> AsyncChromaCollection:
         collection = await self._executor.run(self._client.create_collection, name=name, metadata=metadata)
-        return AsyncChromaCollection(collection, self._executor)
+        return AsyncChromaCollection(collection, self._executor, self)
 
     async def delete_collection(self, name: str) -> None:
         await self._executor.run(self._client.delete_collection, name=name)
@@ -217,9 +226,48 @@ async def get_async_chroma_client(user_id: str | None = None) -> AsyncChromaClie
     return AsyncChromaClient(client)
 
 
+_shared_clients: dict[str | None, AsyncChromaClient] = {}
+_shared_clients_lock = asyncio.Lock()
+
+
+async def get_shared_async_chroma_client(user_id: str | None = None) -> AsyncChromaClient:
+    """
+    Get the process-wide shared AsyncChromaClient for `user_id`.
+
+    Ownership: the returned client is owned by this module, not by the caller.
+    Callers must NOT call `shutdown()` on it; use
+    `shutdown_async_chroma_clients()` at process/test teardown instead. Sharing
+    one client per user avoids leaking a `chroma-io` thread per call site.
+
+    Use `get_async_chroma_client()` instead when you want a private client whose
+    lifetime (and `shutdown()`) you own.
+    """
+    async with _shared_clients_lock:
+        client = _shared_clients.get(user_id)
+        if client is None:
+            client = await get_async_chroma_client(user_id)
+            _shared_clients[user_id] = client
+        return client
+
+
+async def shutdown_async_chroma_clients(wait: bool = False) -> None:
+    """
+    Shut down every shared client and clear the cache.
+    """
+    async with _shared_clients_lock:
+        clients = list(_shared_clients.values())
+        _shared_clients.clear()
+    for client in clients:
+        client.shutdown(wait=wait)
+
+
 async def get_async_collection(name: str) -> AsyncChromaCollection:
     """
     Get a collection by name.
+
+    Uses the shared client for the default user, so repeated calls do not spawn
+    a new background thread each time. The owning client stays reachable as
+    `collection.client`; it is shut down via `shutdown_async_chroma_clients()`.
     """
-    client = await get_async_chroma_client()
+    client = await get_shared_async_chroma_client()
     return await client.get_collection(name)

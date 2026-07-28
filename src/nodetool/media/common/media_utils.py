@@ -105,24 +105,28 @@ async def create_video_thumbnail(input_io: IO, width: int, height: int) -> Bytes
     Generate a thumbnail image from a video file using OpenCV.
     """
     # Create a temporary file to store the video
-    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-        # Write the input BytesIO object to the temporary file
-        temp_file.write(input_io.read())
-        temp_file.flush()
-        input_io.seek(0)
-
-        temp_file_path = temp_file.name  # Store the temporary file path
+    temp_file = tempfile.NamedTemporaryFile(delete=False)
+    temp_file_path = temp_file.name  # Store the temporary file path
 
     try:
+        with temp_file:
+            # Write the input BytesIO object to the temporary file
+            input_io.seek(0)
+            temp_file.write(input_io.read())
+            temp_file.flush()
+        input_io.seek(0)
+
         # Use ffmpeg to generate thumbnail
         # select the most representative frame in a given sequence of consecutive frames
         # automatically from the video.
+        # Scale the frame to fit inside width x height without upscaling,
+        # matching create_image_thumbnail's semantics.
         cmd = [
             FFMPEG_PATH,
             "-i",
             temp_file_path,
             "-vf",
-            "thumbnail=300",
+            f"thumbnail=300,scale=w='min(iw,{width})':h='min(ih,{height})':force_original_aspect_ratio=decrease",
             "-frames:v",
             "1",
             "-f",
@@ -156,15 +160,17 @@ async def get_video_duration(input_io: BytesIO) -> float | None:
     Returns:
         float: The duration of the media file in seconds.
     """
-    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-        # write the input bytes to the temporary file
-        temp_file.write(input_io.read())
-        temp_file.flush()
-        input_io.seek(0)
-
-        temp_file_path = temp_file.name  # Store the temporary file path
+    temp_file = tempfile.NamedTemporaryFile(delete=False)
+    temp_file_path = temp_file.name  # Store the temporary file path
 
     try:
+        with temp_file:
+            # write the input bytes to the temporary file
+            input_io.seek(0)
+            temp_file.write(input_io.read())
+            temp_file.flush()
+        input_io.seek(0)
+
         cmd = [
             FFPROBE_PATH,
             "-v",
@@ -219,6 +225,7 @@ def get_audio_duration(source_io: BytesIO) -> float:
         pydub.AudioSegment.ffprobe = FFPROBE_PATH  # type: ignore[attr-defined]
         _pydub_configured = True
 
+    source_io.seek(0)
     try:
         audio = pydub.AudioSegment.from_file(source_io)
         duration = len(audio) / 1000.0

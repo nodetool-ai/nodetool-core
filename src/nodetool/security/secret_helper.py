@@ -6,14 +6,19 @@ The TS server handles database-stored secrets and passes them via env.
 """
 
 import os
+from collections import OrderedDict
 from typing import Optional
 
 from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
 
-# Cache for secrets: (user_id, key) -> value
-_SECRET_CACHE: dict[tuple[str, str], Optional[str]] = {}
+# Cache for secrets: (user_id, key) -> value. Entries are only ever populated
+# from os.environ, so they must not be served to callers that explicitly opted
+# out of the environment via check_env=False. Bounded LRU so a long-lived worker
+# cannot accumulate entries without limit.
+_SECRET_CACHE_MAX_SIZE = 512
+_SECRET_CACHE: "OrderedDict[tuple[str, str], Optional[str]]" = OrderedDict()
 
 
 def clear_secret_cache(user_id: str, key: str) -> None:
@@ -22,14 +27,22 @@ def clear_secret_cache(user_id: str, key: str) -> None:
 
 
 async def get_secret(key: str, user_id: str, default: Optional[str] = None, check_env: bool = True) -> Optional[str]:
-    if (user_id, key) in _SECRET_CACHE:
-        return _SECRET_CACHE[(user_id, key)]
+    if not check_env:
+        # The cache only holds environment-derived values; honour the opt-out.
+        return default
 
-    if check_env:
-        value = os.environ.get(key)
-        if value:
-            _SECRET_CACHE[(user_id, key)] = value
-            return value
+    cache_key = (user_id, key)
+    if cache_key in _SECRET_CACHE:
+        _SECRET_CACHE.move_to_end(cache_key)
+        return _SECRET_CACHE[cache_key]
+
+    value = os.environ.get(key)
+    if value:
+        _SECRET_CACHE[cache_key] = value
+        _SECRET_CACHE.move_to_end(cache_key)
+        while len(_SECRET_CACHE) > _SECRET_CACHE_MAX_SIZE:
+            _SECRET_CACHE.popitem(last=False)
+        return value
 
     return default
 

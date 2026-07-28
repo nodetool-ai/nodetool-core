@@ -249,8 +249,7 @@ class NodeOutputs:
         if isinstance(self.node, OutputNode):
             node_name = self.node.name
             if node_name in self.runner.outputs:
-                if not self.runner.outputs[node_name] or self.runner.outputs[node_name][-1] != value:
-                    self.runner.outputs[node_name].append(value)
+                self.runner.outputs[node_name].append(value)
             else:
                 self.runner.outputs[node_name] = [value]
 

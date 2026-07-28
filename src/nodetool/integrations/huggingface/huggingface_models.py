@@ -418,9 +418,15 @@ def detect_repo_packaging(
     weight_files = [name for name, _ in weight_entries]
     lower_weight_files = [name.lower() for name in weight_files]
 
+    # Index files are not weight files, but they are the strongest sharding
+    # signal, so they have to reach _has_sharded_weights unfiltered.
+    lower_sharding_candidates = lower_weight_files + [
+        name.lower() for name, _ in file_entries if _is_index_file(name)
+    ]
+
     if _has_bundle_metadata(model_info):
         return RepoPackagingHint.REPO_BUNDLE
-    if _has_sharded_weights(lower_weight_files):
+    if _has_sharded_weights(lower_sharding_candidates):
         return RepoPackagingHint.REPO_BUNDLE
     if _has_quantized_variants(lower_weight_files):
         return RepoPackagingHint.PER_FILE
@@ -439,6 +445,12 @@ def _is_weight_file(file_name: str) -> bool:
     """Lightweight check for weight-like filenames used by packaging heuristics."""
     lower = file_name.lower()
     return lower.endswith(_WEIGHT_EXTENSIONS)
+
+
+def _is_index_file(file_name: str) -> bool:
+    """Lightweight check for shard index manifests (not weight files themselves)."""
+    lower = file_name.lower()
+    return lower in _INDEX_FILENAMES or lower.endswith(".index.json")
 
 
 def _has_bundle_metadata(model_info: ModelInfo | None) -> bool:
@@ -772,7 +784,7 @@ def model_type_from_model_info(
     callers can try local config parsing or artifact inspection.
     """
     recommended = recommended_models.get(repo_id, [])
-    if len(recommended) == 1:
+    if len(recommended) == 1 and recommended[0].type is not None:
         return recommended[0].type
     if model_info is None:
         return None

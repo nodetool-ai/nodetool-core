@@ -87,10 +87,15 @@ class WorkerContext(ProcessingContext):
         import numpy as np
         import struct
 
-        if data.dtype != np.int16:
-            data = (data * 32767).astype(np.int16)
-        channels = num_channels if data.ndim == 1 else data.shape[1]
-        raw = data.tobytes()
+        if data.dtype == np.int16:
+            raw = data.tobytes()
+        elif data.dtype in (np.float16, np.float32, np.float64):
+            raw = (np.clip(data, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
+        else:
+            raise ValueError(f"Unsupported dtype {data.dtype}")
+        # Always honour the caller's channel count, like the base
+        # ProcessingContext: samples are taken as interleaved frames.
+        channels = num_channels
 
         buf = BytesIO()
         data_size = len(raw)
@@ -122,6 +127,16 @@ class WorkerContext(ProcessingContext):
 
     def get_output_blobs(self) -> dict[str, bytes]:
         return dict(self._output_blobs)
+
+    def take_output_blobs(self) -> dict[str, bytes]:
+        """Return the captured blobs and clear them.
+
+        Used on the streaming path so per-chunk blobs are released as soon as
+        they have been emitted, instead of accumulating for the whole request.
+        """
+        blobs = self._output_blobs
+        self._output_blobs = {}
+        return blobs
 
     def drain_progress(self) -> list[Any]:
         """Drain progress messages from the message queue."""

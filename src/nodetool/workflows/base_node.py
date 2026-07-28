@@ -352,6 +352,29 @@ def type_metadata(python_type: type | UnionType, allow_optional: bool = True) ->
         raise ValueError(f"Unknown type: {python_type}. Types must derive from BaseType")
 
 
+def is_empty_value_assignable(type_meta: TypeMetadata, value: Any) -> bool:
+    """Whether an explicitly supplied empty value may be assigned to a property.
+
+    An empty value (`None`, `[]` or `{}`) that is compatible with the property
+    type is a meaningful input and must overwrite the current value. An empty
+    value that is not compatible (most commonly `None` for a non-optional
+    property) is treated as "no value" so the property keeps its default.
+
+    `is_assignable` does not model optionality, so `None` is checked against the
+    `optional` flag of the type instead.
+
+    Args:
+        type_meta: The metadata of the target property type.
+        value: The empty value to check.
+
+    Returns:
+        True if the empty value should be assigned, False if it should be ignored.
+    """
+    if value is None:
+        return type_meta.optional
+    return is_assignable(type_meta, value)
+
+
 T = TypeVar("T")
 
 
@@ -1173,10 +1196,10 @@ class BaseNode(BaseModel):
         # A raw msgpack extension type means a value arrived over the wire that
         # the worker could not decode (e.g. an unset model selection the
         # frontend encoded with a custom extension). Treat it as "no value" so
-        # the property falls back to its default instead of failing validation
-        # with a confusing ExtType error.
+        # the property keeps its default instead of failing validation with a
+        # confusing ExtType error.
         if type(value).__name__ == "ExtType" and type(value).__module__.startswith("msgpack"):
-            value = None
+            return None
 
         prop = self.find_property(name)
         if prop is None:
@@ -1203,7 +1226,11 @@ class BaseNode(BaseModel):
                         type_args = tm.type_args
 
                         if is_empty(value):
-                            return None
+                            if not is_empty_value_assignable(tm, value):
+                                return None
+                            if value is None:
+                                object.__setattr__(self, name, None)
+                                return None
 
                         if tm.is_enum_type():
                             converted = python_type(value)
@@ -1244,7 +1271,15 @@ class BaseNode(BaseModel):
         type_args = prop.type.type_args
 
         if is_empty(value):
-            return None
+            if not is_empty_value_assignable(prop.type, value):
+                return None
+            if value is None:
+                # Clearing an optional property: skip conversion, None is the value.
+                if hasattr(self, name):
+                    setattr(self, name, None)
+                elif self._is_dynamic:
+                    self._dynamic_properties[name] = None
+                return None
 
         if not is_assignable(prop.type, value):
             return f"[{self.__class__.__name__}] Invalid value for property `{name}`: {type(value)} {value} (expected {prop.type})"

@@ -10,6 +10,7 @@ import asyncio
 import logging
 import os
 import threading
+import weakref
 from typing import Optional
 
 import keyring
@@ -24,19 +25,24 @@ KEYRING_USERNAME = "secrets_master_key"
 # Serializes the keychain-lookup/generate section of get_master_key so that
 # concurrent callers that all miss the cache do not each generate a different
 # master key. asyncio.Lock is bound to the event loop it is created in, so keep
-# one lock per running loop (keyed by loop id), matching the provider caches.
-_master_key_locks: dict[int, asyncio.Lock] = {}
+# one lock per running loop. The mapping is keyed by the loop object itself (not
+# by id()) and held weakly: CPython reuses object addresses after GC, so an
+# id-keyed cache can hand a lock bound to a dead loop to a fresh loop that
+# happens to land on the same address, which makes acquire() raise
+# "is bound to a different event loop". Weak keys also drop entries when the
+# loop is collected instead of growing for the process lifetime.
+_master_key_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = weakref.WeakKeyDictionary()
 _master_key_locks_guard = threading.Lock()
 
 
 def _get_master_key_lock() -> asyncio.Lock:
     """Return the asyncio lock for the running event loop, creating it on first use."""
-    loop_id = id(asyncio.get_running_loop())
+    loop = asyncio.get_running_loop()
     with _master_key_locks_guard:
-        lock = _master_key_locks.get(loop_id)
+        lock = _master_key_locks.get(loop)
         if lock is None:
             lock = asyncio.Lock()
-            _master_key_locks[loop_id] = lock
+            _master_key_locks[loop] = lock
         return lock
 
 
