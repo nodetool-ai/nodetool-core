@@ -139,6 +139,7 @@ from nodetool.metadata.utils import (
     is_optional_type,
     is_tuple_type,
     is_union_type,
+    non_none_union_args,
 )
 from nodetool.types.api_graph import Edge
 from nodetool.types.model import UnifiedModel
@@ -328,7 +329,15 @@ def type_metadata(python_type: type | UnionType, allow_optional: bool = True) ->
         )
     # check optional type before union type as optional is a union of None and the type
     elif is_optional_type(python_type):
-        res = type_metadata(python_type.__args__[0])
+        args = non_none_union_args(python_type)
+        if len(args) == 1:
+            res = type_metadata(args[0])
+        else:
+            # Optional[Union[A, B]] must keep every member, not just the first.
+            res = TypeMetadata(
+                type="union",
+                type_args=[type_metadata(t) for t in args],
+            )
         if allow_optional:
             res.optional = True
         return res

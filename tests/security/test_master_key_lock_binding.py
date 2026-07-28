@@ -8,6 +8,10 @@ loop``), and the mapping grew one entry per loop for the process lifetime.
 
 import asyncio
 import gc
+import subprocess
+import sys
+import textwrap
+from pathlib import Path
 
 import pytest
 
@@ -49,14 +53,38 @@ def test_lock_is_stable_within_a_loop_but_distinct_across_loops():
 
 @pytest.mark.no_setup
 def test_registry_does_not_grow_across_loops():
-    baseline = _registry_size()
+    """Churn many short-lived loops in a clean interpreter; nothing may accumulate.
 
-    for _ in range(25):
-        asyncio.run(_contend_on_lock())
+    Run out-of-process so pytest's own machinery cannot keep the loops alive.
+    """
+    snippet = textwrap.dedent(
+        """
+        import asyncio, gc, sys
+        sys.path.insert(0, "src")
+        from nodetool.security.master_key import _get_master_key_lock, _master_key_locks
+
+        async def use():
+            lock = _get_master_key_lock()
+            async def worker():
+                async with lock:
+                    await asyncio.sleep(0)
+            await asyncio.gather(*[worker() for _ in range(3)])
+
+        for _ in range(200):
+            asyncio.run(use())
+            gc.collect()
         gc.collect()
-
-    # Every loop used above is closed and unreachable, so no entry may survive.
-    assert _registry_size() == baseline
+        print(len(_master_key_locks))
+        """
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", snippet],
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).resolve().parents[2]),
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "0", result.stdout + result.stderr
 
 
 @pytest.mark.no_setup

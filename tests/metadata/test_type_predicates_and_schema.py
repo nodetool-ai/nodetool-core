@@ -115,14 +115,6 @@ def test_type_metadata_optional_simple_is_unchanged():
     assert meta.optional is True
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Requires the companion fix in base_node.py:330-334, which extracts "
-        "`python_type.__args__[0]` and therefore drops the remaining union members. "
-        "That file is owned by another agent."
-    ),
-    strict=False,
-)
 def test_type_metadata_optional_union_keeps_all_members():
     meta = type_metadata(Optional[str | int])
     assert meta.optional is True
