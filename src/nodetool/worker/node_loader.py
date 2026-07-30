@@ -194,13 +194,18 @@ def _simple_name(t: Any) -> str:
 def _extract_outputs(node_class: type[BaseNode]) -> list[dict]:
     """Extract output slot metadata using BaseNode's canonical output inference."""
     try:
-        return [
-            {
+        outputs: list[dict] = []
+        for slot in node_class.outputs():
+            output = {
                 "name": slot.name,
                 "type": slot.type.model_dump(exclude_none=True),
             }
-            for slot in node_class.outputs()
-        ]
+            if slot.stream:
+                output["stream"] = True
+            if slot.stream_kind is not None:
+                output["stream_kind"] = slot.stream_kind
+            outputs.append(output)
+        return outputs
     except Exception:
         return [{"name": "output", "type": {"type": "any"}}]
 

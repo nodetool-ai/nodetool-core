@@ -47,6 +47,10 @@ def test_node_to_metadata_uses_streaming_output_type():
         def get_node_type(cls) -> str:
             return "test_ns.StreamingAudioNode"
 
+        @classmethod
+        def output_stream_kinds(cls):
+            return {"chunk": "audio"}
+
         async def gen_process(
             self, context: ProcessingContext
         ) -> AsyncGenerator["StreamingAudioNode.OutputType", None]:
@@ -62,6 +66,9 @@ def test_node_to_metadata_uses_streaming_output_type():
         assert [output["name"] for output in meta["outputs"]] == ["audio", "chunk"]
         assert meta["outputs"][0]["type"]["type"] == "audio"
         assert meta["outputs"][1]["type"]["type"] == "chunk"
+        assert "stream" not in meta["outputs"][0]
+        assert meta["outputs"][1]["stream"] is True
+        assert meta["outputs"][1]["stream_kind"] == "audio"
     finally:
         del NODE_BY_TYPE["test_ns.StreamingAudioNode"]
 
