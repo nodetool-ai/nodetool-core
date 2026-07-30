@@ -1,0 +1,16 @@
+Sentinel: fix SSRF vulnerability in ComfyUI model downloader
+
+## What
+Refactored the `_open_model_source` download flow in `comfy_handler.py` to use a manual redirect loop and configured the associated `aiohttp.ClientSession` with the `SSRFProtectResolver`.
+
+## Why
+The original implementation used `allow_redirects=True` and a default DNS resolver, making the backend vulnerable to SSRF. An attacker could provide a malicious URL pointing to an internal IP (like `127.0.0.1`) or a domain configured for DNS rebinding, tricking the server into downloading or interacting with restricted internal endpoints. Furthermore, cross-domain redirects could unintentionally leak Hugging Face API tokens if the token was supplied.
+
+## Impact
+This change closes an SSRF attack vector, preventing attackers from abusing the nodetool worker to access restricted internal environments and mitigates potential cross-domain credential leakage.
+
+## Verification
+- Added `test_models_download_rejects_ssrf` to explicitly test that local IPs like `127.0.0.1` are rejected by the download endpoint.
+- Existing `test_models_download_from_url` and related endpoints were patched to mock the `is_ip_private` check so that internal server mocking continues to function smoothly.
+- `uv run pytest` tests pass.
+- `uv run ruff check` linting passes.

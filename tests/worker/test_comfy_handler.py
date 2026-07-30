@@ -575,6 +575,7 @@ async def test_comfy_unknown_type(server, fake_comfy):
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_models_download_from_url(server, fake_comfy, tmp_path, monkeypatch):
+    monkeypatch.setattr("nodetool.worker.comfy_handler.is_ip_private", lambda x: False)
     monkeypatch.setenv("COMFY_MODELS_DIR", str(tmp_path))
     payload = b"x" * 64
     fake_comfy.model_files["sd.safetensors"] = payload
@@ -611,6 +612,7 @@ async def test_models_download_from_url(server, fake_comfy, tmp_path, monkeypatc
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_models_download_progress_is_throttled(server, fake_comfy, tmp_path, monkeypatch):
+    monkeypatch.setattr("nodetool.worker.comfy_handler.is_ip_private", lambda x: False)
     """Progress frames are time-throttled, not one per chunk — per-chunk awaits
     on the serialized transport would gate download throughput on bridge latency."""
     monkeypatch.setenv("COMFY_MODELS_DIR", str(tmp_path))
@@ -681,6 +683,7 @@ async def test_models_download_existing_is_skipped_without_network(server, tmp_p
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_models_download_maps_comfy_type_to_folder(server, fake_comfy, tmp_path, monkeypatch):
+    monkeypatch.setattr("nodetool.worker.comfy_handler.is_ip_private", lambda x: False)
     """comfy.checkpoint_file-style type names map to the ComfyUI folder layout."""
     monkeypatch.setenv("COMFY_MODELS_DIR", str(tmp_path))
     fake_comfy.model_files["model.ckpt"] = b"z" * 8
@@ -697,6 +700,25 @@ async def test_models_download_maps_comfy_type_to_folder(server, fake_comfy, tmp
         })
     assert frames[-1]["data"]["status"] == "completed"
     assert (tmp_path / "checkpoints" / "model.ckpt").exists()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_models_download_rejects_ssrf(server, tmp_path, monkeypatch):
+    monkeypatch.setenv("COMFY_MODELS_DIR", str(tmp_path))
+    host, port = server
+    async with websockets.connect(f"ws://{host}:{port}") as ws:
+        frames = await _request(ws, {
+            "type": "comfy.models.download",
+            "request_id": "cmd-ssrf",
+            "data": {
+                "folder": "checkpoints",
+                "filename": "model.bin",
+                "source": {"type": "url", "url": "http://127.0.0.1/malicious"},
+            },
+        })
+        assert frames[-1]["type"] == "error"
+        assert "private/restricted IP" in frames[-1]["data"]["error"] or "resolve" in frames[-1]["data"]["error"].lower()
+    assert not (tmp_path / "checkpoints" / "model.bin").exists()
 
 
 @pytest.mark.asyncio(loop_scope="function")

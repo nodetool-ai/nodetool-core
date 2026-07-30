@@ -61,3 +61,8 @@
 **Vulnerability:** A manual SSRF bypass existed in `download_http_uri` where `aiohttp` automatically followed HTTP redirects, potentially directing the client to resolve a private/restricted IP that wasn't checked by the initial `SSRFProtectResolver` or `is_ip_private` validation on the primary host URL.
 **Learning:** `aiohttp.ClientSession.get` follows redirects by default (`allow_redirects=True`). If the `SSRFProtectResolver` short-circuits on IP literals, or if only the initial host is validated, a malicious redirect can exploit the SSRF.
 **Prevention:** Always set `allow_redirects=False` in HTTP clients used to fetch untrusted URLs when SSRF protections are required. Implement manual redirect following (with a max redirect limit) and re-validate the target host string via `is_ip_private` on every single redirect hop.
+
+## 2026-07-30 - Fix SSRF Vulnerability in ComfyUI Model Downloader
+**Vulnerability:** A Server-Side Request Forgery (SSRF) vulnerability existed in `comfy_handler.py` where aiohttp handled model URL downloads, allowing DNS rebinding and internal network scanning.
+**Learning:** `aiohttp` follows redirects natively via `allow_redirects=True`, potentially leaking original `Authorization` headers to unintended third parties, and it bypasses custom DNS resolvers (`SSRFProtectResolver`) when passed literal IPs directly.
+**Prevention:** Always use `is_ip_private` to block literal internal IPs, set `allow_redirects=False` to handle redirect loops manually, strip cross-domain `Authorization` headers, and use `SSRFProtectResolver` inside an `aiohttp.TCPConnector`.
