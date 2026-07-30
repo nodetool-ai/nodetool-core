@@ -83,6 +83,7 @@ def _patch_source(monkeypatch, factory, name="model.safetensors"):
 @pytest.mark.asyncio(loop_scope="function")
 async def test_concurrent_downloads_of_same_target_transfer_once(tmp_path, monkeypatch):
     """Two concurrent requests for one model: one transfer, intact file, both succeed."""
+    monkeypatch.setattr("nodetool.worker.comfy_handler.is_ip_private", lambda x: False)
     monkeypatch.setenv("COMFY_MODELS_DIR", str(tmp_path))
     payload = bytes(range(256)) * 4096  # 1 MiB of position-sensitive bytes
     hits = []
