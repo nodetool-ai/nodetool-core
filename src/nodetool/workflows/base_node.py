@@ -128,6 +128,7 @@ from nodetool.metadata.types import (
     NameToType,
     NPArray,
     OutputSlot,
+    StreamKind,
     TypeToName,
 )
 from nodetool.metadata.utils import (
@@ -1791,6 +1792,11 @@ class BaseNode(BaseModel):
         return cls.gen_process is not BaseNode.gen_process
 
     @classmethod
+    def output_stream_kinds(cls) -> dict[str, StreamKind]:
+        """Declare the semantic kind of each streaming output."""
+        return {}
+
+    @classmethod
     def return_type(cls) -> type | None:
         """
         Get the return type of the node's process function.
@@ -1841,11 +1847,14 @@ class BaseNode(BaseModel):
             return []
 
         try:
+            stream_kinds = cls.output_stream_kinds() if cls.is_streaming_output() else {}
             if isinstance(return_type, dict):
                 return [
                     OutputSlot(
                         type=type_metadata(field_type, allow_optional=False),
                         name=field,
+                        stream=field in stream_kinds,
+                        stream_kind=stream_kinds.get(field),
                     )
                     for field, field_type in return_type.items()
                 ]
@@ -1860,10 +1869,19 @@ class BaseNode(BaseModel):
                     OutputSlot(
                         type=type_metadata(field_type, allow_optional=False),
                         name=field,
+                        stream=field in stream_kinds,
+                        stream_kind=stream_kinds.get(field),
                     )
                     for field, field_type in annotations.items()
                 ]
-            return [OutputSlot(type=type_metadata(return_type), name="output")]  # type: ignore
+            return [
+                OutputSlot(
+                    type=type_metadata(return_type),
+                    name="output",
+                    stream="output" in stream_kinds,
+                    stream_kind=stream_kinds.get("output"),
+                )
+            ]  # type: ignore
         except ValueError as e:
             raise ValueError(f"Invalid return type for node {cls.__name__}: {return_type} ({e})") from e
 
@@ -1871,7 +1889,20 @@ class BaseNode(BaseModel):
         """
         Returns OutputSlot objects for instance dynamic outputs.
         """
-        return [OutputSlot(type=tm, name=name) for name, tm in self._dynamic_outputs.items()]
+        stream_kinds = (
+            self.__class__.output_stream_kinds()
+            if self.__class__.is_streaming_output()
+            else {}
+        )
+        return [
+            OutputSlot(
+                type=tm,
+                name=name,
+                stream=name in stream_kinds,
+                stream_kind=stream_kinds.get(name),
+            )
+            for name, tm in self._dynamic_outputs.items()
+        ]
 
     def outputs_for_instance(self) -> list[OutputSlot]:
         """

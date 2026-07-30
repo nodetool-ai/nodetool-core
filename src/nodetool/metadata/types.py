@@ -1777,6 +1777,17 @@ class SVGRef(AssetRef):
     data: bytes | None = None
 
 
+StreamKind = Literal[
+    "text",
+    "audio",
+    "control",
+    "image",
+    "video",
+    "document",
+    "binary",
+]
+
+
 class OutputSlot(BaseModel):
     """
     An output slot is a slot that can be connected to an input slot.
@@ -1785,6 +1796,7 @@ class OutputSlot(BaseModel):
     type: TypeMetadata
     name: str
     stream: bool = False
+    stream_kind: StreamKind | None = None
 
 
 class ToolCallEvent(BaseType):
