@@ -34,7 +34,7 @@ def test_node_to_metadata_from_mock_node():
 def test_node_to_metadata_uses_streaming_output_type():
     from typing import AsyncGenerator, TypedDict
 
-    from nodetool.metadata.types import AudioRef, Chunk
+    from nodetool.metadata.types import AudioRef, Chunk, StreamKind
     from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
     from nodetool.workflows.processing_context import ProcessingContext
 
@@ -48,7 +48,7 @@ def test_node_to_metadata_uses_streaming_output_type():
             return "test_ns.StreamingAudioNode"
 
         @classmethod
-        def output_stream_kinds(cls):
+        def output_stream_kinds(cls) -> dict[str, StreamKind]:
             return {"chunk": "audio"}
 
         async def gen_process(

@@ -1846,7 +1846,7 @@ class BaseNode(BaseModel):
             return []
 
         try:
-            stream_kinds = cls.output_stream_kinds()
+            stream_kinds = cls.output_stream_kinds() if cls.is_streaming_output() else {}
             if isinstance(return_type, dict):
                 return [
                     OutputSlot(
@@ -1888,7 +1888,11 @@ class BaseNode(BaseModel):
         """
         Returns OutputSlot objects for instance dynamic outputs.
         """
-        stream_kinds = self.__class__.output_stream_kinds()
+        stream_kinds = (
+            self.__class__.output_stream_kinds()
+            if self.__class__.is_streaming_output()
+            else {}
+        )
         return [
             OutputSlot(
                 type=tm,
