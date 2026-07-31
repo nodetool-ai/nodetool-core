@@ -91,7 +91,8 @@ class WorkerContext(ProcessingContext):
         if data.dtype == np.int16:
             raw = data.tobytes()
         elif data.dtype in (np.float16, np.float32, np.float64):
-            raw = (np.clip(data, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
+            dt = np.float32 if data.dtype == np.float16 else data.dtype.type
+            raw = (data.clip(dt(-1.0), dt(1.0)) * dt(32767)).astype(np.int16).tobytes()
         else:
             raise ValueError(f"Unsupported dtype {data.dtype}")
         # Always honour the caller's channel count, like the base
