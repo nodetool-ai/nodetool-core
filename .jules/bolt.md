@@ -52,3 +52,7 @@
 ## 2025-07-28 - PyTorch Tensor to NumPy Array Optimization
 **Learning:** When converting PyTorch tensors to `uint8` NumPy image arrays, using NumPy's `clip` or explicitly multiplying integers by a Python float upcasts the arrays implicitly to `float64` and creates intermediate allocations. Using PyTorch's native `.mul()`, `.clamp_()`, and `.byte()` operations before moving to NumPy allows PyTorch to utilize its optimized C++ backend to execute the operations in-place, drastically reducing both execution time and memory footprint.
 **Action:** Use PyTorch's native `.mul()`, `.clamp_()`, and `.byte()` methods when scaling and clipping PyTorch tensors to `uint8` arrays, making sure to explicitly cast non-floating point tensors to `.float()` to prevent implicit conversion OOM errors and to maintain accurate math boundaries.
+
+## 2026-08-02 - NumPy array.clip() vs np.clip() optimization
+**Learning:** Replacing the module-level `np.clip(array, min, max)` function with the instance method `array.clip(min, max)` avoids the overhead of NumPy's `__array_function__` dispatcher. This generic dispatcher performs type checking, method lookups, and argument parsing, which adds measurable overhead, especially in hot paths like audio processing loops.
+**Action:** Always prefer the instance method `array.clip(min, max)` over `np.clip(array, min, max)` when the object is known to be a NumPy array.
