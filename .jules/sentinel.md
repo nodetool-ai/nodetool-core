@@ -61,3 +61,8 @@
 **Vulnerability:** A manual SSRF bypass existed in `download_http_uri` where `aiohttp` automatically followed HTTP redirects, potentially directing the client to resolve a private/restricted IP that wasn't checked by the initial `SSRFProtectResolver` or `is_ip_private` validation on the primary host URL.
 **Learning:** `aiohttp.ClientSession.get` follows redirects by default (`allow_redirects=True`). If the `SSRFProtectResolver` short-circuits on IP literals, or if only the initial host is validated, a malicious redirect can exploit the SSRF.
 **Prevention:** Always set `allow_redirects=False` in HTTP clients used to fetch untrusted URLs when SSRF protections are required. Implement manual redirect following (with a max redirect limit) and re-validate the target host string via `is_ip_private` on every single redirect hop.
+
+## 2026-08-06 - SSRF and Credential Leak in ComfyUI Model Downloads
+**Vulnerability:** The `comfy.models.download` function used `aiohttp` to fetch arbitrary user-provided HTTP URLs with automatic redirects enabled (`allow_redirects=True`). It also lacked a custom DNS resolver. This permitted SSRF and DNS Rebinding vulnerabilities. Furthermore, cross-origin redirects implicitly leaked `Authorization` headers to the destination.
+**Learning:** Even if a request validates its initial URL, automatic redirects allow an attacker to bypass constraints by redirecting the client to internal networks or different domains.
+**Prevention:** 1) Block literal private IPs via `is_ip_private()`. 2) Prevent DNS Rebinding via `SSRFProtectResolver()`. 3) Use manual redirects (`allow_redirects=False`) to enforce IP validation at each hop and to strip `Authorization` headers if the domain changes.
