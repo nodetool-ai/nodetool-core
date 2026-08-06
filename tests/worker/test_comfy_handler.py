@@ -572,9 +572,11 @@ async def test_comfy_unknown_type(server, fake_comfy):
 
 # --- model volume management ----------------------------------------------------------
 
+from unittest.mock import patch
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_models_download_from_url(server, fake_comfy, tmp_path, monkeypatch):
+@patch("nodetool.worker.comfy_handler.is_ip_private", return_value=False)
+async def test_models_download_from_url(mock_is_ip_private, server, fake_comfy, tmp_path, monkeypatch):
     monkeypatch.setenv("COMFY_MODELS_DIR", str(tmp_path))
     payload = b"x" * 64
     fake_comfy.model_files["sd.safetensors"] = payload
@@ -610,7 +612,8 @@ async def test_models_download_from_url(server, fake_comfy, tmp_path, monkeypatc
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_models_download_progress_is_throttled(server, fake_comfy, tmp_path, monkeypatch):
+@patch("nodetool.worker.comfy_handler.is_ip_private", return_value=False)
+async def test_models_download_progress_is_throttled(mock_is_ip_private, server, fake_comfy, tmp_path, monkeypatch):
     """Progress frames are time-throttled, not one per chunk — per-chunk awaits
     on the serialized transport would gate download throughput on bridge latency."""
     monkeypatch.setenv("COMFY_MODELS_DIR", str(tmp_path))
@@ -680,7 +683,8 @@ async def test_models_download_existing_is_skipped_without_network(server, tmp_p
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_models_download_maps_comfy_type_to_folder(server, fake_comfy, tmp_path, monkeypatch):
+@patch("nodetool.worker.comfy_handler.is_ip_private", return_value=False)
+async def test_models_download_maps_comfy_type_to_folder(mock_is_ip_private, server, fake_comfy, tmp_path, monkeypatch):
     """comfy.checkpoint_file-style type names map to the ComfyUI folder layout."""
     monkeypatch.setenv("COMFY_MODELS_DIR", str(tmp_path))
     fake_comfy.model_files["model.ckpt"] = b"z" * 8
