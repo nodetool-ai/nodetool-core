@@ -1412,7 +1412,7 @@ class ProcessingContext:
                 data_bytes = data.tobytes()
             elif data.dtype in (np.float32, np.float64, np.float16):
                 # Full-scale conversion: clip to [-1.0, 1.0] then scale to int16
-                data_bytes = (np.clip(data, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
+                data_bytes = (data.clip(-1.0, 1.0) * 32767).astype(np.int16).tobytes()
             else:
                 raise ValueError(f"Unsupported dtype {data.dtype}")
             return AudioSegment(
