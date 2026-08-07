@@ -11,6 +11,7 @@ import asyncio
 import pytest
 from aiohttp import web
 
+from unittest.mock import patch
 from nodetool.worker import comfy_handler
 from nodetool.worker.comfy_handler import ComfyError, _handle_models_download
 
@@ -81,7 +82,8 @@ def _patch_source(monkeypatch, factory, name="model.safetensors"):
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_concurrent_downloads_of_same_target_transfer_once(tmp_path, monkeypatch):
+@patch('nodetool.worker.comfy_handler.is_ip_private', return_value=False)
+async def test_concurrent_downloads_of_same_target_transfer_once(mock_is_ip_private, tmp_path, monkeypatch):
     """Two concurrent requests for one model: one transfer, intact file, both succeed."""
     monkeypatch.setenv("COMFY_MODELS_DIR", str(tmp_path))
     payload = bytes(range(256)) * 4096  # 1 MiB of position-sensitive bytes
