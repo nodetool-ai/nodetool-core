@@ -1,4 +1,7 @@
 Dockerfile
+Dockerfile.comfy
+.git/
+.github/
 electron/node_modules/
 web/node_modules/
 .venv/

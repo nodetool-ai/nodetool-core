@@ -1,3 +1,8 @@
+# Which install stage the runtime image is built from: `final` (nodetool-core
+# from PyPI, used for releases) or `dev` (nodetool-core from the build context,
+# used for main-branch builds of unreleased commits).
+ARG WORKER_BASE=final
+
 FROM mambaorg/micromamba:jammy AS base
 
 # Install uv (used to install nodetool-core into the conda base env)
@@ -81,10 +86,12 @@ RUN micromamba install -y -n base -c conda-forge python=$PYTHON_VERSION pip && \
 ENV PATH=$VIRTUAL_ENV/bin:$PATH
 
 
+# Release image (default target): both packages come from PyPI, so nothing from
+# the build context is needed and the layer caches on the version args alone.
+#
+#   docker build --build-arg NODETOOL_VERSION=0.7.2 --build-arg HF_VERSION=0.7.2 .
 FROM base AS final
 
-# Package versions to install from PyPI. Override at build time:
-#   docker build --build-arg NODETOOL_VERSION=0.7.2 --build-arg HF_VERSION=0.7.2 .
 ARG NODETOOL_VERSION=0.7.1
 ARG HF_VERSION=0.7.1
 
@@ -95,6 +102,32 @@ RUN uv pip install \
         "nodetool-core==${NODETOOL_VERSION}" \
         "nodetool-huggingface==${HF_VERSION}" && \
     rm -rf /root/.cache/uv /root/.cache/pip /tmp/* /var/tmp/*
+
+
+# Development image (--build-arg WORKER_BASE=dev): nodetool-core is installed
+# from the build context instead of PyPI, so unreleased commits (e.g. main) can
+# be imaged. nodetool-huggingface still comes from PyPI.
+FROM base AS dev
+
+ARG HF_VERSION=0.7.1
+
+# nodetool-huggingface first, then the local source — nodetool-huggingface
+# depends on nodetool-core, so installing it second guarantees the build
+# context's version is the one that ends up in the image.
+COPY . /src
+
+RUN uv pip install \
+        --python $VIRTUAL_ENV \
+        --index-url https://pypi.org/simple \
+        "nodetool-huggingface==${HF_VERSION}" && \
+    uv pip install \
+        --python $VIRTUAL_ENV \
+        --index-url https://pypi.org/simple \
+        /src && \
+    rm -rf /src /root/.cache/uv /root/.cache/pip /tmp/* /var/tmp/*
+
+
+FROM ${WORKER_BASE} AS runtime
 
 # Expose the worker's WebSocket port
 EXPOSE 7777

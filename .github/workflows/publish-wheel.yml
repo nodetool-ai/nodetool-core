@@ -1,6 +1,10 @@
 # .github/workflows/publish-wheel.yml
 # Template workflow for individual NodeTool package repositories
 # Copy this to each package repository: nodetool-core, nodetool-huggingface, etc.
+#
+# The nodetool-worker Docker image is NOT built here — it lives in docker.yml,
+# which builds on every main commit and on the same v*.*.* tags (waiting for
+# this workflow's PyPI publish before doing a release build).
 
 name: Build and Publish Wheel
 
@@ -31,10 +35,6 @@ on:
           - none
           - testpypi
           - pypi
-      hf_version:
-        description: "nodetool-huggingface version to bundle in Docker image (defaults to same as release version)"
-        required: false
-        type: string
 
 env:
   PACKAGE_NAME: ${{ github.event.repository.name }} # e.g., "nodetool-core"
@@ -46,7 +46,6 @@ jobs:
       version: ${{ steps.get-version.outputs.version }}
       tag-name: ${{ steps.get-version.outputs.tag-name }}
       is-prerelease: ${{ steps.get-version.outputs.is-prerelease }}
-      hf-version: ${{ steps.get-version.outputs.hf-version }}
     steps:
       - name: Get version from tag or input
         id: get-version
@@ -61,26 +60,13 @@ jobs:
             IS_PRERELEASE="false"
           fi
 
-          # HF version: use the explicit input if given, otherwise the latest
-          # nodetool-huggingface published on PyPI. nodetool-huggingface is
-          # versioned independently, so it rarely matches the core release
-          # version — defaulting to $VERSION breaks the Docker build whenever a
-          # matching HF release doesn't exist.
-          HF_VERSION="${{ github.event.inputs.hf_version }}"
-          if [ -z "$HF_VERSION" ]; then
-            HF_VERSION=$(curl -fsSL https://pypi.org/pypi/nodetool-huggingface/json \
-              | python3 -c "import sys, json; print(json.load(sys.stdin)['info']['version'])")
-          fi
-
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag-name=$TAG_NAME" >> $GITHUB_OUTPUT
           echo "is-prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
-          echo "hf-version=$HF_VERSION" >> $GITHUB_OUTPUT
 
           echo "📋 Version: $VERSION"
           echo "🏷️ Tag: $TAG_NAME"
           echo "🔄 Prerelease: $IS_PRERELEASE"
-          echo "🤗 HF Version: $HF_VERSION"
 
   build-wheel:
     needs: validate
@@ -221,56 +207,6 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-
-  # Build and push the nodetool-worker Docker image to GHCR.
-  # Runs after publish-pypi because the Dockerfile installs nodetool-core and
-  # nodetool-huggingface from PyPI. Both packages must be published before this runs.
-  # Tags: ghcr.io/nodetool-ai/nodetool-worker:<version> and :latest
-  #
-  # Runs after a successful publish (tag push) OR when publish-pypi was skipped
-  # (manual dispatch to rebuild the image for an already-published version,
-  # which installs the packages straight from PyPI). Skips only if publish-pypi
-  # actually failed.
-  build-docker:
-    needs: [validate, publish-pypi]
-    if: |
-      always() &&
-      needs.validate.result == 'success' &&
-      (needs.publish-pypi.result == 'success' || needs.publish-pypi.result == 'skipped')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.validate.outputs.tag-name }}
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64
-          push: true
-          build-args: |
-            NODETOOL_VERSION=${{ needs.validate.outputs.version }}
-            HF_VERSION=${{ needs.validate.outputs.hf-version }}
-          tags: |
-            ghcr.io/nodetool-ai/nodetool-worker:${{ needs.validate.outputs.version }}
-            ghcr.io/nodetool-ai/nodetool-worker:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   # Manual-only TestPyPI dry run (publish_pypi=testpypi).
   # Needs a matching pending publisher on https://test.pypi.org with
