@@ -41,6 +41,7 @@ async def configured_server():
         _cancel_event: asyncio.Event,
         _emit_progress: Callable[[dict[str, Any]], Awaitable[None]],
         emit_chunk: Callable[[dict[str, Any]], Awaitable[None]] | None,
+        _emit_update: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> dict:
         if data.get("node_type") != "fake.Echo":
             raise ValueError(f"Unknown node type: {data.get('node_type')}")
@@ -74,6 +75,7 @@ async def cancellable_server():
         cancel_event: asyncio.Event,
         emit_progress: Callable[[dict[str, Any]], Awaitable[None]],
         emit_chunk: Callable[[dict[str, Any]], Awaitable[None]] | None,
+        _emit_update: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         _ = data, emit_progress
         assert emit_chunk is not None

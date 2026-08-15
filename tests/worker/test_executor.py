@@ -145,6 +145,41 @@ class ProgressBeforeRaiseNode(BaseNode):
         raise RuntimeError("boom")
 
 
+class PreviewEmittingNode(BaseNode):
+    """Posts a preview and a log update — verifies they reach emit_update."""
+
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "test.PreviewEmittingNode"
+
+    async def process(self, context: ProcessingContext) -> str:
+        from nodetool.workflows.types import LogUpdate, PreviewUpdate
+
+        context.post_message(PreviewUpdate(node_id="n1", value={"step": 1}))
+        context.post_message(
+            LogUpdate(node_id="n1", node_name="preview", content="rendering", severity="info")
+        )
+        return "done"
+
+
+class CancellableStreamingNode(BaseNode):
+    """Streams forever; only a cooperative cancel between chunks stops it."""
+
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "test.CancellableStreamingNode"
+
+    async def process(self, context: ProcessingContext) -> str:
+        raise AssertionError("execute_node should use gen_process for streaming nodes")
+
+    async def gen_process(
+        self, context: ProcessingContext
+    ) -> AsyncGenerator[dict[str, int], None]:
+        for index in range(1000):
+            yield {"output": index}
+            await asyncio.sleep(0.01)
+
+
 @pytest.fixture(autouse=True)
 def register_echo():
     NODE_BY_TYPE["test.EchoNode"] = EchoNode
@@ -154,6 +189,8 @@ def register_echo():
     NODE_BY_TYPE["test.MultiChunkStreamingNode"] = MultiChunkStreamingNode
     NODE_BY_TYPE["test.ProgressEmittingNode"] = ProgressEmittingNode
     NODE_BY_TYPE["test.ProgressBeforeRaiseNode"] = ProgressBeforeRaiseNode
+    NODE_BY_TYPE["test.PreviewEmittingNode"] = PreviewEmittingNode
+    NODE_BY_TYPE["test.CancellableStreamingNode"] = CancellableStreamingNode
     yield
     NODE_BY_TYPE.pop("test.EchoNode", None)
     NODE_BY_TYPE.pop("test.ImageListNode", None)
@@ -162,6 +199,8 @@ def register_echo():
     NODE_BY_TYPE.pop("test.MultiChunkStreamingNode", None)
     NODE_BY_TYPE.pop("test.ProgressEmittingNode", None)
     NODE_BY_TYPE.pop("test.ProgressBeforeRaiseNode", None)
+    NODE_BY_TYPE.pop("test.PreviewEmittingNode", None)
+    NODE_BY_TYPE.pop("test.CancellableStreamingNode", None)
 
 
 @pytest.mark.asyncio
@@ -414,3 +453,84 @@ async def test_execute_node_stream_propagates_errors():
             input_blobs={},
         ):
             pass
+
+
+@pytest.mark.asyncio
+async def test_execute_node_forwards_preview_and_log_updates():
+    """PreviewUpdate/LogUpdate posted by a node must reach emit_update, not be discarded."""
+    updates: list[dict[str, Any]] = []
+
+    async def on_update(u: dict[str, Any]) -> None:
+        updates.append(u)
+
+    result = await execute_node(
+        node_type="test.PreviewEmittingNode",
+        fields={},
+        secrets={},
+        input_blobs={},
+        emit_update=on_update,
+    )
+
+    assert result["outputs"]["output"] == "done"
+    kinds = {u.get("type") for u in updates}
+    assert "preview_update" in kinds
+    assert "log_update" in kinds
+    preview = next(u for u in updates if u["type"] == "preview_update")
+    assert preview["value"] == {"step": 1}
+
+
+@pytest.mark.asyncio
+async def test_execute_node_without_emit_update_still_succeeds():
+    """Updates are dropped cleanly when no emit_update callback is provided."""
+    result = await execute_node(
+        node_type="test.PreviewEmittingNode",
+        fields={},
+        secrets={},
+        input_blobs={},
+    )
+    assert result["outputs"]["output"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_streaming_node_cancels_between_chunks():
+    """A set cancel_event must interrupt a streaming node between chunks."""
+    from nodetool.workflows.processing_context import NodeCancelledError
+
+    cancel_event = asyncio.Event()
+    chunks: list[dict[str, Any]] = []
+
+    async def on_chunk(chunk: dict[str, Any]) -> None:
+        chunks.append(chunk)
+        if len(chunks) >= 3:
+            cancel_event.set()
+
+    with pytest.raises(NodeCancelledError):
+        await execute_node(
+            node_type="test.CancellableStreamingNode",
+            fields={},
+            secrets={},
+            input_blobs={},
+            cancel_event=cancel_event,
+            emit_chunk=on_chunk,
+        )
+
+    # The stream stopped shortly after the cancel, not after all 1000 chunks.
+    assert 3 <= len(chunks) < 100
+
+
+@pytest.mark.asyncio
+async def test_pre_cancelled_execution_refuses_to_run_process():
+    """A cancel that lands before process() starts must abort the execution."""
+    from nodetool.workflows.processing_context import NodeCancelledError
+
+    cancel_event = asyncio.Event()
+    cancel_event.set()
+
+    with pytest.raises(NodeCancelledError):
+        await execute_node(
+            node_type="test.EchoNode",
+            fields={"text": "hi"},
+            secrets={},
+            input_blobs={},
+            cancel_event=cancel_event,
+        )

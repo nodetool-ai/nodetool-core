@@ -152,6 +152,7 @@ class StdioWorkerServer:
                 asyncio.Event,
                 Callable[[dict[str, Any]], Awaitable[None]],
                 Callable[[dict[str, Any]], Awaitable[None]] | None,
+                Callable[[dict[str, Any]], Awaitable[None]] | None,
             ],
             Awaitable[dict],
         ],
@@ -239,6 +240,7 @@ async def run_stdio_worker(namespaces: list[str] | None = None) -> None:
         cancel_event: asyncio.Event,
         emit_progress: Callable[[dict[str, Any]], Awaitable[None]],
         emit_chunk: Callable[[dict[str, Any]], Awaitable[None]] | None,
+        emit_update: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> dict:
         return await execute_node(
             node_type=data["node_type"],
@@ -248,6 +250,7 @@ async def run_stdio_worker(namespaces: list[str] | None = None) -> None:
             cancel_event=cancel_event,
             emit_progress=emit_progress,
             emit_chunk=emit_chunk,
+            emit_update=emit_update,
         )
 
     server.set_execute_handler(handle_execute)

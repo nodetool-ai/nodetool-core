@@ -141,3 +141,95 @@ class TestLockEviction:
             ModelManager.clear_unused(["node1"])
             assert key in ModelManager._locks
             assert ModelManager._models == {}
+
+
+class FakeParam:
+    """Stand-in for a torch parameter."""
+
+    def __init__(self, device: str, numel: int = 1000, element_size: int = 4):
+        self.device = device
+        self._numel = numel
+        self._element_size = element_size
+
+    def numel(self) -> int:
+        return self._numel
+
+    def element_size(self) -> int:
+        return self._element_size
+
+
+class FakeModule:
+    def __init__(self, device: str, numel: int = 1000):
+        self._params = [FakeParam(device, numel)]
+
+    def parameters(self):
+        return list(self._params)
+
+
+class FakePipeline:
+    """Diffusers-pipeline shape: no .parameters(), modules under .components."""
+
+    def __init__(self):
+        self.components = {
+            "unet": FakeModule("cuda:0", numel=2000),
+            "vae": FakeModule("cpu", numel=500),
+            "scheduler": object(),  # non-module component
+            "feature_extractor": None,
+        }
+
+
+class TestDeviceAndSizeDetection:
+    def test_torch_module_detected(self):
+        device, size = ModelManager._detect_torch_model_device_and_size(FakeModule("cuda:0", numel=10))
+        assert device == "cuda:0"
+        assert size == 40
+
+    def test_diffusers_pipeline_detected_via_components(self):
+        """A pipeline exposes neither .parameters() nor tensor attrs — its
+        components must still be seen, or VRAM eviction walks past exactly
+        the objects holding the memory."""
+        device, size = ModelManager._detect_torch_model_device_and_size(FakePipeline())
+        assert device == "cuda:0"  # hottest device wins over cpu components
+        assert size == (2000 + 500) * 4
+
+    def test_unknown_object_stays_unknown(self):
+        device, size = ModelManager._detect_torch_model_device_and_size(object())
+        assert device == "unknown"
+        assert size is None
+
+
+class TestEvictAllExcept:
+    def test_evicts_everything_but_the_kept_key(self):
+        ModelManager.set_model("node-1", "modelA_task", FakeModule("cuda:0"))
+        ModelManager.set_model("node-2", "modelB_task", FakeModule("cuda:0"))
+
+        evicted = ModelManager.evict_all_except("modelB_task")
+
+        assert evicted == ["modelA_task"]
+        assert set(ModelManager._models.keys()) == {"modelB_task"}
+        assert "node-1" not in ModelManager._models_by_node
+        assert "modelA_task" not in ModelManager._model_last_used
+
+    def test_none_evicts_all(self):
+        ModelManager.set_model("node-1", "modelA_task", FakeModule("cpu"))
+        evicted = ModelManager.evict_all_except(None)
+        assert evicted == ["modelA_task"]
+        assert ModelManager._models == {}
+
+
+def test_vram_snapshot_usable_credits_reclaimable():
+    from nodetool.ml.core.model_manager import VramSnapshot
+
+    snap = VramSnapshot(
+        percent=90.0,
+        available_gb=1.0,
+        total_gb=24.0,
+        process_allocated_gb=15.0,
+        reclaimable_gb=6.0,
+    )
+    assert snap.usable_gb == 7.0
+    # 24 - 7 usable = 17/24 ≈ 70.8% used — under the 92% threshold, so a
+    # steady state with big reserved-but-free blocks is not treated as pressure.
+    assert ModelManager._needs_vram_cleanup(snap, required_free_gb=None) is False
+    # But a genuine requirement larger than usable still triggers cleanup.
+    assert ModelManager._needs_vram_cleanup(snap, required_free_gb=10.0) is True

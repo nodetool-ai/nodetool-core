@@ -48,6 +48,7 @@ class WorkerProtocolServer:
             asyncio.Event,
             Callable[[dict[str, Any]], Awaitable[None]],
             Callable[[dict[str, Any]], Awaitable[None]] | None,
+            Callable[[dict[str, Any]], Awaitable[None]] | None,
         ], Awaitable[dict[str, Any]]] | None = None
         self._load_errors: list[dict[str, Any]] = []
         self._namespaces: list[str] = []
@@ -68,6 +69,7 @@ class WorkerProtocolServer:
             dict[str, Any],
             asyncio.Event,
             Callable[[dict[str, Any]], Awaitable[None]],
+            Callable[[dict[str, Any]], Awaitable[None]] | None,
             Callable[[dict[str, Any]], Awaitable[None]] | None,
         ], Awaitable[dict[str, Any]]],
     ) -> None:
@@ -138,8 +140,18 @@ class WorkerProtocolServer:
                         })
                     emit_chunk = _emit_chunk
 
+                # Non-progress updates a client can render live (previews,
+                # logs, binary payloads). The data dict is the serialized
+                # message, discriminated by its "type" field.
+                async def emit_update(update: dict[str, Any]) -> None:
+                    await transport.send_msg({
+                        "type": "update",
+                        "request_id": request_id,
+                        "data": update,
+                    })
+
                 result = await self._execute_handler(
-                    msg["data"], cancel_event, emit_progress, emit_chunk
+                    msg["data"], cancel_event, emit_progress, emit_chunk, emit_update
                 )
                 # For execute.stream, the per-chunk frames already carried the
                 # outputs/blobs. The result frame is just a terminator so the

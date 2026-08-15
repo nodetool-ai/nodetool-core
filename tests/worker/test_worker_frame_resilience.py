@@ -127,6 +127,7 @@ async def test_stdio_drains_inflight_tasks_when_a_bad_frame_ends_the_stream(monk
         _cancel: asyncio.Event,
         _progress: Callable[[dict[str, Any]], Awaitable[None]],
         _chunk: Callable[[dict[str, Any]], Awaitable[None]] | None,
+        _update: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> dict:
         started.set()
         await asyncio.sleep(0.05)
