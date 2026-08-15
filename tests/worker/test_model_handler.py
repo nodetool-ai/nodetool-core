@@ -30,8 +30,8 @@ async def server():
 @pytest.mark.asyncio(loop_scope="function")
 async def test_models_list_cached(server, monkeypatch):
     """models.list_cached returns the worker's cached repos as UnifiedModel[]."""
-    from nodetool.types.model import UnifiedModel
     import nodetool.worker.model_handler as mh
+    from nodetool.types.model import UnifiedModel
 
     async def fake_read_cached():
         return [
@@ -61,8 +61,8 @@ async def test_models_list_cached(server, monkeypatch):
 @pytest.mark.asyncio(loop_scope="function")
 async def test_models_list_cached_forces_downloaded_true(server, monkeypatch):
     """Even if a cached entry reports downloaded=False, list_cached forces True."""
-    from nodetool.types.model import UnifiedModel
     import nodetool.worker.model_handler as mh
+    from nodetool.types.model import UnifiedModel
 
     async def fake_read_cached():
         return [

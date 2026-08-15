@@ -30,7 +30,7 @@ def test_host_port_env_defaults(monkeypatch):
     the env-default wiring works."""
     import argparse
 
-    import nodetool.worker.__main__ as worker_main  # noqa: F401  (import side effects)
+    import nodetool.worker.__main__ as worker_main
 
     monkeypatch.setenv("NODETOOL_WORKER_HOST", "0.0.0.0")
     monkeypatch.setenv("NODETOOL_WORKER_PORT", "7777")
