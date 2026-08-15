@@ -63,35 +63,50 @@ def _get_asset_ref_type(annotation: Any) -> str:
 async def _emit_pending_progress(
     ctx: WorkerContext,
     emit_progress: Callable[[dict[str, Any]], Awaitable[None]] | None,
+    emit_update: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> None:
-    """Forward any NodeProgress messages the node queued during execution."""
-    if emit_progress is None:
-        ctx.drain_progress()
+    """Forward messages the node queued during execution.
+
+    NodeProgress goes to ``emit_progress`` in the flat shape the bridge's
+    ``progress`` frame expects. Preview/log/binary updates go to
+    ``emit_update`` as their serialized model dump (discriminated by their
+    ``type`` field) so live previews and logs can reach the UI mid-render.
+    """
+    from nodetool.workflows.types import NodeProgress
+
+    if emit_progress is None and emit_update is None:
+        ctx.drain_messages()
         return
 
-    for msg in ctx.drain_progress():
-        progress = getattr(msg, "progress", None)
-        total = getattr(msg, "total", None)
-        if progress is None:
-            current = getattr(msg, "current", None)
-            if current is not None:
-                progress = current
-        if progress is None:
-            progress = 0
-        if total is None:
-            total = 100
-        await emit_progress(
-            {
-                "progress": progress,
-                "total": total,
-                "message": getattr(msg, "message", None),
-            }
-        )
+    for msg in ctx.drain_messages():
+        if isinstance(msg, NodeProgress):
+            if emit_progress is None:
+                continue
+            progress = getattr(msg, "progress", None)
+            total = getattr(msg, "total", None)
+            if progress is None:
+                current = getattr(msg, "current", None)
+                if current is not None:
+                    progress = current
+            if progress is None:
+                progress = 0
+            if total is None:
+                total = 100
+            await emit_progress(
+                {
+                    "progress": progress,
+                    "total": total,
+                    "message": getattr(msg, "message", None),
+                }
+            )
+        elif emit_update is not None:
+            await emit_update(_serialize_value(msg))
 
 
 def _start_progress_pump(
     ctx: WorkerContext,
     emit_progress: Callable[[dict[str, Any]], Awaitable[None]] | None,
+    emit_update: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> tuple[asyncio.Task, asyncio.Event]:
     """Spawn a background task that flushes queued progress in near-real-time.
 
@@ -111,14 +126,14 @@ def _start_progress_pump(
             except TimeoutError:
                 pass
             try:
-                await _emit_pending_progress(ctx, emit_progress)
+                await _emit_pending_progress(ctx, emit_progress, emit_update)
             except Exception:
                 # Don't let a transient transport error kill the pump or mask
                 # the node's own error — just drop this batch.
                 pass
         # Final drain after stop so anything queued during shutdown still ships.
         try:
-            await _emit_pending_progress(ctx, emit_progress)
+            await _emit_pending_progress(ctx, emit_progress, emit_update)
         except Exception:
             pass
 
@@ -208,6 +223,7 @@ async def execute_node(
     cancel_event: asyncio.Event | None = None,
     emit_progress: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     emit_chunk: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+    emit_update: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> dict[str, Any]:
     """Execute a single Python node and return outputs + blobs.
 
@@ -235,8 +251,9 @@ async def execute_node(
             # Both inside the try so a failure here (e.g. mkdtemp on a
             # read-only FS) still runs the cleanup in `finally`.
             temp_dir = tempfile.mkdtemp(prefix="nodetool_worker_")
-            pump_handle = _start_progress_pump(ctx, emit_progress)
+            pump_handle = _start_progress_pump(ctx, emit_progress, emit_update)
             node = await _prepare_node(node_class, fields, input_blobs, temp_dir, ctx)
+            ctx.raise_if_cancelled()
             if node.is_streaming_output():
                 if emit_chunk is not None:
                     result = await _stream_streaming_outputs(node, ctx, emit_chunk)
@@ -354,6 +371,9 @@ async def _collect_streaming_outputs(
     """Collect the final value emitted for each slot from a streaming node."""
     outputs: dict[str, Any] = {}
     async for item in node.gen_process(ctx):
+        # Cooperative cancellation between chunks: a cancel request must not
+        # wait for the whole stream to finish before taking effect.
+        ctx.raise_if_cancelled()
         if not isinstance(item, dict):
             raise TypeError("Streaming worker nodes must yield dictionaries mapping output names to values.")
         for slot_name, value in item.items():
@@ -377,6 +397,7 @@ async def _stream_streaming_outputs(
     """
     outputs: dict[str, Any] = {}
     async for item in node.gen_process(ctx):
+        ctx.raise_if_cancelled()
         if not isinstance(item, dict):
             raise TypeError("Streaming worker nodes must yield dictionaries mapping output names to values.")
         for slot_name, value in item.items():

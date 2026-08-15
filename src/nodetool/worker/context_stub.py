@@ -140,13 +140,37 @@ class WorkerContext(ProcessingContext):
         return blobs
 
     def drain_progress(self) -> list[Any]:
-        """Drain progress messages from the message queue."""
+        """Drain NodeProgress messages from the message queue.
+
+        Anything else in the queue is discarded — callers that also want
+        previews/logs should use :meth:`drain_messages` instead.
+        """
         from nodetool.workflows.types import NodeProgress
+
+        return [msg for msg in self.drain_messages() if isinstance(msg, NodeProgress)]
+
+    def drain_messages(self) -> list[Any]:
+        """Drain all forwardable messages from the message queue.
+
+        Returns NodeProgress plus the update types a client can render live
+        (PreviewUpdate, LogUpdate, BinaryUpdate) — previously everything but
+        NodeProgress was silently discarded, so in-flight previews and logs
+        could never reach the UI. Message types with no wire representation
+        are still dropped.
+        """
+        from nodetool.workflows.types import (
+            BinaryUpdate,
+            LogUpdate,
+            NodeProgress,
+            PreviewUpdate,
+        )
+
+        keep = (NodeProgress, PreviewUpdate, LogUpdate, BinaryUpdate)
         messages = []
         while not self.message_queue.empty():
             try:
                 msg = self.message_queue.get_nowait()
-                if isinstance(msg, NodeProgress):
+                if isinstance(msg, keep):
                     messages.append(msg)
             except Exception:
                 break

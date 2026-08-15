@@ -664,6 +664,130 @@ class LanguageModel(BaseType):
     supported_tasks: list[str] = Field(default_factory=list)
 
 
+class VideoEnvelope(BaseType):
+    """Per-model capability envelope for video generation.
+
+    Describes the legal geometry and measured cost/memory limits of a video
+    model so clients (and preflight checks) can derive valid inputs by
+    arithmetic instead of hand-carrying per-model ranges in node classes:
+
+    - Legal frame counts form a lattice: ``frames = frame_base + frame_step * k``
+      (off-lattice values are silently snapped or fail deep inside pipelines).
+    - Dimensions must be multiples of ``dim_multiple`` with ``width * height``
+      bounded by ``max_px``.
+    - VRAM is bounded by the *joint* pixels×frames product, not by each
+      dimension independently: ``px_frames_proven`` is a measured-good budget,
+      ``px_frames_oom`` a measured-bad one. Refusing by arithmetic before any
+      model load turns a many-minute OOM into an instant, explainable error.
+    - ``est_ref`` is one measured reference render (keys like ``w``, ``h``,
+      ``frames``, ``steps``, ``total_s``); scale by voxels and steps for a
+      cost estimate.
+    """
+
+    type: Literal["video_envelope"] = "video_envelope"
+    fps: float | None = None
+    min_frames: int | None = None
+    max_frames: int | None = None
+    frame_step: int | None = None
+    frame_base: int | None = None
+    dim_multiple: int | None = None
+    min_dim: int | None = None
+    max_dim: int | None = None
+    max_px: int | None = None
+    audio: bool = False
+    prompt_format: str | None = None
+    steps_default: int | None = None
+    est_ref: dict[str, float] | None = None
+    px_frames_proven: int | None = None
+    px_frames_oom: int | None = None
+
+    def snap_frames(self, frames: int) -> int:
+        """Snap a frame count onto the legal lattice, clamped to the min/max range."""
+        if self.min_frames is not None:
+            frames = max(frames, self.min_frames)
+        if self.max_frames is not None:
+            frames = min(frames, self.max_frames)
+        step = self.frame_step or 1
+        base = self.frame_base or 0
+        if step > 1:
+            k = round((frames - base) / step)
+            frames = base + step * max(k, 0)
+            if self.min_frames is not None and frames < self.min_frames:
+                frames += step
+            if self.max_frames is not None and frames > self.max_frames:
+                frames -= step
+        return frames
+
+    def snap_dimension(self, dim: int) -> int:
+        """Snap a width/height onto the required multiple, clamped to the min/max range."""
+        if self.min_dim is not None:
+            dim = max(dim, self.min_dim)
+        if self.max_dim is not None:
+            dim = min(dim, self.max_dim)
+        multiple = self.dim_multiple or 1
+        if multiple > 1:
+            dim = round(dim / multiple) * multiple
+            if self.min_dim is not None and dim < self.min_dim:
+                dim += multiple
+            if self.max_dim is not None and dim > self.max_dim:
+                dim -= multiple
+        return max(dim, multiple)
+
+    def validate_geometry(self, width: int, height: int, frames: int) -> list[str]:
+        """Return violation descriptions for a requested geometry (empty = valid).
+
+        Checks the frame lattice, dimension multiples, per-frame pixel budget,
+        and the joint pixels×frames memory budget. Meant to run before any
+        lock or model load so an impossible request fails instantly.
+        """
+        errors: list[str] = []
+        multiple = self.dim_multiple or 1
+        for label, dim in (("width", width), ("height", height)):
+            if dim % multiple != 0:
+                errors.append(f"{label} {dim} is not a multiple of {multiple}")
+            if self.min_dim is not None and dim < self.min_dim:
+                errors.append(f"{label} {dim} is below the minimum of {self.min_dim}")
+            if self.max_dim is not None and dim > self.max_dim:
+                errors.append(f"{label} {dim} exceeds the maximum of {self.max_dim}")
+
+        if self.min_frames is not None and frames < self.min_frames:
+            errors.append(f"frames {frames} is below the minimum of {self.min_frames}")
+        if self.max_frames is not None and frames > self.max_frames:
+            errors.append(f"frames {frames} exceeds the maximum of {self.max_frames}")
+        step = self.frame_step or 1
+        base = self.frame_base or 0
+        if step > 1 and (frames - base) % step != 0:
+            errors.append(f"frames {frames} is off the legal lattice ({base} + {step}*k)")
+
+        px = width * height
+        if self.max_px is not None and px > self.max_px:
+            errors.append(f"width*height {px} exceeds the pixel budget of {self.max_px}")
+
+        px_frames = px * frames
+        budget = self.px_frames_proven if self.px_frames_proven is not None else self.px_frames_oom
+        if budget is not None and px_frames > budget:
+            errors.append(
+                f"pixels*frames {px_frames} exceeds the joint memory budget of {budget} "
+                "(the constraint is the product, not each dimension independently)"
+            )
+        return errors
+
+    def estimate_seconds(self, width: int, height: int, frames: int, steps: int | None = None) -> float | None:
+        """Scale the measured reference render to a wall-clock estimate, if one exists."""
+        ref = self.est_ref
+        if not ref:
+            return None
+        ref_voxels = ref.get("w", 0) * ref.get("h", 0) * ref.get("frames", 1)
+        ref_total = ref.get("total_s")
+        if not ref_voxels or ref_total is None:
+            return None
+        scale = (width * height * frames) / ref_voxels
+        ref_steps = ref.get("steps")
+        if steps is not None and ref_steps:
+            scale *= steps / ref_steps
+        return ref_total * scale
+
+
 class ImageModel(BaseType):
     type: Literal["image_model"] = "image_model"
     provider: Provider = Provider.Empty
@@ -671,6 +795,7 @@ class ImageModel(BaseType):
     name: str = ""
     path: str | None = None
     supported_tasks: list[str] = Field(default_factory=list)
+    capabilities: list[str] = Field(default_factory=list)
 
 
 class TTSModel(BaseType):
@@ -698,6 +823,11 @@ class VideoModel(BaseType):
     name: str = ""
     path: str | None = None
     supported_tasks: list[str] = Field(default_factory=list)
+    # Capability flags like "text_to_video", "image_to_video", "audio", "lora".
+    capabilities: list[str] = Field(default_factory=list)
+    # Geometry/cost envelope; when set, clients and preflight checks can derive
+    # legal inputs by arithmetic instead of per-model hand-written node classes.
+    video: VideoEnvelope | None = None
 
 
 class AudioModel(BaseType):

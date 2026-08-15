@@ -9,7 +9,26 @@ from nodetool.worker.node_loader import load_nodes, resolve_namespaces
 from nodetool.worker.server import WorkerServer, start_server
 
 
+def _force_utf8_stdio() -> None:
+    """Reconfigure stdout/stderr to UTF-8.
+
+    Windows pipes default to cp1252, so a single non-ASCII character in a log
+    line (a model name, an emoji from a library) raises UnicodeEncodeError and
+    can kill a render before it starts. ``errors="replace"`` keeps even
+    unencodable text from crashing the process. The stdio transport writes
+    msgpack via the raw buffer, so it is unaffected.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
 def main():
+    _force_utf8_stdio()
     parser = argparse.ArgumentParser(description="NodeTool Python Worker")
     parser.add_argument(
         "--host", default=os.environ.get("NODETOOL_WORKER_HOST", "127.0.0.1")
@@ -52,6 +71,7 @@ async def run(args):
         cancel_event: asyncio.Event,
         emit_progress: Callable[[dict[str, Any]], Awaitable[None]],
         emit_chunk: Callable[[dict[str, Any]], Awaitable[None]] | None,
+        emit_update: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> dict:
         return await execute_node(
             node_type=data["node_type"],
@@ -61,6 +81,7 @@ async def run(args):
             cancel_event=cancel_event,
             emit_progress=emit_progress,
             emit_chunk=emit_chunk,
+            emit_update=emit_update,
         )
 
     worker.set_execute_handler(handle_execute)

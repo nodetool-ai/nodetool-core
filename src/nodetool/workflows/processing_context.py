@@ -101,6 +101,18 @@ log = get_logger(__name__)
 _REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 
 
+class NodeCancelledError(Exception):
+    """Raised by ``ProcessingContext.raise_if_cancelled`` to stop a node cooperatively.
+
+    Long-running nodes (e.g. diffusion loops) should call
+    ``context.raise_if_cancelled()`` between steps — for example from a
+    ``callback_on_step_end`` hook — so a cancel request actually interrupts the
+    render instead of only being observed once it finishes. Never kill a
+    running CUDA call to stop it: that leaks the allocation. Cooperative,
+    between steps, always.
+    """
+
+
 async def _read_buffer(buffer: IO) -> bytes:
     """Read all bytes from a buffer, handling both sync IO and async (aiofiles) handles.
 
@@ -335,6 +347,25 @@ class ProcessingContext:
         # Cost tracking for all operations in this context
         self._total_cost: float = 0.0
         self._operation_costs: list[dict[str, Any]] = []
+
+    @property
+    def is_cancelled(self) -> bool:
+        """Whether a cancel has been requested for the current execution.
+
+        The base context has no cancellation source and always returns False;
+        execution environments that support cancellation (e.g. the worker's
+        ``WorkerContext``) override this.
+        """
+        return False
+
+    def raise_if_cancelled(self) -> None:
+        """Raise :class:`NodeCancelledError` if cancellation was requested.
+
+        Nodes with long-running loops should call this between steps so a
+        cancel request interrupts the work promptly (see NodeCancelledError).
+        """
+        if self.is_cancelled:
+            raise NodeCancelledError("Node execution was cancelled")
 
     def _numpy_to_pil_image(self, arr: np.ndarray) -> PIL.Image.Image:
         """Delegate to shared numpy_to_pil_image utility for consistent behavior."""

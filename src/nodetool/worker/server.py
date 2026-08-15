@@ -58,6 +58,7 @@ class WorkerServer:
                 asyncio.Event,
                 Callable[[dict[str, Any]], Awaitable[None]],
                 Callable[[dict[str, Any]], Awaitable[None]] | None,
+                Callable[[dict[str, Any]], Awaitable[None]] | None,
             ],
             Awaitable[dict],
         ],

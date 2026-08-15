@@ -39,12 +39,25 @@ class MemorySnapshot(NamedTuple):
 
 
 class VramSnapshot(NamedTuple):
-    """VRAM telemetry for the current process/device."""
+    """VRAM telemetry for the current process/device.
+
+    ``reclaimable_gb`` is memory held by torch's caching allocator that is not
+    backing live tensors (``reserved - allocated``). The driver reports it as
+    used, but it is immediately reusable by this process, so treating only
+    driver-free memory as available makes a healthy steady state look like a
+    shortfall.
+    """
 
     percent: float
     available_gb: float
     total_gb: float
     process_allocated_gb: float
+    reclaimable_gb: float = 0.0
+
+    @property
+    def usable_gb(self) -> float:
+        """Memory this process can actually allocate: driver-free plus our own cached-but-free blocks."""
+        return self.available_gb + self.reclaimable_gb
 
 
 class ModelManager:
@@ -314,12 +327,13 @@ class ModelManager:
 
         Returns (device, size_bytes). Device is "unknown" when torch is not
         installed or the model does not expose device metadata.
-        """
 
-        try:  # pragma: no cover - optional dependency
-            pass  # type: ignore
-        except Exception:
-            return "unknown", None
+        Handles three shapes: torch modules (``.parameters()``), bare tensors
+        (``device``/``numel``/``element_size``), and diffusers pipelines, which
+        expose neither directly but carry their modules in ``.components`` —
+        without the last case, VRAM eviction walks straight past the pipelines
+        that hold the most memory.
+        """
 
         try:
             if hasattr(model, "parameters"):
@@ -333,6 +347,28 @@ class ModelManager:
                 device = str(model.device)  # type: ignore[attr-defined]
                 size_bytes = int(model.numel() * model.element_size())  # type: ignore[attr-defined]
                 return device, size_bytes
+
+            components = getattr(model, "components", None)
+            if isinstance(components, dict) and components:
+                device = "unknown"
+                total_bytes = 0
+                found_params = False
+                for component in components.values():
+                    if component is None or not hasattr(component, "parameters"):
+                        continue
+                    params = list(component.parameters())
+                    if not params:
+                        continue
+                    found_params = True
+                    total_bytes += sum(p.numel() * p.element_size() for p in params)
+                    # Report the "hottest" device: any CUDA-resident component
+                    # makes the pipeline a VRAM eviction candidate, even when
+                    # other components are offloaded to CPU.
+                    component_device = str(params[0].device)
+                    if device == "unknown" or (component_device.startswith("cuda") and not device.startswith("cuda")):
+                        device = component_device
+                if found_params:
+                    return device, int(total_bytes)
         except Exception:
             return "unknown", None
 
@@ -434,6 +470,55 @@ class ModelManager:
         cls._try_empty_cuda_cache()
         logger.info("Unloaded cached model: %s (task: %s, path: %s)", model_id, task, path)
         return True
+
+    @classmethod
+    def evict_all_except(cls, cache_key: str | None = None) -> list[str]:
+        """Evict every cached model except ``cache_key`` and free their VRAM.
+
+        This is the "never-coexist" load choke point: call it before loading a
+        large model so at most one model family is resident. Unlike a plain
+        ``model.to("cpu")``, evicted models are dropped from the cache entirely
+        so their host copies can be garbage-collected too — on GPU-bound
+        machines keeping them in system RAM just delays the next eviction.
+
+        Call this on the already-loaded fast path as well: a sibling model may
+        have been cached since the last load.
+
+        Args:
+            cache_key: The one key to keep resident, or None to evict everything.
+
+        Returns:
+            The list of cache keys that were evicted.
+        """
+        evicted: list[str] = []
+        for key in list(cls._models.keys()):
+            if cache_key is not None and key == cache_key:
+                continue
+            model = cls._models.pop(key, None)
+            if model is not None:
+                cls._move_model_to_cpu(model)
+            cls._discard_lock(key)
+            cls._model_last_used.pop(key, None)
+            cls._model_device.pop(key, None)
+            cls._model_size_bytes.pop(key, None)
+            for node_id, mapped_keys in list(cls._models_by_node.items()):
+                if key in mapped_keys:
+                    mapped_keys.discard(key)
+                    if not mapped_keys:
+                        cls._models_by_node.pop(node_id, None)
+                        cls._node_last_used.pop(node_id, None)
+            evicted.append(key)
+
+        if evicted:
+            gc.collect()
+            cls._try_empty_cuda_cache()
+            logger.info(
+                "Evicted %d cached model(s) to make room (kept: %s): %s",
+                len(evicted),
+                cache_key,
+                ", ".join(evicted),
+            )
+        return evicted
 
     @classmethod
     def clear(cls):
@@ -731,7 +816,7 @@ class ModelManager:
             )
             return False
 
-        start_available = snapshot.available_gb
+        start_available = snapshot.usable_gb
         candidates: list[tuple[float, str, Any]] = []
 
         for key, model in list(cls._models.items()):
@@ -786,7 +871,7 @@ class ModelManager:
         cls._try_empty_cuda_cache()
         latest = cls._capture_vram_snapshot()
         if latest is not None:
-            available = latest.available_gb
+            available = latest.usable_gb
 
         if offloaded_keys:
             logger.warning(
@@ -839,6 +924,11 @@ class ModelManager:
                 available_gb = max(total_gb - allocated_bytes / (1024**3), 0.0)
 
             allocated_gb = float(torch.cuda.memory_allocated(0)) / (1024**3)  # type: ignore[attr-defined]
+            try:
+                reserved_gb = float(torch.cuda.memory_reserved(0)) / (1024**3)  # type: ignore[attr-defined]
+            except Exception:
+                reserved_gb = allocated_gb
+            reclaimable_gb = max(reserved_gb - allocated_gb, 0.0)
             used_percent = ((total_gb - available_gb) / total_gb) * 100.0 if total_gb > 0 else 0.0
 
             snapshot = VramSnapshot(
@@ -846,11 +936,13 @@ class ModelManager:
                 available_gb=available_gb,
                 total_gb=total_gb,
                 process_allocated_gb=allocated_gb,
+                reclaimable_gb=reclaimable_gb,
             )
             logger.debug(
-                "VRAM snapshot captured: %.2f%% used, %.2f GB available, process allocated %.2f GB",
+                "VRAM snapshot captured: %.2f%% used, %.2f GB available (+%.2f GB reclaimable), process allocated %.2f GB",
                 snapshot.percent,
                 snapshot.available_gb,
+                snapshot.reclaimable_gb,
                 snapshot.process_allocated_gb,
             )
             return snapshot
@@ -902,10 +994,15 @@ class ModelManager:
 
     @classmethod
     def _needs_vram_cleanup(cls, snapshot: VramSnapshot, required_free_gb: float | None) -> bool:
+        # Judge pressure on usable memory (driver-free + our own cached-but-free
+        # allocator blocks), not raw driver-free: after a render several GB can
+        # sit reserved-but-unallocated, and counting them as a shortfall makes a
+        # healthy steady state look like a leak.
         max_percent, min_available = cls._get_vram_thresholds()
-        if snapshot.percent >= max_percent or snapshot.available_gb <= min_available:
+        used_percent = ((snapshot.total_gb - snapshot.usable_gb) / snapshot.total_gb) * 100.0 if snapshot.total_gb > 0 else 0.0
+        if used_percent >= max_percent or snapshot.usable_gb <= min_available:
             return True
-        return bool(required_free_gb is not None and snapshot.available_gb < required_free_gb)
+        return bool(required_free_gb is not None and snapshot.usable_gb < required_free_gb)
 
     @classmethod
     def _target_vram_available_gb(cls, snapshot: VramSnapshot, required_free_gb: float | None) -> float:
