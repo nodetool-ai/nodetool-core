@@ -1,4 +1,5 @@
 import asyncio
+
 import msgpack
 import pytest
 import pytest_asyncio
@@ -59,12 +60,13 @@ async def test_execute_without_handler_returns_error(server):
 @pytest.mark.asyncio(loop_scope="function")
 async def test_full_execute_with_echo_node():
     """Integration test: discover + execute a real node through the server."""
-    from nodetool.workflows.base_node import BaseNode, NODE_BY_TYPE
-    from nodetool.workflows.processing_context import ProcessingContext
     from pydantic import Field
-    from nodetool.worker.server import WorkerServer, start_server
-    from nodetool.worker.node_loader import load_nodes
+
     from nodetool.worker.executor import execute_node
+    from nodetool.worker.node_loader import load_nodes
+    from nodetool.worker.server import WorkerServer, start_server
+    from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
+    from nodetool.workflows.processing_context import ProcessingContext
 
     class IntegrationEchoNode(BaseNode):
         text: str = Field(default="")

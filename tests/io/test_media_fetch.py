@@ -85,6 +85,7 @@ class TestParseDataUri:
 
 import mimetypes
 
+
 class TestFetchFileUri:
     """Test _fetch_file_uri function."""
 

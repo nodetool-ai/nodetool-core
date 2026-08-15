@@ -1,8 +1,11 @@
-import pytest
 import os
-from pathlib import Path
 from io import BytesIO
+from pathlib import Path
+
+import pytest
+
 from nodetool.storage.file_storage import FileStorage
+
 
 @pytest.mark.asyncio
 async def test_file_storage_path_traversal(tmp_path):

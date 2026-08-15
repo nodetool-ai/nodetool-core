@@ -8,6 +8,7 @@ from nodetool.worker.stdio_stdout_guard import (
 
 def test_install_stdio_stdout_guard_redirects_text_to_stderr(capfd):
     import os
+
     import nodetool.worker.stdio_stdout_guard as guard_mod
 
     real_stdout = sys.__stdout__

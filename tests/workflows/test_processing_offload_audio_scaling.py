@@ -7,9 +7,9 @@ import pytest
 
 pytest.importorskip("pydub")
 
-from pydub import AudioSegment  # noqa: E402
+from pydub import AudioSegment
 
-from nodetool.workflows.processing_offload import (  # noqa: E402
+from nodetool.workflows.processing_offload import (
     _audio_segment_to_numpy,
     _numpy_audio_to_wav_bytes,
 )
