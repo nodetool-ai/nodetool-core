@@ -100,6 +100,9 @@ dev = [
     "pytest-xdist>=3.6.0",
     "aioresponses>=0.7.8",
     "safetensors>=0.4.0",
+    # Validates the worker's emitted bridge frames against the JS repo's
+    # generated dist/bridge-frames.schema.json contract.
+    "jsonschema>=4.23.0",
     "mypy>=1.0.0",
     "ruff==0.15.17",
     "ty>=0.0.7",

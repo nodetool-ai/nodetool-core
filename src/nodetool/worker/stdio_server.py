@@ -222,7 +222,7 @@ async def run_stdio_worker(namespaces: list[str] | None = None) -> None:
 
     install_stdio_stdout_guard()
 
-    from nodetool.worker.executor import execute_node
+    from nodetool.worker.executor import execute_node, read_run_identity
     from nodetool.worker.node_loader import load_nodes, resolve_namespaces
 
     resolved_namespaces = resolve_namespaces(namespaces)
@@ -251,6 +251,7 @@ async def run_stdio_worker(namespaces: list[str] | None = None) -> None:
             emit_progress=emit_progress,
             emit_chunk=emit_chunk,
             emit_update=emit_update,
+            **read_run_identity(data),
         )
 
     server.set_execute_handler(handle_execute)

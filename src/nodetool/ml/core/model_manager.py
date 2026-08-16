@@ -695,6 +695,124 @@ class ModelManager:
         return evicted
 
     @classmethod
+    def evict_models(
+        cls,
+        *,
+        node_ids: list[str] | None = None,
+        target_vram_gb: float | None = None,
+    ) -> tuple[list[str], float]:
+        """Drop loaded model weights on explicit request.
+
+        This is the caller-driven counterpart to the reactive threshold-based
+        reclaim: it serves what only the host knows — the user switched
+        workflows, another process wants the GPU, the worker is idle.
+
+        Args:
+            node_ids: Evict only models registered to these nodes. Keys another
+                node outside the set still references are kept, matching
+                :meth:`release_nodes`. ``None`` considers every cached model.
+            target_vram_gb: Stop once this much has been reclaimed, instead of
+                dropping every loaded weight. Coldest models go first, so a
+                partial eviction keeps the hot ones resident.
+
+        Returns:
+            ``(evicted_keys, freed_gb)``. ``freed_gb`` is a best-effort
+            estimate: the CUDA-resident footprint of each evicted model where
+            that can be walked, its recorded size otherwise.
+        """
+        if node_ids is not None:
+            requested = set(node_ids)
+            keep_referenced = {
+                key
+                for owner, keys in cls._models_by_node.items()
+                if owner not in requested
+                for key in keys
+            }
+            candidates = [
+                key
+                for owner in requested
+                for key in cls._models_by_node.get(owner, set())
+                if key in cls._models and key not in keep_referenced
+            ]
+            # Deduplicate while keeping it a list: two retired nodes can share
+            # a key, and evicting it twice would double-count the bytes freed.
+            candidates = list(dict.fromkeys(candidates))
+        else:
+            candidates = list(cls._models.keys())
+
+        # Coldest first: with a target, whatever survives should be what the
+        # next execution is most likely to want.
+        candidates.sort(key=lambda key: cls._model_last_used.get(key, 0.0))
+
+        evicted: list[str] = []
+        freed_bytes = 0
+        credited_tensor_ids: set[int] = set()
+
+        for key in candidates:
+            if target_vram_gb is not None and freed_bytes / (1024**3) >= target_vram_gb:
+                break
+            # An explicit request owns its own scope's models, but a model
+            # another in-flight node is using is off limits — dropping it
+            # mid-inference is a correctness bug, not a memory win.
+            if cls.is_model_in_use(key, include_current_scope=False):
+                logger.debug("Skipping in-use model during eviction: %s", key)
+                continue
+
+            model = cls._models.get(key)
+            if model is None:
+                continue
+
+            # Snapshot before the move: afterwards the tensors report CPU.
+            # Identity-keyed so weights aliased under two cache keys (a model
+            # and the pipeline wrapping it) are credited once.
+            footprint = cls._cuda_tensor_footprint(model)
+            if footprint:
+                freed_bytes += sum(
+                    nbytes
+                    for tensor_id, nbytes in footprint.items()
+                    if tensor_id not in credited_tensor_ids
+                )
+                credited_tensor_ids.update(footprint)
+            else:
+                # Not CUDA-resident, or not a shape we can walk. The recorded
+                # size is the only number available and cannot be deduped.
+                freed_bytes += cls._model_size_bytes.get(key, 0)
+
+            cls._models.pop(key, None)
+            cls._move_model_to_cpu(model)
+            cls._discard_lock(key)
+            cls._model_last_used.pop(key, None)
+            cls._model_device.pop(key, None)
+            cls._model_size_bytes.pop(key, None)
+            for owner, mapped_keys in list(cls._models_by_node.items()):
+                if key in mapped_keys:
+                    mapped_keys.discard(key)
+                    if not mapped_keys:
+                        cls._models_by_node.pop(owner, None)
+                        cls._node_last_used.pop(owner, None)
+            evicted.append(key)
+
+        freed_gb = freed_bytes / (1024**3)
+        if evicted:
+            gc.collect()
+            cls._try_empty_cuda_cache()
+            logger.info(
+                "Evicted %d cached model(s) on request (%.2f GB, target %s, nodes %s): %s",
+                len(evicted),
+                freed_gb,
+                target_vram_gb,
+                node_ids,
+                ", ".join(evicted),
+            )
+        else:
+            logger.debug(
+                "Eviction request matched no evictable models (nodes %s, target %s)",
+                node_ids,
+                target_vram_gb,
+            )
+        return evicted, freed_gb
+
+    @classmethod
     def clear(cls):
         """Removes all stored models, node associations, and locks."""
         model_count = len(cls._models)

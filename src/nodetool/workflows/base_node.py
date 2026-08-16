@@ -967,6 +967,24 @@ class BaseNode(BaseModel):
         return []
 
     @classmethod
+    def get_required_vram_gb(cls) -> float | None:
+        """Approximate VRAM this node's weights need, in GiB.
+
+        Reported to the host as ``requires_vram_gb`` in the ``discover``
+        payload (bridge protocol v4) and echoed back on every ``execute``, so
+        the worker's pre-execution reclaim pass can target a real number
+        instead of a percentage threshold that has no idea what is about to
+        load.
+
+        Return ``None`` — the default — when the node genuinely does not know.
+        The host treats an absent hint as "no hint" and falls back to the
+        threshold behaviour, which is strictly better than an invented number:
+        too low and the reclaim under-frees and the node OOMs anyway, too high
+        and it evicts models nothing needed it to.
+        """
+        return None
+
+    @classmethod
     def get_model_packs(cls) -> list["ModelPack"]:
         """Return model packs for this node.
 
@@ -2046,17 +2064,21 @@ class BaseNode(BaseModel):
         else:
             return []
 
-    async def initialize(self, context: Any, skip_cache: bool = False):
-        """
-        Initialize the node when workflow starts.
-
-        Responsible for setting up the node, including loading any necessary GPU models.
-        """
-        pass
-
     async def preload_model(self, context: Any):
         """
         Load the model for the node.
+
+        The model-loading half of the lifecycle. The executor runs
+        ``pre_process`` → ``preload_model`` → ``move_to_device`` → ``process``,
+        and ``finalize`` afterwards on every path.
+
+        (A third hook, ``initialize(context, skip_cache=False)``, used to sit
+        alongside these. It had no caller anywhere in this repo, no node
+        package outside the archived ``nodetool-base`` overrode it, and its
+        ``skip_cache`` parameter belonged to a workflow runner that has since
+        moved to the TypeScript server — so it was removed in bridge protocol
+        v4 rather than left as a third documented-but-dead hook. Node authors
+        wanting the old behaviour want this method.)
         """
         pass
 

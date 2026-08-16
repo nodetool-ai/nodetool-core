@@ -1,0 +1,542 @@
+{
+  "$id": "https://nodetool.ai/schemas/protocol/bridge-frames.schema.json",
+  "description": "Every wire frame the Python worker bridge (packages/runtime/src/python-bridge-base.ts) dispatches — discover/result/error/chunk/progress/comfy.event — generated from @nodetool-ai/protocol's Zod schemas. Validate the Python worker's own emissions against this artifact.",
+  "title": "NodeTool Python Bridge Frame",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "discover"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "nodes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "node_type": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "properties": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "outputs": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required_settings": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "requires_vram_gb": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "node_type"
+                ],
+                "additionalProperties": {}
+              }
+            },
+            "protocol_version": {
+              "type": "number"
+            },
+            "load_errors": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "error": {
+                    "type": "string"
+                  },
+                  "module": {
+                    "type": "string"
+                  },
+                  "phase": {
+                    "type": "string"
+                  },
+                  "error_type": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "error"
+                ],
+                "additionalProperties": {}
+              }
+            }
+          },
+          "required": [
+            "nodes"
+          ],
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "type",
+        "request_id",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "result"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "data": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "outputs": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "blobs": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "outputs"
+              ],
+              "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "properties": {
+                "protocol_version": {
+                  "type": "number"
+                },
+                "node_count": {
+                  "type": "number"
+                },
+                "provider_count": {
+                  "type": "number"
+                },
+                "namespaces": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "load_errors": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "error": {
+                        "type": "string"
+                      },
+                      "module": {
+                        "type": "string"
+                      },
+                      "phase": {
+                        "type": "string"
+                      },
+                      "error_type": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "error"
+                    ],
+                    "additionalProperties": {}
+                  }
+                },
+                "transport": {
+                  "type": "string"
+                },
+                "max_frame_size": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "protocol_version",
+                "node_count",
+                "provider_count",
+                "namespaces",
+                "load_errors",
+                "transport",
+                "max_frame_size"
+              ],
+              "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "properties": {
+                "prompt_id": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "outputs": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "blobs": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "request_id",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "error"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "string"
+            },
+            "traceback": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "type",
+        "request_id",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "chunk"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "data": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "outputs": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "blobs": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "outputs"
+              ],
+              "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "properties": {
+                "protocol_version": {
+                  "type": "number"
+                },
+                "node_count": {
+                  "type": "number"
+                },
+                "provider_count": {
+                  "type": "number"
+                },
+                "namespaces": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "load_errors": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "error": {
+                        "type": "string"
+                      },
+                      "module": {
+                        "type": "string"
+                      },
+                      "phase": {
+                        "type": "string"
+                      },
+                      "error_type": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "error"
+                    ],
+                    "additionalProperties": {}
+                  }
+                },
+                "transport": {
+                  "type": "string"
+                },
+                "max_frame_size": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "protocol_version",
+                "node_count",
+                "provider_count",
+                "namespaces",
+                "load_errors",
+                "transport",
+                "max_frame_size"
+              ],
+              "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "properties": {
+                "prompt_id": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "outputs": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "blobs": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "request_id",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "progress"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "data": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "progress": {
+                  "type": "number"
+                },
+                "total": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "progress",
+                "total"
+              ],
+              "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "start",
+                    "progress",
+                    "completed",
+                    "error",
+                    "cancelled",
+                    "exists"
+                  ]
+                },
+                "downloaded_bytes": {
+                  "type": "number"
+                },
+                "total_bytes": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "status",
+                "downloaded_bytes",
+                "total_bytes"
+              ],
+              "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "request_id",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "comfy.event"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "queue",
+                "started",
+                "cached",
+                "executing",
+                "progress",
+                "node_output",
+                "preview",
+                "completed",
+                "cancelled"
+              ]
+            }
+          },
+          "required": [
+            "event"
+          ],
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "type",
+        "request_id",
+        "data"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}
