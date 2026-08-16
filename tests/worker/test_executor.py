@@ -534,3 +534,101 @@ async def test_pre_cancelled_execution_refuses_to_run_process():
             input_blobs={},
             cancel_event=cancel_event,
         )
+
+
+class FinalizeNode(BaseNode):
+    """Records lifecycle calls so teardown wiring can be asserted."""
+
+    fail: bool = Field(default=False)
+    calls: Any = None
+
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "test.FinalizeNode"
+
+    async def process(self, context: ProcessingContext) -> str:
+        FINALIZE_CALLS.append("process")
+        if self.fail:
+            raise RuntimeError("boom")
+        return "ok"
+
+    async def finalize(self, context):
+        FINALIZE_CALLS.append("finalize")
+
+
+class FinalizeRaisesNode(BaseNode):
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "test.FinalizeRaisesNode"
+
+    async def process(self, context: ProcessingContext) -> str:
+        return "ok"
+
+    async def finalize(self, context):
+        FINALIZE_CALLS.append("finalize")
+        raise RuntimeError("teardown exploded")
+
+
+FINALIZE_CALLS: list[str] = []
+NODE_BY_TYPE["test.FinalizeNode"] = FinalizeNode
+NODE_BY_TYPE["test.FinalizeRaisesNode"] = FinalizeRaisesNode
+
+
+class TestNodeFinalization:
+    """``finalize`` is a node's only teardown hook — the executor must run it."""
+
+    def setup_method(self):
+        FINALIZE_CALLS.clear()
+
+    @pytest.mark.asyncio
+    async def test_finalize_runs_after_a_successful_process(self):
+        result = await execute_node("test.FinalizeNode", {}, {}, {})
+        assert result["outputs"]["output"] == "ok"
+        assert FINALIZE_CALLS == ["process", "finalize"]
+
+    @pytest.mark.asyncio
+    async def test_finalize_runs_when_process_raises(self):
+        with pytest.raises(RuntimeError, match="boom"):
+            await execute_node("test.FinalizeNode", {"fail": True}, {}, {})
+        assert FINALIZE_CALLS == ["process", "finalize"]
+
+    @pytest.mark.asyncio
+    async def test_a_failing_finalize_does_not_mask_the_result(self):
+        result = await execute_node("test.FinalizeRaisesNode", {}, {}, {})
+        assert result["outputs"]["output"] == "ok"
+        assert FINALIZE_CALLS == ["finalize"]
+
+    @pytest.mark.asyncio
+    async def test_execution_runs_inside_a_model_manager_scope(self, monkeypatch):
+        """Models touched during execution must be pinned against reclaim."""
+        from nodetool.ml.core.model_manager import ModelManager
+
+        seen: dict[str, bool] = {}
+
+        class ScopeProbeNode(BaseNode):
+            @classmethod
+            def get_node_type(cls) -> str:
+                return "test.ScopeProbeNode"
+
+            async def process(self, context: ProcessingContext) -> str:
+                ModelManager.get_model("probe-key")
+                seen["pinned"] = ModelManager.is_model_in_use("probe-key")
+                return "ok"
+
+        NODE_BY_TYPE["test.ScopeProbeNode"] = ScopeProbeNode
+
+        reclaims: list[str] = []
+        monkeypatch.setattr(
+            ModelManager,
+            "free_vram_if_needed",
+            classmethod(lambda cls, **kwargs: reclaims.append(kwargs.get("reason", ""))),
+        )
+
+        await execute_node("test.ScopeProbeNode", {}, {}, {})
+
+        assert seen["pinned"] is True
+        # The scope closes with the execution.
+        assert ModelManager.is_model_in_use("probe-key") is False
+        # Reclaim happens up front, not only after an OOM.
+        assert len(reclaims) == 1
+        assert "test.ScopeProbeNode" in reclaims[0]

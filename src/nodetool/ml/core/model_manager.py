@@ -11,8 +11,9 @@ production environments.
 import asyncio
 import gc
 import time
-from contextlib import asynccontextmanager, suppress
-from typing import Any, AsyncIterator, ClassVar, NamedTuple
+from contextlib import asynccontextmanager, contextmanager, suppress
+from contextvars import ContextVar
+from typing import Any, AsyncIterator, ClassVar, Iterator, NamedTuple
 
 import psutil
 
@@ -20,6 +21,12 @@ from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# Identifies the execution scope (see ``ModelManager.execution_scope``) that the
+# current task is running in. Every cache key touched inside a scope is pinned
+# for as long as that scope is open, so background reclaim can never pull a
+# model out from under a node that is still using it.
+_CURRENT_SCOPE: ContextVar[int | None] = ContextVar("nodetool_model_scope", default=None)
 
 
 class MemorySnapshot(NamedTuple):
@@ -76,9 +83,12 @@ class ModelManager:
         _node_last_used (Dict[str, float]): Last-used timestamps per node ID
         _model_device (Dict[str, str]): Known device for cached models (e.g., "cpu", "cuda:0")
         _model_size_bytes (Dict[str, int]): Approximate model size in bytes when available
+        _active_scopes (Dict[int, set[str]]): Cache keys touched by each open execution scope
     """
 
     _models: ClassVar[dict[str, Any]] = {}
+    _active_scopes: ClassVar[dict[int, set[str]]] = {}
+    _scope_counter: ClassVar[int] = 0
     _models_by_node: ClassVar[dict[str, set[str]]] = {}
     _locks: ClassVar[dict[str, asyncio.Lock]] = {}
     _lock_creation_lock: ClassVar[asyncio.Lock] = asyncio.Lock()
@@ -105,6 +115,7 @@ class ModelManager:
         Returns:
             Any: The stored model instance if found in non-production environment, None otherwise
         """
+        cls._pin_key_in_scope(cache_key)
         model = cls._models.get(cache_key)
         if model is not None:
             cls._update_model_metadata(cache_key, model)
@@ -154,6 +165,7 @@ class ModelManager:
             cache_key = cls._make_cache_key(model_id_or_cache_key, task)
             model_instance = model
 
+        cls._pin_key_in_scope(cache_key)
         cls._ensure_memory_capacity(reason=f"Preparing to cache model {cache_key}")
 
         was_existing = cache_key in cls._models
@@ -257,6 +269,67 @@ class ModelManager:
                 yield
             finally:
                 logger.debug(f"🔓 Releasing lock for model: {cache_key}")
+
+    # ------------------------------------------------------------------
+    # Execution scopes (in-use protection)
+    # ------------------------------------------------------------------
+
+    @classmethod
+    @contextmanager
+    def execution_scope(cls) -> Iterator[None]:
+        """Mark a region of code as an in-flight node execution.
+
+        Every cache key passed to :meth:`get_model` or :meth:`set_model` while
+        the scope is open is pinned: reclaim paths skip it until the scope
+        closes. This is what makes proactive eviction safe to run — without it,
+        a reclaim pass triggered by one node could offload (or drop) a model a
+        concurrently executing node is in the middle of using, turning a memory
+        leak into a correctness bug.
+
+        Scopes are tracked per :mod:`contextvars` context, so concurrent
+        ``asyncio`` tasks each get their own and never see each other's keys as
+        their own. Nesting is supported; the inner scope shadows the outer one
+        for the duration, and both remain pinned.
+        """
+        cls._scope_counter += 1
+        scope_id = cls._scope_counter
+        cls._active_scopes[scope_id] = set()
+        token = _CURRENT_SCOPE.set(scope_id)
+        try:
+            yield
+        finally:
+            _CURRENT_SCOPE.reset(token)
+            cls._active_scopes.pop(scope_id, None)
+
+    @classmethod
+    def _pin_key_in_scope(cls, cache_key: str) -> None:
+        """Record that the current execution scope (if any) is using ``cache_key``."""
+
+        scope_id = _CURRENT_SCOPE.get()
+        if scope_id is None:
+            return
+        keys = cls._active_scopes.get(scope_id)
+        if keys is not None:
+            keys.add(cache_key)
+
+    @classmethod
+    def is_model_in_use(cls, cache_key: str, *, include_current_scope: bool = True) -> bool:
+        """Return True when an open execution scope has touched ``cache_key``.
+
+        Args:
+            cache_key: The cache key to check.
+            include_current_scope: When False, only *other* scopes count. Use
+                this for explicit, caller-driven eviction (the caller knows what
+                it is doing with its own models) while still refusing to disturb
+                concurrently executing nodes.
+        """
+        current = _CURRENT_SCOPE.get()
+        for scope_id, keys in cls._active_scopes.items():
+            if not include_current_scope and scope_id == current:
+                continue
+            if cache_key in keys:
+                return True
+        return False
 
     # ------------------------------------------------------------------
     # Usage tracking helpers
@@ -375,6 +448,61 @@ class ModelManager:
         return "unknown", None
 
     @staticmethod
+    def _cuda_tensor_footprint(model: Any) -> dict[int, int] | None:
+        """Map ``id(tensor) -> nbytes`` for every CUDA-resident tensor in ``model``.
+
+        Keyed by tensor identity on purpose. The same weights are routinely
+        cached under two keys — a transformers model on its own plus the
+        pipeline that wraps it, or a transformer shared between a txt2img and an
+        img2img pipeline. That aliasing is legitimate and deliberate, so the
+        accounting has to be identity-aware: summing per cache key would credit
+        the same bytes twice and make a reclaim loop stop while VRAM is still
+        occupied.
+
+        Handles the same three shapes as
+        :meth:`_detect_torch_model_device_and_size`: torch modules, bare
+        tensors, and diffusers pipelines (modules under ``.components``).
+
+        Returns ``None`` when the object is none of those shapes, so callers can
+        tell "not introspectable" apart from "introspected, nothing on CUDA" —
+        an aliased model whose weights a previous offload already moved falls in
+        the second case and must be credited zero, not its recorded size.
+        """
+
+        footprint: dict[int, int] = {}
+
+        def _add(tensor: Any) -> None:
+            with suppress(Exception):
+                if not str(tensor.device).startswith("cuda"):
+                    return
+                footprint[id(tensor)] = int(tensor.numel() * tensor.element_size())
+
+        try:
+            if hasattr(model, "parameters"):
+                params = list(model.parameters())
+                if params:
+                    for param in params:
+                        _add(param)
+                    return footprint
+
+            if all(hasattr(model, attr) for attr in ("device", "numel", "element_size")):
+                _add(model)
+                return footprint
+
+            components = getattr(model, "components", None)
+            if isinstance(components, dict) and components:
+                for component in components.values():
+                    if component is None or not hasattr(component, "parameters"):
+                        continue
+                    for param in component.parameters():
+                        _add(param)
+                return footprint
+        except Exception:
+            return footprint or None
+
+        return None
+
+    @staticmethod
     def _move_model_to_cpu(model: Any) -> None:
         """Move a model to CPU if it exposes a relevant helper."""
         with suppress(Exception):
@@ -385,13 +513,23 @@ class ModelManager:
                 model.cpu()  # type: ignore[attr-defined]
 
     @classmethod
-    def clear_unused(cls, node_ids: list[str]):
-        """Removes models that are no longer associated with active nodes.
+    def release_nodes(cls, node_ids: list[str]):
+        """Release the models owned exclusively by the given *retired* nodes.
 
-        Also cleans up locks associated with the removed models.
+        ``node_ids`` are nodes that have finished and will not run again — not
+        the live ones to preserve. For each of them the association is dropped,
+        and any cache key that no other node still references is evicted (moved
+        to CPU first, then removed from the cache along with its lock and
+        metadata).
+
+        Two things are never evicted here:
+
+        - keys another node is still associated with, and
+        - keys pinned by an open :meth:`execution_scope`, i.e. models a
+          currently executing node is using.
 
         Args:
-            node_ids (list[str]): List of active node IDs to check against
+            node_ids (list[str]): IDs of nodes that are done executing.
         """
         cleared_count = 0
         cleared_models = []
@@ -403,6 +541,14 @@ class ModelManager:
                 for key in list(keys):
                     is_still_referenced = any(key in mapped_keys for mapped_keys in cls._models_by_node.values())
                     if is_still_referenced:
+                        continue
+
+                    if cls.is_model_in_use(key):
+                        # A concurrently executing node holds this model. Put
+                        # the association back so the key is not orphaned in the
+                        # cache with nobody left to release it.
+                        cls._models_by_node.setdefault(node_id, set()).add(key)
+                        logger.debug("Keeping in-use model %s while releasing node %s", key, node_id)
                         continue
 
                     if key in cls._models:
@@ -427,7 +573,8 @@ class ModelManager:
                         cls._model_device.pop(key, None)
                         cls._model_size_bytes.pop(key, None)
 
-            cls._node_last_used.pop(node_id, None)
+            if node_id not in cls._models_by_node:
+                cls._node_last_used.pop(node_id, None)
 
         if cleared_count > 0:
             logger.info(f"🗑️ Cache CLEANUP: Removed {cleared_count} unused models: {', '.join(cleared_models)}")
@@ -444,6 +591,19 @@ class ModelManager:
         if cleared_count > 0:
             gc.collect()
             cls._try_empty_cuda_cache()
+
+    @classmethod
+    def clear_unused(cls, node_ids: list[str]):
+        """Deprecated alias for :meth:`release_nodes`.
+
+        The name and old docstring read as "keep these active nodes, drop the
+        rest", but the implementation has always done the opposite: it releases
+        the models owned by the node IDs you pass. ``release_nodes`` says that
+        out loud. This alias preserves the behaviour existing callers already
+        depend on — passing a list of *live* node IDs here evicts exactly the
+        models still in use, which was never the intent.
+        """
+        cls.release_nodes(node_ids)
 
     @classmethod
     def unload_model(cls, model_id: str, task: str, path: str | None = None) -> bool:
@@ -491,8 +651,16 @@ class ModelManager:
             The list of cache keys that were evicted.
         """
         evicted: list[str] = []
+        skipped_in_use: list[str] = []
         for key in list(cls._models.keys()):
             if cache_key is not None and key == cache_key:
+                continue
+            # The caller owns its own scope's models (that is the point of an
+            # explicit choke point), but a model another in-flight node is using
+            # is off limits — dropping it mid-inference is a correctness bug,
+            # not a memory win.
+            if cls.is_model_in_use(key, include_current_scope=False):
+                skipped_in_use.append(key)
                 continue
             model = cls._models.pop(key, None)
             if model is not None:
@@ -517,6 +685,12 @@ class ModelManager:
                 len(evicted),
                 cache_key,
                 ", ".join(evicted),
+            )
+        if skipped_in_use:
+            logger.info(
+                "Kept %d cached model(s) in use by concurrently executing node(s): %s",
+                len(skipped_in_use),
+                ", ".join(skipped_in_use),
             )
         return evicted
 
@@ -823,6 +997,10 @@ class ModelManager:
             if model is None:
                 continue
 
+            if cls.is_model_in_use(key):
+                logger.debug("Skipping in-use model during VRAM cleanup: %s", key)
+                continue
+
             detected_device, size_bytes = cls._detect_torch_model_device_and_size(model)
             device = detected_device if detected_device != "unknown" else cls._model_device.get(key)
 
@@ -848,10 +1026,18 @@ class ModelManager:
 
         available = start_available
         offloaded_keys: list[str] = []
+        # Tensors already credited this pass, by identity. Aliased cache keys
+        # (a model plus the pipeline wrapping it) share tensors; counting a
+        # shared tensor once per key would credit its bytes twice and stop the
+        # loop early with VRAM still occupied.
+        credited_tensor_ids: set[int] = set()
 
         for _, key, model in candidates:
             if available >= target_free_gb:
                 break
+
+            # Snapshot before the move: afterwards the tensors report CPU.
+            footprint = cls._cuda_tensor_footprint(model)
 
             try:
                 if hasattr(model, "to"):
@@ -862,11 +1048,20 @@ class ModelManager:
                     continue
                 cls._model_device[key] = "cpu"
                 offloaded_keys.append(key)
-                if key in cls._model_size_bytes:
-                    available += cls._model_size_bytes[key] / (1024**3)
             except Exception as exc:
                 logger.debug("Failed to offload model %s to CPU: %s", key, exc)
                 continue
+
+            if footprint is not None:
+                freed_bytes = sum(
+                    nbytes for tensor_id, nbytes in footprint.items() if tensor_id not in credited_tensor_ids
+                )
+                credited_tensor_ids.update(footprint)
+                available += freed_bytes / (1024**3)
+            elif key in cls._model_size_bytes:
+                # Not a shape we can walk (an exotic wrapper). Fall back to the
+                # recorded size, which cannot be deduped.
+                available += cls._model_size_bytes[key] / (1024**3)
 
         cls._try_empty_cuda_cache()
         latest = cls._capture_vram_snapshot()

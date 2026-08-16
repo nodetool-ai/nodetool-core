@@ -1,6 +1,8 @@
 """Regression tests for fixes in io.py, types.py, memory_utils.py and torch_support.py."""
 
 import asyncio
+from contextlib import nullcontext
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -174,3 +176,68 @@ async def test_oom_retry_counter_increments_once_per_attempt(monkeypatch):
     assert len(attempts) == 3
     # Backoff doubles without skipping a step
     assert delays == [1.0, 2.0]
+
+
+# --- OOM cleanup must not run with the failed frames still pinned ----------
+
+
+@pytest.mark.asyncio
+async def test_oom_cleanup_runs_after_the_traceback_is_released(monkeypatch):
+    """The activations that caused the OOM live on ``exc.__traceback__``.
+
+    Reclaiming while the traceback is still bound frees little or nothing, so
+    the retry runs against the same occupied VRAM. The traceback must be gone
+    by the time ``free_vram_if_needed`` is called.
+    """
+    import nodetool.workflows.torch_support as ts
+
+    class FakeOOM(Exception):
+        pass
+
+    observed: list[object] = []
+
+    support = ts.TorchWorkflowSupport.__new__(ts.TorchWorkflowSupport)
+    support.max_retries = 1
+    support.base_delay = 1
+    support.max_delay = 1
+
+    monkeypatch.setattr(support, "is_cuda_oom_exception", lambda exc: True)
+    monkeypatch.setattr(ts, "is_cuda_available", lambda: True)
+    monkeypatch.setattr(support, "get_available_vram", lambda: 0)
+    monkeypatch.setattr(support, "empty_cuda_cache", lambda: None)
+    monkeypatch.setattr(
+        ts,
+        "torch",
+        SimpleNamespace(
+            cuda=SimpleNamespace(synchronize=lambda: None, ipc_collect=lambda: None),
+            no_grad=nullcontext,
+        ),
+    )
+    monkeypatch.setattr(ts.ModelManager, "get_vram_snapshot", classmethod(lambda cls: None))
+
+    raised: dict[str, BaseException] = {}
+
+    def _record_reclaim(cls, **kwargs):
+        observed.append(raised["exc"].__traceback__)
+
+    monkeypatch.setattr(ts.ModelManager, "free_vram_if_needed", classmethod(_record_reclaim))
+
+    class _Node:
+        _requires_grad = True
+        _id = "n1"
+
+        def get_title(self) -> str:
+            return "n1"
+
+        async def process(self, context):
+            exc = FakeOOM("out of memory")
+            raised["exc"] = exc
+            raise exc
+
+    with pytest.raises(FakeOOM):
+        await support.process_with_gpu(None, None, _Node())
+
+    assert observed, "reclaim was never attempted"
+    assert observed[0] is None, "VRAM was reclaimed while the failed frames were still alive"
+    assert raised["exc"].__cause__ is None
+    assert raised["exc"].__context__ is None

@@ -2071,10 +2071,20 @@ class BaseNode(BaseModel):
 
     async def finalize(self, context):
         """
-        Finalizes the workflow by performing any necessary cleanup or post-processing tasks.
+        Tear down whatever this node set up.
 
-        This method is called when the workflow is shutting down.
-        It's responsible for cleaning up resources, unloading GPU models, and performing any necessary teardown operations.
+        Called exactly once per execution, after ``process``/``gen_process``
+        returns — including when it raised. This is the counterpart to
+        ``pre_process``/``preload_model``/``move_to_device``: release handles,
+        close files, drop references to GPU tensors the node allocated itself.
+
+        Cached models are *not* the node's to unload here: they live in
+        ``ModelManager`` precisely so the next execution can reuse them, and
+        reclaim under memory pressure is handled centrally. Unload explicitly
+        only when the node knows the weights will not be needed again.
+
+        Exceptions raised here are logged and swallowed, so a failing teardown
+        cannot mask the node's result or its error.
         """
         pass
 
