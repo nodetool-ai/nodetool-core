@@ -273,7 +273,7 @@ def numpy_to_audio_segment(arr: np.ndarray, sample_rate=44100) -> AudioSegment:
     """
     # Convert the float array to int16 format, which is used by WAV files.
     # Clip first so out-of-range samples saturate instead of wrapping around.
-    arr_int16 = np.int16(np.clip(arr, -1.0, 1.0) * 32767.0).tobytes()
+    arr_int16 = (np.asarray(arr, dtype=np.float32).clip(-1.0, 1.0) * np.float32(32767.0)).astype(np.int16).tobytes()
 
     # Create a pydub AudioSegment from raw data.
     return AudioSegment(arr_int16, sample_width=2, frame_rate=sample_rate, channels=1)
