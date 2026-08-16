@@ -10,6 +10,7 @@ from collections.abc import AsyncGenerator
 from types import UnionType
 from typing import Any, Awaitable, Callable, Union, get_args, get_origin
 
+from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     AssetRef,
     AudioRef,
@@ -18,9 +19,12 @@ from nodetool.metadata.types import (
     TypeToName,
     VideoRef,
 )
+from nodetool.ml.core.model_manager import ModelManager
 from nodetool.runtime.resources import ResourceScope
 from nodetool.worker.context_stub import WorkerContext
 from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
+
+log = get_logger(__name__)
 
 # Asset ref types that should be extracted as blobs
 ASSET_REF_TYPES = (ImageRef, AudioRef, VideoRef, Model3DRef, AssetRef)
@@ -240,34 +244,57 @@ async def execute_node(
     if node_class is None:
         raise ValueError(f"Unknown node type: {node_type}")
 
+    # ``execution_scope`` is synchronous, so it nests inside the ``async with``
+    # rather than joining it. It pins every model this execution touches for as
+    # long as the node is running, which is what lets the reclaim pass below —
+    # and any reclaim triggered by a concurrent execution — stay safe.
     async with ResourceScope():
-        ctx = WorkerContext(
-            secrets=secrets,
-            cancel_event=cancel_event,
-        )
-        temp_dir: str | None = None
-        pump_handle: tuple[asyncio.Task, asyncio.Event] | None = None
-        try:
-            # Both inside the try so a failure here (e.g. mkdtemp on a
-            # read-only FS) still runs the cleanup in `finally`.
-            temp_dir = tempfile.mkdtemp(prefix="nodetool_worker_")
-            pump_handle = _start_progress_pump(ctx, emit_progress, emit_update)
-            node = await _prepare_node(node_class, fields, input_blobs, temp_dir, ctx)
-            ctx.raise_if_cancelled()
-            if node.is_streaming_output():
-                if emit_chunk is not None:
-                    result = await _stream_streaming_outputs(node, ctx, emit_chunk)
+        with ModelManager.execution_scope():
+            ctx = WorkerContext(
+                secrets=secrets,
+                cancel_event=cancel_event,
+            )
+            temp_dir: str | None = None
+            pump_handle: tuple[asyncio.Task, asyncio.Event] | None = None
+            node: BaseNode | None = None
+            try:
+                # Both inside the try so a failure here (e.g. mkdtemp on a
+                # read-only FS) still runs the cleanup in `finally`.
+                temp_dir = tempfile.mkdtemp(prefix="nodetool_worker_")
+                pump_handle = _start_progress_pump(ctx, emit_progress, emit_update)
+                # Reclaim before the node loads anything, rather than only after
+                # an OOM has already been raised. This scope has touched no
+                # models yet, so nothing of ours can be evicted, and models
+                # pinned by concurrently executing nodes are protected by their
+                # own scopes. The call is threshold- and cooldown-gated, so it
+                # is a no-op unless VRAM is actually under pressure.
+                ModelManager.free_vram_if_needed(reason=f"Preparing to execute node {node_type}")
+                node = await _prepare_node(node_class, fields, input_blobs, temp_dir, ctx)
+                ctx.raise_if_cancelled()
+                if node.is_streaming_output():
+                    if emit_chunk is not None:
+                        result = await _stream_streaming_outputs(node, ctx, emit_chunk)
+                    else:
+                        result = await _collect_streaming_outputs(node, ctx)
+                    outputs, blobs = _extract_named_outputs(result, ctx)
                 else:
-                    result = await _collect_streaming_outputs(node, ctx)
-                outputs, blobs = _extract_named_outputs(result, ctx)
-            else:
-                result = await node.process(ctx)
-                outputs, blobs = _extract_outputs(result, ctx)
-            return {"outputs": outputs, "blobs": blobs}
-        finally:
-            await _stop_progress_pump(pump_handle)
-            if temp_dir is not None:
-                shutil.rmtree(temp_dir, ignore_errors=True)
+                    result = await node.process(ctx)
+                    outputs, blobs = _extract_outputs(result, ctx)
+                return {"outputs": outputs, "blobs": blobs}
+            finally:
+                if node is not None:
+                    # The node's teardown hook — the counterpart to
+                    # pre_process/preload_model/move_to_device. Runs on the
+                    # error path too, and its own failure must never mask the
+                    # node's result or error. Ordered before the pump stops so
+                    # progress posted during teardown still ships.
+                    try:
+                        await node.finalize(ctx)
+                    except Exception:
+                        log.exception("Error finalizing node %s", node_type)
+                await _stop_progress_pump(pump_handle)
+                if temp_dir is not None:
+                    shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 async def execute_node_stream(

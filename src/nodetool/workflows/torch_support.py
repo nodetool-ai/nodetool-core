@@ -41,6 +41,24 @@ except ImportError:  # pragma: no cover - torch not installed
     torch = None  # type: ignore
 
 
+def _release_exception(exc: BaseException) -> None:
+    """Drop an exception's traceback and chained-exception references.
+
+    A live ``__traceback__`` pins every frame of the failed call, and with them
+    the locals of the forward pass — including the activations that caused a
+    CUDA OOM. Reclaiming VRAM while those frames are still reachable frees
+    little or nothing, so the retry runs against the same occupied memory.
+    Clearing the chain first lets the collector actually release them.
+
+    The exception object itself stays usable (and re-raisable); only the frames
+    it was holding go away.
+    """
+    with suppress(Exception):
+        exc.__traceback__ = None
+        exc.__cause__ = None
+        exc.__context__ = None
+
+
 def is_cuda_available() -> bool:
     """Safely check if CUDA is available, handling cases where PyTorch is not compiled with CUDA support."""
     if not TORCH_AVAILABLE or torch is None:
@@ -153,6 +171,11 @@ class TorchWorkflowSupport(BaseTorchSupport):
                 exc,
             )
             retries += 1
+
+            # Release the frames of the failed forward pass *before* reclaiming.
+            # The message is already logged above; everything below only needs
+            # the exception object itself, which stays re-raisable.
+            _release_exception(exc)
 
             if is_cuda_available():
                 try:
