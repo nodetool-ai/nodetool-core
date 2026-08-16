@@ -434,13 +434,12 @@ async def handle_provider_message(
         await transport.send_msg({"type": "result", "request_id": rid, "data": d})
 
     async def send_error(rid: str | None, error: str, tb: str | None = None) -> None:
-        await transport.send_msg(
-            {
-                "type": "error",
-                "request_id": rid,
-                "data": {"error": error, "traceback": tb},
-            }
-        )
+        # Omitted rather than null — the JS side's frame schema types
+        # `traceback` as an optional string, and a null fails validation.
+        data: dict[str, Any] = {"error": error}
+        if tb:
+            data["traceback"] = tb
+        await transport.send_msg({"type": "error", "request_id": rid, "data": data})
 
     async def send_chunk(rid: str | None, d: dict) -> None:
         await transport.send_msg({"type": "chunk", "request_id": rid, "data": d})

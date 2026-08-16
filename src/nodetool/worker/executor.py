@@ -22,6 +22,7 @@ from nodetool.metadata.types import (
 from nodetool.ml.core.model_manager import ModelManager
 from nodetool.runtime.resources import ResourceScope
 from nodetool.worker.context_stub import WorkerContext
+from nodetool.worker.job_registry import JobRegistry
 from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
 
 log = get_logger(__name__)
@@ -159,12 +160,48 @@ async def _stop_progress_pump(
         pass
 
 
+def read_run_identity(data: dict[str, Any]) -> dict[str, Any]:
+    """Extract the v4 run-identity kwargs from an ``execute`` payload.
+
+    Every key is optional and absent keys must reproduce the pre-v4 behaviour
+    exactly: the JS side omits a field it cannot name rather than sending
+    ``null``, so ``data.get("node_id") is None`` is the normal old-client path,
+    not an error. Wrong-typed values are dropped for the same reason — a peer
+    that sends a number where a string belongs should degrade to "no identity",
+    not fail an otherwise valid execution.
+
+    Returns kwargs suitable for ``execute_node(**identity)``; keys the payload
+    did not carry are simply ``None``.
+    """
+
+    def _str(key: str) -> str | None:
+        value = data.get(key)
+        return value if isinstance(value, str) and value else None
+
+    raw_vram = data.get("requires_vram_gb")
+    # bool is an int subclass; a stray True must not become 1.0 GiB.
+    vram = (
+        float(raw_vram)
+        if isinstance(raw_vram, (int, float)) and not isinstance(raw_vram, bool) and raw_vram > 0
+        else None
+    )
+
+    return {
+        "node_id": _str("node_id"),
+        "job_id": _str("job_id"),
+        "workflow_id": _str("workflow_id"),
+        "user_id": _str("user_id"),
+        "requires_vram_gb": vram,
+    }
+
+
 async def _prepare_node(
     node_class: type[BaseNode],
     fields: dict[str, Any],
     input_blobs: dict[str, bytes | list[bytes]],
     temp_dir: str,
     ctx: WorkerContext,
+    node_id: str | None = None,
 ) -> BaseNode:
     """Instantiate a node, assign fields/blobs, and run its preprocessing lifecycle.
 
@@ -190,8 +227,12 @@ async def _prepare_node(
                 f.write(data)
             input_ref_uris[name] = f"file://{path}"
 
-    # Instantiate node
-    node = node_class()
+    # Instantiate node. ``node_id`` is the graph id the JS side sends on
+    # ``execute`` (bridge protocol v4); before v4 every node was built with no
+    # id, so ``self._id`` was "" for all of them and a node calling
+    # ``set_model(self._id, …)`` registered into a single shared bucket. Absent
+    # (a pre-v4 client) it stays "", exactly as before.
+    node = node_class(id=node_id) if node_id else node_class()
 
     # Set fields — convert blob references for asset fields
     resolved_fields = dict(fields)
@@ -228,6 +269,11 @@ async def execute_node(
     emit_progress: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     emit_chunk: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     emit_update: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+    node_id: str | None = None,
+    job_id: str | None = None,
+    workflow_id: str | None = None,
+    user_id: str | None = None,
+    requires_vram_gb: float | None = None,
 ) -> dict[str, Any]:
     """Execute a single Python node and return outputs + blobs.
 
@@ -239,6 +285,20 @@ async def execute_node(
     Progress posted to ``ctx.message_queue`` is forwarded to ``emit_progress``
     in near-real-time by a background pump (every 50ms), and one final drain
     runs after the node finishes — including on exception paths.
+
+    The five run-identity arguments arrive from the bridge's ``execute`` frame
+    (protocol v4) and are all optional — every one of them absent must
+    reproduce the pre-v4 behaviour exactly, because that is the shape a client
+    that cannot name them still sends:
+
+    - ``node_id`` becomes the node's ``_id``, which is what turns
+      ``ModelManager._models_by_node`` from a single ``""`` bucket into a real
+      map and gives ``release_nodes()`` something to release.
+    - ``job_id`` pairs the execution with the ``job.start`` / ``job.end``
+      boundary via :class:`~nodetool.worker.job_registry.JobRegistry`.
+    - ``workflow_id`` / ``user_id`` populate the ``WorkerContext``.
+    - ``requires_vram_gb`` gives the pre-execution reclaim pass a real number
+      to target instead of only a percentage threshold.
     """
     node_class = NODE_BY_TYPE.get(node_type)
     if node_class is None:
@@ -253,7 +313,13 @@ async def execute_node(
             ctx = WorkerContext(
                 secrets=secrets,
                 cancel_event=cancel_event,
+                workflow_id=workflow_id,
+                user_id=user_id,
+                job_id=job_id,
             )
+            # Attribute this node to its run so job.end has something to
+            # retire. A no-op when either id is absent (the pre-v4 path).
+            JobRegistry.note_execution(job_id, node_id)
             temp_dir: str | None = None
             pump_handle: tuple[asyncio.Task, asyncio.Event] | None = None
             node: BaseNode | None = None
@@ -268,8 +334,20 @@ async def execute_node(
                 # pinned by concurrently executing nodes are protected by their
                 # own scopes. The call is threshold- and cooldown-gated, so it
                 # is a no-op unless VRAM is actually under pressure.
-                ModelManager.free_vram_if_needed(reason=f"Preparing to execute node {node_type}")
-                node = await _prepare_node(node_class, fields, input_blobs, temp_dir, ctx)
+                #
+                # ``requires_vram_gb`` (protocol v4) is what the worker itself
+                # reported for this node type at ``discover``, echoed back by
+                # the JS side. With it the pass targets the amount the node is
+                # about to load and reclaims once, correctly; without it it
+                # falls back to the percentage threshold, which can only
+                # trickle because it has no idea what is coming.
+                ModelManager.free_vram_if_needed(
+                    reason=f"Preparing to execute node {node_type}",
+                    required_free_gb=requires_vram_gb,
+                )
+                node = await _prepare_node(
+                    node_class, fields, input_blobs, temp_dir, ctx, node_id=node_id
+                )
                 ctx.raise_if_cancelled()
                 if node.is_streaming_output():
                     if emit_chunk is not None:
@@ -303,12 +381,18 @@ async def execute_node_stream(
     secrets: dict[str, str],
     input_blobs: dict[str, bytes | list[bytes]],
     cancel_event: asyncio.Event | None = None,
+    node_id: str | None = None,
+    job_id: str | None = None,
+    workflow_id: str | None = None,
+    user_id: str | None = None,
+    requires_vram_gb: float | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Execute a streaming node, yielding each emitted ``{"outputs", "blobs"}``.
 
     Thin adapter around ``execute_node`` so the two entry points can never
     diverge in their chunk semantics: this generator yields exactly what
-    ``execute_node`` would have passed to ``emit_chunk``.
+    ``execute_node`` would have passed to ``emit_chunk`` — including how it
+    handles the v4 run identity, which is forwarded verbatim.
     """
     queue: asyncio.Queue = asyncio.Queue()
     sentinel: object = object()
@@ -325,6 +409,11 @@ async def execute_node_stream(
                 input_blobs=input_blobs,
                 cancel_event=cancel_event,
                 emit_chunk=emit_chunk,
+                node_id=node_id,
+                job_id=job_id,
+                workflow_id=workflow_id,
+                user_id=user_id,
+                requires_vram_gb=requires_vram_gb,
             )
         finally:
             queue.put_nowait(sentinel)

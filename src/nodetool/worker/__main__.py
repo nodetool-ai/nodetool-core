@@ -4,7 +4,7 @@ import os
 import sys
 from typing import Any, Awaitable, Callable
 
-from nodetool.worker.executor import execute_node
+from nodetool.worker.executor import execute_node, read_run_identity
 from nodetool.worker.node_loader import load_nodes, resolve_namespaces
 from nodetool.worker.server import WorkerServer, start_server
 
@@ -82,6 +82,7 @@ async def run(args):
             emit_progress=emit_progress,
             emit_chunk=emit_chunk,
             emit_update=emit_update,
+            **read_run_identity(data),
         )
 
     worker.set_execute_handler(handle_execute)

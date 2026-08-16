@@ -187,6 +187,17 @@ class WorkerProtocolServer:
                 cancel_event.set()
             return
 
+        if msg_type and str(msg_type).startswith("job."):
+            from nodetool.worker.job_handler import handle_job_message
+
+            await handle_job_message(
+                msg_type=str(msg_type),
+                request_id=request_id,
+                data=msg.get("data", {}) or {},
+                transport=transport,
+            )
+            return
+
         if msg_type and str(msg_type).startswith("provider."):
             from nodetool.worker.provider_handler import handle_provider_message
 

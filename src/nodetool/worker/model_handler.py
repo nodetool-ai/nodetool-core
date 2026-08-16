@@ -252,6 +252,50 @@ async def _handle_download(
             cancel_flags.pop(request_id, None)
 
 
+def _handle_evict(data: dict[str, Any]) -> dict[str, Any]:
+    """Drop loaded model weights (``models.evict``, bridge protocol v4).
+
+    All three scoping fields are optional and they compose: ``node_ids`` and
+    ``job_id`` both narrow *which* models are candidates (a ``job_id`` resolves
+    to the nodes that job executed), while ``target_vram_gb`` bounds *how much*
+    gets dropped. With no scope at all, everything eligible is evicted.
+
+    Unlike the reactive threshold reclaim, this runs whenever the host asks —
+    the host is the only side that knows the user switched workflows or that
+    another process wants the GPU.
+    """
+    from nodetool.ml.core.model_manager import ModelManager
+    from nodetool.worker.job_registry import JobRegistry
+
+    raw_node_ids = data.get("node_ids")
+    node_ids: list[str] | None = None
+    if isinstance(raw_node_ids, (list, tuple)):
+        node_ids = [n for n in raw_node_ids if isinstance(n, str) and n]
+
+    job_id = data.get("job_id")
+    if isinstance(job_id, str) and job_id:
+        # An unknown job contributes no nodes. That must not silently widen the
+        # request into "evict everything": a scope was asked for, so an empty
+        # scope evicts nothing.
+        node_ids = (node_ids or []) + JobRegistry.node_ids_for(job_id)
+
+    raw_target = data.get("target_vram_gb")
+    target = (
+        float(raw_target)
+        if isinstance(raw_target, (int, float)) and not isinstance(raw_target, bool) and raw_target > 0
+        else None
+    )
+
+    evicted, freed_gb = ModelManager.evict_models(
+        node_ids=list(dict.fromkeys(node_ids)) if node_ids is not None else None,
+        target_vram_gb=target,
+    )
+    result: dict[str, Any] = {"evicted": evicted}
+    if evicted:
+        result["freed_vram_gb"] = freed_gb
+    return result
+
+
 async def handle_models_message(
     msg_type: str,
     request_id: str | None,
@@ -265,7 +309,12 @@ async def handle_models_message(
         await transport.send_msg({"type": "result", "request_id": rid, "data": d})
 
     async def send_error(rid: str | None, error: str, tb: str | None = None) -> None:
-        await transport.send_msg({"type": "error", "request_id": rid, "data": {"error": error, "traceback": tb}})
+        # `traceback` is omitted rather than sent as null — the JS side's frame
+        # schema types it as an optional string, so a null fails validation.
+        payload: dict[str, Any] = {"error": error}
+        if tb:
+            payload["traceback"] = tb
+        await transport.send_msg({"type": "error", "request_id": rid, "data": payload})
 
     async def send_progress(rid: str | None, d: dict) -> None:
         await transport.send_msg({"type": "progress", "request_id": rid, "data": d})
@@ -287,6 +336,9 @@ async def handle_models_message(
         elif msg_type == "models.delete":
             deleted = await delete_cached_hf_model(data["repo_id"])
             await send_result(request_id, {"deleted": bool(deleted)})
+
+        elif msg_type == "models.evict":
+            await send_result(request_id, _handle_evict(data))
 
         else:
             await send_error(request_id, f"Unknown models message type: {msg_type}")
