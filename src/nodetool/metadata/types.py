@@ -806,6 +806,10 @@ class TTSModel(BaseType):
     path: str | None = None
     voices: list[str] = Field(default_factory=list)
     selected_voice: str = ""
+    capabilities: list[str] = Field(default_factory=list)
+    languages: list[str] = Field(default_factory=list)
+    sample_rate: int | None = None
+    requires_reference_text: bool = False
 
 
 class ASRModel(BaseType):
