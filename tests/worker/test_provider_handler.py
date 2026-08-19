@@ -37,6 +37,9 @@ async def test_provider_list(server):
         assert resp["request_id"] == "pl-1"
         assert "providers" in resp["data"]
         assert isinstance(resp["data"]["providers"], list)
+        for provider in resp["data"]["providers"]:
+            assert provider["access"] == "in_process"
+            assert provider["display_name"]
 
 
 @pytest.mark.asyncio(loop_scope="function")
