@@ -465,7 +465,24 @@ class ProcessingContext:
                 location = response.headers.get("Location")
                 if not location:
                     raise ValueError(f"Redirect response without Location header from {current_url}")
-                current_url = urljoin(current_url, location)
+                next_url = urljoin(current_url, location)
+
+                # Strip Authorization header if redirecting to a different host
+                if urlparse(current_url).hostname != urlparse(next_url).hostname:
+                    headers = kwargs.get("headers")
+                    if headers:
+                        if isinstance(headers, dict):
+                            kwargs["headers"] = {k: v for k, v in headers.items() if k.lower() != "authorization"}
+                        elif hasattr(headers, "copy"):
+                            h_copy = headers.copy()
+                            if "authorization" in h_copy:
+                                del h_copy["authorization"]
+                            # httpx Headers use lower case keys, but handle both just in case
+                            if "Authorization" in h_copy:
+                                del h_copy["Authorization"]
+                            kwargs["headers"] = h_copy
+
+                current_url = next_url
                 if response.status_code in (301, 302, 303) and current_method.upper() not in ("GET", "HEAD"):
                     current_method = "GET"
                     for body_key in ("content", "data", "files", "json"):
