@@ -93,5 +93,30 @@ def test_tts_model_capability_defaults_are_backward_compatible():
     assert model.languages == []
     assert model.sample_rate is None
     assert model.requires_reference_text is False
+    assert model.adapter is None
+
+
+def test_tts_model_accepts_adapter_availability_facts():
+    model = TTSModel.model_validate(
+        {
+            "provider": "huggingface",
+            "id": "vendor/model",
+            "name": "Model",
+            "adapter": {
+                "state": "missing_dependency",
+                "reason_code": "missing_dependency",
+                "reason": "Install the optional model package.",
+                "artifact_ref": {
+                    "source": "huggingface",
+                    "repo_id": "vendor/model",
+                },
+            },
+        }
+    )
+
+    assert model.adapter is not None
+    assert model.adapter.state == "missing_dependency"
+    assert model.adapter.artifact_ref is not None
+    assert model.adapter.artifact_ref.repo_id == "vendor/model"
 
 

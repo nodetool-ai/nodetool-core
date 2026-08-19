@@ -798,6 +798,24 @@ class ImageModel(BaseType):
     capabilities: list[str] = Field(default_factory=list)
 
 
+class ModelArtifactRef(BaseModel):
+    """Exact artifact identity required by a provider model adapter."""
+
+    source: Literal["huggingface"]
+    repo_id: str
+    revision: str | None = None
+    path: str | None = None
+
+
+class ModelAdapterInfo(BaseModel):
+    """Non-loading readiness facts reported by a model adapter."""
+
+    state: Literal["installed", "missing_dependency", "unknown"] = "unknown"
+    reason_code: str | None = None
+    reason: str | None = None
+    artifact_ref: ModelArtifactRef | None = None
+
+
 class TTSModel(BaseType):
     type: Literal["tts_model"] = "tts_model"
     provider: Provider = Provider.Empty
@@ -810,6 +828,7 @@ class TTSModel(BaseType):
     languages: list[str] = Field(default_factory=list)
     sample_rate: int | None = None
     requires_reference_text: bool = False
+    adapter: ModelAdapterInfo | None = None
 
 
 class ASRModel(BaseType):

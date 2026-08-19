@@ -164,6 +164,11 @@ def get_available_providers() -> list[dict[str, Any]]:
                     "id": pid,
                     "capabilities": capabilities,
                     "required_secrets": (cls.required_secrets() if hasattr(cls, "required_secrets") else []),
+                    # Every provider exposed by this handler executes inside
+                    # the Python worker. The TypeScript server assigns whether
+                    # that worker is local or remote from the active transport.
+                    "access": "in_process",
+                    "display_name": "Hugging Face Local" if pid == "huggingface" else "MLX",
                 }
             )
     return result
