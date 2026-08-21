@@ -1,3 +1,7 @@
+from unittest.mock import patch
+
+import nodetool.worker.comfy_handler
+
 """Tests for the comfy.* bridge handler (ComfyUI proxy).
 
 A fake ComfyUI server (aiohttp.web) implements the endpoints the proxy uses —
@@ -212,6 +216,7 @@ class FakeComfy:
 
 @pytest_asyncio.fixture(loop_scope="function")
 async def fake_comfy(monkeypatch):
+    monkeypatch.setattr("nodetool.worker.comfy_handler.is_ip_private", lambda ip: False)
     fake = FakeComfy()
     runner = web.AppRunner(fake.app)
     await runner.setup()
