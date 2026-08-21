@@ -80,6 +80,9 @@ def _patch_source(monkeypatch, factory, name="model.safetensors"):
 # --- concurrency ----------------------------------------------------------------------
 
 
+from unittest.mock import patch
+
+
 @pytest.mark.asyncio(loop_scope="function")
 async def test_concurrent_downloads_of_same_target_transfer_once(tmp_path, monkeypatch):
     """Two concurrent requests for one model: one transfer, intact file, both succeed."""
@@ -112,7 +115,8 @@ async def test_concurrent_downloads_of_same_target_transfer_once(tmp_path, monke
         a, b = Collector(), Collector()
         data_a = {"folder": "checkpoints", "filename": "model.safetensors", "source": source}
         data_b = dict(data_a)
-        await asyncio.gather(_download(data_a, "d-1", a), _download(data_b, "d-2", b))
+        with patch("nodetool.worker.comfy_handler.is_ip_private", return_value=False):
+                await asyncio.gather(_download(data_a, "d-1", a), _download(data_b, "d-2", b))
     finally:
         await runner.cleanup()
 
