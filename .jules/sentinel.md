@@ -61,3 +61,7 @@
 **Vulnerability:** A manual SSRF bypass existed in `download_http_uri` where `aiohttp` automatically followed HTTP redirects, potentially directing the client to resolve a private/restricted IP that wasn't checked by the initial `SSRFProtectResolver` or `is_ip_private` validation on the primary host URL.
 **Learning:** `aiohttp.ClientSession.get` follows redirects by default (`allow_redirects=True`). If the `SSRFProtectResolver` short-circuits on IP literals, or if only the initial host is validated, a malicious redirect can exploit the SSRF.
 **Prevention:** Always set `allow_redirects=False` in HTTP clients used to fetch untrusted URLs when SSRF protections are required. Implement manual redirect following (with a max redirect limit) and re-validate the target host string via `is_ip_private` on every single redirect hop.
+## 2023-10-27 - Manual Redirect Handling for SSRF Protection
+**Vulnerability:** Model downloads allowed automatic redirects via `aiohttp.ClientSession(allow_redirects=True)`, which bypassed the SSRF checks for IP literals (e.g., DNS rebinding or redirecting to localhost).
+**Learning:** `aiohttp` bypasses custom resolvers for IP literals, so automatic redirects can bypass `SSRFProtectResolver` protections. Cross-origin redirects can also leak sensitive headers like `Authorization`.
+**Prevention:** Disable automatic redirects (`allow_redirects=False`), manually validate the hostname against `is_ip_private()` at each redirect hop, and explicitly strip sensitive headers when crossing origins.
