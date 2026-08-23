@@ -103,6 +103,25 @@ def _get_provider(provider_id: str, secrets: dict[str, str]) -> Any:
     return instance
 
 
+def _tts_kwargs(data: dict[str, Any]) -> dict[str, Any]:
+    """Build the public TTS provider arguments from a bridge request."""
+    result: dict[str, Any] = {
+        "text": data["text"],
+        "model": data["model"],
+    }
+    for key in (
+        "voice",
+        "speed",
+        "reference_audio",
+        "reference_text",
+        "language",
+        "instructions",
+    ):
+        if key in data:
+            result[key] = data[key]
+    return result
+
+
 def get_available_providers() -> list[dict[str, Any]]:
     """List providers that are available in this Python environment."""
     from nodetool.providers.base import _PROVIDER_REGISTRY
@@ -145,6 +164,11 @@ def get_available_providers() -> list[dict[str, Any]]:
                     "id": pid,
                     "capabilities": capabilities,
                     "required_secrets": (cls.required_secrets() if hasattr(cls, "required_secrets") else []),
+                    # Every provider exposed by this handler executes inside
+                    # the Python worker. The TypeScript server assigns whether
+                    # that worker is local or remote from the active transport.
+                    "access": "in_process",
+                    "display_name": "Hugging Face Local" if pid == "huggingface" else "MLX",
                 }
             )
     return result
@@ -524,13 +548,7 @@ async def handle_provider_message(
                 cancel_flags[request_id] = cancel_event
             try:
                 provider = _get_provider(data["provider"], data.get("secrets", {}))
-                kwargs_tts: dict[str, Any] = {
-                    "text": data["text"],
-                    "model": data["model"],
-                }
-                for key in ("voice", "speed"):
-                    if key in data:
-                        kwargs_tts[key] = data[key]
+                kwargs_tts = _tts_kwargs(data)
                 async for audio_chunk in provider.text_to_speech(**kwargs_tts):
                     if cancel_event.is_set():
                         break
