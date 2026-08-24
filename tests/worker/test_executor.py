@@ -285,7 +285,11 @@ async def test_execute_serializes_streaming_audio_refs_with_protocol_type():
         input_blobs={},
     )
 
-    assert "audio" not in result["outputs"]
+    # The ref travels next to its bytes: the blob carries the payload, the ref
+    # carries everything else the host needs. It used to be dropped here.
+    assert result["outputs"]["audio"]["type"] == "audio"
+    assert result["outputs"]["audio"]["uri"].startswith("blob://")
+    assert result["outputs"]["audio"]["data"] is None, "payload must not ride inline"
     assert result["blobs"]["audio"].startswith(b"RIFF")
     assert result["outputs"]["chunk"]["content_type"] == "audio"
     assert result["outputs"].get("chunk", {}).get("done") is True
@@ -326,7 +330,8 @@ async def test_execute_node_stream_extracts_blobs_per_chunk():
     ]
 
     assert len(items) == 1
-    assert "audio" not in items[0]["outputs"]
+    assert items[0]["outputs"]["audio"]["type"] == "audio"
+    assert items[0]["outputs"]["audio"]["data"] is None, "payload must not ride inline"
     assert items[0]["blobs"]["audio"].startswith(b"RIFF")
     assert items[0]["outputs"]["chunk"]["content_type"] == "audio"
 
