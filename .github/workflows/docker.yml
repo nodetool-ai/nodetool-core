@@ -73,10 +73,16 @@ jobs:
           ${IMAGE}:latest"
           else
             # Source build: nodetool-core comes from the build context.
+            #
+            # Name the moving tag after the ref that was actually built. This
+            # branch used to hardcode ":main", so a workflow_dispatch on any
+            # branch republished ":main" pointing at unmerged code, and anyone
+            # pulling ":main" silently got it. On main the tags are unchanged.
             WORKER_BASE=dev
             SHORT_SHA="${GITHUB_SHA::7}"
-            TAGS="${IMAGE}:main
-          ${IMAGE}:main-${SHORT_SHA}"
+            REF_SLUG=$(printf '%s' "${GITHUB_REF_NAME}" | tr '/' '-' | tr -cd '[:alnum:]._-')
+            TAGS="${IMAGE}:${REF_SLUG}
+          ${IMAGE}:${REF_SLUG}-${SHORT_SHA}"
           fi
 
           {
