@@ -94,20 +94,27 @@ jobs:
 
       # Release builds install nodetool-core from PyPI, and publish-wheel.yml
       # uploads it on the same tag push — wait for it to land.
+      #
+      # Poll the SIMPLE index, not the JSON API. They are separate surfaces with
+      # independent propagation: /pypi/<pkg>/<version>/json answered 200 for
+      # 0.7.10 while /simple/ still did not list it, so this step passed and the
+      # build then died on "no version of nodetool-core==0.7.10". uv installs
+      # from /simple, so /simple is what has to be ready.
       - name: Wait for nodetool-core on PyPI
         if: steps.meta.outputs.version != ''
         run: |
           VERSION="${{ steps.meta.outputs.version }}"
-          echo "Waiting for nodetool-core==$VERSION on PyPI..."
+          echo "Waiting for nodetool-core==$VERSION on the PyPI simple index..."
           for i in $(seq 1 60); do
-            if curl -fsSL "https://pypi.org/pypi/nodetool-core/${VERSION}/json" >/dev/null 2>&1; then
-              echo "✅ nodetool-core==$VERSION is available"
+            if curl -fsSL "https://pypi.org/simple/nodetool-core/" \
+                 | grep -q "nodetool_core-${VERSION}-"; then
+              echo "✅ nodetool-core==$VERSION is on the simple index"
               exit 0
             fi
-            echo "  not yet available, retrying in 30s ($i/60)"
+            echo "  not yet listed, retrying in 30s ($i/60)"
             sleep 30
           done
-          echo "❌ nodetool-core==$VERSION never appeared on PyPI"
+          echo "❌ nodetool-core==$VERSION never appeared on the simple index"
           exit 1
 
       # Resolved AFTER the wait above, not with the tags. Both repos release on
@@ -124,8 +131,20 @@ jobs:
             HF_VERSION=$(curl -fsSL https://pypi.org/pypi/nodetool-huggingface/json \
               | python3 -c "import sys, json; print(json.load(sys.stdin)['info']['version'])")
           fi
-          echo "hf-version=$HF_VERSION" >> $GITHUB_OUTPUT
-          echo "🤗 nodetool-huggingface: $HF_VERSION"
+          # Same two-surface problem as the wait above: whichever version was
+          # chosen, the install reads /simple, so confirm it is listed there.
+          for i in $(seq 1 20); do
+            if curl -fsSL "https://pypi.org/simple/nodetool-huggingface/" \
+                 | grep -q "nodetool_huggingface-${HF_VERSION}-"; then
+              echo "hf-version=$HF_VERSION" >> $GITHUB_OUTPUT
+              echo "🤗 nodetool-huggingface: $HF_VERSION"
+              exit 0
+            fi
+            echo "  nodetool-huggingface==$HF_VERSION not yet on the simple index, retrying in 30s ($i/20)"
+            sleep 30
+          done
+          echo "❌ nodetool-huggingface==$HF_VERSION never appeared on the simple index"
+          exit 1
 
       - name: Checkout code
         uses: actions/checkout@v6
