@@ -5,6 +5,7 @@ Overrides only what's needed:
 - Injects per-request secrets (from the bridge protocol)
 - Captures output blobs produced by media conversion methods
 """
+
 import asyncio
 import os
 import uuid
@@ -91,7 +92,7 @@ class WorkerContext(ProcessingContext):
         if data.dtype == np.int16:
             raw = data.tobytes()
         elif data.dtype in (np.float16, np.float32, np.float64):
-            raw = (np.clip(data, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
+            raw = (np.asarray(data, dtype=np.float32).clip(-1.0, 1.0) * np.float32(32767.0)).astype(np.int16).tobytes()
         else:
             raise ValueError(f"Unsupported dtype {data.dtype}")
         # Always honour the caller's channel count, like the base
@@ -104,8 +105,7 @@ class WorkerContext(ProcessingContext):
         buf.write(struct.pack("<I", 36 + data_size))
         buf.write(b"WAVE")
         buf.write(b"fmt ")
-        buf.write(struct.pack("<IHHIIHH", 16, 1, channels, sample_rate,
-                              sample_rate * channels * 2, channels * 2, 16))
+        buf.write(struct.pack("<IHHIIHH", 16, 1, channels, sample_rate, sample_rate * channels * 2, channels * 2, 16))
         buf.write(b"data")
         buf.write(struct.pack("<I", data_size))
         buf.write(raw)
