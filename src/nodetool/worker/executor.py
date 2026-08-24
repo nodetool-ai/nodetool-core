@@ -597,16 +597,72 @@ def msgpack_default(obj: Any) -> Any:
     isoformat = getattr(obj, "isoformat", None)
     if callable(isoformat):
         return isoformat()
+    # numpy scalars (np.float32, np.int64, ...) reach the packer inside
+    # dataframe rows. `.item()` gives the Python primitive; it raises for a
+    # multi-element array, which has no primitive form and stays unsupported.
+    item = getattr(obj, "item", None)
+    if callable(item):
+        try:
+            return item()
+        except (ValueError, TypeError):
+            pass
     raise TypeError(f"Object of type {type(obj).__name__} is not msgpack-serializable")
+
+
+def _is_binary_payload(payload: Any) -> bool:
+    """True when an AssetRef's ``data`` holds raw bytes rather than a payload."""
+    if isinstance(payload, (bytes, bytearray, memoryview)):
+        return True
+    return isinstance(payload, list) and any(
+        isinstance(item, (bytes, bytearray, memoryview)) for item in payload
+    )
+
+
+def _strip_binary_payloads(obj: Any) -> Any:
+    """Drop every raw-bytes ``data`` field from a dumped ref, at any depth.
+
+    Nesting is real: ``Model3DRef.texture_files`` is a list of ``ImageRef`` and
+    ``material_file`` is one too, so a top-level check would still inline
+    texture bytes into the frame.
+    """
+    if isinstance(obj, dict):
+        out = {k: _strip_binary_payloads(v) for k, v in obj.items()}
+        if _is_binary_payload(out.get("data")):
+            out["data"] = None
+        return out
+    if isinstance(obj, list):
+        return [_strip_binary_payloads(item) for item in obj]
+    return obj
+
+
+def _serialize_asset_ref(value: AssetRef) -> dict[str, Any]:
+    """Serialize an asset ref, keeping every field except raw bytes.
+
+    Bytes never travel inline. A ref whose payload is real bytes carries a
+    ``blob://`` uri, and ``_extract_outputs`` moves those bytes into the frame's
+    separate blobs map; copying them into ``data`` as well would duplicate a
+    megabyte-scale payload in every frame.
+
+    Nothing else may be dropped. This used to reduce every ref to ``uri`` and
+    ``type``, which is right only for a ref whose payload is in a blob.
+    ``DataframeRef`` overrides ``data`` with ``list[list[Any]]`` and holds its
+    rows there with no blob and an empty uri, so the flattening discarded the
+    whole table and reported success. ``Model3DRef`` (format, material_file,
+    texture_files) and ``VideoRef`` (duration, format) lost metadata the same
+    way.
+    """
+    dumped = _strip_binary_payloads(value.model_dump())
+    # Keep the wire's type name authoritative: the field's own literal and
+    # TypeToName agree for every shipped ref, but an unregistered subclass would
+    # otherwise announce a name the TS side does not know.
+    dumped["type"] = TypeToName.get(type(value), type(value).__name__)
+    return dumped
 
 
 def _serialize_value(value: Any) -> Any:
     """Convert a value to JSON/msgpack-safe form."""
     if isinstance(value, ASSET_REF_TYPES):
-        return {
-            "uri": value.uri,
-            "type": TypeToName.get(type(value), type(value).__name__),
-        }
+        return _serialize_asset_ref(value)
     from enum import Enum
 
     if isinstance(value, Enum):
