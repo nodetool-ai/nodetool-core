@@ -4,6 +4,11 @@ models.* are HuggingFace-scoped for now (the worker cache is HF). They run
 against whatever HF_HOME the worker process sees — when this worker is a remote
 pod with a persistent volume, that is the pod's cache.
 
+``models.download`` accepts an optional ``token`` field. A rented worker holds
+no HuggingFace credential, so the host may pass one per request; the worker uses
+it for that download only and never persists, logs, or echoes it. Without the
+field the worker resolves a token itself, as before.
+
 Mirrors ``provider_handler.handle_provider_message``: transport-agnostic, it
 only needs a transport exposing an async ``send_msg``, so the same code path
 serves both the WebSocket and stdio workers.
@@ -39,6 +44,23 @@ async def _list_repo_files(repo_id: str, token: str | None = None):
     return await asyncio.to_thread(_list)
 
 
+def _request_token(data: dict[str, Any]) -> str | None:
+    """Return the HF token the caller supplied with this request, if any.
+
+    A rented worker is a bare container: it has no per-user secret store and
+    nothing sets ``HF_TOKEN`` in its environment, so ``get_hf_token()`` resolves
+    to None and every gated repo answers 401. The host therefore passes the
+    credential with the request, and it lives only for the life of the call.
+
+    An absent, non-string, or blank value means "no token supplied" — an empty
+    Bearer header fails differently than sending no header at all.
+    """
+    raw = data.get("token")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
+
+
 def _matches(path: str, patterns: list[str] | None) -> bool:
     if not patterns:
         return True
@@ -62,7 +84,8 @@ async def _handle_download(
     if request_id:
         cancel_flags[request_id] = cancel_event
 
-    token = await get_hf_token()
+    # Per-request token first; fall back to the worker's own resolution.
+    token = _request_token(data) or await get_hf_token()
     loop = asyncio.get_running_loop()
 
     def frame(
