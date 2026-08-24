@@ -465,7 +465,19 @@ class ProcessingContext:
                 location = response.headers.get("Location")
                 if not location:
                     raise ValueError(f"Redirect response without Location header from {current_url}")
-                current_url = urljoin(current_url, location)
+
+                new_url = urljoin(current_url, location)
+
+                # Strip sensitive headers on cross-origin redirect
+                if urlparse(current_url).hostname != urlparse(new_url).hostname:
+                    if "headers" in kwargs and isinstance(kwargs["headers"], dict):
+                        kwargs["headers"] = {
+                            k: v for k, v in kwargs["headers"].items()
+                            if k.lower() != "authorization"
+                        }
+
+                current_url = new_url
+
                 if response.status_code in (301, 302, 303) and current_method.upper() not in ("GET", "HEAD"):
                     current_method = "GET"
                     for body_key in ("content", "data", "files", "json"):
