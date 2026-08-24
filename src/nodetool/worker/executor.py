@@ -154,22 +154,27 @@ async def _prepare_node(
     the lifecycle methods are flushed by the background pump started in
     ``execute_node`` — no inline drain is needed here.
     """
-    # Write input blobs to temp files for URI resolution
+    # Write input blobs into the workspace (`temp_dir`) and address them
+    # workspace-relative. `ProcessingContext.resolve_workspace_path` re-roots
+    # every absolute path at the workspace to block traversal, so a
+    # `file:///private/var/.../input_audio` URI resolves to
+    # `<workspace>/private/var/.../input_audio` and the node never finds its
+    # own input. `file:///input_audio` resolves back to the file just written.
     input_ref_uris: dict[str, str | list[str]] = {}
     for name, data in input_blobs.items():
         if isinstance(data, list):
             uris: list[str] = []
             for index, item in enumerate(data):
-                path = os.path.join(temp_dir, f"input_{name}_{index}")
-                with open(path, "wb") as f:
+                filename = f"input_{name}_{index}"
+                with open(os.path.join(temp_dir, filename), "wb") as f:
                     f.write(item)
-                uris.append(f"file://{path}")
+                uris.append(f"file:///{filename}")
             input_ref_uris[name] = uris
         else:
-            path = os.path.join(temp_dir, f"input_{name}")
-            with open(path, "wb") as f:
+            filename = f"input_{name}"
+            with open(os.path.join(temp_dir, filename), "wb") as f:
                 f.write(data)
-            input_ref_uris[name] = f"file://{path}"
+            input_ref_uris[name] = f"file:///{filename}"
 
     # Instantiate node
     node = node_class()
@@ -225,12 +230,20 @@ async def execute_node(
         raise ValueError(f"Unknown node type: {node_type}")
 
     async with ResourceScope():
+        # The temp dir is the run's workspace, not just scratch space:
+        # `_prepare_node` writes every input blob into it and hands the node a
+        # `file://` URI, and resolving one goes through
+        # `ProcessingContext.resolve_workspace_path`, which refuses any path
+        # when no workspace is assigned. Without this the node sees its media
+        # input as "No workspace is assigned" instead of the bytes the caller
+        # sent.
+        temp_dir = tempfile.mkdtemp(prefix="nodetool_worker_")
         ctx = WorkerContext(
             secrets=secrets,
             cancel_event=cancel_event,
+            workspace_dir=temp_dir,
         )
         pump_handle = _start_progress_pump(ctx, emit_progress)
-        temp_dir = tempfile.mkdtemp(prefix="nodetool_worker_")
         try:
             node = await _prepare_node(node_class, fields, input_blobs, temp_dir, ctx)
             if node.is_streaming_output():
