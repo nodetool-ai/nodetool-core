@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -195,6 +196,37 @@ def _hf_cache_root() -> Path:
         return Path(xdg) / "huggingface" / "hub"
 
     return Path.home() / ".cache" / "huggingface" / "hub"
+
+
+_COMMIT_HASH_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _write_revision_ref(repo_cache: Path, revision: str, commit_hash: str) -> None:
+    """Record `refs/<revision> -> commit_hash`, the way huggingface_hub does.
+
+    Our cache layout matches huggingface_hub's `blobs/` + `snapshots/<commit>/`
+    exactly, but nothing wrote the third directory it keeps. `from_pretrained`
+    resolves a branch name (the default "main") to a commit by reading
+    `refs/<revision>`; with the file absent, an offline load cannot find the
+    snapshot sitting right next to it and raises `LocalEntryNotFoundError`.
+
+    Written as soon as the commit is known, which is what huggingface_hub does
+    too: a repo is fetched one file at a time, so there is no later moment at
+    which the snapshot becomes "complete" enough to point at.
+    """
+    if not commit_hash or _COMMIT_HASH_RE.match(revision):
+        # A revision that IS a commit hash needs no indirection.
+        return
+    try:
+        safe_revision = _validate_path_component(revision, allow_subdirs=True)
+    except ValueError:
+        log.warning("Refusing to write a ref for unsafe revision %r", revision)
+        return
+    ref_path = repo_cache / "refs" / safe_revision
+    ref_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = ref_path.with_name(ref_path.name + ".tmp")
+    tmp_path.write_text(commit_hash)
+    os.replace(tmp_path, ref_path)
 
 
 def _hf_repo_cache_dir(
@@ -543,11 +575,26 @@ async def async_hf_download(
 
         snapshot_root = repo_cache / "snapshots" / safe_commit
         snapshot_path = snapshot_root / safe_filename
-        # filename may legitimately contain subdirs; assert the resolved path
+        # filename may legitimately contain subdirs; assert the joined path
         # stays within the snapshot commit directory.
-        if not snapshot_path.resolve().is_relative_to(snapshot_root.resolve()):
+        #
+        # Resolve the ROOT only, and normalize the joined name textually.
+        # Once a file has been downloaded, `snapshot_path` IS a symlink into
+        # ../../blobs, and `Path.resolve()` follows it — so resolving the full
+        # path reported every already-cached file as an escape and made a
+        # second download of any repo fail. Normalizing the text answers the
+        # question actually being asked (does this *name* escape?) without
+        # consulting the filesystem.
+        snapshot_root_resolved = snapshot_root.resolve()
+        if not Path(
+            os.path.normpath(snapshot_root_resolved / safe_filename)
+        ).is_relative_to(snapshot_root_resolved):
             raise ValueError(f"Filename escapes snapshot directory: {filename!r}")
         blob_path = blobs_dir / safe_etag
+
+        # Point the branch name at this commit so an offline load can resolve
+        # the snapshot we are about to populate (see _write_revision_ref).
+        _write_revision_ref(repo_cache, revision, meta.commit_hash or "")
 
         # Blob already cached and looks complete
         if blob_path.exists() and (meta.size is None or blob_path.stat().st_size == meta.size):
