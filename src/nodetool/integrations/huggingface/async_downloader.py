@@ -4,7 +4,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 import httpx
 
@@ -20,10 +20,6 @@ HF_HEADER_X_LINKED_SIZE = "X-Linked-Size"
 
 # Simple in-process cache for the resolved HF token
 _CACHED_HF_TOKEN: Optional[str] = None
-
-# Same-origin redirect hops hf_head_metadata will follow while it still has no
-# ETag. One is enough for a renamed repo; the cap only has to stop a loop.
-_MAX_METADATA_REDIRECTS = 5
 
 # Exponential backoff between resumable-download retries, in seconds.
 _RETRY_BACKOFF_BASE = 1.0
@@ -67,12 +63,6 @@ def _validate_path_component(component: str, *, allow_subdirs: bool = False) -> 
     if not allow_subdirs and len(p.parts) > 1:
         raise ValueError(f"Path separators not allowed in component: {component!r}")
     return candidate
-
-
-def _same_origin(a: str, b: str) -> bool:
-    """True when two URLs share scheme and host:port."""
-    pa, pb = urlparse(a), urlparse(b)
-    return (pa.scheme, pa.netloc) == (pb.scheme, pb.netloc)
 
 
 def _env_bool(name: str) -> bool:
@@ -251,16 +241,6 @@ async def hf_head_metadata(
 
     Hugging Face uses X-Linked-Etag and X-Linked-Size on redirects to LFS/CDN
     plus X-Repo-Commit for the resolved commit.
-
-    The first hop usually carries them. A repo that has been RENAMED answers
-    with a rename redirect first, and that hop carries no ETag and no commit —
-    both appear one hop later. So when a redirect has no ETag, follow it, but
-    only while the target stays on the same origin: the hop that leaves
-    huggingface.co is the CDN hand-off, and its own ETag is a different hash
-    than the one the cache layout is keyed on.
-
-    Every header of the returned metadata comes from the same response, so the
-    commit can never be paired with an ETag resolved on a different hop.
     """
     headers = {
         "Accept-Encoding": "identity",  # avoid compression; want real Content-Length
@@ -269,35 +249,19 @@ async def hf_head_metadata(
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    current_url = url
     try:
-        for _ in range(_MAX_METADATA_REDIRECTS + 1):
-            resp = await client.head(
-                current_url,
-                headers=headers,
-                follow_redirects=False,  # never chase the CDN hand-off here
-                timeout=timeout,
-            )
-            if not (300 <= resp.status_code < 400):
-                resp.raise_for_status()
-                break
-
-            # A redirect is expected for LFS/CDN, and it normally carries the
-            # metadata. Take it and stop.
-            if resp.headers.get(HF_HEADER_X_LINKED_ETAG) or resp.headers.get("ETag"):
-                break
-
-            location = resp.headers.get("Location")
-            if not location:
-                break
-            target = urljoin(current_url, location)
-            if not _same_origin(current_url, target):
-                break
-            current_url = target
+        resp = await client.head(
+            url,
+            headers=headers,
+            follow_redirects=False,  # stay on huggingface.co for metadata
+            timeout=timeout,
+        )
+        if 300 <= resp.status_code < 400:
+            # It's a redirect, which is expected for LFS/CDN.
+            # We'll extract headers from this response.
+            pass
         else:
-            raise RuntimeError(
-                f"Too many redirects (>{_MAX_METADATA_REDIRECTS}) resolving metadata for url={url!r}"
-            )
+            resp.raise_for_status()
     except httpx.HTTPStatusError as e:
         if e.response.status_code in (401, 403):
             raise PermissionError(
@@ -322,6 +286,8 @@ async def hf_head_metadata(
 
     location = resp.headers.get("Location") or str(resp.url)
     if location and not location.startswith(("http://", "https://")):
+        from urllib.parse import urljoin
+
         location = urljoin(str(resp.url), location)
 
     commit = resp.headers.get(HF_HEADER_X_REPO_COMMIT)
