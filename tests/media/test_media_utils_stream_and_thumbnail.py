@@ -54,9 +54,7 @@ async def test_create_video_thumbnail_scales_and_rewinds(tmp_path, monkeypatch) 
     stub = _write_stub(
         tmp_path,
         "ffmpeg_stub.sh",
-        f'echo "$@" > {args_file}\n'
-        'if [ ! -s "$2" ]; then echo "empty input" >&2; exit 1; fi\n'
-        "printf THUMB\n",
+        f'echo "$@" > {args_file}\nif [ ! -s "$2" ]; then echo "empty input" >&2; exit 1; fi\nprintf THUMB\n',
     )
     monkeypatch.setattr(media_utils, "FFMPEG_PATH", stub)
 
@@ -75,6 +73,7 @@ async def test_create_video_thumbnail_removes_temp_file_on_error(tmp_path, monke
     stub = _write_stub(tmp_path, "ffmpeg_fail.sh", "echo boom >&2\nexit 1\n")
     monkeypatch.setattr(media_utils, "FFMPEG_PATH", stub)
 
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     before = set(os.listdir(tempfile.gettempdir()))
     with pytest.raises(Exception, match="ffmpeg error"):
         await media_utils.create_video_thumbnail(io.BytesIO(b"data"), 100, 100)
@@ -88,6 +87,7 @@ async def test_create_video_thumbnail_removes_temp_file_when_read_fails(tmp_path
         def read(self, *args, **kwargs):  # type: ignore[override]
             raise OSError("stream broken")
 
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     before = set(os.listdir(tempfile.gettempdir()))
     with pytest.raises(OSError, match="stream broken"):
         await media_utils.create_video_thumbnail(Broken(b"data"), 100, 100)

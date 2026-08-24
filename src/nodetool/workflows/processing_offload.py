@@ -122,8 +122,7 @@ def _numpy_audio_to_mp3_bytes(arr: Any, sample_rate: int = DEFAULT_AUDIO_SAMPLE_
     if audio_arr.dtype == np.int16:
         raw = audio_arr.tobytes()
     elif audio_arr.dtype in (np.float32, np.float64, np.float16):
-        dt = np.float32
-        raw = (audio_arr.astype(dt, copy=False).clip(dt(-1.0), dt(1.0)) * dt(32767.0)).astype(np.int16).tobytes()
+        raw = (np.clip(audio_arr, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
     else:
         raise ValueError(f"Unsupported audio ndarray dtype {audio_arr.dtype}")
 
@@ -149,8 +148,7 @@ def _numpy_audio_to_wav_bytes(arr: Any, sample_rate: int = DEFAULT_AUDIO_SAMPLE_
     if audio_arr.dtype == np.int16:
         raw = audio_arr.tobytes()
     elif audio_arr.dtype in (np.float32, np.float64, np.float16):
-        dt = np.float32
-        raw = (audio_arr.astype(dt, copy=False).clip(dt(-1.0), dt(1.0)) * dt(32767.0)).astype(np.int16).tobytes()
+        raw = (np.clip(audio_arr, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
     else:
         raise ValueError(f"Unsupported audio ndarray dtype {audio_arr.dtype}")
 
