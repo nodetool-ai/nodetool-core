@@ -129,6 +129,23 @@ RUN uv pip install \
 
 FROM ${WORKER_BASE} AS runtime
 
+# Fail the build if the torch stack cannot import.
+#
+# torchvision and torchaudio ship CUDA-variant wheels that must match torch's.
+# When nodetool-huggingface left them unpinned, the resolver installed
+# torchaudio 2.11.0 (built against CUDA 13) next to torch 2.9.0+cu128, and the
+# import died with `libcudart.so.13: cannot open shared object file`. Nothing
+# here checked, so the image published fine and every HuggingFace node failed
+# at execute time instead — the worker even reported zero load errors, because
+# discovery does not import the extensions.
+#
+# This runs at build time on a CPU-only builder, so it must not touch a GPU.
+# The import is the whole check: the .so loads against torch's CUDA runtime, or
+# it does not.
+RUN python -c "\
+import torch, torchvision, torchaudio; \
+print('torch', torch.__version__, 'torchvision', torchvision.__version__, 'torchaudio', torchaudio.__version__)"
+
 # Expose the worker's WebSocket port
 EXPOSE 7777
 
