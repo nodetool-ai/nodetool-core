@@ -445,6 +445,11 @@ async def test_models_download_uses_supplied_token(server, monkeypatch):
             ws, "md-tok-1", {"repo_id": "org/gated", "token": REQUEST_TOKEN}
         )
 
+    # One token per download, used for the whole download. Asserted first so a
+    # half-applied change — the listing updated, the file fetches missed —
+    # fails by name rather than as a value mismatch. The test this replaces
+    # pinned the same property; only the expected value changed.
+    assert seen["list"] == seen["download"], "listing and download used different tokens"
     assert seen["list"] == REQUEST_TOKEN
     assert seen["download"] == REQUEST_TOKEN
     # The worker's own resolution is skipped entirely when the host supplies one.
@@ -465,6 +470,7 @@ async def test_models_download_without_token_falls_back(server, monkeypatch):
     assert seen["fallback_consulted"] is True
     assert seen["list"] == WORKER_LOCAL_TOKEN
     assert seen["download"] == WORKER_LOCAL_TOKEN
+    assert seen["list"] == seen["download"]
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -487,6 +493,7 @@ async def test_models_download_blank_token_is_absent(server, monkeypatch, blank)
     assert seen["fallback_consulted"] is True
     assert seen["list"] == WORKER_LOCAL_TOKEN
     assert seen["download"] == WORKER_LOCAL_TOKEN
+    assert seen["list"] == seen["download"]
 
 
 @pytest.mark.asyncio(loop_scope="function")

@@ -54,6 +54,27 @@ def _request_token(data: dict[str, Any]) -> str | None:
 
     An absent, non-string, or blank value means "no token supplied" — an empty
     Bearer header fails differently than sending no header at all.
+
+    Why accepting a credential from the request is not a new exposure
+    ----------------------------------------------------------------
+    On a rented pod this bridge is internet-reachable — a
+    ``wss://<pod>-7777.proxy.runpod.net`` URL fronted by nothing but the
+    ``NODETOOL_WORKER_TOKEN`` bearer — so the question is fair. The answer is
+    that the request channel is already fully trusted: a peer that can reach it
+    holds that bearer, and with it can execute arbitrary nodes, write model
+    files, and read this worker's environment (``worker/server.py`` warns about
+    exactly this when the worker binds off-loopback without a token). A
+    download token adds no capability that channel does not already grant, and
+    it spends the caller's own HuggingFace quota, not the worker's.
+
+    An earlier version rejected the field, with a test asserting "a malicious
+    client token must be ignored". That protected nothing — it only stopped the
+    host from reaching a gated repo — and the alternative it forced was worse:
+    baking ``HF_TOKEN`` into the pod's environment for the life of the pod,
+    where every node and every subprocess can read it. Here the credential
+    lives for one call. Do not re-add that test, and do not read its absence as
+    evidence that the bridge is hardened; the bridge's security is the bearer
+    token and the network boundary, and neither changes here.
     """
     raw = data.get("token")
     if isinstance(raw, str) and raw.strip():
