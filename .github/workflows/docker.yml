@@ -128,8 +128,13 @@ jobs:
         run: |
           HF_VERSION="${{ github.event.inputs.hf_version }}"
           if [ -z "$HF_VERSION" ]; then
-            HF_VERSION=$(curl -fsSL https://pypi.org/pypi/nodetool-huggingface/json \
-              | python3 -c "import sys, json; print(json.load(sys.stdin)['info']['version'])")
+            # Derive "latest" from the SIMPLE index, not /pypi/<pkg>/json. They
+            # are separate surfaces with independent propagation, and the JSON
+            # API lags: minutes after 0.7.9 was listed on /simple, info.version
+            # still answered 0.7.8. This step picked 0.7.8, the confirmation
+            # below verified 0.7.8, and the build shipped the previous wheel.
+            # Sorted numerically, not lexically: 0.7.10 must beat 0.7.9.
+            HF_VERSION=$(curl -fsSL https://pypi.org/simple/nodetool-huggingface/ | python3 -c "import re, sys; v = set(re.findall(r'nodetool_huggingface-([0-9][^-]*)-py3', sys.stdin.read())); sys.exit('no nodetool-huggingface wheels on the simple index') if not v else print(max(v, key=lambda s: [int(p) for p in s.split('.')]))")
           fi
           # Same two-surface problem as the wait above: whichever version was
           # chosen, the install reads /simple, so confirm it is listed there.
