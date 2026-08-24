@@ -543,9 +543,20 @@ async def async_hf_download(
 
         snapshot_root = repo_cache / "snapshots" / safe_commit
         snapshot_path = snapshot_root / safe_filename
-        # filename may legitimately contain subdirs; assert the resolved path
+        # filename may legitimately contain subdirs; assert the joined path
         # stays within the snapshot commit directory.
-        if not snapshot_path.resolve().is_relative_to(snapshot_root.resolve()):
+        #
+        # Resolve the ROOT only, and normalize the joined name textually.
+        # Once a file has been downloaded, `snapshot_path` IS a symlink into
+        # ../../blobs, and `Path.resolve()` follows it — so resolving the full
+        # path reported every already-cached file as an escape and made a
+        # second download of any repo fail. Normalizing the text answers the
+        # question actually being asked (does this *name* escape?) without
+        # consulting the filesystem.
+        snapshot_root_resolved = snapshot_root.resolve()
+        if not Path(
+            os.path.normpath(snapshot_root_resolved / safe_filename)
+        ).is_relative_to(snapshot_root_resolved):
             raise ValueError(f"Filename escapes snapshot directory: {filename!r}")
         blob_path = blobs_dir / safe_etag
 
