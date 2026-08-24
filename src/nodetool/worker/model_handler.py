@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import os
 import traceback
 from typing import Any, Callable
 
@@ -86,6 +87,21 @@ def _matches(path: str, patterns: list[str] | None) -> bool:
     if not patterns:
         return True
     return any(fnmatch.fnmatch(path, p) for p in patterns)
+
+
+# Files per repo downloaded at once. Eight matches huggingface_hub's own
+# snapshot_download default; the limit exists because a rented worker shares a
+# NIC and an unbounded fan-out over a many-shard repo starves everything else
+# on the box. Override with NODETOOL_HF_DOWNLOAD_CONCURRENCY.
+def _download_concurrency() -> int:
+    raw = os.environ.get("NODETOOL_HF_DOWNLOAD_CONCURRENCY")
+    if not raw:
+        return 8
+    try:
+        value = int(raw)
+    except ValueError:
+        return 8
+    return max(1, min(value, 32))
 
 
 async def _handle_download(
@@ -157,7 +173,6 @@ async def _handle_download(
 
         total_files = len(files)
         total_bytes = sum(s for _, s in files)
-        done_bytes = 0
         done_files = 0
 
         await send_progress(request_id, frame("start", 0, total_bytes, 0, total_files, []))
@@ -170,107 +185,98 @@ async def _handle_download(
             if progress_tasks:
                 await asyncio.gather(*progress_tasks, return_exceptions=True)
 
-        for filename, _size in files:
-            if cancel_event.is_set():
-                await drain()
-                await send_progress(
-                    request_id,
-                    frame(
-                        "cancelled",
-                        done_bytes,
-                        total_bytes,
-                        done_files,
-                        total_files,
-                        [],
-                    ),
-                )
-                await send_result(request_id, {"repo_id": repo_id, "status": "cancelled"})
-                return
+        # Files transfer concurrently. Serially, a repo of many shards moved at
+        # one connection's throughput: SmolVLM-Instruct took 1798 s for 29.5 GB
+        # (16 MB/s) on an A40, while the host had far more bandwidth available.
+        #
+        # Progress can no longer use a running base — completions interleave, so
+        # each file accumulates into its own slot and the reported total is the
+        # sum. The old `file_base = done_bytes` arithmetic silently corrupts the
+        # next file's base as soon as two are in flight.
+        semaphore = asyncio.Semaphore(_download_concurrency())
+        file_bytes: dict[str, int] = {name: 0 for name, _ in files}
+        cancelled = False
 
-            file_base = done_bytes
-            # async_hf_download's progress_callback reports per-chunk DELTAS on
-            # the streaming path (len(chunk)) and a single cumulative value on
-            # the cached/complete fast paths. Accumulating deltas is correct for
-            # both: the fast path adds the whole size once, the streaming path
-            # sums to the same total. (Treating each delta as an absolute total
-            # would make downloaded_bytes oscillate and corrupt the next file's
-            # base.)
-            file_acc = {"bytes": 0}
+        def total_done() -> int:
+            return sum(file_bytes.values())
 
-            def on_bytes(
-                delta: int,
-                _file_total: int | None = None,
-                _filename: str = filename,
-                _base: int = file_base,
-                _fsize: int | None = _size,
-                _acc: dict[str, int] = file_acc,
-            ) -> None:
-                nonlocal done_bytes
-                _acc["bytes"] += delta
-                progressed = min(_acc["bytes"], _fsize) if _fsize else _acc["bytes"]
-                done_bytes = _base + progressed
-                # fire-and-forget; ordering is preserved by the transport
-                # write-lock. Schedule on the running loop captured above so
-                # the sync callback works regardless of its calling thread.
-                task = loop.create_task(
-                    send_progress(
-                        request_id,
-                        frame(
-                            "progress",
-                            done_bytes,
-                            total_bytes,
-                            # Deliberately late-bound, unlike the per-file
-                            # values above: this must report how many files
-                            # have completed *now*, not when the callback was
-                            # defined (which is always 0 for the current file).
-                            done_files,  # noqa: B023
-                            total_files,
-                            [_filename],
-                        ),
+        async def download_one(filename: str, size: int | None) -> None:
+            nonlocal done_files, cancelled
+            async with semaphore:
+                if cancel_event.is_set():
+                    cancelled = True
+                    return
+
+                def on_bytes(
+                    delta: int,
+                    _file_total: int | None = None,
+                    _filename: str = filename,
+                    _fsize: int | None = size,
+                ) -> None:
+                    # async_hf_download reports per-chunk deltas on the streaming
+                    # path and one cumulative value on the cached fast path;
+                    # accumulating deltas is correct for both.
+                    acc = file_bytes[_filename] + delta
+                    file_bytes[_filename] = min(acc, _fsize) if _fsize else acc
+                    task = loop.create_task(
+                        send_progress(
+                            request_id,
+                            frame(
+                                "progress",
+                                total_done(),
+                                total_bytes,
+                                # Read at call time, not closure-definition
+                                # time, so it reports how many files have
+                                # completed now.
+                                done_files,
+                                total_files,
+                                [_filename],
+                            ),
+                        )
                     )
-                )
-                progress_tasks.add(task)
-                task.add_done_callback(progress_tasks.discard)
+                    progress_tasks.add(task)
+                    task.add_done_callback(progress_tasks.discard)
 
-            try:
-                await async_hf_download(
-                    repo_id,
-                    filename,
-                    token=token,
-                    progress_callback=on_bytes,
-                    cancel_event=cancel_event,
-                )
-            except asyncio.CancelledError:
-                # Cooperative app-level cancel: async_hf_download raises
-                # asyncio.CancelledError when cancel_event is set mid-stream.
-                # CancelledError is a BaseException, so it escapes the outer
-                # `except Exception` — without this, no terminal frame is sent
-                # and the bridge's downloadModel() promise hangs forever.
-                # Convert it to the cancelled terminal sequence and swallow it
-                # (this task itself is not being cancelled).
-                await drain()
-                await send_progress(
-                    request_id,
-                    frame(
-                        "cancelled",
-                        done_bytes,
-                        total_bytes,
-                        done_files,
-                        total_files,
-                        [],
-                    ),
-                )
-                await send_result(request_id, {"repo_id": repo_id, "status": "cancelled"})
-                return
+                try:
+                    await async_hf_download(
+                        repo_id,
+                        filename,
+                        token=token,
+                        progress_callback=on_bytes,
+                        cancel_event=cancel_event,
+                    )
+                except asyncio.CancelledError:
+                    # Cooperative app-level cancel from cancel_event, not this
+                    # task being cancelled. CancelledError is a BaseException and
+                    # would escape the caller's `except Exception`, leaving the
+                    # bridge's downloadModel() promise hanging with no terminal
+                    # frame.
+                    cancelled = True
+                    return
 
-            # Snap to the exact file size so the next file's base is correct
-            # even if the callback under-reported (e.g. size metadata missing).
-            if _size:
-                done_bytes = file_base + _size
-            # Not enumerate(): on_bytes closes over this and must observe the
-            # count as it advances, and the early-return paths above report it
-            # mid-loop.
-            done_files += 1  # noqa: SIM113
+                # Snap to the exact size so a callback that under-reported (missing
+                # size metadata) does not leave the total short of 100%.
+                if size:
+                    file_bytes[filename] = size
+                done_files += 1
+
+        await asyncio.gather(*(download_one(name, size) for name, size in files))
+
+        if cancelled or cancel_event.is_set():
+            await drain()
+            await send_progress(
+                request_id,
+                frame(
+                    "cancelled",
+                    total_done(),
+                    total_bytes,
+                    done_files,
+                    total_files,
+                    [],
+                ),
+            )
+            await send_result(request_id, {"repo_id": repo_id, "status": "cancelled"})
+            return
 
         # Drain any in-flight progress frames before the terminal frames.
         await drain()
