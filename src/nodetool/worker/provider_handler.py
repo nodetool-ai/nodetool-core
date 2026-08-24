@@ -9,13 +9,23 @@ so the same code path serves both the WebSocket and stdio workers.
 
 import asyncio
 import hashlib
+import os
 import sys
 import traceback
+from collections import OrderedDict
+from functools import lru_cache
 from typing import Any
+
+from nodetool.config.logging_config import get_logger
+
+log = get_logger(__name__)
 
 # Cached provider instances, keyed by (provider_id, secrets hash) so a
 # different / rotated secret set never reuses another caller's instance.
-_provider_cache: dict[tuple[str, str], Any] = {}
+# Bounded LRU: each instance can pin loaded model weights, so an unbounded
+# cache would leak a full model copy per rotated token / per user secrets set.
+PROVIDER_CACHE_MAX_SIZE = max(1, int(os.environ.get("NODETOOL_PROVIDER_CACHE_SIZE", "4")))
+_provider_cache: "OrderedDict[tuple[str, str], Any]" = OrderedDict()
 _providers_imported = False
 
 
@@ -28,6 +38,24 @@ def _hash_secrets(secrets: dict[str, str]) -> str:
         h.update(str(value).encode("utf-8"))
         h.update(b"\x00")
     return h.hexdigest()
+
+
+def _release_provider(instance: Any) -> None:
+    """Best-effort release of an evicted provider's resources (model weights)."""
+    for hook_name in ("close", "unload", "unload_model"):
+        hook = getattr(instance, hook_name, None)
+        if not callable(hook):
+            continue
+        try:
+            result = hook()
+            if asyncio.iscoroutine(result):
+                try:
+                    asyncio.get_running_loop().create_task(result)
+                except RuntimeError:
+                    result.close()
+        except Exception as e:  # pragma: no cover — release is best-effort
+            print(f"Warning: failed to release provider via {hook_name}(): {e}", file=sys.stderr)
+        return
 
 
 def _ensure_providers_imported() -> None:
@@ -59,14 +87,39 @@ def _get_provider(provider_id: str, secrets: dict[str, str]) -> Any:
     _ensure_providers_imported()
 
     cache_key = (provider_id, _hash_secrets(secrets))
-    if cache_key in _provider_cache:
-        return _provider_cache[cache_key]
+    cached = _provider_cache.get(cache_key)
+    if cached is not None:
+        _provider_cache.move_to_end(cache_key)
+        return cached
 
     provider_enum = Provider(provider_id)
     cls, kwargs = get_registered_provider(provider_enum)
     instance = cls(secrets=secrets, **kwargs)
     _provider_cache[cache_key] = instance
+    _provider_cache.move_to_end(cache_key)
+    while len(_provider_cache) > PROVIDER_CACHE_MAX_SIZE:
+        _, evicted = _provider_cache.popitem(last=False)
+        _release_provider(evicted)
     return instance
+
+
+def _tts_kwargs(data: dict[str, Any]) -> dict[str, Any]:
+    """Build the public TTS provider arguments from a bridge request."""
+    result: dict[str, Any] = {
+        "text": data["text"],
+        "model": data["model"],
+    }
+    for key in (
+        "voice",
+        "speed",
+        "reference_audio",
+        "reference_text",
+        "language",
+        "instructions",
+    ):
+        if key in data:
+            result[key] = data[key]
+    return result
 
 
 def get_available_providers() -> list[dict[str, Any]]:
@@ -111,6 +164,11 @@ def get_available_providers() -> list[dict[str, Any]]:
                     "id": pid,
                     "capabilities": capabilities,
                     "required_secrets": (cls.required_secrets() if hasattr(cls, "required_secrets") else []),
+                    # Every provider exposed by this handler executes inside
+                    # the Python worker. The TypeScript server assigns whether
+                    # that worker is local or remote from the active transport.
+                    "access": "in_process",
+                    "display_name": "Hugging Face Local" if pid == "huggingface" else "MLX",
                 }
             )
     return result
@@ -119,29 +177,55 @@ def get_available_providers() -> list[dict[str, Any]]:
 # ── Handler implementations ─────────────────────────────────────────────
 
 
-def _deserialize_messages(raw_messages: list[dict]) -> list[Any]:
+@lru_cache(maxsize=1)
+def _content_part_types() -> dict[str, tuple[type[Any], str]]:
+    """Map wire content-part ``type`` values to (model class, payload field).
+
+    The wire protocol names the image part ``"image"`` while
+    :class:`MessageImageContent` declares ``Literal["image_url"]``, so the
+    discriminator can never be forwarded verbatim — only the payload field is.
+    """
+    from nodetool.metadata.types import (
+        MessageAudioContent,
+        MessageImageContent,
+        MessageTextContent,
+        MessageVideoContent,
+    )
+
+    return {
+        "text": (MessageTextContent, "text"),
+        "image": (MessageImageContent, "image"),
+        "image_url": (MessageImageContent, "image"),
+        "audio": (MessageAudioContent, "audio"),
+        "video": (MessageVideoContent, "video"),
+    }
+
+
+def _deserialize_messages(raw_messages: list[dict[str, Any]]) -> list[Any]:
     """Convert wire-format messages to Python Message objects."""
     from nodetool.metadata.types import Message
 
-    messages = []
+    messages: list[Any] = []
     for m in raw_messages:
-        content = m.get("content")
+        content: Any = m.get("content")
         # content can be string, list of content parts, or None
         if isinstance(content, list):
-            from nodetool.metadata.types import (
-                MessageAudioContent,
-                MessageImageContent,
-                MessageTextContent,
-            )
-
-            parts = []
+            parts: list[Any] = []
             for part in content:
-                if part.get("type") == "text":
-                    parts.append(MessageTextContent(type="text", text=part["text"]))
-                elif part.get("type") == "image":
-                    parts.append(MessageImageContent(type="image", image=part["image"]))
-                elif part.get("type") == "audio":
-                    parts.append(MessageAudioContent(type="audio", audio=part["audio"]))
+                # Note: the discriminator is never passed explicitly — the wire
+                # names ("image") differ from the model's own Literal defaults
+                # ("image_url"), and passing the wire name raises a pydantic
+                # ValidationError.
+                wire_type = part.get("type")
+                factory = _content_part_types().get(wire_type)
+                if factory is None:
+                    log.warning("Dropping message content part with unknown type %r", wire_type)
+                    continue
+                model_cls, field = factory
+                if field not in part:
+                    log.warning("Dropping %r content part with no %r field", wire_type, field)
+                    continue
+                parts.append(model_cls(**{field: part[field]}))
             content = parts
 
         msg = Message(
@@ -174,14 +258,20 @@ def _serialize_message(msg: Any) -> dict:
     return result
 
 
-def _serialize_content_part(part: Any) -> dict:
-    """Serialize a MessageContent part."""
-    if hasattr(part, "text"):
-        return {"type": "text", "text": part.text}
-    if hasattr(part, "image"):
-        return {"type": "image", "image": part.image}
-    if hasattr(part, "audio"):
-        return {"type": "audio", "audio": part.audio}
+def _serialize_content_part(part: Any) -> dict[str, Any]:
+    """Serialize a MessageContent part to the wire format.
+
+    Mirrors :func:`_content_part_types` so a round-trip through the bridge is
+    lossless — including video parts, which previously degraded to ``str(part)``
+    text because they were not recognised here.
+    """
+    for wire_type, (_model_cls, field) in _content_part_types().items():
+        # "image_url" is only accepted on the way in; emit the canonical "image".
+        if wire_type == "image_url":
+            continue
+        value = getattr(part, field, None)
+        if value is not None:
+            return {"type": wire_type, field: value}
     return {"type": "text", "text": str(part)}
 
 
@@ -368,13 +458,12 @@ async def handle_provider_message(
         await transport.send_msg({"type": "result", "request_id": rid, "data": d})
 
     async def send_error(rid: str | None, error: str, tb: str | None = None) -> None:
-        await transport.send_msg(
-            {
-                "type": "error",
-                "request_id": rid,
-                "data": {"error": error, "traceback": tb},
-            }
-        )
+        # Omitted rather than null — the JS side's frame schema types
+        # `traceback` as an optional string, and a null fails validation.
+        data: dict[str, Any] = {"error": error}
+        if tb:
+            data["traceback"] = tb
+        await transport.send_msg({"type": "error", "request_id": rid, "data": data})
 
     async def send_chunk(rid: str | None, d: dict) -> None:
         await transport.send_msg({"type": "chunk", "request_id": rid, "data": d})
@@ -459,13 +548,7 @@ async def handle_provider_message(
                 cancel_flags[request_id] = cancel_event
             try:
                 provider = _get_provider(data["provider"], data.get("secrets", {}))
-                kwargs_tts: dict[str, Any] = {
-                    "text": data["text"],
-                    "model": data["model"],
-                }
-                for key in ("voice", "speed"):
-                    if key in data:
-                        kwargs_tts[key] = data[key]
+                kwargs_tts = _tts_kwargs(data)
                 async for audio_chunk in provider.text_to_speech(**kwargs_tts):
                     if cancel_event.is_set():
                         break

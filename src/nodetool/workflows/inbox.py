@@ -94,6 +94,11 @@ class NodeInbox:
         self._closed: bool = False
         # Buffer limit for backpressure (None = unlimited)
         self._buffer_limit: int | None = buffer_limit
+        # Strong references to in-flight notify tasks. asyncio only keeps weak
+        # references to running tasks, so a fire-and-forget notify task can be
+        # garbage-collected before it ever runs — which would silently drop an
+        # EOS/arrival wakeup and hang every consumer blocked in iter_input.
+        self._notify_tasks: set[asyncio.Task[None]] = set()
         assert self._loop is not None, "Event loop is not running"
 
     def _notify_waiters_threadsafe(self) -> None:
@@ -115,7 +120,10 @@ class NodeInbox:
                 async with self._cond:
                     self._cond.notify_all()
 
-            self._loop.create_task(_notify())
+            task = self._loop.create_task(_notify())
+            # Retain until done so the task cannot be collected mid-flight.
+            self._notify_tasks.add(task)
+            task.add_done_callback(self._notify_tasks.discard)
 
         self._loop.call_soon_threadsafe(_schedule_notify)
 
@@ -238,6 +246,18 @@ class NodeInbox:
 
         self._notify_waiters_threadsafe()
 
+    def _discard_arrival(self, handle: str) -> None:
+        """Remove the first arrival entry for a handle after a per-handle pop.
+
+        Keeps ``_arrival`` in sync with the per-handle buffers so it cannot grow
+        unboundedly and so ``iter_any``/``try_pop_any`` never trip over stale
+        entries pointing at an already drained handle.
+        """
+        try:
+            self._arrival.remove(handle)
+        except ValueError:
+            pass
+
     def has_any(self) -> bool:
         """Return True if any handle currently has buffered items.
 
@@ -286,6 +306,8 @@ class NodeInbox:
             # Drain any available items without waiting
             while self._buffers[handle]:
                 envelope = self._buffers[handle].popleft()
+                # Keep the global arrival queue in sync with the per-handle buffer
+                self._discard_arrival(handle)
                 # Notify producers that space is available (backpressure release)
                 async with self._cond:
                     self._cond.notify_all()
@@ -447,11 +469,13 @@ class NodeInbox:
         Returns:
             A tuple of ``(handle, MessageEnvelope)`` if available, otherwise ``None``.
         """
-        if not self._arrival:
-            return None
-        handle = self._arrival.popleft()
-        buf = self._buffers.get(handle)
-        if buf and len(buf) > 0:
+        # Skip past stale arrival entries whose buffer has already been drained
+        # (e.g. by iter_input) instead of reporting "nothing available".
+        while self._arrival:
+            handle = self._arrival.popleft()
+            buf = self._buffers.get(handle)
+            if not buf:
+                continue
             envelope = buf.popleft()
             log.debug(
                 "Inbox[%s] try_pop_any: handle=%s size=%s open=%s arrival=%s",

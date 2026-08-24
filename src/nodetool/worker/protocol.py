@@ -48,6 +48,7 @@ class WorkerProtocolServer:
             asyncio.Event,
             Callable[[dict[str, Any]], Awaitable[None]],
             Callable[[dict[str, Any]], Awaitable[None]] | None,
+            Callable[[dict[str, Any]], Awaitable[None]] | None,
         ], Awaitable[dict[str, Any]]] | None = None
         self._load_errors: list[dict[str, Any]] = []
         self._namespaces: list[str] = []
@@ -69,13 +70,17 @@ class WorkerProtocolServer:
             asyncio.Event,
             Callable[[dict[str, Any]], Awaitable[None]],
             Callable[[dict[str, Any]], Awaitable[None]] | None,
+            Callable[[dict[str, Any]], Awaitable[None]] | None,
         ], Awaitable[dict[str, Any]]],
     ) -> None:
         self._execute_handler = handler
 
     async def dispatch(self, msg: dict[str, Any], transport: WorkerTransport) -> None:
         msg_type = msg.get("type")
-        request_id = msg.get("request_id")
+        raw_request_id = msg.get("request_id")
+        # A peer can send any msgpack value here; coerce to the str the
+        # _cancel_flags map and the downstream handlers are typed for.
+        request_id: str | None = raw_request_id if isinstance(raw_request_id, str) else None
 
         if msg_type == "discover":
             await transport.send_msg({
@@ -135,8 +140,18 @@ class WorkerProtocolServer:
                         })
                     emit_chunk = _emit_chunk
 
+                # Non-progress updates a client can render live (previews,
+                # logs, binary payloads). The data dict is the serialized
+                # message, discriminated by its "type" field.
+                async def emit_update(update: dict[str, Any]) -> None:
+                    await transport.send_msg({
+                        "type": "update",
+                        "request_id": request_id,
+                        "data": update,
+                    })
+
                 result = await self._execute_handler(
-                    msg["data"], cancel_event, emit_progress, emit_chunk
+                    msg["data"], cancel_event, emit_progress, emit_chunk, emit_update
                 )
                 # For execute.stream, the per-chunk frames already carried the
                 # outputs/blobs. The result frame is just a terminator so the
@@ -162,13 +177,25 @@ class WorkerProtocolServer:
                     },
                 })
             finally:
-                self._cancel_flags.pop(request_id, None)
+                if request_id:
+                    self._cancel_flags.pop(request_id, None)
             return
 
         if msg_type == "cancel":
-            cancel_event = self._cancel_flags.get(request_id)
+            cancel_event = self._cancel_flags.get(request_id) if request_id else None
             if cancel_event:
                 cancel_event.set()
+            return
+
+        if msg_type and str(msg_type).startswith("job."):
+            from nodetool.worker.job_handler import handle_job_message
+
+            await handle_job_message(
+                msg_type=str(msg_type),
+                request_id=request_id,
+                data=msg.get("data", {}) or {},
+                transport=transport,
+            )
             return
 
         if msg_type and str(msg_type).startswith("provider."):

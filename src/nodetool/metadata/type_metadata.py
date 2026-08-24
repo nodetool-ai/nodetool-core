@@ -258,12 +258,21 @@ class TypeMetadata(BaseModel):
                     "items": self.type_args[0].get_json_schema(),
                 }
         if self.type == "dict":
-            if not self.type_args:
+            # A dict is a map, not a fixed-shape object: the value type
+            # constrains every entry via additionalProperties.
+            if len(self.type_args) < 2:
                 return {"type": "object"}
-            return {
+            key_type, value_type = self.type_args[0], self.type_args[1]
+            schema: dict[str, Any] = {
                 "type": "object",
-                "properties": {f"key_{i}": t.get_json_schema() for i, t in enumerate(self.type_args)},
+                "additionalProperties": value_type.get_json_schema(),
             }
+            if key_type.type not in ("str", "text", "any"):
+                # JSON object keys are always strings, so a non-string key type
+                # cannot be expressed as a constraint; document it instead.
+                schema["propertyNames"] = {"type": "string"}
+                schema["description"] = f"Keys are string representations of {key_type!r}"
+            return schema
         if self.type == "union":
             return {
                 "anyOf": [t.get_json_schema() for t in self.type_args],

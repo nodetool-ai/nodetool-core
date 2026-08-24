@@ -2492,7 +2492,7 @@ wheels = [
 
 [[package]]
 name = "nodetool-core"
-version = "0.7.7"
+version = "0.7.8"
 source = { editable = "." }
 dependencies = [
     { name = "aiofiles" },
@@ -2529,6 +2529,7 @@ data = [
 ]
 dev = [
     { name = "aioresponses" },
+    { name = "jsonschema" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -2596,6 +2597,7 @@ requires-dist = [
     { name = "imageio-ffmpeg", marker = "extra == 'video'", specifier = ">=0.6.0" },
     { name = "jinja2", marker = "extra == 'documents'", specifier = "==3.1.6" },
     { name = "joblib", marker = "extra == 'data'" },
+    { name = "jsonschema", marker = "extra == 'dev'", specifier = ">=4.23.0" },
     { name = "keyring", specifier = ">=25.5.0" },
     { name = "langchain-text-splitters", marker = "extra == 'vectorstore'", specifier = "==1.1.2" },
     { name = "markitdown", marker = "extra == 'documents'" },

@@ -18,7 +18,9 @@ from .types import EdgeUpdate
 log = get_logger(__name__)
 
 if TYPE_CHECKING:
+    from .base_node import BaseNode
     from .inbox import MessageEnvelope, NodeInbox
+    from .processing_context import ProcessingContext
 
 
 class NodeInputs:
@@ -150,11 +152,19 @@ class NodeOutputs:
     through the node graph via MessageEnvelopes.
     """
 
-    def __init__(self, runner, node, context, capture_only: bool = False) -> None:
+    def __init__(
+        self,
+        runner: Any,
+        node: BaseNode,
+        context: ProcessingContext,
+        capture_only: bool = False,
+    ) -> None:
         """Initialize a NodeOutputs view.
 
         Args:
-            runner: The active ``WorkflowRunner`` instance.
+            runner: The active workflow runner. Duck-typed (``Any``) because the
+                runner lives in the TS server; it only needs to expose
+                ``send_messages``, ``node_inboxes`` and ``outputs``.
             node: The current ``BaseNode`` instance producing outputs.
             context: The workflow ``ProcessingContext``.
             capture_only: If True, collect outputs without routing them downstream.
@@ -249,8 +259,7 @@ class NodeOutputs:
         if isinstance(self.node, OutputNode):
             node_name = self.node.name
             if node_name in self.runner.outputs:
-                if not self.runner.outputs[node_name] or self.runner.outputs[node_name][-1] != value:
-                    self.runner.outputs[node_name].append(value)
+                self.runner.outputs[node_name].append(value)
             else:
                 self.runner.outputs[node_name] = [value]
 

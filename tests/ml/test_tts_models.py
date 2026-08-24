@@ -50,6 +50,12 @@ async def test_tts_models_fastapi_serialization():
         assert "provider" in model_dict
         assert "voices" in model_dict
         assert isinstance(model_dict["voices"], list)
+        assert "capabilities" in model_dict
+        assert isinstance(model_dict["capabilities"], list)
+        assert "languages" in model_dict
+        assert isinstance(model_dict["languages"], list)
+        assert "sample_rate" in model_dict
+        assert "requires_reference_text" in model_dict
 
 
 @pytest.mark.asyncio
@@ -69,5 +75,48 @@ async def test_tts_models_have_required_fields():
 
         # Voices should be a list (can be empty for some models)
         assert isinstance(model.voices, list), f"Model voices should be a list: {model}"
+
+
+def test_tts_model_capability_defaults_are_backward_compatible():
+    """Older serialized TTS model values remain valid without capability metadata."""
+    model = TTSModel.model_validate(
+        {
+            "type": "tts_model",
+            "provider": "huggingface",
+            "id": "legacy-model",
+            "name": "Legacy model",
+            "voices": ["default"],
+        }
+    )
+
+    assert model.capabilities == []
+    assert model.languages == []
+    assert model.sample_rate is None
+    assert model.requires_reference_text is False
+    assert model.adapter is None
+
+
+def test_tts_model_accepts_adapter_availability_facts():
+    model = TTSModel.model_validate(
+        {
+            "provider": "huggingface",
+            "id": "vendor/model",
+            "name": "Model",
+            "adapter": {
+                "state": "missing_dependency",
+                "reason_code": "missing_dependency",
+                "reason": "Install the optional model package.",
+                "artifact_ref": {
+                    "source": "huggingface",
+                    "repo_id": "vendor/model",
+                },
+            },
+        }
+    )
+
+    assert model.adapter is not None
+    assert model.adapter.state == "missing_dependency"
+    assert model.adapter.artifact_ref is not None
+    assert model.adapter.artifact_ref.repo_id == "vendor/model"
 
 

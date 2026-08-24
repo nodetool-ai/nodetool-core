@@ -21,6 +21,10 @@ HF_HEADER_X_LINKED_SIZE = "X-Linked-Size"
 # Simple in-process cache for the resolved HF token
 _CACHED_HF_TOKEN: Optional[str] = None
 
+# Exponential backoff between resumable-download retries, in seconds.
+_RETRY_BACKOFF_BASE = 1.0
+_RETRY_BACKOFF_MAX = 30.0
+
 
 @dataclass
 class HfFileMeta:
@@ -366,18 +370,30 @@ async def _download_with_resume(
                 follow_redirects=True,
                 timeout=timeout,
             ) as resp:
-                # Server ignored Range; start over
-                if resume_from > 0 and resp.status_code == 200 and accept_ranges:
-                    if tmp.exists():
-                        tmp.unlink()
-                    resume_from = 0
-
                 # Handle 416 Range Not Satisfiable
                 if resp.status_code == 416:
                     log.warning(f"Range not satisfiable (resume_from={resume_from}). Restarting download.")
                     if tmp.exists():
                         tmp.unlink()
+                    if attempt >= max_retries:
+                        raise RuntimeError(f"Download failed after {attempt} attempts: server kept returning 416")
                     continue
+
+                # Only keep the partial file when the server actually served a
+                # partial response. Any other status carries the WHOLE body, so
+                # appending it to the partial file would corrupt the result —
+                # silently so when expected_size is unknown and the size check
+                # below cannot run. This covers the ``accept_ranges is False``
+                # case too, where no Range header was ever sent.
+                if resume_from > 0 and resp.status_code != 206:
+                    log.warning(
+                        "Server did not honour Range for %s (status %s); restarting download.",
+                        url,
+                        resp.status_code,
+                    )
+                    if tmp.exists():
+                        tmp.unlink()
+                    resume_from = 0
 
                 resp.raise_for_status()
 
@@ -404,13 +420,27 @@ async def _download_with_resume(
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             if attempt >= max_retries:
                 raise RuntimeError(f"Download failed after {attempt} attempts") from exc
-            # loop again, resuming from whatever is on disk
+            # Back off before resuming from whatever is on disk. Without this,
+            # a fast-failing error (connection refused, DNS failure) burns every
+            # attempt in a tight loop, so the retries buy nothing.
+            delay = min(_RETRY_BACKOFF_BASE * (2 ** (attempt - 1)), _RETRY_BACKOFF_MAX)
+            log.warning(
+                "Download of %s failed (%s); retrying in %.1fs (attempt %d/%d)",
+                url,
+                exc,
+                delay,
+                attempt,
+                max_retries,
+            )
+            await asyncio.sleep(delay)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 416:
                 # Should be handled above, but just in case raise_for_status catches it first
                 log.warning("Range not satisfiable (caught via exception). Restarting download.")
                 if tmp.exists():
                     tmp.unlink()
+                if attempt >= max_retries:
+                    raise RuntimeError(f"Download failed after {attempt} attempts: server kept returning 416") from exc
                 continue
             raise
 

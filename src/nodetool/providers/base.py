@@ -714,6 +714,10 @@ class BaseProvider:
         model: str,
         voice: str | None = None,
         speed: float = 1.0,
+        reference_audio: bytes | None = None,
+        reference_text: str | None = None,
+        language: str | None = None,
+        instructions: str | None = None,
         timeout_s: int | None = None,
         context: Any = None,  # ProcessingContext, but imported later
         **kwargs: Any,
@@ -730,6 +734,10 @@ class BaseProvider:
             model: Model identifier for TTS
             voice: Voice identifier/name (provider-specific)
             speed: Speech speed multiplier (typically 0.25 to 4.0)
+            reference_audio: Optional reference voice recording for voice cloning
+            reference_text: Optional transcript of the reference recording
+            language: Optional language code or name
+            instructions: Optional natural-language voice or delivery instructions
             timeout_s: Optional timeout in seconds
             context: Optional processing context
             **kwargs: Additional provider-specific parameters

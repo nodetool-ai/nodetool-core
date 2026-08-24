@@ -181,7 +181,7 @@ class TestMemoryUtils:
     def test_get_memory_uri_cache_stats(self):
         mock_scope = MagicMock()
         mock_cache = MagicMock()
-        mock_cache._cache = {1: 1, 2: 2} # len 2
+        mock_cache._store = {1: 1, 2: 2} # len 2
         mock_scope.get_memory_uri_cache.return_value = mock_cache
 
         with patch("nodetool.runtime.resources.maybe_scope", return_value=mock_scope):
@@ -191,7 +191,7 @@ class TestMemoryUtils:
     def test_clear_memory_uri_cache(self):
         mock_scope = MagicMock()
         mock_cache = MagicMock()
-        mock_cache._cache = {1: 1, 2: 2}
+        mock_cache._store = {1: 1, 2: 2}
         mock_scope.get_memory_uri_cache.return_value = mock_cache
 
         with patch("nodetool.runtime.resources.maybe_scope", return_value=mock_scope):

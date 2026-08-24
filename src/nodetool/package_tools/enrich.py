@@ -89,11 +89,12 @@ async def enrich_nodes_with_model_info(
 
         updated_models: list[Any] = []
         for model in node.recommended_models:
-            if not getattr(model, "repo_id", None):
+            repo_id: str | None = getattr(model, "repo_id", None)
+            if not repo_id:
                 updated_models.append(model)
                 continue
 
-            info = model_info_map.get(model.repo_id)
+            info = model_info_map.get(repo_id)
             if not info:
                 updated_models.append(model)
                 continue
@@ -105,7 +106,7 @@ async def enrich_nodes_with_model_info(
                     updates["size_on_disk"] = size
 
             if getattr(model, "type", None) is None:
-                inferred_type = model_type_from_model_info(repo_to_models, model.repo_id, info)
+                inferred_type = model_type_from_model_info(repo_to_models, repo_id, info)
                 if inferred_type:
                     updates["type"] = inferred_type
 

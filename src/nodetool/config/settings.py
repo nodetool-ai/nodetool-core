@@ -534,9 +534,12 @@ def get_value(
     if value is None or str(value) == "":
         value = settings.get(key)
 
-    # Fall back to default environment values
+    # Fall back to default environment values. Use a membership test rather than
+    # dict.get's sentinel: many DEFAULT_ENV keys are explicitly mapped to None,
+    # and those must not shadow a caller-supplied default.
     if value is None:
-        value = default_env.get(key, default)
+        default_value = default_env.get(key)
+        value = default_value if default_value is not None else default
 
     if value is not NOT_GIVEN:
         return value

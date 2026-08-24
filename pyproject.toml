@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nodetool-core"
-version = "0.7.7"
+version = "0.7.8"
 description = "Nodetool Core is the core library for Nodetool, providing the necessary functionality for building and running AI workflows."
 readme = "README.md"
 authors = [{ name = "Matthias Georgi", email = "matti.georgi@gmail.com" }]
@@ -100,6 +100,9 @@ dev = [
     "pytest-xdist>=3.6.0",
     "aioresponses>=0.7.8",
     "safetensors>=0.4.0",
+    # Validates the worker's emitted bridge frames against the JS repo's
+    # generated dist/bridge-frames.schema.json contract.
+    "jsonschema>=4.23.0",
     "mypy>=1.0.0",
     "ruff==0.15.17",
     "ty>=0.0.7",
@@ -170,6 +173,10 @@ ignore = [
 "tests/**/*.py" = ["ARG", "S101", "F401"]  # Allow unused args, assert, and unused imports in tests
 "**/__init__.py" = ["F401"]  # Allow unused imports in __init__
 "**/conftest.py" = ["F401"]  # Allow unused imports in conftest
+# Pydantic models need their field types importable at runtime, so TC001's
+# "move into a type-checking block" would break model construction.
+"src/nodetool/metadata/node_metadata.py" = ["TC001"]
+"src/nodetool/package_tools/enrich.py" = ["TC001"]
 
 [tool.ruff.format]
 # Use double quotes for strings

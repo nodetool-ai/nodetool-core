@@ -128,6 +128,7 @@ from nodetool.metadata.types import (
     NameToType,
     NPArray,
     OutputSlot,
+    StreamKind,
     TypeToName,
 )
 from nodetool.metadata.utils import (
@@ -139,6 +140,7 @@ from nodetool.metadata.utils import (
     is_optional_type,
     is_tuple_type,
     is_union_type,
+    non_none_union_args,
 )
 from nodetool.types.api_graph import Edge
 from nodetool.types.model import UnifiedModel
@@ -162,6 +164,7 @@ if TYPE_CHECKING:
     from nodetool.types.model import ModelPack
 
     from .io import NodeInputs, NodeOutputs
+    from .property import Property
 
 
 def sanitize_node_name(node_name: str) -> str:
@@ -328,7 +331,15 @@ def type_metadata(python_type: type | UnionType, allow_optional: bool = True) ->
         )
     # check optional type before union type as optional is a union of None and the type
     elif is_optional_type(python_type):
-        res = type_metadata(python_type.__args__[0])
+        args = non_none_union_args(python_type)
+        if len(args) == 1:
+            res = type_metadata(args[0])
+        else:
+            # Optional[Union[A, B]] must keep every member, not just the first.
+            res = TypeMetadata(
+                type="union",
+                type_args=[type_metadata(t) for t in args],
+            )
         if allow_optional:
             res.optional = True
         return res
@@ -350,6 +361,29 @@ def type_metadata(python_type: type | UnionType, allow_optional: bool = True) ->
         )
     else:
         raise ValueError(f"Unknown type: {python_type}. Types must derive from BaseType")
+
+
+def is_empty_value_assignable(type_meta: TypeMetadata, value: Any) -> bool:
+    """Whether an explicitly supplied empty value may be assigned to a property.
+
+    An empty value (`None`, `[]` or `{}`) that is compatible with the property
+    type is a meaningful input and must overwrite the current value. An empty
+    value that is not compatible (most commonly `None` for a non-optional
+    property) is treated as "no value" so the property keeps its default.
+
+    `is_assignable` does not model optionality, so `None` is checked against the
+    `optional` flag of the type instead.
+
+    Args:
+        type_meta: The metadata of the target property type.
+        value: The empty value to check.
+
+    Returns:
+        True if the empty value should be assigned, False if it should be ignored.
+    """
+    if value is None:
+        return type_meta.optional
+    return is_assignable(type_meta, value)
 
 
 T = TypeVar("T")
@@ -933,6 +967,24 @@ class BaseNode(BaseModel):
         return []
 
     @classmethod
+    def get_required_vram_gb(cls) -> float | None:
+        """Approximate VRAM this node's weights need, in GiB.
+
+        Reported to the host as ``requires_vram_gb`` in the ``discover``
+        payload (bridge protocol v4) and echoed back on every ``execute``, so
+        the worker's pre-execution reclaim pass can target a real number
+        instead of a percentage threshold that has no idea what is about to
+        load.
+
+        Return ``None`` — the default — when the node genuinely does not know.
+        The host treats an absent hint as "no hint" and falls back to the
+        threshold behaviour, which is strictly better than an invented number:
+        too low and the reclaim under-frees and the node OOMs anyway, too high
+        and it evicts models nothing needed it to.
+        """
+        return None
+
+    @classmethod
     def get_model_packs(cls) -> list["ModelPack"]:
         """Return model packs for this node.
 
@@ -1173,10 +1225,10 @@ class BaseNode(BaseModel):
         # A raw msgpack extension type means a value arrived over the wire that
         # the worker could not decode (e.g. an unset model selection the
         # frontend encoded with a custom extension). Treat it as "no value" so
-        # the property falls back to its default instead of failing validation
-        # with a confusing ExtType error.
+        # the property keeps its default instead of failing validation with a
+        # confusing ExtType error.
         if type(value).__name__ == "ExtType" and type(value).__module__.startswith("msgpack"):
-            value = None
+            return None
 
         prop = self.find_property(name)
         if prop is None:
@@ -1203,7 +1255,11 @@ class BaseNode(BaseModel):
                         type_args = tm.type_args
 
                         if is_empty(value):
-                            return None
+                            if not is_empty_value_assignable(tm, value):
+                                return None
+                            if value is None:
+                                object.__setattr__(self, name, None)
+                                return None
 
                         if tm.is_enum_type():
                             converted = python_type(value)
@@ -1244,7 +1300,15 @@ class BaseNode(BaseModel):
         type_args = prop.type.type_args
 
         if is_empty(value):
-            return None
+            if not is_empty_value_assignable(prop.type, value):
+                return None
+            if value is None:
+                # Clearing an optional property: skip conversion, None is the value.
+                if hasattr(self, name):
+                    setattr(self, name, None)
+                elif self._is_dynamic:
+                    self._dynamic_properties[name] = None
+                return None
 
         if not is_assignable(prop.type, value):
             return f"[{self.__class__.__name__}] Invalid value for property `{name}`: {type(value)} {value} (expected {prop.type})"
@@ -1746,6 +1810,11 @@ class BaseNode(BaseModel):
         return cls.gen_process is not BaseNode.gen_process
 
     @classmethod
+    def output_stream_kinds(cls) -> dict[str, StreamKind]:
+        """Declare the semantic kind of each streaming output."""
+        return {}
+
+    @classmethod
     def return_type(cls) -> type | None:
         """
         Get the return type of the node's process function.
@@ -1796,11 +1865,14 @@ class BaseNode(BaseModel):
             return []
 
         try:
+            stream_kinds = cls.output_stream_kinds() if cls.is_streaming_output() else {}
             if isinstance(return_type, dict):
                 return [
                     OutputSlot(
                         type=type_metadata(field_type, allow_optional=False),
                         name=field,
+                        stream=field in stream_kinds,
+                        stream_kind=stream_kinds.get(field),
                     )
                     for field, field_type in return_type.items()
                 ]
@@ -1815,10 +1887,19 @@ class BaseNode(BaseModel):
                     OutputSlot(
                         type=type_metadata(field_type, allow_optional=False),
                         name=field,
+                        stream=field in stream_kinds,
+                        stream_kind=stream_kinds.get(field),
                     )
                     for field, field_type in annotations.items()
                 ]
-            return [OutputSlot(type=type_metadata(return_type), name="output")]  # type: ignore
+            return [
+                OutputSlot(
+                    type=type_metadata(return_type),
+                    name="output",
+                    stream="output" in stream_kinds,
+                    stream_kind=stream_kinds.get("output"),
+                )
+            ]  # type: ignore
         except ValueError as e:
             raise ValueError(f"Invalid return type for node {cls.__name__}: {return_type} ({e})") from e
 
@@ -1826,7 +1907,20 @@ class BaseNode(BaseModel):
         """
         Returns OutputSlot objects for instance dynamic outputs.
         """
-        return [OutputSlot(type=tm, name=name) for name, tm in self._dynamic_outputs.items()]
+        stream_kinds = (
+            self.__class__.output_stream_kinds()
+            if self.__class__.is_streaming_output()
+            else {}
+        )
+        return [
+            OutputSlot(
+                type=tm,
+                name=name,
+                stream=name in stream_kinds,
+                stream_kind=stream_kinds.get(name),
+            )
+            for name, tm in self._dynamic_outputs.items()
+        ]
 
     def outputs_for_instance(self) -> list[OutputSlot]:
         """
@@ -1970,17 +2064,21 @@ class BaseNode(BaseModel):
         else:
             return []
 
-    async def initialize(self, context: Any, skip_cache: bool = False):
-        """
-        Initialize the node when workflow starts.
-
-        Responsible for setting up the node, including loading any necessary GPU models.
-        """
-        pass
-
     async def preload_model(self, context: Any):
         """
         Load the model for the node.
+
+        The model-loading half of the lifecycle. The executor runs
+        ``pre_process`` → ``preload_model`` → ``move_to_device`` → ``process``,
+        and ``finalize`` afterwards on every path.
+
+        (A third hook, ``initialize(context, skip_cache=False)``, used to sit
+        alongside these. It had no caller anywhere in this repo, no node
+        package outside the archived ``nodetool-base`` overrode it, and its
+        ``skip_cache`` parameter belonged to a workflow runner that has since
+        moved to the TypeScript server — so it was removed in bridge protocol
+        v4 rather than left as a third documented-but-dead hook. Node authors
+        wanting the old behaviour want this method.)
         """
         pass
 
@@ -1995,10 +2093,20 @@ class BaseNode(BaseModel):
 
     async def finalize(self, context):
         """
-        Finalizes the workflow by performing any necessary cleanup or post-processing tasks.
+        Tear down whatever this node set up.
 
-        This method is called when the workflow is shutting down.
-        It's responsible for cleaning up resources, unloading GPU models, and performing any necessary teardown operations.
+        Called exactly once per execution, after ``process``/``gen_process``
+        returns — including when it raised. This is the counterpart to
+        ``pre_process``/``preload_model``/``move_to_device``: release handles,
+        close files, drop references to GPU tensors the node allocated itself.
+
+        Cached models are *not* the node's to unload here: they live in
+        ``ModelManager`` precisely so the next execution can reuse them, and
+        reclaim under memory pressure is handled centrally. Unload explicitly
+        only when the node knows the weights will not be needed again.
+
+        Exceptions raised here are logged and swallowed, so a failing teardown
+        cannot mask the node's result or its error.
         """
         pass
 

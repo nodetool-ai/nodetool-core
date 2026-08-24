@@ -88,18 +88,29 @@ def _parse_data_uri(uri: str) -> tuple[str, bytes]:
         raise ValueError(f"Invalid data URI: {e}") from e
 
 
-def _fetch_file_uri(uri: str) -> tuple[str, bytes]:
+def _fetch_file_uri(uri: str, workspace_dir: str | None = None) -> tuple[str, bytes]:
     """Read file:// URI and return (mime, bytes).
+
+    The path is resolved inside ``workspace_dir`` so that a workflow-supplied
+    URI cannot read arbitrary local files, mirroring
+    ``asset_storage.read_file_uri`` and ``ProcessingContext.get_asset_bytes``.
 
     Use builtins.open so tests can mock file IO with patch("builtins.open").
     """
     import mimetypes
-    import pathlib
+    from urllib.parse import unquote
 
-    path = uri[len("file://") :]
-    # Normalize path
-    p = pathlib.Path(path)
-    with open(p, "rb") as f:  # type: ignore[arg-type]
+    from nodetool.io.path_utils import resolve_workspace_path
+
+    parsed = urlparse(uri)
+    netloc = unquote(parsed.netloc or "")
+    path = unquote(parsed.path or "")
+    if netloc and netloc.lower() != "localhost":
+        path = f"//{netloc}{path}"
+
+    # 🛡️ Enforce workspace boundary to prevent path traversal/LFI
+    safe_path = resolve_workspace_path(workspace_dir, path)
+    with open(safe_path, "rb") as f:  # type: ignore[arg-type]
         data = f.read()
     mime_type, _ = mimetypes.guess_type(uri)
     if not mime_type:
@@ -283,17 +294,20 @@ async def _fetch_asset_uri_async(uri: str) -> tuple[str, bytes]:
     raise ValueError(f"Asset not found in storage: {asset_id}")
 
 
-async def fetch_uri_bytes_and_mime_async(uri: str) -> tuple[str, bytes]:
+async def fetch_uri_bytes_and_mime_async(uri: str, workspace_dir: str | None = None) -> tuple[str, bytes]:
     """
     Fetch content from a URI and return (mime_type, data_bytes).
     Supports data:, memory://, file://, asset://, and http(s) URIs.
+
+    ``file://`` URIs are only readable inside ``workspace_dir``; without a
+    workspace they are rejected.
     """
     if uri.startswith("data:"):
         return _parse_data_uri(uri)
     if uri.startswith("memory://"):
         return _fetch_memory_uri(uri)
     if uri.startswith("file://"):
-        return _fetch_file_uri(uri)
+        return _fetch_file_uri(uri, workspace_dir)
     if uri.startswith("asset://"):
         return await _fetch_asset_uri_async(uri)
     if uri.startswith("http://") or uri.startswith("https://"):

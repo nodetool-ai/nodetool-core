@@ -47,7 +47,7 @@ def authorize(auth_header: str | None, expected_token: str | None) -> bool:
     return hmac.compare_digest(auth_header, BEARER_PREFIX + expected_token)
 
 
-def make_process_request() -> Callable[["ServerConnection", "Request"], "Response | None"]:
+def make_process_request() -> Callable[[ServerConnection, Request], Response | None]:
     """Build a ``process_request`` hook that enforces the worker token.
 
     The expected token is read from ``NODETOOL_WORKER_TOKEN`` on each handshake,
@@ -60,8 +60,8 @@ def make_process_request() -> Callable[["ServerConnection", "Request"], "Respons
     """
 
     def process_request(
-        connection: "ServerConnection", request: "Request"
-    ) -> "Response | None":
+        connection: ServerConnection, request: Request
+    ) -> Response | None:
         expected_token = os.environ.get("NODETOOL_WORKER_TOKEN")
         if authorize(request.headers.get("Authorization"), expected_token):
             return None

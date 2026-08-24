@@ -39,10 +39,14 @@ import re
 import struct
 import traceback
 import uuid
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urljoin, urlparse
 
 import aiohttp
+
+from nodetool.utils.network import SSRFProtectResolver, is_ip_private
 
 DEFAULT_COMFYUI_URL = "http://127.0.0.1:8188"
 DEFAULT_MODELS_DIR = "/workspace/models"
@@ -677,12 +681,64 @@ async def _open_model_source(
     else:
         raise ComfyError(f"Unknown model source type: {source_type!r} (expected 'huggingface' or 'url')")
 
-    resp = await session.get(url, headers=headers, allow_redirects=True)
-    if resp.status >= 400:
-        body = (await resp.text())[:1000]
-        resp.release()
-        raise ComfyError(f"Model download failed with HTTP {resp.status}: {body}")
-    return resp, default_name
+    max_redirects = 5
+    current_url = str(url)
+
+    for _ in range(max_redirects + 1):
+        parsed = urlparse(current_url)
+        if parsed.hostname and is_ip_private(parsed.hostname):
+            raise ComfyError(f"Access to private/restricted IP blocked: {parsed.hostname}")
+
+        resp = await session.get(current_url, headers=headers, allow_redirects=False)
+
+        if resp.status in (301, 302, 303, 307, 308):
+            location = resp.headers.get("Location")
+            resp.release()
+            if not location:
+                raise ComfyError(f"Redirect response without Location header from {current_url}")
+            current_url = urljoin(current_url, location)
+            if urlparse(current_url).hostname != parsed.hostname:
+                headers.pop("Authorization", None)
+            continue
+
+        if resp.status >= 400:
+            body = (await resp.text())[:1000]
+            resp.release()
+            raise ComfyError(f"Model download failed with HTTP {resp.status}: {body}")
+
+        return resp, default_name
+
+    raise ComfyError(f"Too many redirects while downloading {url}")
+
+
+_download_locks: dict[str, asyncio.Lock] = {}
+_download_lock_users: dict[str, int] = {}
+
+
+@asynccontextmanager
+async def _target_download_lock(target: Path):
+    """Serialize downloads writing to the same target file.
+
+    Concurrent requests for one model would otherwise share a single `.part`
+    path and interleave writes at independent offsets, installing a scrambled
+    file. Waiters re-check `target.exists()` afterwards, so they take the fast
+    path when the first download succeeded and retry it when it failed.
+    """
+    key = str(target)
+    lock = _download_locks.get(key)
+    if lock is None:
+        lock = _download_locks[key] = asyncio.Lock()
+    _download_lock_users[key] = _download_lock_users.get(key, 0) + 1
+    try:
+        async with lock:
+            yield
+    finally:
+        remaining = _download_lock_users[key] - 1
+        if remaining > 0:
+            _download_lock_users[key] = remaining
+        else:
+            _download_lock_users.pop(key, None)
+            _download_locks.pop(key, None)
 
 
 async def _handle_models_download(
@@ -725,75 +781,95 @@ async def _handle_models_download(
         })
 
     try:
-        # With an explicit filename the existence check needs no network —
-        # keeps warm restarts on a populated volume instant and offline-safe.
-        filename = data.get("filename")
-        if filename and not data.get("force"):
-            target = _resolve_model_path(str(folder), str(filename))
-            if target.exists():
-                await report_exists(target, str(filename))
-                return
-
-        timeout = aiohttp.ClientTimeout(total=None, sock_connect=30)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            resp, default_name = await _open_model_source(session, source)
-            async with resp:
-                filename = filename or default_name
-                data["filename"] = filename
+        async with AsyncExitStack() as stack:
+            # With an explicit filename the existence check needs no network —
+            # keeps warm restarts on a populated volume instant and offline-safe.
+            filename = data.get("filename")
+            target: Path | None = None
+            if filename:
                 target = _resolve_model_path(str(folder), str(filename))
-                total = int(resp.headers.get("Content-Length") or 0)
-
+                # Taken before the network round-trip so a duplicate request waits
+                # here and then sees the finished file instead of re-downloading.
+                await stack.enter_async_context(_target_download_lock(target))
                 if target.exists() and not data.get("force"):
                     await report_exists(target, str(filename))
                     return
 
-                target.parent.mkdir(parents=True, exist_ok=True)
-                part_path = target.with_name(target.name + ".part")
-                downloaded = 0
-                last_progress = 0.0
-                loop = asyncio.get_running_loop()
+            timeout = aiohttp.ClientTimeout(total=None, sock_connect=30)
+            connector = aiohttp.TCPConnector(resolver=SSRFProtectResolver())
+            async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+                resp, default_name = await _open_model_source(session, source)
+                async with resp:
+                    filename = filename or default_name
+                    data["filename"] = filename
+                    if target is None:
+                        target = _resolve_model_path(str(folder), str(filename))
+                        await stack.enter_async_context(_target_download_lock(target))
+                    total = int(resp.headers.get("Content-Length") or 0)
 
-                await send_progress(request_id, frame("start", 0, total))
-                try:
-                    with open(part_path, "wb") as out:
-                        async for chunk in resp.content.iter_chunked(1024 * 1024):
-                            if cancel_event.is_set():
-                                raise asyncio.CancelledError()
-                            out.write(chunk)
-                            downloaded += len(chunk)
-                            # Throttle to ~2 frames/sec: transport writes are
-                            # serialized, so awaiting a send per chunk would gate
-                            # download throughput on bridge latency (and a
-                            # multi-GB model would emit thousands of frames).
-                            now = loop.time()
-                            if now - last_progress >= 0.5:
-                                last_progress = now
-                                await send_progress(request_id, frame("progress", downloaded, total))
-                    os.replace(part_path, target)
-                except asyncio.CancelledError:
-                    part_path.unlink(missing_ok=True)
-                    await send_progress(request_id, frame("cancelled", downloaded, total))
+                    if target.exists() and not data.get("force"):
+                        await report_exists(target, str(filename))
+                        return
+
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    part_path = target.with_name(target.name + ".part")
+                    downloaded = 0
+                    last_progress = 0.0
+                    loop = asyncio.get_running_loop()
+
+                    await send_progress(request_id, frame("start", 0, total))
+                    try:
+                        with open(part_path, "wb") as out:
+                            async for chunk in resp.content.iter_chunked(1024 * 1024):
+                                if cancel_event.is_set():
+                                    raise asyncio.CancelledError()
+                                out.write(chunk)
+                                downloaded += len(chunk)
+                                # Throttle to ~2 frames/sec: transport writes are
+                                # serialized, so awaiting a send per chunk would gate
+                                # download throughput on bridge latency (and a
+                                # multi-GB model would emit thousands of frames).
+                                now = loop.time()
+                                if now - last_progress >= 0.5:
+                                    last_progress = now
+                                    await send_progress(request_id, frame("progress", downloaded, total))
+                        # Never install a short read: a truncated body would be
+                        # trusted forever by the exists fast path.
+                        if total and downloaded != total:
+                            raise ComfyError(
+                                f"Model download incomplete: expected {total} bytes, got {downloaded}"
+                            )
+                        os.replace(part_path, target)
+                    except asyncio.CancelledError:
+                        part_path.unlink(missing_ok=True)
+                        await send_progress(request_id, frame("cancelled", downloaded, total))
+                        await send_result(request_id, {
+                            "status": "cancelled",
+                            "folder": folder,
+                            "filename": filename,
+                        })
+                        return
+                    except BaseException:
+                        part_path.unlink(missing_ok=True)
+                        raise
+
+                    await send_progress(request_id, frame("completed", downloaded, downloaded or total))
                     await send_result(request_id, {
-                        "status": "cancelled",
+                        "status": "completed",
                         "folder": folder,
                         "filename": filename,
+                        "path": str(target),
+                        "size_bytes": downloaded,
                     })
-                    return
-                except BaseException:
-                    part_path.unlink(missing_ok=True)
-                    raise
-
-                await send_progress(request_id, frame("completed", downloaded, downloaded or total))
-                await send_result(request_id, {
-                    "status": "completed",
-                    "folder": folder,
-                    "filename": filename,
-                    "path": str(target),
-                    "size_bytes": downloaded,
-                })
     except ComfyError as e:
         await send_progress(request_id, frame("error", 0, 0, error=str(e)))
         raise
+    except Exception as e:
+        # Filesystem/transport failures must surface as an "error" progress
+        # frame too, not just via the generic handler's error message.
+        detail = f"{type(e).__name__}: {e}"
+        await send_progress(request_id, frame("error", 0, 0, error=detail))
+        raise ComfyError(f"Model download failed: {detail}") from e
     finally:
         if request_id:
             cancel_flags.pop(request_id, None)
@@ -832,9 +908,12 @@ async def handle_comfy_message(
         await transport.send_msg({"type": "result", "request_id": rid, "data": d})
 
     async def send_error(rid: str | None, error: str, tb: str | None = None) -> None:
-        await transport.send_msg(
-            {"type": "error", "request_id": rid, "data": {"error": error, "traceback": tb}}
-        )
+        # Omitted rather than null — the JS side's frame schema types
+        # `traceback` as an optional string, and a null fails validation.
+        data: dict[str, Any] = {"error": error}
+        if tb:
+            data["traceback"] = tb
+        await transport.send_msg({"type": "error", "request_id": rid, "data": data})
 
     async def send_progress(rid: str | None, d: dict) -> None:
         await transport.send_msg({"type": "progress", "request_id": rid, "data": d})

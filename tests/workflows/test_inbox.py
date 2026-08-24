@@ -858,3 +858,52 @@ async def test_backward_compat_unwrap():
     assert len(envelopes) == 1
     assert envelopes[0].data == {"nested": "data"}
     assert envelopes[0].metadata == {"meta": "value"}
+
+
+@pytest.mark.asyncio
+async def test_notify_tasks_are_retained_until_done():
+    """The threadsafe notify task must hold a strong reference while in flight.
+
+    asyncio only keeps weak references to running tasks, so a bare
+    ``create_task(...)`` can be collected before it runs — silently dropping an
+    EOS wakeup and hanging every consumer blocked in ``iter_input``.
+    """
+    inbox = NodeInbox()
+    inbox.add_upstream("a", 1)
+
+    assert inbox._notify_tasks == set()
+
+    inbox.mark_source_done("a")
+    # call_soon_threadsafe defers _schedule_notify; let it run.
+    await asyncio.sleep(0)
+    assert len(inbox._notify_tasks) == 1
+
+    # Once the notify coroutine completes the reference is released again, so
+    # the set cannot grow without bound over a long-lived run.
+    await asyncio.sleep(0.05)
+    assert inbox._notify_tasks == set()
+
+
+@pytest.mark.asyncio
+async def test_eos_from_thread_wakes_consumer_under_gc_pressure():
+    """A consumer blocked on iter_input still reaches EOS when GC runs."""
+    import gc
+
+    inbox = NodeInbox()
+    inbox.add_upstream("a", 1)
+
+    received = []
+
+    async def consume():
+        async for item in inbox.iter_input("a"):
+            received.append(item)
+
+    task = asyncio.create_task(consume())
+    await asyncio.sleep(0.05)
+
+    threading.Thread(target=lambda: inbox.mark_source_done("a")).start()
+    await asyncio.sleep(0)
+    gc.collect()
+
+    await asyncio.wait_for(task, timeout=2.0)
+    assert received == []

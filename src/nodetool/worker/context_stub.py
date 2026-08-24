@@ -5,14 +5,15 @@ Overrides only what's needed:
 - Injects per-request secrets (from the bridge protocol)
 - Captures output blobs produced by media conversion methods
 """
+
 import asyncio
 import os
 import uuid
 from io import BytesIO
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from nodetool.metadata.types import AudioRef, ImageRef, Model3DRef
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.metadata.types import ImageRef, AudioRef, Model3DRef
 
 if TYPE_CHECKING:
     import numpy as np
@@ -84,13 +85,19 @@ class WorkerContext(ProcessingContext):
         name: str | None = None,
         parent_id: str | None = None,
     ) -> AudioRef:
-        import numpy as np
         import struct
 
-        if data.dtype != np.int16:
-            data = (data * 32767).astype(np.int16)
-        channels = num_channels if data.ndim == 1 else data.shape[1]
-        raw = data.tobytes()
+        import numpy as np
+
+        if data.dtype == np.int16:
+            raw = data.tobytes()
+        elif data.dtype in (np.float16, np.float32, np.float64):
+            raw = (np.asarray(data, dtype=np.float32).clip(-1.0, 1.0) * np.float32(32767.0)).astype(np.int16).tobytes()
+        else:
+            raise ValueError(f"Unsupported dtype {data.dtype}")
+        # Always honour the caller's channel count, like the base
+        # ProcessingContext: samples are taken as interleaved frames.
+        channels = num_channels
 
         buf = BytesIO()
         data_size = len(raw)
@@ -98,8 +105,7 @@ class WorkerContext(ProcessingContext):
         buf.write(struct.pack("<I", 36 + data_size))
         buf.write(b"WAVE")
         buf.write(b"fmt ")
-        buf.write(struct.pack("<IHHIIHH", 16, 1, channels, sample_rate,
-                              sample_rate * channels * 2, channels * 2, 16))
+        buf.write(struct.pack("<IHHIIHH", 16, 1, channels, sample_rate, sample_rate * channels * 2, channels * 2, 16))
         buf.write(b"data")
         buf.write(struct.pack("<I", data_size))
         buf.write(raw)
@@ -123,14 +129,48 @@ class WorkerContext(ProcessingContext):
     def get_output_blobs(self) -> dict[str, bytes]:
         return dict(self._output_blobs)
 
+    def take_output_blobs(self) -> dict[str, bytes]:
+        """Return the captured blobs and clear them.
+
+        Used on the streaming path so per-chunk blobs are released as soon as
+        they have been emitted, instead of accumulating for the whole request.
+        """
+        blobs = self._output_blobs
+        self._output_blobs = {}
+        return blobs
+
     def drain_progress(self) -> list[Any]:
-        """Drain progress messages from the message queue."""
+        """Drain NodeProgress messages from the message queue.
+
+        Anything else in the queue is discarded — callers that also want
+        previews/logs should use :meth:`drain_messages` instead.
+        """
         from nodetool.workflows.types import NodeProgress
+
+        return [msg for msg in self.drain_messages() if isinstance(msg, NodeProgress)]
+
+    def drain_messages(self) -> list[Any]:
+        """Drain all forwardable messages from the message queue.
+
+        Returns NodeProgress plus the update types a client can render live
+        (PreviewUpdate, LogUpdate, BinaryUpdate) — previously everything but
+        NodeProgress was silently discarded, so in-flight previews and logs
+        could never reach the UI. Message types with no wire representation
+        are still dropped.
+        """
+        from nodetool.workflows.types import (
+            BinaryUpdate,
+            LogUpdate,
+            NodeProgress,
+            PreviewUpdate,
+        )
+
+        keep = (NodeProgress, PreviewUpdate, LogUpdate, BinaryUpdate)
         messages = []
         while not self.message_queue.empty():
             try:
                 msg = self.message_queue.get_nowait()
-                if isinstance(msg, NodeProgress):
+                if isinstance(msg, keep):
                     messages.append(msg)
             except Exception:
                 break

@@ -85,7 +85,7 @@ def node_to_metadata(node_class: type[BaseNode]) -> dict[str, Any]:
     except (TypeError, AttributeError):
         required_settings = []
 
-    return {
+    metadata = {
         "node_type": node_type,
         "title": title,
         "description": description,
@@ -97,6 +97,34 @@ def node_to_metadata(node_class: type[BaseNode]) -> dict[str, Any]:
         "is_streaming_input": _call_or_get(node_class, "is_streaming_input"),
         "is_dynamic": _call_or_get(node_class, "is_dynamic"),
     }
+
+    # Protocol v4. Omitted — not sent as null — where the node does not know:
+    # the host treats an absent hint as "no hint", and an invented number is
+    # worse than none.
+    required_vram = _required_vram_gb(node_class)
+    if required_vram is not None:
+        metadata["requires_vram_gb"] = required_vram
+
+    return metadata
+
+
+def _required_vram_gb(node_class: type[BaseNode]) -> float | None:
+    """Read a node's VRAM hint, tolerating a broken or absent override.
+
+    A node package that raises or returns nonsense here must not take its whole
+    node out of ``discover`` — the hint is an optimization, so a bad one
+    degrades to no hint.
+    """
+    getter = getattr(node_class, "get_required_vram_gb", None)
+    if getter is None:
+        return None
+    try:
+        value = getter()
+    except Exception:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if value > 0 else None
 
 
 def _recommended_models(node_class: type[BaseNode]) -> list[dict]:
@@ -194,13 +222,18 @@ def _simple_name(t: Any) -> str:
 def _extract_outputs(node_class: type[BaseNode]) -> list[dict]:
     """Extract output slot metadata using BaseNode's canonical output inference."""
     try:
-        return [
-            {
+        outputs: list[dict] = []
+        for slot in node_class.outputs():
+            output = {
                 "name": slot.name,
                 "type": slot.type.model_dump(exclude_none=True),
             }
-            for slot in node_class.outputs()
-        ]
+            if slot.stream:
+                output["stream"] = True
+            if slot.stream_kind is not None:
+                output["stream_kind"] = slot.stream_kind
+            outputs.append(output)
+        return outputs
     except Exception:
         return [{"name": "output", "type": {"type": "any"}}]
 

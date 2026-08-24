@@ -45,3 +45,14 @@
 ## 2025-06-25 - [Optimize uint16 to uint8 downscaling with integer division]
 **Learning:** When downscaling a NumPy `uint16` array to `uint8` by dividing by a Python float (e.g., `a / 257.0`), NumPy implicitly upcasts the array to `float64`, performs floating-point division, and then downcasts back to `uint8`. This implicit conversion introduces significant memory and computation overhead. In benchmarks, processing a 2000x2000 array took ~1.00s with float division compared to ~0.18s with integer division.
 **Action:** Use integer division (`a // 257`) when downscaling integer arrays to avoid implicit float64 conversion and maintain integer arithmetic for better performance.
+
+## 2026-07-08 - Prevent implicit float64 upcasting during array scaling
+**Learning:** When multiplying a NumPy float array (e.g., `float32`) by a standard Python float constant (like `255.0` or `32768.0`) or using Python float scalars for min/max operations, NumPy implicitly upcasts the array to `float64` to match the Python float precision. This effectively doubles memory usage and slows down computation significantly, which is especially noticeable when downscaling later to `uint8` or `int16`.
+**Action:** When scaling NumPy arrays using constants, always extract the array's exact native type using `dt = array.dtype.type` and cast the constant (e.g., `dt(255.0)`). This prevents unnecessary `float64` upcasting during arithmetic operations.
+## 2025-07-28 - PyTorch Tensor to NumPy Array Optimization
+**Learning:** When converting PyTorch tensors to `uint8` NumPy image arrays, using NumPy's `clip` or explicitly multiplying integers by a Python float upcasts the arrays implicitly to `float64` and creates intermediate allocations. Using PyTorch's native `.mul()`, `.clamp_()`, and `.byte()` operations before moving to NumPy allows PyTorch to utilize its optimized C++ backend to execute the operations in-place, drastically reducing both execution time and memory footprint.
+**Action:** Use PyTorch's native `.mul()`, `.clamp_()`, and `.byte()` methods when scaling and clipping PyTorch tensors to `uint8` arrays, making sure to explicitly cast non-floating point tensors to `.float()` to prevent implicit conversion OOM errors and to maintain accurate math boundaries.
+
+## 2025-10-09 - Avoid np.clip overhead and float16 overflow
+**Learning:** Using the module-level `np.clip` and implicit floating-point conversions can lead to both performance penalties and critical bugs like integer overflow (e.g. converting float16). Casting explicitly to `float32` and using the instance `.clip()` is both much faster and avoids upcasting arrays to `float64`.
+**Action:** When working with image/audio scaling, explicitly cast the data to `np.float32` using `np.asarray` and use `.clip` with a typed float multiplier instead of `np.clip()`.

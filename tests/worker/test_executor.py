@@ -145,6 +145,41 @@ class ProgressBeforeRaiseNode(BaseNode):
         raise RuntimeError("boom")
 
 
+class PreviewEmittingNode(BaseNode):
+    """Posts a preview and a log update — verifies they reach emit_update."""
+
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "test.PreviewEmittingNode"
+
+    async def process(self, context: ProcessingContext) -> str:
+        from nodetool.workflows.types import LogUpdate, PreviewUpdate
+
+        context.post_message(PreviewUpdate(node_id="n1", value={"step": 1}))
+        context.post_message(
+            LogUpdate(node_id="n1", node_name="preview", content="rendering", severity="info")
+        )
+        return "done"
+
+
+class CancellableStreamingNode(BaseNode):
+    """Streams forever; only a cooperative cancel between chunks stops it."""
+
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "test.CancellableStreamingNode"
+
+    async def process(self, context: ProcessingContext) -> str:
+        raise AssertionError("execute_node should use gen_process for streaming nodes")
+
+    async def gen_process(
+        self, context: ProcessingContext
+    ) -> AsyncGenerator[dict[str, int], None]:
+        for index in range(1000):
+            yield {"output": index}
+            await asyncio.sleep(0.01)
+
+
 @pytest.fixture(autouse=True)
 def register_echo():
     NODE_BY_TYPE["test.EchoNode"] = EchoNode
@@ -154,6 +189,8 @@ def register_echo():
     NODE_BY_TYPE["test.MultiChunkStreamingNode"] = MultiChunkStreamingNode
     NODE_BY_TYPE["test.ProgressEmittingNode"] = ProgressEmittingNode
     NODE_BY_TYPE["test.ProgressBeforeRaiseNode"] = ProgressBeforeRaiseNode
+    NODE_BY_TYPE["test.PreviewEmittingNode"] = PreviewEmittingNode
+    NODE_BY_TYPE["test.CancellableStreamingNode"] = CancellableStreamingNode
     yield
     NODE_BY_TYPE.pop("test.EchoNode", None)
     NODE_BY_TYPE.pop("test.ImageListNode", None)
@@ -162,6 +199,8 @@ def register_echo():
     NODE_BY_TYPE.pop("test.MultiChunkStreamingNode", None)
     NODE_BY_TYPE.pop("test.ProgressEmittingNode", None)
     NODE_BY_TYPE.pop("test.ProgressBeforeRaiseNode", None)
+    NODE_BY_TYPE.pop("test.PreviewEmittingNode", None)
+    NODE_BY_TYPE.pop("test.CancellableStreamingNode", None)
 
 
 @pytest.mark.asyncio
@@ -414,3 +453,182 @@ async def test_execute_node_stream_propagates_errors():
             input_blobs={},
         ):
             pass
+
+
+@pytest.mark.asyncio
+async def test_execute_node_forwards_preview_and_log_updates():
+    """PreviewUpdate/LogUpdate posted by a node must reach emit_update, not be discarded."""
+    updates: list[dict[str, Any]] = []
+
+    async def on_update(u: dict[str, Any]) -> None:
+        updates.append(u)
+
+    result = await execute_node(
+        node_type="test.PreviewEmittingNode",
+        fields={},
+        secrets={},
+        input_blobs={},
+        emit_update=on_update,
+    )
+
+    assert result["outputs"]["output"] == "done"
+    kinds = {u.get("type") for u in updates}
+    assert "preview_update" in kinds
+    assert "log_update" in kinds
+    preview = next(u for u in updates if u["type"] == "preview_update")
+    assert preview["value"] == {"step": 1}
+
+
+@pytest.mark.asyncio
+async def test_execute_node_without_emit_update_still_succeeds():
+    """Updates are dropped cleanly when no emit_update callback is provided."""
+    result = await execute_node(
+        node_type="test.PreviewEmittingNode",
+        fields={},
+        secrets={},
+        input_blobs={},
+    )
+    assert result["outputs"]["output"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_streaming_node_cancels_between_chunks():
+    """A set cancel_event must interrupt a streaming node between chunks."""
+    from nodetool.workflows.processing_context import NodeCancelledError
+
+    cancel_event = asyncio.Event()
+    chunks: list[dict[str, Any]] = []
+
+    async def on_chunk(chunk: dict[str, Any]) -> None:
+        chunks.append(chunk)
+        if len(chunks) >= 3:
+            cancel_event.set()
+
+    with pytest.raises(NodeCancelledError):
+        await execute_node(
+            node_type="test.CancellableStreamingNode",
+            fields={},
+            secrets={},
+            input_blobs={},
+            cancel_event=cancel_event,
+            emit_chunk=on_chunk,
+        )
+
+    # The stream stopped shortly after the cancel, not after all 1000 chunks.
+    assert 3 <= len(chunks) < 100
+
+
+@pytest.mark.asyncio
+async def test_pre_cancelled_execution_refuses_to_run_process():
+    """A cancel that lands before process() starts must abort the execution."""
+    from nodetool.workflows.processing_context import NodeCancelledError
+
+    cancel_event = asyncio.Event()
+    cancel_event.set()
+
+    with pytest.raises(NodeCancelledError):
+        await execute_node(
+            node_type="test.EchoNode",
+            fields={"text": "hi"},
+            secrets={},
+            input_blobs={},
+            cancel_event=cancel_event,
+        )
+
+
+class FinalizeNode(BaseNode):
+    """Records lifecycle calls so teardown wiring can be asserted."""
+
+    fail: bool = Field(default=False)
+    calls: Any = None
+
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "test.FinalizeNode"
+
+    async def process(self, context: ProcessingContext) -> str:
+        FINALIZE_CALLS.append("process")
+        if self.fail:
+            raise RuntimeError("boom")
+        return "ok"
+
+    async def finalize(self, context):
+        FINALIZE_CALLS.append("finalize")
+
+
+class FinalizeRaisesNode(BaseNode):
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "test.FinalizeRaisesNode"
+
+    async def process(self, context: ProcessingContext) -> str:
+        return "ok"
+
+    async def finalize(self, context):
+        FINALIZE_CALLS.append("finalize")
+        raise RuntimeError("teardown exploded")
+
+
+FINALIZE_CALLS: list[str] = []
+NODE_BY_TYPE["test.FinalizeNode"] = FinalizeNode
+NODE_BY_TYPE["test.FinalizeRaisesNode"] = FinalizeRaisesNode
+
+
+class TestNodeFinalization:
+    """``finalize`` is a node's only teardown hook — the executor must run it."""
+
+    def setup_method(self):
+        FINALIZE_CALLS.clear()
+
+    @pytest.mark.asyncio
+    async def test_finalize_runs_after_a_successful_process(self):
+        result = await execute_node("test.FinalizeNode", {}, {}, {})
+        assert result["outputs"]["output"] == "ok"
+        assert FINALIZE_CALLS == ["process", "finalize"]
+
+    @pytest.mark.asyncio
+    async def test_finalize_runs_when_process_raises(self):
+        with pytest.raises(RuntimeError, match="boom"):
+            await execute_node("test.FinalizeNode", {"fail": True}, {}, {})
+        assert FINALIZE_CALLS == ["process", "finalize"]
+
+    @pytest.mark.asyncio
+    async def test_a_failing_finalize_does_not_mask_the_result(self):
+        result = await execute_node("test.FinalizeRaisesNode", {}, {}, {})
+        assert result["outputs"]["output"] == "ok"
+        assert FINALIZE_CALLS == ["finalize"]
+
+    @pytest.mark.asyncio
+    async def test_execution_runs_inside_a_model_manager_scope(self, monkeypatch):
+        """Models touched during execution must be pinned against reclaim."""
+        from nodetool.ml.core.model_manager import ModelManager
+
+        seen: dict[str, bool] = {}
+
+        class ScopeProbeNode(BaseNode):
+            @classmethod
+            def get_node_type(cls) -> str:
+                return "test.ScopeProbeNode"
+
+            async def process(self, context: ProcessingContext) -> str:
+                ModelManager.get_model("probe-key")
+                seen["pinned"] = ModelManager.is_model_in_use("probe-key")
+                return "ok"
+
+        NODE_BY_TYPE["test.ScopeProbeNode"] = ScopeProbeNode
+
+        reclaims: list[str] = []
+        monkeypatch.setattr(
+            ModelManager,
+            "free_vram_if_needed",
+            classmethod(lambda cls, **kwargs: reclaims.append(kwargs.get("reason", ""))),
+        )
+
+        await execute_node("test.ScopeProbeNode", {}, {}, {})
+
+        assert seen["pinned"] is True
+        # The scope closes with the execution.
+        assert ModelManager.is_model_in_use("probe-key") is False
+        # Reclaim happens up front, not only after an OOM.
+        assert len(reclaims) == 1
+        assert "test.ScopeProbeNode" in reclaims[0]

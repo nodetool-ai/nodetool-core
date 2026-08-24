@@ -170,8 +170,8 @@ def get_memory_uri_cache_stats() -> dict[str, int]:
         scope = maybe_scope()
         if scope:
             cache = scope.get_memory_uri_cache()
-            if cache and hasattr(cache, "_cache"):
-                count = len(cache._cache)
+            if cache and hasattr(cache, "_store"):
+                count = len(cache._store)
                 return {"count": count}
     except Exception:
         pass
@@ -196,8 +196,8 @@ def clear_memory_uri_cache(log_stats: bool = True) -> int:
             cache = scope.get_memory_uri_cache()
             if cache:
                 count = 0
-                if hasattr(cache, "_cache"):
-                    count = len(cache._cache)
+                if hasattr(cache, "_store"):
+                    count = len(cache._store)
                 if log_stats:
                     log.info(f"[MEMORY CACHE] Clearing {count} items from memory URI cache")
 

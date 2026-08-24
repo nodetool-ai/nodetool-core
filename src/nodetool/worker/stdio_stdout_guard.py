@@ -16,9 +16,25 @@ class _ProtocolStdoutBuffer:
         self._fd = fd
 
     def write(self, data: bytes | bytearray | memoryview) -> int:
-        if isinstance(data, memoryview):
-            data = data.tobytes()
-        return os.write(self._fd, data)
+        """Write *all* of ``data`` to the protocol pipe.
+
+        ``os.write`` may return a short count on a blocking pipe (for example
+        when a signal handler runs after a partial transfer); Python only
+        retries EINTR automatically when *zero* bytes were written. A truncated
+        frame would permanently desynchronize the length-prefixed stream, so
+        loop until every byte is out.
+        """
+        view = memoryview(data if isinstance(data, memoryview) else bytes(data))
+        total = len(view)
+        written = 0
+        while written < total:
+            n = os.write(self._fd, view[written:])
+            if n <= 0:
+                raise OSError(
+                    f"Protocol stdout write made no progress ({written}/{total} bytes written)"
+                )
+            written += n
+        return written
 
     def flush(self) -> None:
         # os.write goes straight to the pipe; nothing to flush.
@@ -34,7 +50,7 @@ def get_protocol_stdout_buffer() -> BinaryIO:
         raise RuntimeError(
             "Protocol stdout is not initialized; call install_stdio_stdout_guard() first"
         )
-    return cast(BinaryIO, _ProtocolStdoutBuffer(_protocol_stdout_fd))
+    return cast("BinaryIO", _ProtocolStdoutBuffer(_protocol_stdout_fd))
 
 
 def install_stdio_stdout_guard() -> None:

@@ -140,12 +140,24 @@ class Property(BaseModel):
         le = metadata.get(annotated_types.Le)
 
         title = name.replace("_", " ").title() if field.title is None else field.title
-        is_required = field.default is PydanticUndefined
+        # `field.default` is PydanticUndefined for `default_factory` fields too,
+        # so ask the field itself and materialize the factory default.
+        is_required = field.is_required()
+        default = None
+        if not is_required:
+            if field.default_factory is not None:
+                try:
+                    default = field.default_factory()  # type: ignore[call-arg]
+                except TypeError:
+                    # Pydantic also supports factories taking the validated data.
+                    default = field.default_factory({})  # type: ignore[call-arg]
+            elif field.default is not PydanticUndefined:
+                default = field.default
 
         return Property(
             name=name,
             type=type_,
-            default=None if is_required else field.default,
+            default=default,
             title=title,
             description=field.description,
             min=ge.ge if ge is not None else None,

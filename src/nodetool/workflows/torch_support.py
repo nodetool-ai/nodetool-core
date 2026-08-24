@@ -41,6 +41,24 @@ except ImportError:  # pragma: no cover - torch not installed
     torch = None  # type: ignore
 
 
+def _release_exception(exc: BaseException) -> None:
+    """Drop an exception's traceback and chained-exception references.
+
+    A live ``__traceback__`` pins every frame of the failed call, and with them
+    the locals of the forward pass — including the activations that caused a
+    CUDA OOM. Reclaiming VRAM while those frames are still reachable frees
+    little or nothing, so the retry runs against the same occupied memory.
+    Clearing the chain first lets the collector actually release them.
+
+    The exception object itself stays usable (and re-raisable); only the frames
+    it was holding go away.
+    """
+    with suppress(Exception):
+        exc.__traceback__ = None
+        exc.__cause__ = None
+        exc.__context__ = None
+
+
 def is_cuda_available() -> bool:
     """Safely check if CUDA is available, handling cases where PyTorch is not compiled with CUDA support."""
     if not TORCH_AVAILABLE or torch is None:
@@ -154,6 +172,11 @@ class TorchWorkflowSupport(BaseTorchSupport):
             )
             retries += 1
 
+            # Release the frames of the failed forward pass *before* reclaiming.
+            # The message is already logged above; everything below only needs
+            # the exception object itself, which stays re-raisable.
+            _release_exception(exc)
+
             if is_cuda_available():
                 try:
                     torch.cuda.synchronize()
@@ -208,7 +231,7 @@ class TorchWorkflowSupport(BaseTorchSupport):
                 self.max_retries,
             )
             await asyncio.sleep(delay)
-            return await self.process_with_gpu(runner, context, node, retries + 1)
+            return await self.process_with_gpu(runner, context, node, retries)
 
     def is_cuda_oom_exception(self, exc: Exception) -> bool:
         if not TORCH_AVAILABLE or torch is None:
@@ -285,8 +308,15 @@ def tensor_to_image_array(tensor: Any) -> np.ndarray:
     """Convert a torch tensor into a uint8 numpy image array."""
     if not is_torch_tensor(tensor):
         raise ImportError("torch is required for tensor conversion")
-    data = tensor.detach().cpu().numpy()
-    return (255.0 * data).clip(0, 255).astype(np.uint8)
+
+    # ⚡ Bolt Optimization: Use PyTorch's optimized C++ backend to scale and clip tensors
+    # before converting to NumPy to avoid memory-intensive intermediate allocations.
+    if tensor.is_floating_point():
+        return tensor.detach().cpu().mul(255.0).clamp_(0, 255).byte().numpy()
+
+    # Non-floating point tensors were historically multiplied by 255.0 and clipped.
+    # To preserve correctness while avoiding OOM, we convert to float first, scale, clip, and byte.
+    return tensor.detach().cpu().float().mul(255.0).clamp_(0, 255).byte().numpy()
 
 
 def torch_tensor_to_metadata(tensor: Any) -> TorchTensor | Any:

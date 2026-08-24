@@ -244,6 +244,7 @@ class TestDownloadHttpUri:
         import aiohttp
 
         mock_response = AsyncMock()
+        mock_response.status = 200
         mock_response.read = AsyncMock(return_value=b"downloaded content")
         mock_response.raise_for_status = MagicMock()
 
@@ -462,3 +463,28 @@ class TestObjectToBytes:
         result = object_to_bytes({"not": "an image"}, asset)
 
         assert result is None
+
+    def test_audio_segment_encodes_as_declared_content_type(self):
+        """AudioSegment bytes must match the content type auto_save_assets stores.
+
+        Regression: the exporter emitted mp3 while
+        ``get_content_type_for_asset_ref`` reported ``audio/wav``, so saved
+        audio assets were mp3 bytes labelled (and named ``.wav``) as WAV.
+        """
+        from pydub import AudioSegment
+
+        from nodetool.workflows.asset_storage import get_extension_for_content_type
+
+        asset = AudioRef(uri="test://")
+        segment = AudioSegment.silent(duration=50, frame_rate=8000)
+
+        result = object_to_bytes(segment, asset)
+
+        assert result is not None
+        # RIFF....WAVE header — i.e. actually a wav, not an mp3.
+        assert result[:4] == b"RIFF"
+        assert result[8:12] == b"WAVE"
+
+        content_type = get_content_type_for_asset_ref(asset)
+        assert content_type == "audio/wav"
+        assert get_extension_for_content_type(content_type) == ".wav"
