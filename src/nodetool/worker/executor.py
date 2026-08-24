@@ -463,7 +463,15 @@ def _extract_outputs(
 
     if isinstance(result, ASSET_REF_TYPES) and result.uri and result.uri.startswith("blob://"):
         blob_key = result.uri[len("blob://") :]
-        return {}, {"output": output_blobs.get(blob_key, b"")}
+        # Emit the ref as well as its bytes. The bytes travel in the blobs map,
+        # but everything else about the asset lives only on the ref —
+        # VideoRef.duration/format, Model3DRef.format/material_file/
+        # texture_files — and the host pairs the two by output name. Dropping
+        # the ref here is why that metadata never left the worker.
+        #
+        # Sending both does not duplicate the payload: _serialize_asset_ref
+        # strips every raw-bytes `data` field, at any depth.
+        return {"output": _serialize_value(result)}, {"output": output_blobs.get(blob_key, b"")}
 
     # Check if result is a dict with blob values that need extraction
     if isinstance(result, dict):
@@ -479,8 +487,11 @@ def _extract_outputs(
                     blob_key = value.uri[len("blob://") :]
                     if blob_key in output_blobs:
                         blobs[key] = output_blobs[blob_key]
-                else:
-                    outputs[key] = _serialize_value(value)
+                # Not an `else`: the ref carries the asset's metadata and is
+                # emitted alongside its bytes (see the single-output case
+                # above). A ref whose blob is missing is still emitted, rather
+                # than the output vanishing from the frame entirely.
+                outputs[key] = _serialize_value(value)
             return outputs, blobs
 
     # Multi-output dict: if result is a dict with named output keys
@@ -564,7 +575,8 @@ def _extract_named_outputs(
             blob_key = value.uri[len("blob://") :]
             if blob_key in output_blobs:
                 blobs[key] = output_blobs[blob_key]
-            continue
+            # Falls through: the ref is emitted next to its bytes, for the same
+            # reason as the batch path in _extract_outputs.
 
         outputs[key] = _serialize_value(value)
 

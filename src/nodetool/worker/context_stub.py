@@ -64,7 +64,7 @@ class WorkerContext(ProcessingContext):
         data = buf.getvalue()
         blob_key = f"image_{name or 'output'}_{uuid.uuid4().hex[:8]}"
         self._output_blobs[blob_key] = data
-        return ImageRef(uri=f"blob://{blob_key}")
+        return ImageRef(uri=f"blob://{blob_key}", metadata=metadata)
 
     async def image_from_bytes(
         self,
@@ -75,7 +75,7 @@ class WorkerContext(ProcessingContext):
     ) -> ImageRef:
         blob_key = f"image_{name or 'output'}_{uuid.uuid4().hex[:8]}"
         self._output_blobs[blob_key] = b
-        return ImageRef(uri=f"blob://{blob_key}")
+        return ImageRef(uri=f"blob://{blob_key}", metadata=metadata)
 
     async def audio_from_numpy(
         self,
@@ -124,7 +124,14 @@ class WorkerContext(ProcessingContext):
     ) -> Model3DRef:
         blob_key = f"model3d_{name or 'output'}_{uuid.uuid4().hex[:8]}"
         self._output_blobs[blob_key] = b
-        return Model3DRef(uri=f"blob://{blob_key}")
+        # `format` and `metadata` are declared fields of the ref. Accepting
+        # them and building the ref without them left a node that used the
+        # canonical factory with no format to carry, which is the other half of
+        # why a Model3DRef reached the host bare.
+        #
+        # `parent_id` has no field on the ref — it addresses a folder in the
+        # asset store, which a worker does not have — so it stays dropped.
+        return Model3DRef(uri=f"blob://{blob_key}", format=format, metadata=metadata)
 
     def get_output_blobs(self) -> dict[str, bytes]:
         return dict(self._output_blobs)
