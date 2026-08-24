@@ -16,7 +16,10 @@
 #                    source build of the current ref.
 #
 # nodetool-huggingface always comes from PyPI; its version defaults to the
-# latest release since it is versioned independently of nodetool-core.
+# latest release since it is versioned independently of nodetool-core. That
+# lookup happens after the core-on-PyPI wait, because the two repos release in
+# parallel — see the step's own comment. Both versions are recorded as image
+# labels (ai.nodetool.core-version, ai.nodetool.huggingface-version).
 
 name: Build Worker Image
 
@@ -76,18 +79,8 @@ jobs:
           ${IMAGE}:main-${SHORT_SHA}"
           fi
 
-          # nodetool-huggingface is versioned independently of nodetool-core,
-          # so default to whatever is currently latest on PyPI rather than
-          # assuming a matching version exists.
-          HF_VERSION="${{ github.event.inputs.hf_version }}"
-          if [ -z "$HF_VERSION" ]; then
-            HF_VERSION=$(curl -fsSL https://pypi.org/pypi/nodetool-huggingface/json \
-              | python3 -c "import sys, json; print(json.load(sys.stdin)['info']['version'])")
-          fi
-
           {
             echo "version=$VERSION"
-            echo "hf-version=$HF_VERSION"
             echo "worker-base=$WORKER_BASE"
             echo "tags<<EOF"
             echo "$TAGS"
@@ -96,7 +89,6 @@ jobs:
 
           echo "🏗️ Mode: $WORKER_BASE"
           echo "📋 nodetool-core: ${VERSION:-<build context>}"
-          echo "🤗 nodetool-huggingface: $HF_VERSION"
           echo "🏷️ Tags:"
           echo "$TAGS"
 
@@ -117,6 +109,23 @@ jobs:
           done
           echo "❌ nodetool-core==$VERSION never appeared on PyPI"
           exit 1
+
+      # Resolved AFTER the wait above, not with the tags. Both repos release on
+      # a tag push, so the two wheel builds run in parallel: reading "latest"
+      # when this job starts pins the *previous* nodetool-huggingface, and the
+      # image ships without the fixes released alongside it. The core wait
+      # already costs a minute or more, by which time the sibling wheel has
+      # landed.
+      - name: Resolve nodetool-huggingface version
+        id: hf
+        run: |
+          HF_VERSION="${{ github.event.inputs.hf_version }}"
+          if [ -z "$HF_VERSION" ]; then
+            HF_VERSION=$(curl -fsSL https://pypi.org/pypi/nodetool-huggingface/json \
+              | python3 -c "import sys, json; print(json.load(sys.stdin)['info']['version'])")
+          fi
+          echo "hf-version=$HF_VERSION" >> $GITHUB_OUTPUT
+          echo "🤗 nodetool-huggingface: $HF_VERSION"
 
       - name: Checkout code
         uses: actions/checkout@v6
@@ -150,7 +159,10 @@ jobs:
           build-args: |
             WORKER_BASE=${{ steps.meta.outputs.worker-base }}
             NODETOOL_VERSION=${{ steps.meta.outputs.version }}
-            HF_VERSION=${{ steps.meta.outputs.hf-version }}
+            HF_VERSION=${{ steps.hf.outputs.hf-version }}
           tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            ai.nodetool.core-version=${{ steps.meta.outputs.version }}
+            ai.nodetool.huggingface-version=${{ steps.hf.outputs.hf-version }}
           cache-from: type=gha,scope=worker
           cache-to: type=gha,mode=max,scope=worker
