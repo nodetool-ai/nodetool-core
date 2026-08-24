@@ -10,10 +10,10 @@ import asyncio
 import os
 import uuid
 from io import BytesIO
-from typing import TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any
 
-from nodetool.metadata.types import AudioRef, ImageRef, Model3DRef
-from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.metadata.types import AudioRef, ImageRef, Model3DRef, VideoRef
+from nodetool.workflows.processing_context import ProcessingContext, _read_buffer
 
 if TYPE_CHECKING:
     import numpy as np
@@ -113,6 +113,24 @@ class WorkerContext(ProcessingContext):
         blob_key = f"audio_{name or 'output'}_{uuid.uuid4().hex[:8]}"
         self._output_blobs[blob_key] = buf.getvalue()
         return AudioRef(uri=f"blob://{blob_key}")
+
+    async def video_from_io(
+        self,
+        buffer: IO,
+        name: str | None = None,
+        parent_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> VideoRef:
+        # Every other video factory funnels here — video_from_bytes,
+        # video_from_numpy and video_from_frames all call it — so this one
+        # override captures them all. Without it a video node fell through to
+        # the base implementation, which returns VideoRef(data=...) with no
+        # uri: the executor only extracts blobs from a `blob://` uri, and
+        # _serialize_asset_ref strips raw `data` at any depth, so the mp4 was
+        # dropped while its metadata reached the host.
+        blob_key = f"video_{name or 'output'}_{uuid.uuid4().hex[:8]}"
+        self._output_blobs[blob_key] = await _read_buffer(buffer)
+        return VideoRef(uri=f"blob://{blob_key}", metadata=metadata)
 
     async def model3d_from_bytes(
         self,
