@@ -35,6 +35,8 @@ RUN rm -rf /var/lib/apt/lists/* && \
     gcc \
     g++ \
     git \
+    # sshd, started only when the pod supplies PUBLIC_KEY
+    openssh-server \
     wget \
     curl \
     python3-pip \
@@ -181,8 +183,13 @@ import torch, torchvision, torchaudio, nunchaku; \
 print('torch', torch.__version__, 'torchvision', torchvision.__version__, 'torchaudio', torchaudio.__version__); \
 print('nunchaku', md.version('nunchaku'))"
 
-# Expose the worker's WebSocket port
+# Expose the worker's WebSocket port. 22 is opened only when the pod is
+# provisioned with a public key (see docker/worker-entrypoint.sh).
 EXPOSE 7777
+EXPOSE 22
+
+COPY docker/worker-entrypoint.sh /usr/local/bin/worker-entrypoint.sh
+RUN chmod +x /usr/local/bin/worker-entrypoint.sh
 
 # Health check — the worker is a WebSocket server (no HTTP route), so probe it
 # with a real WebSocket handshake. A raw TCP connect gets rejected mid-handshake
@@ -192,4 +199,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "from websockets.sync.client import connect; connect('ws://127.0.0.1:7777', open_timeout=5).close()" || exit 1
 
 # Run the NodeTool Python worker (WebSocket transport, reachable from the TS server)
+ENTRYPOINT ["/usr/local/bin/worker-entrypoint.sh"]
 CMD ["python", "-m", "nodetool.worker", "--host", "0.0.0.0", "--port", "7777"]
