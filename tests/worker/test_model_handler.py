@@ -308,49 +308,6 @@ async def test_models_download_mid_file_cancel(server, monkeypatch):
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_models_download_resolves_token_on_worker(server, monkeypatch):
-    """The HF token is resolved on the worker, never taken from the request."""
-    import nodetool.worker.model_handler as mh
-
-    received: dict[str, str | None] = {}
-
-    async def fake_list_repo_files(repo_id, token=None):
-        received["list_token"] = token
-        return [("model.bin", 10)]
-
-    async def fake_download(repo_id, filename, *, token=None, progress_callback=None,
-                            cancel_event=None, **kwargs):
-        received["dl_token"] = token
-        if progress_callback:
-            progress_callback(10, 10)
-        return Path("/tmp") / filename
-
-    async def fake_token():
-        return "worker-secret"
-
-    monkeypatch.setattr(mh, "_list_repo_files", fake_list_repo_files)
-    monkeypatch.setattr(mh, "async_hf_download", fake_download)
-    monkeypatch.setattr(mh, "get_hf_token", fake_token)
-
-    host, port = server
-    async with websockets.connect(f"ws://{host}:{port}") as ws:
-        await ws.send(msgpack.packb({
-            "type": "models.download",
-            "request_id": "md-token",
-            # A malicious client token must be ignored.
-            "data": {"repo_id": "org/model-a", "token": "client-evil"},
-        }))
-        while True:
-            raw = await asyncio.wait_for(ws.recv(), timeout=5)
-            f = msgpack.unpackb(raw, raw=False)
-            if f["type"] in ("result", "error"):
-                break
-
-    assert received["dl_token"] == "worker-secret"
-    assert received["list_token"] == "worker-secret"
-
-
-@pytest.mark.asyncio(loop_scope="function")
 async def test_models_download_filters_by_allow_patterns(server, monkeypatch):
     """allow_patterns restricts the file set that is downloaded."""
     import nodetool.worker.model_handler as mh
@@ -425,3 +382,142 @@ async def test_models_download_error_emits_error_frame(server, monkeypatch):
     assert any(p["data"]["status"] == "error" for p in progress)
     assert frames[-1]["type"] == "error"
     assert "hub exploded" in frames[-1]["data"]["error"]
+
+
+# --- Per-request HF token -------------------------------------------------
+#
+# A rented GPU worker is a bare container: no per-user secret store, no HF_TOKEN
+# in its environment. get_hf_token() therefore resolves to None there and every
+# gated repo (FLUX.1-dev, RMBG-2.0, ...) answers 401. The host passes the
+# credential with the models.download request instead.
+
+WORKER_LOCAL_TOKEN = "hf_worker_local_fallback"
+REQUEST_TOKEN = "hf_supplied_by_host"
+
+
+def _install_download_doubles(monkeypatch, seen: dict):
+    """Record the token each collaborator receives; download nothing."""
+    import nodetool.worker.model_handler as mh
+
+    async def fake_list_repo_files(repo_id, token=None):
+        seen["list"] = token
+        return [("model.bin", 10)]
+
+    async def fake_download(repo_id, filename, *, token=None, progress_callback=None,
+                            cancel_event=None, **kwargs):
+        seen["download"] = token
+        if progress_callback:
+            progress_callback(10, 10)
+        return Path("/tmp") / filename
+
+    async def fake_token():
+        seen["fallback_consulted"] = True
+        return WORKER_LOCAL_TOKEN
+
+    monkeypatch.setattr(mh, "_list_repo_files", fake_list_repo_files)
+    monkeypatch.setattr(mh, "async_hf_download", fake_download)
+    monkeypatch.setattr(mh, "get_hf_token", fake_token)
+
+
+async def _run_download(ws, request_id: str, data: dict) -> list[bytes]:
+    """Send one models.download and collect raw frames up to the terminal one."""
+    await ws.send(msgpack.packb(
+        {"type": "models.download", "request_id": request_id, "data": data}
+    ))
+    raw_frames: list[bytes] = []
+    while True:
+        raw = await asyncio.wait_for(ws.recv(), timeout=5)
+        raw_frames.append(bytes(raw))
+        if msgpack.unpackb(raw, raw=False)["type"] in ("result", "error"):
+            break
+    return raw_frames
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_models_download_uses_supplied_token(server, monkeypatch):
+    """A token on the request is used for the listing and every file fetch."""
+    seen: dict = {}
+    _install_download_doubles(monkeypatch, seen)
+
+    host, port = server
+    async with websockets.connect(f"ws://{host}:{port}") as ws:
+        frames = await _run_download(
+            ws, "md-tok-1", {"repo_id": "org/gated", "token": REQUEST_TOKEN}
+        )
+
+    # One token per download, used for the whole download. Asserted first so a
+    # half-applied change — the listing updated, the file fetches missed —
+    # fails by name rather than as a value mismatch. The test this replaces
+    # pinned the same property; only the expected value changed.
+    assert seen["list"] == seen["download"], "listing and download used different tokens"
+    assert seen["list"] == REQUEST_TOKEN
+    assert seen["download"] == REQUEST_TOKEN
+    # The worker's own resolution is skipped entirely when the host supplies one.
+    assert "fallback_consulted" not in seen
+    assert msgpack.unpackb(frames[-1], raw=False)["data"]["status"] == "completed"
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_models_download_without_token_falls_back(server, monkeypatch):
+    """No token on the request keeps today's behaviour: resolve one locally."""
+    seen: dict = {}
+    _install_download_doubles(monkeypatch, seen)
+
+    host, port = server
+    async with websockets.connect(f"ws://{host}:{port}") as ws:
+        await _run_download(ws, "md-tok-2", {"repo_id": "org/open"})
+
+    assert seen["fallback_consulted"] is True
+    assert seen["list"] == WORKER_LOCAL_TOKEN
+    assert seen["download"] == WORKER_LOCAL_TOKEN
+    assert seen["list"] == seen["download"]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.parametrize("blank", ["", "   ", None])
+async def test_models_download_blank_token_is_absent(server, monkeypatch, blank):
+    """An empty/blank token means "none supplied", not an empty credential.
+
+    Sending `Authorization: Bearer ` would fail differently — and for a public
+    repo, worse — than sending no header at all.
+    """
+    seen: dict = {}
+    _install_download_doubles(monkeypatch, seen)
+
+    host, port = server
+    async with websockets.connect(f"ws://{host}:{port}") as ws:
+        await _run_download(
+            ws, "md-tok-3", {"repo_id": "org/open", "token": blank}
+        )
+
+    assert seen["fallback_consulted"] is True
+    assert seen["list"] == WORKER_LOCAL_TOKEN
+    assert seen["download"] == WORKER_LOCAL_TOKEN
+    assert seen["list"] == seen["download"]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_models_download_never_echoes_token(server, monkeypatch):
+    """No frame the worker emits carries the credential back, success or error."""
+    import nodetool.worker.model_handler as mh
+
+    seen: dict = {}
+    _install_download_doubles(monkeypatch, seen)
+
+    host, port = server
+    async with websockets.connect(f"ws://{host}:{port}") as ws:
+        ok_frames = await _run_download(
+            ws, "md-tok-4", {"repo_id": "org/gated", "token": REQUEST_TOKEN}
+        )
+
+        async def exploding_list(repo_id, token=None):
+            raise RuntimeError("hub exploded")
+
+        monkeypatch.setattr(mh, "_list_repo_files", exploding_list)
+        err_frames = await _run_download(
+            ws, "md-tok-5", {"repo_id": "org/gated", "token": REQUEST_TOKEN}
+        )
+
+    assert msgpack.unpackb(err_frames[-1], raw=False)["type"] == "error"
+    for raw in ok_frames + err_frames:
+        assert REQUEST_TOKEN.encode() not in raw
