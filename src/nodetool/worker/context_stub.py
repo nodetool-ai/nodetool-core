@@ -154,6 +154,53 @@ class WorkerContext(ProcessingContext):
         self._output_blobs[blob_key] = await _read_buffer(buffer)
         return AudioRef(uri=f"blob://{blob_key}")
 
+    async def image_from_io(
+        self,
+        buffer: IO,
+        name: str | None = None,
+        parent_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> ImageRef:
+        # image_from_url and every other caller that holds an open buffer
+        # funnels here. Without the override the base implementation returned
+        # ImageRef(data=..., uri="") and the bytes never reached the host.
+        blob_key = f"image_{name or 'output'}_{uuid.uuid4().hex[:8]}"
+        self._output_blobs[blob_key] = await _read_buffer(buffer)
+        return ImageRef(uri=f"blob://{blob_key}", metadata=metadata)
+
+    async def model3d_from_io(
+        self,
+        buffer: IO,
+        name: str | None = None,
+        parent_id: str | None = None,
+        format: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Model3DRef:
+        blob_key = f"model3d_{name or 'output'}_{uuid.uuid4().hex[:8]}"
+        self._output_blobs[blob_key] = await _read_buffer(buffer)
+        return Model3DRef(uri=f"blob://{blob_key}", format=format, metadata=metadata)
+
+    async def audio_from_segment(
+        self,
+        audio_segment: Any,
+        name: str | None = None,
+        parent_id: str | None = None,
+        **kwargs: Any,
+    ) -> AudioRef:
+        # With a name the base implementation funnels through audio_from_io
+        # and comes back as a blob. With no name it takes a shortcut the host
+        # cannot follow: AudioRef(uri="memory://<uuid>", data=...), pointing at
+        # an in-process store that lives and dies inside the worker. The
+        # executor recognizes only blob://, so that ref crossed the bridge
+        # empty. Re-home the bytes; the encoding and the metadata stay the
+        # base implementation's.
+        ref = await super().audio_from_segment(audio_segment, name=name, parent_id=parent_id, **kwargs)
+        if ref.uri.startswith("blob://"):
+            return ref
+        blob_key = f"audio_{name or 'output'}_{uuid.uuid4().hex[:8]}"
+        self._output_blobs[blob_key] = ref.data or b""
+        return AudioRef(uri=f"blob://{blob_key}", metadata=ref.metadata)
+
     async def model3d_from_bytes(
         self,
         b: bytes,
