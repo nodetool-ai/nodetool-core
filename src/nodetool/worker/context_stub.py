@@ -132,6 +132,28 @@ class WorkerContext(ProcessingContext):
         self._output_blobs[blob_key] = await _read_buffer(buffer)
         return VideoRef(uri=f"blob://{blob_key}", metadata=metadata)
 
+    async def audio_from_io(
+        self,
+        buffer: IO,
+        name: str | None = None,
+        parent_id: str | None = None,
+        content_type: str = "audio/wav",
+    ) -> AudioRef:
+        # audio_from_numpy encodes its own WAV, but a node handed already
+        # encoded audio (a provider's mp3, a file read from disk) calls
+        # audio_from_bytes / audio_from_base64, which both funnel here. Without
+        # this override they fell through to the base implementation and got
+        # AudioRef(data=..., uri=""); the executor extracts blobs only from a
+        # `blob://` uri and the serializer strips raw `data` at any depth, so
+        # the bytes were dropped.
+        #
+        # `content_type` selects an asset's MIME type in the base
+        # implementation. A worker creates no asset, and AudioRef carries no
+        # field for it, so it stays dropped like `parent_id`.
+        blob_key = f"audio_{name or 'output'}_{uuid.uuid4().hex[:8]}"
+        self._output_blobs[blob_key] = await _read_buffer(buffer)
+        return AudioRef(uri=f"blob://{blob_key}")
+
     async def model3d_from_bytes(
         self,
         b: bytes,
