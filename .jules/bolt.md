@@ -56,3 +56,7 @@
 ## 2025-10-09 - Avoid np.clip overhead and float16 overflow
 **Learning:** Using the module-level `np.clip` and implicit floating-point conversions can lead to both performance penalties and critical bugs like integer overflow (e.g. converting float16). Casting explicitly to `float32` and using the instance `.clip()` is both much faster and avoids upcasting arrays to `float64`.
 **Action:** When working with image/audio scaling, explicitly cast the data to `np.float32` using `np.asarray` and use `.clip` with a typed float multiplier instead of `np.clip()`.
+
+## 2025-10-15 - Optimize float to int16 conversion for audio arrays
+**Learning:** Using `data.dtype.type` dynamically upcasts inputs to `float64` during multiplication with `32768.0`, even if the input was `float32`. This causes unnecessary allocations, doubles memory overhead, and can fail completely on `float16` inputs (where `32768` is mapped to `inf`).
+**Action:** When converting audio float arrays to `int16`, normalize the array directly to `float32` first via `np.asarray(data, dtype=np.float32)` and explicitly use `np.float32(32768.0)`. This guarantees a strict `float32` operation that is fast, memory-efficient, and robust against overflow.
