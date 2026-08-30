@@ -2037,7 +2037,7 @@ _AUDIO_PIPELINE_CLASS_NAMES = {
 }
 
 
-def _read_model_index_class_name(snapshot_dir: str | Path | None) -> str | None:
+async def _read_model_index_class_name(snapshot_dir: str | Path | None) -> str | None:
     """Read the diffusers ``_class_name`` from a cached repo's model_index.json."""
     if not snapshot_dir:
         return None
@@ -2045,8 +2045,9 @@ def _read_model_index_class_name(snapshot_dir: str | Path | None) -> str | None:
         path = os.path.join(str(snapshot_dir), "model_index.json")
         if not os.path.exists(path):
             return None
-        with open(path) as f:
-            return json.load(f).get("_class_name")
+        async with aiofiles.open(path, encoding="utf-8") as f:
+            content = await f.read()
+            return json.loads(content).get("_class_name")
     except Exception:
         return None
 
@@ -2062,7 +2063,7 @@ async def get_text_to_video_models_from_hf_cache() -> list[VideoModel]:
         if not file_list:
             continue
         if (
-            _read_model_index_class_name(snapshot_dir)
+            await _read_model_index_class_name(snapshot_dir)
             not in _VIDEO_PIPELINE_CLASS_NAMES
         ):
             continue
@@ -2085,7 +2086,7 @@ async def get_text_to_audio_models_from_hf_cache() -> list[AudioModel]:
         if not file_list:
             continue
         if (
-            _read_model_index_class_name(snapshot_dir)
+            await _read_model_index_class_name(snapshot_dir)
             not in _AUDIO_PIPELINE_CLASS_NAMES
         ):
             continue

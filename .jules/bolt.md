@@ -56,3 +56,6 @@
 ## 2025-10-09 - Avoid np.clip overhead and float16 overflow
 **Learning:** Using the module-level `np.clip` and implicit floating-point conversions can lead to both performance penalties and critical bugs like integer overflow (e.g. converting float16). Casting explicitly to `float32` and using the instance `.clip()` is both much faster and avoids upcasting arrays to `float64`.
 **Action:** When working with image/audio scaling, explicitly cast the data to `np.float32` using `np.asarray` and use `.clip` with a typed float multiplier instead of `np.clip()`.
+## 2025-05-18 - Async file I/O in async generator
+**Learning:** Synchronous file I/O inside an `async for` generator (e.g., using `open()` inside `iter_cached_model_files` iteration) blocks the event loop, preventing other tasks from executing and causing performance regressions in async applications.
+**Action:** When reading files in async generators, explicitly use `aiofiles.open()` with `await f.read()` to ensure the I/O is non-blocking.
