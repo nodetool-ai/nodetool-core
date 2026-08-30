@@ -160,10 +160,13 @@ class Graph(BaseModel):
                 node_type = node_data.get("type", "<unknown>")
                 filtered_node_data = node_data.copy()
                 if node_id in properties_with_edges:
-                    data = filtered_node_data.get("data", {})
-                    connected_properties = properties_with_edges[node_id]
-                    filtered_data = {k: v for k, v in data.items() if k not in connected_properties}
-                    filtered_node_data["data"] = filtered_data
+                    data = filtered_node_data.get("data")
+                    if data:
+                        connected_properties = properties_with_edges[node_id]
+                        filtered_data = data.copy()
+                        for prop in connected_properties:
+                            filtered_data.pop(prop, None)
+                        filtered_node_data["data"] = filtered_data
 
                 result = BaseNode.from_dict(
                     filtered_node_data,
