@@ -1,9 +1,10 @@
 import asyncio
+import contextlib
 import os
 import subprocess
 import tempfile
 from io import BytesIO
-from typing import IO
+from typing import IO, Iterator
 
 from nodetool.config.logging_config import get_logger
 
@@ -33,6 +34,32 @@ FFMPEG_PATH = os.environ.get("FFMPEG_PATH", "ffmpeg")
 FFPROBE_PATH = os.environ.get("FFPROBE_PATH", "ffprobe")
 
 _pydub_configured = False
+
+
+@contextlib.contextmanager
+def temp_file_from_io(input_io: IO) -> Iterator[str]:
+    """
+    Write an IO object to a temporary file and yield its path.
+    Ensures the temporary file is deleted after use.
+    """
+    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+        temp_file_path = temp_file.name
+        try:
+            input_io.seek(0)
+            temp_file.write(input_io.read())
+            temp_file.flush()
+            input_io.seek(0)
+        except BaseException:
+            os.remove(temp_file_path)
+            raise
+
+    try:
+        yield temp_file_path
+    finally:
+        try:
+            os.remove(temp_file_path)
+        except OSError:
+            pass
 
 
 def create_empty_video(fps: int, width: int, height: int, duration: int, filename: str):
@@ -104,20 +131,7 @@ async def create_video_thumbnail(input_io: IO, width: int, height: int) -> Bytes
     """
     Generate a thumbnail image from a video file using OpenCV.
     """
-    # Create a temporary file to store the video
-    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-        temp_file_path = temp_file.name  # Store the temporary file path
-        try:
-            # Write the input BytesIO object to the temporary file
-            input_io.seek(0)
-            temp_file.write(input_io.read())
-            temp_file.flush()
-            input_io.seek(0)
-        except BaseException:
-            os.remove(temp_file_path)
-            raise
-
-    try:
+    with temp_file_from_io(input_io) as temp_file_path:
         # Use ffmpeg to generate thumbnail
         # select the most representative frame in a given sequence of consecutive frames
         # automatically from the video.
@@ -148,8 +162,6 @@ async def create_video_thumbnail(input_io: IO, width: int, height: int) -> Bytes
             return BytesIO(output)
         else:
             raise Exception(f"ffmpeg error (using {FFMPEG_PATH}): {errors.decode()}")
-    finally:
-        os.remove(temp_file_path)  # Ensure the temporary file is deleted
 
 
 async def get_video_duration(input_io: BytesIO) -> float | None:
@@ -162,19 +174,7 @@ async def get_video_duration(input_io: BytesIO) -> float | None:
     Returns:
         float: The duration of the media file in seconds.
     """
-    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-        temp_file_path = temp_file.name  # Store the temporary file path
-        try:
-            # write the input bytes to the temporary file
-            input_io.seek(0)
-            temp_file.write(input_io.read())
-            temp_file.flush()
-            input_io.seek(0)
-        except BaseException:
-            os.remove(temp_file_path)
-            raise
-
-    try:
+    with temp_file_from_io(input_io) as temp_file_path:
         cmd = [
             FFPROBE_PATH,
             "-v",
@@ -207,8 +207,6 @@ async def get_video_duration(input_io: BytesIO) -> float | None:
         else:
             log.error(f"ffprobe error (using {FFPROBE_PATH}): {errors.decode()}")
             return None
-    finally:
-        os.remove(temp_file_path)
 
 
 def get_audio_duration(source_io: BytesIO) -> float:
