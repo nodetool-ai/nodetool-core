@@ -49,3 +49,17 @@ def test_get_output_schema_basic():
 
     assert set(schema["required"]) == {"result"}
     assert schema["properties"]["result"]["type"] == "any"
+
+
+def test_edge_is_control():
+    # Test default (data)
+    edge_default = Edge(source="1", sourceHandle="out", target="2", targetHandle="in")
+    assert edge_default.is_control() is False
+
+    # Test explicit data
+    edge_data = Edge(source="1", sourceHandle="out", target="2", targetHandle="in", edge_type="data")
+    assert edge_data.is_control() is False
+
+    # Test control
+    edge_control = Edge(source="1", sourceHandle="out", target="2", targetHandle="in", edge_type="control")
+    assert edge_control.is_control() is True
