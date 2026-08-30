@@ -226,17 +226,14 @@ class JobRegistry:
             return []
         now = time.monotonic()
         expired = [
-            job_id
-            for job_id, state in cls._jobs.items()
-            if job_id != exclude and (now - state.last_activity) > ttl
+            job_id for job_id, state in cls._jobs.items() if job_id != exclude and (now - state.last_activity) > ttl
         ]
         for job_id in expired:
             state = cls._jobs.pop(job_id, None)
             if state is None:  # pragma: no cover — defensive
                 continue
             log.warning(
-                "Job %s had no activity for %.0fs and is presumed abandoned "
-                "(no job.end arrived); releasing %d node(s)",
+                "Job %s had no activity for %.0fs and is presumed abandoned (no job.end arrived); releasing %d node(s)",
                 job_id,
                 now - state.last_activity,
                 len(state.node_ids),

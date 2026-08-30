@@ -197,9 +197,7 @@ class StdioWorkerServer:
         assert self._transport is not None
         print(f"stdio worker: {error}", file=sys.stderr, flush=True)
         try:
-            await self._transport.send_msg(
-                {"type": "error", "request_id": request_id, "data": {"error": error}}
-            )
+            await self._transport.send_msg({"type": "error", "request_id": request_id, "data": {"error": error}})
         except Exception:  # pragma: no cover — pipe already gone
             pass
 

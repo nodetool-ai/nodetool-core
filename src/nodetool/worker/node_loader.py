@@ -21,6 +21,7 @@ def _discover_namespaces() -> list[str]:
     # Method 1: entry_points (group kwarg supported since Python 3.9+)
     try:
         from importlib.metadata import entry_points
+
         eps = entry_points(group="nodetool.namespaces")
 
         for ep in eps:
@@ -35,6 +36,7 @@ def _discover_namespaces() -> list[str]:
     if not namespaces:
         try:
             import importlib
+
             nodes_pkg = importlib.import_module("nodetool.nodes")
             if hasattr(nodes_pkg, "__path__"):
                 for package_path in nodes_pkg.__path__:
@@ -145,9 +147,7 @@ def _recommended_models(node_class: type[BaseNode]) -> list[dict]:
 
     result: list[dict] = []
     for model in models:
-        model_id = (
-            f"{model.repo_id}:{model.path}" if model.path is not None else model.repo_id
-        )
+        model_id = f"{model.repo_id}:{model.path}" if model.path is not None else model.repo_id
         result.append(
             UnifiedModel(
                 id=model_id,
@@ -178,10 +178,7 @@ def _normalize_default(value: Any) -> Any:
     from pydantic import BaseModel
 
     if isinstance(value, BaseModel):
-        return {
-            key: _normalize_default(item)
-            for key, item in value.model_dump().items()
-        }
+        return {key: _normalize_default(item) for key, item in value.model_dump().items()}
     if isinstance(value, Enum):
         return value.value
     if isinstance(value, list):
@@ -189,10 +186,7 @@ def _normalize_default(value: Any) -> Any:
     if isinstance(value, tuple):
         return [_normalize_default(item) for item in value]
     if isinstance(value, dict):
-        return {
-            key: _normalize_default(item)
-            for key, item in value.items()
-        }
+        return {key: _normalize_default(item) for key, item in value.items()}
     return value
 
 
@@ -251,9 +245,7 @@ def _import_node_packages(namespaces: list[str]) -> None:
             print(f"Warning: could not import {module_name}", file=sys.stderr)
             continue
         # Walk submodules to trigger registration
-        for _importer, modname, _ispkg in pkgutil.walk_packages(
-            path=pkg.__path__, prefix=pkg.__name__ + "."
-        ):
+        for _importer, modname, _ispkg in pkgutil.walk_packages(path=pkg.__path__, prefix=pkg.__name__ + "."):
             try:
                 importlib.import_module(modname)
             except Exception as e:

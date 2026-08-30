@@ -68,9 +68,7 @@ class NodeMetadata(BaseModel):
     properties: list[Property] = Field(default_factory=list, description="Properties of the node")
     outputs: list[OutputSlot] = Field(default_factory=list, description="Outputs of the node")
     the_model_info: dict[str, Any] = Field(default_factory=dict, description="HF Model info for the node")
-    recommended_models: list[UnifiedModel] = Field(
-        default_factory=list, description="Recommended models for the node"
-    )
+    recommended_models: list[UnifiedModel] = Field(default_factory=list, description="Recommended models for the node")
     basic_fields: list[str] = Field(default_factory=list, description="Basic fields of the node")
     input_fields: list[str] = Field(
         default_factory=list,
@@ -91,9 +89,7 @@ class NodeMetadata(BaseModel):
         default=False,
         description="Whether the node can declare outputs dynamically at runtime (only for dynamic nodes)",
     )
-    model_packs: list[ModelPack] = Field(
-        default_factory=list, description="Model packs associated with this node"
-    )
+    model_packs: list[ModelPack] = Field(default_factory=list, description="Model packs associated with this node")
 
 
 class ExampleMetadata(BaseModel):
@@ -114,13 +110,9 @@ class PackageModel(BaseModel):
     authors: list[str] = Field(description="Authors of the package")
     namespaces: list[str] = Field(default_factory=list, description="Namespaces provided by this package")
     repo_id: str | None = Field(default=None, description="Repository ID in the format <owner>/<project>")
-    nodes: list[NodeMetadata] | None = Field(
-        default_factory=list, description="List of nodes provided by this package"
-    )
+    nodes: list[NodeMetadata] | None = Field(default_factory=list, description="List of nodes provided by this package")
     git_hash: str | None = Field(default=None, description="Git commit hash of the package")
-    assets: list[AssetInfo] | None = Field(
-        default_factory=list, description="List of assets provided by this package"
-    )
+    assets: list[AssetInfo] | None = Field(default_factory=list, description="List of assets provided by this package")
     examples: list[ExampleMetadata] | None = Field(
         default_factory=list, description="List of examples provided by this package"
     )
@@ -173,17 +165,11 @@ def get_node_classes_from_module(module_name: str, verbose: bool = False) -> lis
     for _name, obj in inspect.getmembers(module):
         if inspect.isclass(obj):
             has_abstract_method = any(
-                getattr(member, "__isabstractmethod__", False)
-                for _, member in inspect.getmembers(obj)
+                getattr(member, "__isabstractmethod__", False) for _, member in inspect.getmembers(obj)
             )
             if has_abstract_method:
                 continue
-        if (
-            inspect.isclass(obj)
-            and issubclass(obj, BaseNode)
-            and obj is not BaseNode
-            and obj.__module__ == module_name
-        ):
+        if inspect.isclass(obj) and issubclass(obj, BaseNode) and obj is not BaseNode and obj.__module__ == module_name:
             node_classes.append(obj)
             if verbose:
                 logger.debug(f"Found node class: {obj.__name__} in {module_name}")

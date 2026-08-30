@@ -86,9 +86,7 @@ class WorkerServer:
                         if isinstance(raw_message, (bytes, bytearray))
                         else str(raw_message).encode("utf-8", "replace")
                     )
-                    await send_frame_error(
-                        salvage_request_id(bytes(payload)), f"Malformed msgpack frame: {e}"
-                    )
+                    await send_frame_error(salvage_request_id(bytes(payload)), f"Malformed msgpack frame: {e}")
                     continue
                 if not isinstance(msg, dict):
                     await send_frame_error(None, f"Expected a msgpack map, got {type(msg).__name__}")

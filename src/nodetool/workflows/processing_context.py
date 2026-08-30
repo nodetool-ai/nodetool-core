@@ -471,10 +471,7 @@ class ProcessingContext:
                 # Strip sensitive headers on cross-origin redirect
                 if urlparse(current_url).hostname != urlparse(new_url).hostname:
                     if "headers" in kwargs and isinstance(kwargs["headers"], dict):
-                        kwargs["headers"] = {
-                            k: v for k, v in kwargs["headers"].items()
-                            if k.lower() != "authorization"
-                        }
+                        kwargs["headers"] = {k: v for k, v in kwargs["headers"].items() if k.lower() != "authorization"}
 
                 current_url = new_url
 

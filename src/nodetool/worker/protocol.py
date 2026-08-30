@@ -43,13 +43,19 @@ class WorkerProtocolServer:
     def __init__(self, *, transport_name: str):
         self._nodes_metadata: list[dict[str, Any]] = []
         self._cancel_flags: dict[str, asyncio.Event] = {}
-        self._execute_handler: Callable[[
-            dict[str, Any],
-            asyncio.Event,
-            Callable[[dict[str, Any]], Awaitable[None]],
-            Callable[[dict[str, Any]], Awaitable[None]] | None,
-            Callable[[dict[str, Any]], Awaitable[None]] | None,
-        ], Awaitable[dict[str, Any]]] | None = None
+        self._execute_handler: (
+            Callable[
+                [
+                    dict[str, Any],
+                    asyncio.Event,
+                    Callable[[dict[str, Any]], Awaitable[None]],
+                    Callable[[dict[str, Any]], Awaitable[None]] | None,
+                    Callable[[dict[str, Any]], Awaitable[None]] | None,
+                ],
+                Awaitable[dict[str, Any]],
+            ]
+            | None
+        ) = None
         self._load_errors: list[dict[str, Any]] = []
         self._namespaces: list[str] = []
         self._transport_name = transport_name
@@ -65,13 +71,16 @@ class WorkerProtocolServer:
 
     def set_execute_handler(
         self,
-        handler: Callable[[
-            dict[str, Any],
-            asyncio.Event,
-            Callable[[dict[str, Any]], Awaitable[None]],
-            Callable[[dict[str, Any]], Awaitable[None]] | None,
-            Callable[[dict[str, Any]], Awaitable[None]] | None,
-        ], Awaitable[dict[str, Any]]],
+        handler: Callable[
+            [
+                dict[str, Any],
+                asyncio.Event,
+                Callable[[dict[str, Any]], Awaitable[None]],
+                Callable[[dict[str, Any]], Awaitable[None]] | None,
+                Callable[[dict[str, Any]], Awaitable[None]] | None,
+            ],
+            Awaitable[dict[str, Any]],
+        ],
     ) -> None:
         self._execute_handler = handler
 
@@ -83,15 +92,17 @@ class WorkerProtocolServer:
         request_id: str | None = raw_request_id if isinstance(raw_request_id, str) else None
 
         if msg_type == "discover":
-            await transport.send_msg({
-                "type": "discover",
-                "request_id": request_id,
-                "data": {
-                    "protocol_version": BRIDGE_PROTOCOL_VERSION,
-                    "nodes": self._nodes_metadata,
-                    "load_errors": self._load_errors,
-                },
-            })
+            await transport.send_msg(
+                {
+                    "type": "discover",
+                    "request_id": request_id,
+                    "data": {
+                        "protocol_version": BRIDGE_PROTOCOL_VERSION,
+                        "nodes": self._nodes_metadata,
+                        "load_errors": self._load_errors,
+                    },
+                }
+            )
             return
 
         if msg_type == "worker.status":
@@ -108,11 +119,13 @@ class WorkerProtocolServer:
                 max_frame_size=MAX_BRIDGE_FRAME_SIZE,
                 comfy=get_comfy_info(),
             )
-            await transport.send_msg({
-                "type": "result",
-                "request_id": request_id,
-                "data": status.to_dict(),
-            })
+            await transport.send_msg(
+                {
+                    "type": "result",
+                    "request_id": request_id,
+                    "data": status.to_dict(),
+                }
+            )
             return
 
         if msg_type in ("execute", "execute.stream"):
@@ -124,58 +137,64 @@ class WorkerProtocolServer:
                     raise RuntimeError("No execute handler registered")
 
                 async def emit_progress(progress: dict[str, Any]) -> None:
-                    await transport.send_msg({
-                        "type": "progress",
-                        "request_id": request_id,
-                        "data": progress,
-                    })
+                    await transport.send_msg(
+                        {
+                            "type": "progress",
+                            "request_id": request_id,
+                            "data": progress,
+                        }
+                    )
 
                 emit_chunk: Callable[[dict[str, Any]], Awaitable[None]] | None = None
                 if msg_type == "execute.stream":
+
                     async def _emit_chunk(chunk: dict[str, Any]) -> None:
-                        await transport.send_msg({
-                            "type": "chunk",
-                            "request_id": request_id,
-                            "data": chunk,
-                        })
+                        await transport.send_msg(
+                            {
+                                "type": "chunk",
+                                "request_id": request_id,
+                                "data": chunk,
+                            }
+                        )
+
                     emit_chunk = _emit_chunk
 
                 # Non-progress updates a client can render live (previews,
                 # logs, binary payloads). The data dict is the serialized
                 # message, discriminated by its "type" field.
                 async def emit_update(update: dict[str, Any]) -> None:
-                    await transport.send_msg({
-                        "type": "update",
-                        "request_id": request_id,
-                        "data": update,
-                    })
+                    await transport.send_msg(
+                        {
+                            "type": "update",
+                            "request_id": request_id,
+                            "data": update,
+                        }
+                    )
 
-                result = await self._execute_handler(
-                    msg["data"], cancel_event, emit_progress, emit_chunk, emit_update
-                )
+                result = await self._execute_handler(msg["data"], cancel_event, emit_progress, emit_chunk, emit_update)
                 # For execute.stream, the per-chunk frames already carried the
                 # outputs/blobs. The result frame is just a terminator so the
                 # bridge can close the stream — keep its data empty to match
                 # the pre-protocol-refactor wire contract.
-                result_data = (
-                    {"outputs": {}, "blobs": {}}
-                    if msg_type == "execute.stream"
-                    else result
+                result_data = {"outputs": {}, "blobs": {}} if msg_type == "execute.stream" else result
+                await transport.send_msg(
+                    {
+                        "type": "result",
+                        "request_id": request_id,
+                        "data": result_data,
+                    }
                 )
-                await transport.send_msg({
-                    "type": "result",
-                    "request_id": request_id,
-                    "data": result_data,
-                })
             except Exception as e:
-                await transport.send_msg({
-                    "type": "error",
-                    "request_id": request_id,
-                    "data": {
-                        "error": str(e),
-                        "traceback": traceback.format_exc(),
-                    },
-                })
+                await transport.send_msg(
+                    {
+                        "type": "error",
+                        "request_id": request_id,
+                        "data": {
+                            "error": str(e),
+                            "traceback": traceback.format_exc(),
+                        },
+                    }
+                )
             finally:
                 if request_id:
                     self._cancel_flags.pop(request_id, None)
@@ -234,8 +253,10 @@ class WorkerProtocolServer:
             )
             return
 
-        await transport.send_msg({
-            "type": "error",
-            "request_id": request_id,
-            "data": {"error": f"Unknown message type: {msg_type}"},
-        })
+        await transport.send_msg(
+            {
+                "type": "error",
+                "request_id": request_id,
+                "data": {"error": f"Unknown message type: {msg_type}"},
+            }
+        )

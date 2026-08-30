@@ -723,10 +723,7 @@ class ModelManager:
         if node_ids is not None:
             requested = set(node_ids)
             keep_referenced = {
-                key
-                for owner, keys in cls._models_by_node.items()
-                if owner not in requested
-                for key in keys
+                key for owner, keys in cls._models_by_node.items() if owner not in requested for key in keys
             }
             candidates = [
                 key
@@ -768,9 +765,7 @@ class ModelManager:
             footprint = cls._cuda_tensor_footprint(model)
             if footprint:
                 freed_bytes += sum(
-                    nbytes
-                    for tensor_id, nbytes in footprint.items()
-                    if tensor_id not in credited_tensor_ids
+                    nbytes for tensor_id, nbytes in footprint.items() if tensor_id not in credited_tensor_ids
                 )
                 credited_tensor_ids.update(footprint)
             else:
@@ -1312,7 +1307,9 @@ class ModelManager:
         # sit reserved-but-unallocated, and counting them as a shortfall makes a
         # healthy steady state look like a leak.
         max_percent, min_available = cls._get_vram_thresholds()
-        used_percent = ((snapshot.total_gb - snapshot.usable_gb) / snapshot.total_gb) * 100.0 if snapshot.total_gb > 0 else 0.0
+        used_percent = (
+            ((snapshot.total_gb - snapshot.usable_gb) / snapshot.total_gb) * 100.0 if snapshot.total_gb > 0 else 0.0
+        )
         if used_percent >= max_percent or snapshot.usable_gb <= min_available:
             return True
         return bool(required_free_gb is not None and snapshot.usable_gb < required_free_gb)

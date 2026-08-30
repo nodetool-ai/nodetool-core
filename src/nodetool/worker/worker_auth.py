@@ -59,9 +59,7 @@ def make_process_request() -> Callable[[ServerConnection, Request], Response | N
         :class:`~websockets.http11.Response` to abort it before any frame.
     """
 
-    def process_request(
-        connection: ServerConnection, request: Request
-    ) -> Response | None:
+    def process_request(connection: ServerConnection, request: Request) -> Response | None:
         expected_token = os.environ.get("NODETOOL_WORKER_TOKEN")
         if authorize(request.headers.get("Authorization"), expected_token):
             return None

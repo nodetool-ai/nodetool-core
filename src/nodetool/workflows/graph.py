@@ -445,6 +445,8 @@ class Graph(BaseModel):
             key = (edge.target, edge.targetHandle)
             edges_by_target_handle[key].append(edge)
 
+        source_cache = {}
+
         # Validate each target handle
         for (target_id, handle), edges in edges_by_target_handle.items():
             target_node = self.find_node(target_id)
@@ -461,11 +463,17 @@ class Graph(BaseModel):
                 if type(target_node).is_dynamic():
                     # Still validate source outputs exist for dynamic nodes
                     for edge in edges:
-                        source_node = self.find_node(edge.source)
+                        source_key = (edge.source, edge.sourceHandle)
+                        if source_key not in source_cache:
+                            sn = self.find_node(edge.source)
+                            so = sn.find_output_instance(edge.sourceHandle) if sn else None
+                            source_cache[source_key] = (sn, so)
+
+                        source_node, source_output = source_cache[source_key]
+
                         if not source_node:
                             validation_errors.append(f"Source node '{edge.source}' not found for edge")
                             continue
-                        source_output = source_node.find_output_instance(edge.sourceHandle)
                         if not source_output:
                             validation_errors.append(
                                 f"{edge.target}: Output '{edge.sourceHandle}' not found on source node {source_node.__class__.__name__}"
@@ -495,12 +503,18 @@ class Graph(BaseModel):
                 element_type = target_type.type_args[0] if target_type.type_args else TypeMetadata(type="any")
 
                 for edge in edges:
-                    source_node = self.find_node(edge.source)
+                    source_key = (edge.source, edge.sourceHandle)
+                    if source_key not in source_cache:
+                        sn = self.find_node(edge.source)
+                        so = sn.find_output_instance(edge.sourceHandle) if sn else None
+                        source_cache[source_key] = (sn, so)
+
+                    source_node, source_output = source_cache[source_key]
+
                     if not source_node:
                         validation_errors.append(f"Source node '{edge.source}' not found for edge")
                         continue
 
-                    source_output = source_node.find_output_instance(edge.sourceHandle)
                     if not source_output:
                         validation_errors.append(
                             f"{edge.target}: Output '{edge.sourceHandle}' not found on source node {source_node.__class__.__name__}"
@@ -525,12 +539,18 @@ class Graph(BaseModel):
             else:
                 # Single edge - standard validation
                 edge = edges[0]
-                source_node = self.find_node(edge.source)
+                source_key = (edge.source, edge.sourceHandle)
+                if source_key not in source_cache:
+                    sn = self.find_node(edge.source)
+                    so = sn.find_output_instance(edge.sourceHandle) if sn else None
+                    source_cache[source_key] = (sn, so)
+
+                source_node, source_output = source_cache[source_key]
+
                 if not source_node:
                     validation_errors.append(f"Source node '{edge.source}' not found for edge")
                     continue
 
-                source_output = source_node.find_output_instance(edge.sourceHandle)
                 if not source_output:
                     validation_errors.append(
                         f"{edge.target}: Output '{edge.sourceHandle}' not found on source node {source_node.__class__.__name__}"

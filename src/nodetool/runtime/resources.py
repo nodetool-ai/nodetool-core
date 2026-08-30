@@ -15,9 +15,7 @@ from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
 
-_current_scope: contextvars.ContextVar[Optional[ResourceScope]] = contextvars.ContextVar(
-    "_current_scope", default=None
-)
+_current_scope: contextvars.ContextVar[Optional[ResourceScope]] = contextvars.ContextVar("_current_scope", default=None)
 
 
 def require_scope() -> ResourceScope:

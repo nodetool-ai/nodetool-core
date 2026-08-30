@@ -1030,11 +1030,7 @@ class BaseNode(BaseModel):
         # optional `--enrich` scan step decorates these with size/tags/etc.
         return [
             UnifiedModel(
-                id=(
-                    f"{model.repo_id}:{model.path}"
-                    if model.path is not None
-                    else model.repo_id
-                ),
+                id=(f"{model.repo_id}:{model.path}" if model.path is not None else model.repo_id),
                 repo_id=model.repo_id,
                 path=model.path,
                 type=model.type,
@@ -1907,11 +1903,7 @@ class BaseNode(BaseModel):
         """
         Returns OutputSlot objects for instance dynamic outputs.
         """
-        stream_kinds = (
-            self.__class__.output_stream_kinds()
-            if self.__class__.is_streaming_output()
-            else {}
-        )
+        stream_kinds = self.__class__.output_stream_kinds() if self.__class__.is_streaming_output() else {}
         return [
             OutputSlot(
                 type=tm,

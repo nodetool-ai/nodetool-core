@@ -282,9 +282,11 @@ class MemoryTracker:
 # DETAILED GPU TRACING UTILITIES
 # =============================================================================
 
+
 @dataclass
 class GPUTraceSnapshot:
     """A snapshot of GPU memory state at a specific point in time."""
+
     timestamp: float
     label: str
     ram_mb: float
@@ -299,6 +301,7 @@ class GPUTraceSnapshot:
 @dataclass
 class IterationStats:
     """Statistics for a single iteration in a traced loop."""
+
     iteration: int
     start_time: float
     end_time: float = 0.0
@@ -389,9 +392,7 @@ class GPUTraceSession:
             avg_growth_per_iter = total_growth / len(self.iterations)
 
             if avg_growth_per_iter > 10:  # More than 10MB per iteration
-                self._log(
-                    f"[GPU TRACE] WARNING: Average growth of {avg_growth_per_iter:.2f}MB per iteration detected!"
-                )
+                self._log(f"[GPU TRACE] WARNING: Average growth of {avg_growth_per_iter:.2f}MB per iteration detected!")
                 self._log(self._format_top_growth_iterations(5))
 
     @contextmanager
@@ -468,6 +469,7 @@ class GPUTraceSession:
         gpu_max_reserved = None
         try:
             import torch
+
             if torch.cuda.is_available():
                 gpu_max_allocated = torch.cuda.max_memory_allocated() / (1024 * 1024)
                 gpu_max_reserved = torch.cuda.max_memory_reserved() / (1024 * 1024)
@@ -502,6 +504,7 @@ class GPUTraceSession:
         """Count tensors by device (expensive operation)."""
         try:
             import torch
+
             counts = defaultdict(int)
             for obj in gc.get_objects():
                 try:
@@ -518,10 +521,7 @@ class GPUTraceSession:
         """Get a summary of the current stack frame."""
         frames = traceback.format_stack()
         # Filter out frames from this module
-        filtered = [
-            f for f in frames
-            if "memory_utils.py" not in f and "<frozen" not in f
-        ]
+        filtered = [f for f in frames if "memory_utils.py" not in f and "<frozen" not in f]
         # Keep only last 5 frames
         return filtered[-5:] if len(filtered) > 5 else filtered
 
@@ -555,11 +555,7 @@ class GPUTraceSession:
 
     def _format_top_growth_iterations(self, n: int) -> str:
         """Format the top N iterations with highest GPU memory growth."""
-        sorted_iters = sorted(
-            self.iterations,
-            key=lambda x: x.delta_allocated,
-            reverse=True
-        )[:n]
+        sorted_iters = sorted(self.iterations, key=lambda x: x.delta_allocated, reverse=True)[:n]
 
         lines = [f"[GPU TRACE] Top {n} iterations with highest GPU growth:"]
         for stats in sorted_iters:
@@ -612,13 +608,13 @@ class GPUTraceSession:
 
         # Categorize iterations
         stable = sum(1 for d in deltas if abs(d) < 1.0)  # < 1MB change
-        growing = sum(1 for d in deltas if d > 1.0)       # > 1MB growth
-        shrinking = sum(1 for d in deltas if d < -1.0)    # > 1MB freed
+        growing = sum(1 for d in deltas if d > 1.0)  # > 1MB growth
+        shrinking = sum(1 for d in deltas if d < -1.0)  # > 1MB freed
 
         # Calculate trend
         if len(deltas) >= 10:
-            first_half_avg = sum(deltas[:len(deltas)//2]) / (len(deltas)//2)
-            second_half_avg = sum(deltas[len(deltas)//2:]) / (len(deltas) - len(deltas)//2)
+            first_half_avg = sum(deltas[: len(deltas) // 2]) / (len(deltas) // 2)
+            second_half_avg = sum(deltas[len(deltas) // 2 :]) / (len(deltas) - len(deltas) // 2)
         else:
             first_half_avg = second_half_avg = sum(deltas) / len(deltas)
 
@@ -727,7 +723,7 @@ class GPUIterationTracer:
 
         return (
             f"[GPU TRACE] Summary: {len(iterations)} iters, "
-            f"{total_growth:+.2f}MB GPU growth ({total_growth/len(iterations):+.3f}MB/iter), "
+            f"{total_growth:+.2f}MB GPU growth ({total_growth / len(iterations):+.3f}MB/iter), "
             f"{avg_iter_time:.1f}ms avg time"
         )
 
@@ -774,6 +770,7 @@ def trace_gpu_iterations(
 # DEBUG UTILITIES FOR GPU MEMORY ANALYSIS
 # =============================================================================
 
+
 def get_gpu_memory_breakdown() -> dict:
     """
     Get a detailed breakdown of GPU memory usage.
@@ -804,13 +801,15 @@ def get_gpu_memory_breakdown() -> dict:
 
         for i in range(torch.cuda.device_count()):
             device_props = torch.cuda.get_device_properties(i)
-            result["devices"].append({
-                "id": i,
-                "name": device_props.name,
-                "total_memory_mb": device_props.total_memory / (1024 * 1024),
-                "allocated_mb": torch.cuda.memory_allocated(i) / (1024 * 1024),
-                "reserved_mb": torch.cuda.memory_reserved(i) / (1024 * 1024),
-            })
+            result["devices"].append(
+                {
+                    "id": i,
+                    "name": device_props.name,
+                    "total_memory_mb": device_props.total_memory / (1024 * 1024),
+                    "allocated_mb": torch.cuda.memory_allocated(i) / (1024 * 1024),
+                    "reserved_mb": torch.cuda.memory_reserved(i) / (1024 * 1024),
+                }
+            )
     except ImportError:
         pass
 
@@ -842,6 +841,7 @@ def reset_gpu_memory_stats() -> None:
     """Reset PyTorch GPU memory stats (max values)."""
     try:
         import torch
+
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
             log.info("[GPU] Reset peak memory stats")

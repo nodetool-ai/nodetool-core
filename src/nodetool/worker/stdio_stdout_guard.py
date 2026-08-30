@@ -30,9 +30,7 @@ class _ProtocolStdoutBuffer:
         while written < total:
             n = os.write(self._fd, view[written:])
             if n <= 0:
-                raise OSError(
-                    f"Protocol stdout write made no progress ({written}/{total} bytes written)"
-                )
+                raise OSError(f"Protocol stdout write made no progress ({written}/{total} bytes written)")
             written += n
         return written
 
@@ -47,9 +45,7 @@ class _ProtocolStdoutBuffer:
 def get_protocol_stdout_buffer() -> BinaryIO:
     """Return the binary stream used exclusively for length-prefixed bridge frames."""
     if _protocol_stdout_fd is None:
-        raise RuntimeError(
-            "Protocol stdout is not initialized; call install_stdio_stdout_guard() first"
-        )
+        raise RuntimeError("Protocol stdout is not initialized; call install_stdio_stdout_guard() first")
     return cast("BinaryIO", _ProtocolStdoutBuffer(_protocol_stdout_fd))
 
 

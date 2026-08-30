@@ -40,9 +40,7 @@ def _model_size_from_info(model: Any, model_info: Any) -> int | None:
     )
 
 
-async def enrich_nodes_with_model_info(
-    nodes: list[NodeMetadata], verbose: bool = False
-) -> tuple[int, int]:
+async def enrich_nodes_with_model_info(nodes: list[NodeMetadata], verbose: bool = False) -> tuple[int, int]:
     """Fetch HF model metadata to populate recommended model details.
 
     Returns (ok, failed) — counts of repo fetches that succeeded/failed.
@@ -120,10 +118,7 @@ async def enrich_nodes_with_model_info(
                 updates["downloads"] = info.downloads
             if getattr(model, "likes", None) is None and getattr(info, "likes", None) is not None:
                 updates["likes"] = info.likes
-            if (
-                getattr(model, "trending_score", None) is None
-                and getattr(info, "trending_score", None) is not None
-            ):
+            if getattr(model, "trending_score", None) is None and getattr(info, "trending_score", None) is not None:
                 updates["trending_score"] = info.trending_score
 
             if updates:

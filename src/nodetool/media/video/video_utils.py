@@ -57,6 +57,7 @@ def _legacy_export_to_video(
         raise ValueError(f"Unsupported frame type: {type(first_frame)}")
 
     import itertools
+
     video_frames_iter = itertools.chain([first_frame], iterator)
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
@@ -140,6 +141,7 @@ def export_to_video(
         raise IndexError("list index out of range") from None
 
     import itertools
+
     video_frames_iter = itertools.chain([first_frame], iterator)
 
     # Export using imageio
@@ -220,6 +222,7 @@ def export_to_video_bytes(
         raise IndexError("list index out of range") from None
 
     import itertools
+
     video_frames_iter = itertools.chain([first_frame], iterator)
 
     # Export using imageio to bytes
@@ -275,6 +278,7 @@ def _legacy_export_to_video_bytes(
         raise ValueError(f"Unsupported frame type: {type(first_frame)}")
 
     import itertools
+
     video_frames_iter = itertools.chain([first_frame], iterator)
 
     import os

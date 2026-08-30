@@ -327,9 +327,7 @@ async def hf_head_metadata(
                 break
             current_url = target
         else:
-            raise RuntimeError(
-                f"Too many redirects (>{_MAX_METADATA_REDIRECTS}) resolving metadata for url={url!r}"
-            )
+            raise RuntimeError(f"Too many redirects (>{_MAX_METADATA_REDIRECTS}) resolving metadata for url={url!r}")
     except httpx.HTTPStatusError as e:
         if e.response.status_code in (401, 403):
             raise PermissionError(
@@ -586,9 +584,7 @@ async def async_hf_download(
         # question actually being asked (does this *name* escape?) without
         # consulting the filesystem.
         snapshot_root_resolved = snapshot_root.resolve()
-        if not Path(
-            os.path.normpath(snapshot_root_resolved / safe_filename)
-        ).is_relative_to(snapshot_root_resolved):
+        if not Path(os.path.normpath(snapshot_root_resolved / safe_filename)).is_relative_to(snapshot_root_resolved):
             raise ValueError(f"Filename escapes snapshot directory: {filename!r}")
         blob_path = blobs_dir / safe_etag
 

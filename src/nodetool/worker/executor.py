@@ -359,9 +359,7 @@ async def execute_node(
                     reason=f"Preparing to execute node {node_type}",
                     required_free_gb=requires_vram_gb,
                 )
-                node = await _prepare_node(
-                    node_class, fields, input_blobs, temp_dir, ctx, node_id=node_id
-                )
+                node = await _prepare_node(node_class, fields, input_blobs, temp_dir, ctx, node_id=node_id)
                 ctx.raise_if_cancelled()
                 if node.is_streaming_output():
                     if emit_chunk is not None:
@@ -625,9 +623,7 @@ def _is_binary_payload(payload: Any) -> bool:
     """True when an AssetRef's ``data`` holds raw bytes rather than a payload."""
     if isinstance(payload, (bytes, bytearray, memoryview)):
         return True
-    return isinstance(payload, list) and any(
-        isinstance(item, (bytes, bytearray, memoryview)) for item in payload
-    )
+    return isinstance(payload, list) and any(isinstance(item, (bytes, bytearray, memoryview)) for item in payload)
 
 
 def _strip_binary_payloads(obj: Any) -> Any:
