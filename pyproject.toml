@@ -24,8 +24,6 @@ dependencies = [
     # Node execution utilities
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.2",
-    "keyring>=25.5.0",
-    "cryptography>=46.0.7",
     "psutil>=6.1.0",
     "tqdm>=4.67.0",
 
@@ -44,12 +42,6 @@ dependencies = [
 nodetool-pkg = "nodetool.package_tools.__main__:main"
 
 [project.optional-dependencies]
-# Vectorstore nodes (chromadb + langchain)
-vectorstore = [
-    "chromadb>=1.4.0",
-    "langchain-text-splitters==1.1.2",
-    "bs4==0.0.2",
-]
 # Document processing nodes
 documents = [
     "html2text",
