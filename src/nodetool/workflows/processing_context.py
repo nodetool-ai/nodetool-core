@@ -25,7 +25,6 @@ if TYPE_CHECKING:
     import pandas as pd
     import PIL.Image
     import PIL.ImageOps
-    from chromadb.api import ClientAPI
     from pydub import AudioSegment
     from sklearn.base import BaseEstimator  # type: ignore
 
@@ -41,9 +40,6 @@ from typing import IO, Any, AsyncGenerator, Callable
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-
-# NOTE: ChromaDB imports are done lazily in get_chroma_client() to avoid
-# heavy initialization of chromadb/langchain during CLI startup
 from nodetool.io.uri_utils import create_file_uri as _create_file_uri
 from nodetool.media.common.media_constants import (
     DEFAULT_AUDIO_SAMPLE_RATE,
@@ -300,7 +296,6 @@ class ProcessingContext:
         encode_assets_as_base64: bool = False,
         upload_assets_to_s3: bool = False,
         asset_output_mode: AssetOutputMode | None = None,
-        chroma_client: ClientAPI | None = None,
         workspace_dir: str | None = None,
         http_client: httpx.AsyncClient | None = None,
         tool_bridge: Any | None = None,
@@ -330,7 +325,6 @@ class ProcessingContext:
                 self.asset_output_mode = AssetOutputMode.PYTHON
         else:
             self.asset_output_mode = asset_output_mode
-        self.chroma_client = chroma_client
         # HTTP client is now managed by ResourceScope to ensure correct event loop binding
         # Store passed client only as fallback if no scope is available
         if http_client is not None:
