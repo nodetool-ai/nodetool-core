@@ -1550,7 +1550,7 @@ class ProcessingContext:
         elif data.dtype in (np.float32, np.float64):
             # Convert float to int16 range using 32768.0 for proper scaling
             # This ensures -1.0 maps to -32768 and values close to 1.0 map to 32767
-            data_int16 = (data * data.dtype.type(32768.0)).clip(-32768, 32767).astype(np.int16)
+            data_int16 = (np.asarray(data, dtype=np.float32) * np.float32(32768.0)).clip(-32768, 32767).astype(np.int16)
             data_bytes = data_int16.tobytes()
             sample_width = 2
             format_str = "pcm_s16le"
@@ -1649,7 +1649,7 @@ class ProcessingContext:
         elif dtype == "float64" and samples.dtype == np.int16:
             samples = samples.astype(np.float64) / 32768.0
         elif dtype == "int16" and samples.dtype in (np.float32, np.float64):
-            samples = (samples * samples.dtype.type(32768.0)).clip(-32768, 32767).astype(np.int16)
+            samples = (np.asarray(samples, dtype=np.float32) * np.float32(32768.0)).clip(-32768, 32767).astype(np.int16)
         elif dtype != str(samples.dtype):
             samples = samples.astype(dtype)
 
