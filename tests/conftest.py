@@ -21,7 +21,6 @@ from nodetool.types.api_graph import Edge, Node
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.processing_context import ProcessingContext
 
-
 configure_logging("DEBUG")
 
 
@@ -56,34 +55,6 @@ def _set_dummy_api_keys(monkeypatch):
     monkeypatch.setenv("REPLICATE_API_TOKEN", os.getenv("REPLICATE_API_TOKEN", "test-replicate-token"))
     monkeypatch.setenv("ELEVENLABS_API_KEY", os.getenv("ELEVENLABS_API_KEY", "test-elevenlabs-key"))
     monkeypatch.setenv("FAL_API_KEY", os.getenv("FAL_API_KEY", "test-fal-key"))
-
-
-@pytest.fixture(autouse=True)
-def mock_keyring(monkeypatch):
-    import keyring
-    from nodetool.security.master_key import MasterKeyManager
-
-    store: dict[tuple[str, str], str] = {}
-
-    def get_password(service: str, username: str) -> str | None:
-        return store.get((service, username))
-
-    def set_password(service: str, username: str, password: str) -> None:
-        store[(service, username)] = password
-
-    def delete_password(service: str, username: str) -> None:
-        store.pop((service, username), None)
-
-    monkeypatch.setattr(keyring, "get_password", get_password)
-    monkeypatch.setattr(keyring, "set_password", set_password)
-    monkeypatch.setattr(keyring, "delete_password", delete_password)
-
-    MasterKeyManager.clear_cache()
-    try:
-        yield
-    finally:
-        store.clear()
-        MasterKeyManager.clear_cache()
 
 
 @pytest.fixture(scope="session")
