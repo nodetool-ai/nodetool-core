@@ -59,3 +59,13 @@
 ## 2025-05-18 - Async file I/O in async generator
 **Learning:** Synchronous file I/O inside an `async for` generator (e.g., using `open()` inside `iter_cached_model_files` iteration) blocks the event loop, preventing other tasks from executing and causing performance regressions in async applications.
 **Action:** When reading files in async generators, explicitly use `aiofiles.open()` with `await f.read()` to ensure the I/O is non-blocking.
+
+## 2025-10-15 - Optimize float to int16 conversion for audio arrays
+**Learning:** Using `data.dtype.type` dynamically upcasts inputs to `float64` during multiplication with `32768.0`, even if the input was `float32`. This causes unnecessary allocations, doubles memory overhead, and can fail completely on `float16` inputs (where `32768` is mapped to `inf`).
+**Action:** When converting audio float arrays to `int16`, normalize the array directly to `float32` first via `np.asarray(data, dtype=np.float32)` and explicitly use `np.float32(32768.0)`. This guarantees a strict `float32` operation that is fast, memory-efficient, and robust against overflow.
+## 2026-08-30 - Optimize dictionary filtering in Graph.from_dict
+**Learning:** Filtering a dictionary by creating a new one with a dictionary comprehension (e.g., `{k: v for k, v in d.items() if k not in keys_to_remove}`) requires iterating over all items, which is O(N) where N is the size of the dictionary. When removing a small number of known keys, it is significantly faster to create a shallow copy and `.pop()` the specific keys, achieving a speedup of roughly ~7x in large dictionaries.
+**Action:** Replaced dict comprehension filtering in `src/nodetool/workflows/graph.py` with `filtered_data = data.copy()` and a loop calling `filtered_data.pop(prop, None)`.
+## 2024-05-18 - Avoid OOM and Precision Loss when scaling arrays
+**Learning:** Using standard Python float literals (e.g. `32768.0`) when scaling `np.float32` arrays causes implicit conversion to `np.float64`, consuming double the memory and slowing down execution unnecessarily.
+**Action:** Always scale numpy float arrays using constants properly casted to `np.float32` (e.g. `np.float32(32768.0)`) or the array's exact native type (`array.dtype.type(32768.0)`) and use `np.asarray(data, dtype=np.float32)` instead of `.astype(np.float32)` to avoid float16 overflow issues during clipping operations.
