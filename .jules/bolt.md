@@ -60,3 +60,6 @@
 ## 2026-08-30 - Optimize dictionary filtering in Graph.from_dict
 **Learning:** Filtering a dictionary by creating a new one with a dictionary comprehension (e.g., `{k: v for k, v in d.items() if k not in keys_to_remove}`) requires iterating over all items, which is O(N) where N is the size of the dictionary. When removing a small number of known keys, it is significantly faster to create a shallow copy and `.pop()` the specific keys, achieving a speedup of roughly ~7x in large dictionaries.
 **Action:** Replaced dict comprehension filtering in `src/nodetool/workflows/graph.py` with `filtered_data = data.copy()` and a loop calling `filtered_data.pop(prop, None)`.
+## 2024-05-18 - Avoid OOM and Precision Loss when scaling arrays
+**Learning:** Using standard Python float literals (e.g. `32768.0`) when scaling `np.float32` arrays causes implicit conversion to `np.float64`, consuming double the memory and slowing down execution unnecessarily.
+**Action:** Always scale numpy float arrays using constants properly casted to `np.float32` (e.g. `np.float32(32768.0)`) or the array's exact native type (`array.dtype.type(32768.0)`) and use `np.asarray(data, dtype=np.float32)` instead of `.astype(np.float32)` to avoid float16 overflow issues during clipping operations.
