@@ -8,6 +8,11 @@ from nodetool.types.api_graph import (
 )
 
 
+def test_node_get_node_type():
+    node = Node(id="test_id", type="custom.NodeType")
+    assert node.get_node_type() == "custom.NodeType"
+
+
 def test_remove_connected_slots():
     node1 = Node(id="1", type="nodetool.input.IntegerInput", data={"value": 1})
     node2 = Node(id="2", type="custom", data={"slot1": "a", "slot2": "b"})
