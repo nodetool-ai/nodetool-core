@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urljoin, urlparse
 
+import aiofiles
 import aiohttp
 
 from nodetool.utils.network import SSRFProtectResolver, is_ip_private
@@ -266,7 +267,7 @@ def _patch_blob_refs(obj: Any, uploads: dict[str, str]) -> Any:
     if isinstance(obj, list):
         return [_patch_blob_refs(v, uploads) for v in obj]
     if isinstance(obj, str) and obj.startswith("blob:"):
-        key = obj[len("blob:"):]
+        key = obj[len("blob:") :]
         if key not in uploads:
             raise ComfyError(f"Workflow references input blob '{key}' but no such blob was sent")
         return uploads[key]
@@ -294,11 +295,7 @@ async def _upload_input_blobs(
 
 
 def _looks_like_file_output(values: Any) -> bool:
-    return (
-        isinstance(values, list)
-        and len(values) > 0
-        and all(isinstance(v, dict) and "filename" in v for v in values)
-    )
+    return isinstance(values, list) and len(values) > 0 and all(isinstance(v, dict) and "filename" in v for v in values)
 
 
 async def _collect_outputs(
@@ -336,9 +333,7 @@ async def _collect_outputs(
                 if file_type == "temp" and not include_temp:
                     entries.append(meta)
                     continue
-                data, content_type = await client.view(
-                    item["filename"], item.get("subfolder", ""), file_type
-                )
+                data, content_type = await client.view(item["filename"], item.get("subfolder", ""), file_type)
                 blob_key = f"{node_id}/{slot}/{index}/{item['filename']}"
                 blobs[blob_key] = data
                 meta["content_type"] = content_type
@@ -443,11 +438,14 @@ async def _handle_execute(
                 if not prompt_id:
                     raise ComfyError(f"ComfyUI POST /prompt returned no prompt_id: {submit}")
 
-                await send_event(request_id, {
-                    "event": "queued",
-                    "prompt_id": prompt_id,
-                    "queue_position": submit.get("number"),
-                })
+                await send_event(
+                    request_id,
+                    {
+                        "event": "queued",
+                        "prompt_id": prompt_id,
+                        "queue_position": submit.get("number"),
+                    },
+                )
 
                 status = await _stream_events(
                     ws=ws,
@@ -474,12 +472,15 @@ async def _handle_execute(
                 client, entry.get("outputs", {}) or {}, include_temp=include_temp
             )
             await send_event(request_id, {"event": "completed", "prompt_id": prompt_id})
-            await send_result(request_id, {
-                "prompt_id": prompt_id,
-                "status": "completed",
-                "outputs": outputs,
-                "blobs": output_blobs,
-            })
+            await send_result(
+                request_id,
+                {
+                    "prompt_id": prompt_id,
+                    "status": "completed",
+                    "outputs": outputs,
+                    "blobs": output_blobs,
+                },
+            )
     finally:
         if request_id:
             cancel_flags.pop(request_id, None)
@@ -534,46 +535,59 @@ async def _stream_events(
                     continue
 
                 if event_type == "status":
-                    remaining = (
-                        event_data.get("status", {}).get("exec_info", {}).get("queue_remaining")
-                    )
+                    remaining = event_data.get("status", {}).get("exec_info", {}).get("queue_remaining")
                     if remaining is not None:
-                        await send_event(request_id, {
-                            "event": "queue",
-                            "prompt_id": prompt_id,
-                            "queue_remaining": remaining,
-                        })
+                        await send_event(
+                            request_id,
+                            {
+                                "event": "queue",
+                                "prompt_id": prompt_id,
+                                "queue_remaining": remaining,
+                            },
+                        )
                 elif event_type == "execution_start" and event_prompt == prompt_id:
                     await send_event(request_id, {"event": "started", "prompt_id": prompt_id})
                 elif event_type == "execution_cached" and event_prompt == prompt_id:
-                    await send_event(request_id, {
-                        "event": "cached",
-                        "prompt_id": prompt_id,
-                        "nodes": event_data.get("nodes", []),
-                    })
+                    await send_event(
+                        request_id,
+                        {
+                            "event": "cached",
+                            "prompt_id": prompt_id,
+                            "nodes": event_data.get("nodes", []),
+                        },
+                    )
                 elif event_type == "executing" and event_prompt == prompt_id:
                     if event_data.get("node") is None:
                         return "completed"
-                    await send_event(request_id, {
-                        "event": "executing",
-                        "prompt_id": prompt_id,
-                        "node": event_data.get("node"),
-                    })
+                    await send_event(
+                        request_id,
+                        {
+                            "event": "executing",
+                            "prompt_id": prompt_id,
+                            "node": event_data.get("node"),
+                        },
+                    )
                 elif event_type == "progress":
-                    await send_event(request_id, {
-                        "event": "progress",
-                        "prompt_id": prompt_id,
-                        "node": event_data.get("node"),
-                        "value": event_data.get("value"),
-                        "max": event_data.get("max"),
-                    })
+                    await send_event(
+                        request_id,
+                        {
+                            "event": "progress",
+                            "prompt_id": prompt_id,
+                            "node": event_data.get("node"),
+                            "value": event_data.get("value"),
+                            "max": event_data.get("max"),
+                        },
+                    )
                 elif event_type == "executed" and event_prompt == prompt_id:
-                    await send_event(request_id, {
-                        "event": "node_output",
-                        "prompt_id": prompt_id,
-                        "node": event_data.get("node"),
-                        "outputs": event_data.get("output"),
-                    })
+                    await send_event(
+                        request_id,
+                        {
+                            "event": "node_output",
+                            "prompt_id": prompt_id,
+                            "node": event_data.get("node"),
+                            "outputs": event_data.get("output"),
+                        },
+                    )
                 elif event_type == "execution_success" and event_prompt == prompt_id:
                     return "completed"
                 elif event_type == "execution_interrupted" and event_prompt == prompt_id:
@@ -591,12 +605,15 @@ async def _stream_events(
                 if event_code != _BINARY_EVENT_PREVIEW_IMAGE:
                     continue
                 image_format = struct.unpack(">I", msg.data[4:8])[0]
-                await send_event(request_id, {
-                    "event": "preview",
-                    "prompt_id": prompt_id,
-                    "format": _PREVIEW_FORMATS.get(image_format, "unknown"),
-                    "image": msg.data[8:],
-                })
+                await send_event(
+                    request_id,
+                    {
+                        "event": "preview",
+                        "prompt_id": prompt_id,
+                        "format": _PREVIEW_FORMATS.get(image_format, "unknown"),
+                        "image": msg.data[8:],
+                    },
+                )
 
             elif msg.type in (
                 aiohttp.WSMsgType.CLOSED,
@@ -772,13 +789,16 @@ async def _handle_models_download(
     async def report_exists(target: Path, filename: str) -> None:
         existing = target.stat().st_size
         await send_progress(request_id, frame("exists", existing, existing))
-        await send_result(request_id, {
-            "status": "exists",
-            "folder": folder,
-            "filename": filename,
-            "path": str(target),
-            "size_bytes": existing,
-        })
+        await send_result(
+            request_id,
+            {
+                "status": "exists",
+                "folder": folder,
+                "filename": filename,
+                "path": str(target),
+                "size_bytes": existing,
+            },
+        )
 
     try:
         async with AsyncExitStack() as stack:
@@ -819,11 +839,11 @@ async def _handle_models_download(
 
                     await send_progress(request_id, frame("start", 0, total))
                     try:
-                        with open(part_path, "wb") as out:
+                        async with aiofiles.open(part_path, "wb") as out:
                             async for chunk in resp.content.iter_chunked(1024 * 1024):
                                 if cancel_event.is_set():
                                     raise asyncio.CancelledError()
-                                out.write(chunk)
+                                await out.write(chunk)
                                 downloaded += len(chunk)
                                 # Throttle to ~2 frames/sec: transport writes are
                                 # serialized, so awaiting a send per chunk would gate
@@ -836,31 +856,35 @@ async def _handle_models_download(
                         # Never install a short read: a truncated body would be
                         # trusted forever by the exists fast path.
                         if total and downloaded != total:
-                            raise ComfyError(
-                                f"Model download incomplete: expected {total} bytes, got {downloaded}"
-                            )
+                            raise ComfyError(f"Model download incomplete: expected {total} bytes, got {downloaded}")
                         os.replace(part_path, target)
                     except asyncio.CancelledError:
                         part_path.unlink(missing_ok=True)
                         await send_progress(request_id, frame("cancelled", downloaded, total))
-                        await send_result(request_id, {
-                            "status": "cancelled",
-                            "folder": folder,
-                            "filename": filename,
-                        })
+                        await send_result(
+                            request_id,
+                            {
+                                "status": "cancelled",
+                                "folder": folder,
+                                "filename": filename,
+                            },
+                        )
                         return
                     except BaseException:
                         part_path.unlink(missing_ok=True)
                         raise
 
                     await send_progress(request_id, frame("completed", downloaded, downloaded or total))
-                    await send_result(request_id, {
-                        "status": "completed",
-                        "folder": folder,
-                        "filename": filename,
-                        "path": str(target),
-                        "size_bytes": downloaded,
-                    })
+                    await send_result(
+                        request_id,
+                        {
+                            "status": "completed",
+                            "folder": folder,
+                            "filename": filename,
+                            "path": str(target),
+                            "size_bytes": downloaded,
+                        },
+                    )
     except ComfyError as e:
         await send_progress(request_id, frame("error", 0, 0, error=str(e)))
         raise
@@ -884,11 +908,13 @@ def _list_models() -> list[dict[str, Any]]:
         for path in sorted(folder.rglob("*")):
             if not path.is_file() or path.name.endswith(".part"):
                 continue
-            result.append({
-                "folder": folder.name,
-                "filename": str(path.relative_to(folder)),
-                "size_bytes": path.stat().st_size,
-            })
+            result.append(
+                {
+                    "folder": folder.name,
+                    "filename": str(path.relative_to(folder)),
+                    "size_bytes": path.stat().st_size,
+                }
+            )
     return result
 
 
@@ -944,10 +970,13 @@ async def handle_comfy_message(
         elif msg_type == "comfy.queue":
             async with ComfyClient() as client:
                 queue_data = await client.queue()
-            await send_result(request_id, {
-                "queue_running": queue_data.get("queue_running", []),
-                "queue_pending": queue_data.get("queue_pending", []),
-            })
+            await send_result(
+                request_id,
+                {
+                    "queue_running": queue_data.get("queue_running", []),
+                    "queue_pending": queue_data.get("queue_pending", []),
+                },
+            )
 
         elif msg_type == "comfy.interrupt":
             async with ComfyClient() as client:
@@ -987,11 +1016,14 @@ async def handle_comfy_message(
                     str(data.get("subfolder", "")),
                     str(data.get("type", "output")),
                 )
-            await send_result(request_id, {
-                "filename": data["filename"],
-                "content_type": content_type,
-                "data": blob,
-            })
+            await send_result(
+                request_id,
+                {
+                    "filename": data["filename"],
+                    "content_type": content_type,
+                    "data": blob,
+                },
+            )
 
         elif msg_type == "comfy.object_info":
             async with ComfyClient() as client:
@@ -1015,10 +1047,13 @@ async def handle_comfy_message(
             await _handle_models_download(data, request_id, cancel_flags, send_progress, send_result)
 
         elif msg_type == "comfy.models.list":
-            await send_result(request_id, {
-                "models_dir": str(models_dir()),
-                "models": _list_models(),
-            })
+            await send_result(
+                request_id,
+                {
+                    "models_dir": str(models_dir()),
+                    "models": _list_models(),
+                },
+            )
 
         elif msg_type == "comfy.models.delete":
             folder = data.get("folder")
