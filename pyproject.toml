@@ -96,7 +96,7 @@ dev = [
     # generated dist/bridge-frames.schema.json contract.
     "jsonschema>=4.23.0",
     "mypy>=1.0.0",
-    "ruff==0.16.4",
+    "ruff==0.16.5",
     "ty>=0.0.7",
 ]
 
