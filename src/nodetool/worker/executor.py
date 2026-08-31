@@ -10,6 +10,8 @@ from collections.abc import AsyncGenerator
 from types import UnionType
 from typing import Any, Awaitable, Callable, Union, get_args, get_origin
 
+import aiofiles
+
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     AssetRef,
@@ -222,14 +224,14 @@ async def _prepare_node(
             uris: list[str] = []
             for index, item in enumerate(data):
                 filename = f"input_{name}_{index}"
-                with open(os.path.join(temp_dir, filename), "wb") as f:
-                    f.write(item)
+                async with aiofiles.open(os.path.join(temp_dir, filename), "wb") as f:
+                    await f.write(item)
                 uris.append(f"file:///{filename}")
             input_ref_uris[name] = uris
         else:
             filename = f"input_{name}"
-            with open(os.path.join(temp_dir, filename), "wb") as f:
-                f.write(data)
+            async with aiofiles.open(os.path.join(temp_dir, filename), "wb") as f:
+                await f.write(data)
             input_ref_uris[name] = f"file:///{filename}"
 
     # Instantiate node. ``node_id`` is the graph id the JS side sends on
@@ -359,9 +361,7 @@ async def execute_node(
                     reason=f"Preparing to execute node {node_type}",
                     required_free_gb=requires_vram_gb,
                 )
-                node = await _prepare_node(
-                    node_class, fields, input_blobs, temp_dir, ctx, node_id=node_id
-                )
+                node = await _prepare_node(node_class, fields, input_blobs, temp_dir, ctx, node_id=node_id)
                 ctx.raise_if_cancelled()
                 if node.is_streaming_output():
                     if emit_chunk is not None:
@@ -625,9 +625,7 @@ def _is_binary_payload(payload: Any) -> bool:
     """True when an AssetRef's ``data`` holds raw bytes rather than a payload."""
     if isinstance(payload, (bytes, bytearray, memoryview)):
         return True
-    return isinstance(payload, list) and any(
-        isinstance(item, (bytes, bytearray, memoryview)) for item in payload
-    )
+    return isinstance(payload, list) and any(isinstance(item, (bytes, bytearray, memoryview)) for item in payload)
 
 
 def _strip_binary_payloads(obj: Any) -> Any:
