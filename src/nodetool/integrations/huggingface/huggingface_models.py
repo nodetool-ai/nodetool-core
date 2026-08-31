@@ -251,9 +251,6 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
 # Fast HF cache view for local snapshot lookups.
 HF_FAST_CACHE = HfFastCache()
 
-# GGUF_MODELS_FILE = Path(__file__).parent / "gguf_models.json"
-# MLX_MODELS_FILE = Path(__file__).parent / "mlx_models.json"
-
 # Map transformer `model_type` values to hf.* types when configs are parsed offline.
 _CONFIG_MODEL_TYPE_MAPPING = {
     "whisper": "hf.automatic_speech_recognition",
@@ -2295,54 +2292,6 @@ async def delete_cached_hf_model(model_id: str) -> bool:
 
     await HF_FAST_CACHE.invalidate(model_id, repo_type="model")
     return True
-
-
-# GGUF_AUTHORS = [
-# "unsloth",
-# "ggml-org",
-# "LiquidAI",
-# "gabriellarson",
-# "openbmb",
-# "zai-org",
-# "vikhyatk",
-# "01-ai",
-# "BAAI",
-# "Lin-Chen",
-# "mtgv",
-# "lm-sys",
-# "NousResearch",
-# ]
-# MLX_AUTHORS = ["mlx-community"]
-
-
-# async def save_gguf_models_to_file() -> None:
-#     models = await get_gguf_language_models_from_authors(
-#         GGUF_AUTHORS, limit=500, sort="downloads", tags="gguf"
-#     )
-#     with open(GGUF_MODELS_FILE, "w") as f:
-#         json.dump(
-#             [model.model_dump() for model in models if model is not None], f, indent=2
-#         )
-
-
-# async def save_mlx_models_to_file() -> None:
-#     models = await get_mlx_language_models_from_authors(
-#         MLX_AUTHORS, limit=1000, sort="downloads", tags="mlx"
-#     )
-#     with open(MLX_MODELS_FILE, "w") as f:
-#         json.dump([model.model_dump() for model in models], f, indent=2)
-
-
-# async def load_gguf_models_from_file() -> List[UnifiedModel]:
-#     async with aiofiles.open(GGUF_MODELS_FILE, "r") as f:
-#         content = await f.read()
-#         return [UnifiedModel(**model) for model in json.loads(content)]
-
-
-# async def load_mlx_models_from_file() -> List[UnifiedModel]:
-#     async with aiofiles.open(MLX_MODELS_FILE, "r") as f:
-#         content = await f.read()
-#         return [UnifiedModel(**model) for model in json.loads(content)]
 
 
 if __name__ == "__main__":
