@@ -113,7 +113,7 @@ class TypeMetadata(BaseModel):
     def is_primitive_type(self, recursive: bool = False):
         if recursive and self.is_union_type():
             return any(t.is_primitive_type(recursive=True) for t in self.type_args)
-        return self.type in ["int", "float", "bool", "str", "text"]
+        return self.type in {"int", "float", "bool", "str", "text"}
 
     def is_enum_type(self, recursive: bool = False):
         if recursive and self.is_union_type():
