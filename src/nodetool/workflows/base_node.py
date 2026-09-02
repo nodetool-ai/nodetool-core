@@ -1030,11 +1030,7 @@ class BaseNode(BaseModel):
         # optional `--enrich` scan step decorates these with size/tags/etc.
         return [
             UnifiedModel(
-                id=(
-                    f"{model.repo_id}:{model.path}"
-                    if model.path is not None
-                    else model.repo_id
-                ),
+                id=(f"{model.repo_id}:{model.path}" if model.path is not None else model.repo_id),
                 repo_id=model.repo_id,
                 path=model.path,
                 type=model.type,
@@ -1907,11 +1903,7 @@ class BaseNode(BaseModel):
         """
         Returns OutputSlot objects for instance dynamic outputs.
         """
-        stream_kinds = (
-            self.__class__.output_stream_kinds()
-            if self.__class__.is_streaming_output()
-            else {}
-        )
+        stream_kinds = self.__class__.output_stream_kinds() if self.__class__.is_streaming_output() else {}
         return [
             OutputSlot(
                 type=tm,
@@ -2056,8 +2048,9 @@ class BaseNode(BaseModel):
             ValueError: If any input is missing or invalid.
         """
         missing_inputs = []
+        target_handles = {e.targetHandle for e in input_edges}
         for i in self.required_inputs():
-            if i not in [e.targetHandle for e in input_edges]:
+            if i not in target_handles:
                 missing_inputs.append(i)
         if len(missing_inputs) > 0:
             return [f"Missing inputs: {', '.join(missing_inputs)}"]
