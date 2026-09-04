@@ -66,3 +66,7 @@
 ## 2024-05-18 - Avoid OOM and Precision Loss when scaling arrays
 **Learning:** Using standard Python float literals (e.g. `32768.0`) when scaling `np.float32` arrays causes implicit conversion to `np.float64`, consuming double the memory and slowing down execution unnecessarily.
 **Action:** Always scale numpy float arrays using constants properly casted to `np.float32` (e.g. `np.float32(32768.0)`) or the array's exact native type (`array.dtype.type(32768.0)`) and use `np.asarray(data, dtype=np.float32)` instead of `.astype(np.float32)` to avoid float16 overflow issues during clipping operations.
+
+## 2024-05-18 - Optimize membership checks using set literals
+**Learning:** Python evaluates set literals (e.g., `x in {'a', 'b'}`) at compile time and optimizes them into a `frozenset`, granting O(1) lookup time compared to the O(N) time of list literals. List comprehensions for membership checks inside loops also create unnecessary arrays and result in O(N) lookups inside the loop.
+**Action:** Always prefer set literals over list or tuple literals for static membership checks. Move O(N) array constructions out of loops and use set comprehensions (e.g. `{e.targetHandle for e in input_edges}`) when checking membership dynamically.
