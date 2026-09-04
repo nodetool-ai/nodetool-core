@@ -11,7 +11,8 @@ that repo emits from its Zod schemas
 
 It is the cross-repo contract for the wire frames the JS bridge's
 `PythonBridgeBase._handleMessage` dispatches — `discover`, `result`, `error`,
-`chunk`, `progress`, `comfy.event`. `tests/worker/test_bridge_frame_contract.py`
+`chunk`, `progress`, `comfy.event`, `blender.event`.
+`tests/worker/test_bridge_frame_contract.py`
 validates the frames this worker actually emits against it, so the two sides of
 the bridge cannot silently drift.
 

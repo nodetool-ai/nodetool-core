@@ -28,7 +28,7 @@ SCHEMA_PATH = Path(__file__).parent / "fixtures" / "bridge-frames.schema.json"
 
 # The frame types the JS dispatcher switches on. Anything else the worker sends
 # is not covered by the contract, so validating it would be validating nothing.
-DISPATCHED_TYPES = {"discover", "result", "error", "chunk", "progress", "comfy.event"}
+DISPATCHED_TYPES = {"discover", "result", "error", "chunk", "progress", "comfy.event", "blender.event"}
 
 
 @pytest.fixture(scope="module")
