@@ -39,7 +39,6 @@ services:
       VLLM_CONTEXT_WINDOW: ${VLLM_CONTEXT_WINDOW:-128000}
       HF_HOME: /app/huggingface
       SENTRY_DSN: ${SENTRY_DSN}
-      SECRETS_MASTER_KEY: ${SECRETS_MASTER_KEY}
       MEMCACHE_HOST: ${MEMCACHE_HOST:-memcached}
       MEMCACHE_PORT: ${MEMCACHE_PORT:-11211}
       CHROMA_PATH: /chroma-data
