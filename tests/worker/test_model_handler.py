@@ -12,11 +12,11 @@ from nodetool.worker import BRIDGE_PROTOCOL_VERSION
 from nodetool.worker.server import WorkerServer, start_server
 
 
-def test_protocol_version_is_4():
+def test_protocol_version_is_5():
     # Lockstep with `BRIDGE_PROTOCOL_VERSION` in the JS repo's
-    # packages/protocol/src/bridge-protocol.ts. v4 added run identity on
-    # execute, the job.* boundary, models.evict, and the discover VRAM hint.
-    assert BRIDGE_PROTOCOL_VERSION == 4
+    # packages/protocol/src/bridge-protocol.ts. v5 added negotiated chunked
+    # execute-result blobs with size and digest verification.
+    assert BRIDGE_PROTOCOL_VERSION == 5
 
 
 @pytest_asyncio.fixture(loop_scope="function")

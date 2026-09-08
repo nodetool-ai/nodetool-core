@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import traceback
 from dataclasses import dataclass
@@ -9,6 +10,7 @@ from typing import Any, Awaitable, Callable, Protocol
 from nodetool.worker import BRIDGE_PROTOCOL_VERSION
 
 MAX_BRIDGE_FRAME_SIZE = int(os.environ.get("NODETOOL_BRIDGE_MAX_FRAME_SIZE", str(256 * 1024 * 1024)))
+BLOB_CHUNK_SIZE = int(os.environ.get("NODETOOL_BRIDGE_BLOB_CHUNK_SIZE", str(1024 * 1024)))
 
 
 class WorkerTransport(Protocol):
@@ -162,6 +164,17 @@ class WorkerProtocolServer:
                     if msg_type == "execute.stream"
                     else result
                 )
+                if (
+                    msg_type == "execute"
+                    and msg["data"].get("blob_transfer") == "chunked-v1"
+                    and result_data.get("blobs")
+                ):
+                    await self._send_result_blobs(
+                        request_id=request_id,
+                        blobs=result_data["blobs"],
+                        transport=transport,
+                    )
+                    result_data = {**result_data, "blobs": {}}
                 await transport.send_msg({
                     "type": "result",
                     "request_id": request_id,
@@ -239,3 +252,39 @@ class WorkerProtocolServer:
             "request_id": request_id,
             "data": {"error": f"Unknown message type: {msg_type}"},
         })
+
+    async def _send_result_blobs(
+        self,
+        *,
+        request_id: str | None,
+        blobs: dict[str, bytes],
+        transport: WorkerTransport,
+    ) -> None:
+        """Send result blobs in bounded, integrity-checked protocol-v5 frames."""
+        chunk_size = max(1, min(BLOB_CHUNK_SIZE, MAX_BRIDGE_FRAME_SIZE // 2))
+        for name, blob in blobs.items():
+            if not isinstance(name, str) or not isinstance(blob, bytes):
+                raise TypeError("Execute result blobs must map string names to bytes")
+            await transport.send_msg({
+                "type": "blob.start",
+                "request_id": request_id,
+                "data": {"name": name, "size": len(blob)},
+            })
+            digest = hashlib.sha256()
+            for offset in range(0, len(blob), chunk_size):
+                chunk = blob[offset : offset + chunk_size]
+                digest.update(chunk)
+                await transport.send_msg({
+                    "type": "blob.chunk",
+                    "request_id": request_id,
+                    "data": {"name": name, "offset": offset, "bytes": chunk},
+                })
+            await transport.send_msg({
+                "type": "blob.end",
+                "request_id": request_id,
+                "data": {
+                    "name": name,
+                    "size": len(blob),
+                    "sha256": digest.hexdigest(),
+                },
+            })
