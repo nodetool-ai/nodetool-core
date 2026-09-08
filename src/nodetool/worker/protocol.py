@@ -27,6 +27,7 @@ class WorkerStatus:
     transport: str
     max_frame_size: int
     comfy: dict[str, Any]
+    model_prepare_backends: list[str]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -38,6 +39,7 @@ class WorkerStatus:
             "transport": self.transport,
             "max_frame_size": self.max_frame_size,
             "comfy": self.comfy,
+            "model_prepare_backends": self.model_prepare_backends,
         }
 
 
@@ -98,6 +100,7 @@ class WorkerProtocolServer:
 
         if msg_type == "worker.status":
             from nodetool.worker.comfy_handler import get_comfy_info
+            from nodetool.worker.model_handler import get_model_prepare_backends
             from nodetool.worker.provider_handler import get_available_providers
 
             status = WorkerStatus(
@@ -109,6 +112,7 @@ class WorkerProtocolServer:
                 transport=self._transport_name,
                 max_frame_size=MAX_BRIDGE_FRAME_SIZE,
                 comfy=get_comfy_info(),
+                model_prepare_backends=get_model_prepare_backends(),
             )
             await transport.send_msg({
                 "type": "result",

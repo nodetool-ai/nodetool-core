@@ -1,6 +1,7 @@
 """Tests for the models.* bridge handler."""
 
 import asyncio
+import sys
 from pathlib import Path
 
 import msgpack
@@ -33,8 +34,8 @@ async def server():
 @pytest.mark.asyncio(loop_scope="function")
 async def test_models_list_cached(server, monkeypatch):
     """models.list_cached returns the worker's cached repos as UnifiedModel[]."""
-    from nodetool.types.model import UnifiedModel
     import nodetool.worker.model_handler as mh
+    from nodetool.types.model import UnifiedModel
 
     async def fake_read_cached():
         return [
@@ -64,8 +65,8 @@ async def test_models_list_cached(server, monkeypatch):
 @pytest.mark.asyncio(loop_scope="function")
 async def test_models_list_cached_forces_downloaded_true(server, monkeypatch):
     """Even if a cached entry reports downloaded=False, list_cached forces True."""
-    from nodetool.types.model import UnifiedModel
     import nodetool.worker.model_handler as mh
+    from nodetool.types.model import UnifiedModel
 
     async def fake_read_cached():
         return [
@@ -100,6 +101,128 @@ async def test_models_unknown_type(server):
         resp = msgpack.unpackb(raw, raw=False)
         assert resp["type"] == "error"
         assert "Unknown models message type" in resp["data"]["error"]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_models_prepare_relays_image_adapter_progress(
+    server, monkeypatch, tmp_path
+):
+    """An image-owned adapter can prepare a logical model without HF repo mapping."""
+    adapter = tmp_path / "prepare.py"
+    adapter.write_text(
+        "import json, sys\n"
+        "request = json.loads(sys.stdin.readline())\n"
+        "assert request['model_type'] == 'wan2.2_t2v'\n"
+        "print(json.dumps({'status': 'progress', 'downloaded_bytes': 4096, "
+        "'total_bytes': 0, 'current_files': ['model.safetensors'], "
+        "'bytes_per_second': 2048, 'seconds_since_activity': 0.0}))\n"
+        "print(json.dumps({'status': 'completed', 'downloaded_bytes': 4096, "
+        "'total_bytes': 0, 'current_files': []}))\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(
+        "NODETOOL_MODEL_PREPARE_COMMAND_WANGP",
+        f"{sys.executable} {adapter}",
+    )
+
+    host, port = server
+    async with websockets.connect(f"ws://{host}:{port}") as ws:
+        await ws.send(
+            msgpack.packb(
+                {
+                    "type": "models.prepare",
+                    "request_id": "mp-1",
+                    "data": {
+                        "backend": "wangp",
+                        "repo_id": "wangp:wan2.2_t2v",
+                        "model_type": "wan2.2_t2v",
+                    },
+                }
+            )
+        )
+        frames = []
+        while True:
+            frame = msgpack.unpackb(await asyncio.wait_for(ws.recv(), timeout=5), raw=False)
+            frames.append(frame)
+            if frame["type"] in ("result", "error"):
+                break
+
+    assert [frame["data"]["status"] for frame in frames] == [
+        "start",
+        "progress",
+        "completed",
+        "completed",
+    ]
+    progress = frames[1]["data"]
+    assert progress["repo_id"] == "wangp:wan2.2_t2v"
+    assert progress["downloaded_bytes"] == 4096
+    assert progress["total_bytes"] == 0
+    assert progress["current_files"] == ["model.safetensors"]
+    assert progress["bytes_per_second"] == 2048
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_worker_status_advertises_model_prepare_backend(server, monkeypatch):
+    monkeypatch.setenv("NODETOOL_MODEL_PREPARE_COMMAND_WANGP", "/bin/true")
+    host, port = server
+    async with websockets.connect(f"ws://{host}:{port}") as ws:
+        await ws.send(
+            msgpack.packb(
+                {"type": "worker.status", "request_id": "status-prepare", "data": {}}
+            )
+        )
+        response = msgpack.unpackb(
+            await asyncio.wait_for(ws.recv(), timeout=15), raw=False
+        )
+
+    assert response["data"]["model_prepare_backends"] == ["wangp"]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_models_prepare_cancel_stops_adapter(server, monkeypatch, tmp_path):
+    adapter = tmp_path / "slow_prepare.py"
+    adapter.write_text(
+        "import sys, time\n"
+        "sys.stdin.readline()\n"
+        "time.sleep(60)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(
+        "NODETOOL_MODEL_PREPARE_COMMAND_WANGP",
+        f"{sys.executable} {adapter}",
+    )
+
+    host, port = server
+    async with websockets.connect(f"ws://{host}:{port}") as ws:
+        await ws.send(
+            msgpack.packb(
+                {
+                    "type": "models.prepare",
+                    "request_id": "mp-cancel",
+                    "data": {"backend": "wangp", "model_type": "wan2.2_t2v"},
+                }
+            )
+        )
+        started = msgpack.unpackb(
+            await asyncio.wait_for(ws.recv(), timeout=5), raw=False
+        )
+        assert started["data"]["status"] == "start"
+        await ws.send(
+            msgpack.packb(
+                {"type": "cancel", "request_id": "mp-cancel", "data": {}}
+            )
+        )
+        cancelled = msgpack.unpackb(
+            await asyncio.wait_for(ws.recv(), timeout=10), raw=False
+        )
+        result = msgpack.unpackb(
+            await asyncio.wait_for(ws.recv(), timeout=5), raw=False
+        )
+
+    assert cancelled["type"] == "progress"
+    assert cancelled["data"]["status"] == "cancelled"
+    assert result["type"] == "result"
+    assert result["data"]["status"] == "cancelled"
 
 
 @pytest.mark.asyncio(loop_scope="function")
