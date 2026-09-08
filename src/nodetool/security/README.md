@@ -1,11 +1,9 @@
 # NodeTool Security
 
-Encrypted secret storage and key management.
+Runtime secret lookup for the Python worker.
 
 ## Components
 
-- `crypto.py` — `SecretCrypto`: Fernet symmetric encryption (AES-128-CBC with HMAC-SHA256 authentication), per-user key derivation (PBKDF2-SHA256)
-- `master_key.py` — `MasterKeyManager`: Master key from env var or system keychain
 - `secret_helper.py` — `get_secret()`, `get_secret_required()`: Secret resolution (env var → default)
 
 ## Usage

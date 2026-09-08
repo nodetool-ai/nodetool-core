@@ -131,7 +131,6 @@ Storage: `create_asset`, `download_asset`, `asset_storage_url`
 | `HF_TOKEN` | HuggingFace token | - |
 | `DB_PATH` | SQLite database path | `~/.config/nodetool/nodetool.sqlite3` |
 | `FFMPEG_PATH` | Path to ffmpeg | `ffmpeg` |
-| `SECRETS_MASTER_KEY` | Master key for encrypted secrets | auto-generated |
 | `COMFYUI_URL` | ComfyUI server proxied by the worker's `comfy.*` messages | `http://127.0.0.1:8188` |
 | `COMFY_MODELS_DIR` | Model tree for `comfy.models.*` (RunPod network volume) | `/workspace/models` |
 
@@ -141,7 +140,7 @@ Tests are in `tests/` mirroring `src/` structure. Key test directories:
 
 - `tests/worker/` — Worker subprocess tests
 - `tests/workflows/` — Node execution, processing context, graph tests
-- `tests/security/` — Crypto, secret helper tests
+- `tests/security/` — Secret helper tests
 - `tests/integrations/` — HuggingFace model detection, safetensors, vector stores
 - `tests/storage/` — Storage backend tests
 
