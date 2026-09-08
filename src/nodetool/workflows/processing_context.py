@@ -166,32 +166,12 @@ def _numpy_to_pil_image_util(arr: np.ndarray):
     return numpy_to_pil_image(arr)
 
 
-def _export_to_video_bytes(
-    video_frames,
-    fps: int = 10,
-    quality: float = 5.0,
-    bitrate: int | None = None,
-    macro_block_size: int | None = 16,
-):
-    from nodetool.media.video.video_utils import export_to_video_bytes as _exporter
-
-    return _exporter(
-        video_frames,
-        fps=fps,
-        quality=quality,
-        bitrate=bitrate,
-        macro_block_size=macro_block_size,
-    )
-
-
 def create_file_uri(path: str) -> str:
     """
     Compatibility wrapper delegating to nodetool.io.uri_utils.create_file_uri.
     """
     return _create_file_uri(path)
 
-
-## AUDIO_CODEC and DEFAULT_AUDIO_SAMPLE_RATE imported from media_constants
 
 HTTP_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",

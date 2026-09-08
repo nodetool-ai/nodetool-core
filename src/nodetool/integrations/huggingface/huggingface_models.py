@@ -73,17 +73,6 @@ SINGLE_FILE_DIFFUSION_EXTENSIONS = (
     ".svdq",
 )
 
-# Tags that hint at single-file diffusion checkpoints when hub metadata is present.
-SINGLE_FILE_DIFFUSION_TAGS = {
-    "diffusers",
-    "diffusers:stablediffusionpipeline",
-    "diffusers:stablediffusionxlpipeline",
-    "diffusers:stablediffusion3pipeline",
-    "diffusion-single-file",
-    "stable-diffusion",
-    "flux",
-}
-
 log = get_logger(__name__)
 
 # Default globs used when scanning repos for general-purpose weight files.
