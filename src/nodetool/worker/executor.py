@@ -195,6 +195,28 @@ def read_run_identity(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _write_input_blobs_sync(
+    input_blobs: dict[str, bytes | list[bytes]], temp_dir: str
+) -> dict[str, str | list[str]]:
+    """Write input blobs into the workspace synchronously."""
+    input_ref_uris: dict[str, str | list[str]] = {}
+    for name, data in input_blobs.items():
+        if isinstance(data, list):
+            uris: list[str] = []
+            for index, item in enumerate(data):
+                filename = f"input_{name}_{index}"
+                with open(os.path.join(temp_dir, filename), "wb") as f:
+                    f.write(item)
+                uris.append(f"file:///{filename}")
+            input_ref_uris[name] = uris
+        else:
+            filename = f"input_{name}"
+            with open(os.path.join(temp_dir, filename), "wb") as f:
+                f.write(data)
+            input_ref_uris[name] = f"file:///{filename}"
+    return input_ref_uris
+
+
 async def _prepare_node(
     node_class: type[BaseNode],
     fields: dict[str, Any],
@@ -216,21 +238,11 @@ async def _prepare_node(
     # `file:///private/var/.../input_audio` URI resolves to
     # `<workspace>/private/var/.../input_audio` and the node never finds its
     # own input. `file:///input_audio` resolves back to the file just written.
-    input_ref_uris: dict[str, str | list[str]] = {}
-    for name, data in input_blobs.items():
-        if isinstance(data, list):
-            uris: list[str] = []
-            for index, item in enumerate(data):
-                filename = f"input_{name}_{index}"
-                with open(os.path.join(temp_dir, filename), "wb") as f:
-                    f.write(item)
-                uris.append(f"file:///{filename}")
-            input_ref_uris[name] = uris
-        else:
-            filename = f"input_{name}"
-            with open(os.path.join(temp_dir, filename), "wb") as f:
-                f.write(data)
-            input_ref_uris[name] = f"file:///{filename}"
+
+    loop = asyncio.get_running_loop()
+    input_ref_uris = await loop.run_in_executor(
+        None, _write_input_blobs_sync, input_blobs, temp_dir
+    )
 
     # Instantiate node. ``node_id`` is the graph id the JS side sends on
     # ``execute`` (bridge protocol v4); before v4 every node was built with no

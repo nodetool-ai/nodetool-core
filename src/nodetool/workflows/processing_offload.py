@@ -110,9 +110,8 @@ def _audio_segment_to_wav_bytes(segment: Any) -> bytes:
     return buffer.getvalue()
 
 
-def _numpy_audio_to_mp3_bytes(arr: Any, sample_rate: int = DEFAULT_AUDIO_SAMPLE_RATE) -> bytes:
+def _prepare_numpy_audio(arr: Any) -> tuple[bytes, int]:
     np = _ensure_numpy()
-    AudioSegment = _ensure_audio_segment()
 
     channels = 1
     audio_arr = arr
@@ -126,37 +125,32 @@ def _numpy_audio_to_mp3_bytes(arr: Any, sample_rate: int = DEFAULT_AUDIO_SAMPLE_
     else:
         raise ValueError(f"Unsupported audio ndarray dtype {audio_arr.dtype}")
 
+    return raw, channels
+
+
+def _numpy_audio_to_mp3_bytes(arr: Any, sample_rate: int = DEFAULT_AUDIO_SAMPLE_RATE) -> bytes:
+    AudioSegment = _ensure_audio_segment()
+    raw, channels = _prepare_numpy_audio(arr)
+
     seg = AudioSegment(
         data=raw,
         frame_rate=sample_rate,
         sample_width=2,
-        channels=int(channels),
+        channels=channels,
     )
     return _audio_segment_to_mp3_bytes(seg)
 
 
 def _numpy_audio_to_wav_bytes(arr: Any, sample_rate: int = DEFAULT_AUDIO_SAMPLE_RATE) -> bytes:
     """Convert numpy audio array to WAV bytes (PCM format)."""
-    np = _ensure_numpy()
     AudioSegment = _ensure_audio_segment()
-
-    channels = 1
-    audio_arr = arr
-    if getattr(audio_arr, "ndim", 0) == 2:
-        channels = int(audio_arr.shape[1])
-
-    if audio_arr.dtype == np.int16:
-        raw = audio_arr.tobytes()
-    elif audio_arr.dtype in (np.float32, np.float64, np.float16):
-        raw = (np.asarray(audio_arr, dtype=np.float32).clip(-1.0, 1.0) * np.float32(32767.0)).astype(np.int16).tobytes()
-    else:
-        raise ValueError(f"Unsupported audio ndarray dtype {audio_arr.dtype}")
+    raw, channels = _prepare_numpy_audio(arr)
 
     seg = AudioSegment(
         data=raw,
         frame_rate=sample_rate,
         sample_width=2,  # 16-bit PCM
-        channels=int(channels),
+        channels=channels,
     )
     return _audio_segment_to_wav_bytes(seg)
 

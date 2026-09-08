@@ -1,6 +1,6 @@
 # NodeTool Security
 
-Runtime secret lookup for the Python worker.
+Secret resolution for the Python worker.
 
 ## Components
 
@@ -17,7 +17,8 @@ api_key = await get_secret("OPENAI_API_KEY", user_id)
 ## Secret Resolution Order
 
 For the lean Python worker, secrets come from environment variables. The TS
-server handles database-stored secrets and passes them to the worker via env.
+server handles database-stored secrets, including encryption at rest, and
+passes the resolved values to the worker via env.
 
 1. Environment variable (`os.environ`)
 2. Not found (returns the provided default / `None`, or raises for `get_secret_required`)

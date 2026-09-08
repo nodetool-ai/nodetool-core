@@ -8,6 +8,11 @@ from nodetool.types.api_graph import (
 )
 
 
+def test_node_get_node_type():
+    node = Node(id="test_id", type="custom.NodeType")
+    assert node.get_node_type() == "custom.NodeType"
+
+
 def test_remove_connected_slots():
     node1 = Node(id="1", type="nodetool.input.IntegerInput", data={"value": 1})
     node2 = Node(id="2", type="custom", data={"slot1": "a", "slot2": "b"})
@@ -44,3 +49,17 @@ def test_get_output_schema_basic():
 
     assert set(schema["required"]) == {"result"}
     assert schema["properties"]["result"]["type"] == "any"
+
+
+def test_edge_is_control():
+    # Test default (data)
+    edge_default = Edge(source="1", sourceHandle="out", target="2", targetHandle="in")
+    assert edge_default.is_control() is False
+
+    # Test explicit data
+    edge_data = Edge(source="1", sourceHandle="out", target="2", targetHandle="in", edge_type="data")
+    assert edge_data.is_control() is False
+
+    # Test control
+    edge_control = Edge(source="1", sourceHandle="out", target="2", targetHandle="in", edge_type="control")
+    assert edge_control.is_control() is True
