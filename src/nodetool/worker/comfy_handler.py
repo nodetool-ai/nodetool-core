@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urljoin, urlparse
 
+import aiofiles
 import aiohttp
 
 from nodetool.utils.network import SSRFProtectResolver, is_ip_private
@@ -819,11 +820,11 @@ async def _handle_models_download(
 
                     await send_progress(request_id, frame("start", 0, total))
                     try:
-                        with open(part_path, "wb") as out:
+                        async with aiofiles.open(part_path, "wb") as out:
                             async for chunk in resp.content.iter_chunked(1024 * 1024):
                                 if cancel_event.is_set():
                                     raise asyncio.CancelledError()
-                                out.write(chunk)
+                                await out.write(chunk)
                                 downloaded += len(chunk)
                                 # Throttle to ~2 frames/sec: transport writes are
                                 # serialized, so awaiting a send per chunk would gate
