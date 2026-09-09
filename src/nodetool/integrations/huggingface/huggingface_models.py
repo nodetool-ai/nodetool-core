@@ -222,9 +222,6 @@ class RepoPackagingHint(StrEnum):
 # Fast HF cache view for local snapshot lookups.
 HF_FAST_CACHE = HfFastCache()
 
-# GGUF_MODELS_FILE = Path(__file__).parent / "gguf_models.json"
-# MLX_MODELS_FILE = Path(__file__).parent / "mlx_models.json"
-
 # Map transformer `model_type` values to hf.* types when configs are parsed offline.
 _CONFIG_MODEL_TYPE_MAPPING = {
     "whisper": "hf.automatic_speech_recognition",
