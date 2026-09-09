@@ -27,6 +27,7 @@ class WorkerStatus:
     transport: str
     max_frame_size: int
     comfy: dict[str, Any]
+    blender: dict[str, Any]
     model_prepare_backends: list[str]
 
     def to_dict(self) -> dict[str, Any]:
@@ -39,6 +40,7 @@ class WorkerStatus:
             "transport": self.transport,
             "max_frame_size": self.max_frame_size,
             "comfy": self.comfy,
+            "blender": self.blender,
             "model_prepare_backends": self.model_prepare_backends,
         }
 
@@ -99,6 +101,7 @@ class WorkerProtocolServer:
             return
 
         if msg_type == "worker.status":
+            from nodetool.worker.blender_handler import get_blender_info
             from nodetool.worker.comfy_handler import get_comfy_info
             from nodetool.worker.model_handler import get_model_prepare_backends
             from nodetool.worker.provider_handler import get_available_providers
@@ -112,6 +115,7 @@ class WorkerProtocolServer:
                 transport=self._transport_name,
                 max_frame_size=MAX_BRIDGE_FRAME_SIZE,
                 comfy=get_comfy_info(),
+                blender=get_blender_info(),
                 model_prepare_backends=get_model_prepare_backends(),
             )
             await transport.send_msg({
@@ -246,6 +250,18 @@ class WorkerProtocolServer:
                 msg_type=str(msg_type),
                 request_id=request_id,
                 data=msg.get("data", {}),
+                transport=transport,
+                cancel_flags=self._cancel_flags,
+            )
+            return
+
+        if msg_type and str(msg_type).startswith("blender."):
+            from nodetool.worker.blender_handler import handle_blender_message
+
+            await handle_blender_message(
+                msg_type=str(msg_type),
+                request_id=request_id,
+                data=msg.get("data", {}) or {},
                 transport=transport,
                 cancel_flags=self._cancel_flags,
             )
