@@ -1,7 +1,9 @@
 """Tests for the provider bridge handler."""
 
 import asyncio
+import json
 import sys
+from pathlib import Path
 
 import msgpack
 import pytest
@@ -190,7 +192,7 @@ print(json.dumps({"type": "result", "data": data}), flush=True)
         blob_chunk = msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)
         blob_end = msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)
         result = msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)
-        assert progress["type"] == "progress"
+        assert progress["type"] == "progress", progress
         assert progress["data"] == {"progress": 50}
         assert blob_start["type"] == "blob.start"
         assert blob_start["data"] == {"name": "video", "size": 10}
@@ -341,3 +343,204 @@ time.sleep(30)
         error = msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)
         assert error["type"] == "error"
         assert error["data"]["error"] == "Provider operation cancelled"
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_command_backed_reference_video_stages_ordered_media(server, monkeypatch, tmp_path):
+    """Reference media is staged with detected suffixes and ordered path lists."""
+    adapter = tmp_path / "reference_adapter.py"
+    output = tmp_path / "generated.mp4"
+    paths_file = tmp_path / "paths.json"
+    adapter.write_text(
+        r"""
+import json
+import pathlib
+import sys
+request = json.loads(sys.stdin.readline())
+assert request["operation"] == "reference_to_video"
+images = request["reference_image_paths"]
+videos = request["reference_video_paths"]
+assert [pathlib.Path(p).read_bytes() for p in images] == [bytes.fromhex("89504e470d0a1a0a696d616765"), bytes.fromhex("ffd8ff70686f746f")]
+assert pathlib.Path(videos[0]).read_bytes() == bytes.fromhex("1a45dfa3766964656f")
+assert pathlib.Path(images[0]).suffix == ".png"
+assert pathlib.Path(images[1]).suffix == ".jpg"
+assert pathlib.Path(videos[0]).suffix == ".webm"
+print(json.dumps({"type": "progress", "data": {"progress": 50}}), flush=True)
+pathlib.Path(sys.argv[2]).write_text(json.dumps(images + videos))
+path = pathlib.Path(sys.argv[1])
+path.write_bytes(b"video-data")
+print(json.dumps({"type": "result", "data": {"path": str(path)}}), flush=True)
+""".strip()
+        + "\n"
+    )
+    monkeypatch.setenv(
+        "NODETOOL_PROVIDER_ADAPTER_COMMAND_EXTERNAL",
+        f"{sys.executable} {adapter} {output} {paths_file}",
+    )
+    monkeypatch.setenv(
+        "NODETOOL_PROVIDER_ADAPTER_CAPABILITIES_EXTERNAL",
+        "reference_to_video",
+    )
+
+    host, port = server
+    async with websockets.connect(f"ws://{host}:{port}") as ws:
+        await ws.send(msgpack.packb({
+            "type": "provider.reference_to_video",
+            "request_id": "reference",
+            "data": {
+                "provider": "external",
+                "reference_images": [bytes.fromhex("89504e470d0a1a0a696d616765"), bytes.fromhex("ffd8ff70686f746f")],
+                "reference_videos": [bytes.fromhex("1a45dfa3766964656f")],
+                "params": {"model": "demo", "prompt": "keep identity"},
+                "blob_transfer": "chunked-v1",
+            },
+        }))
+        progress = msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)
+        assert progress["type"] == "progress", progress
+        assert progress["data"] == {"progress": 50}
+        assert msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)["type"] == "blob.start"
+        assert msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)["type"] == "blob.chunk"
+        assert msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)["type"] == "blob.end"
+        result = msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)
+        assert result["type"] == "result"
+        assert result["data"]["blobs"] == {}
+    staged_paths = [Path(path) for path in json.loads(paths_file.read_text())]
+    assert staged_paths
+    assert all(not path.exists() for path in staged_paths)
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_reference_validation_happens_before_adapter(monkeypatch, tmp_path):
+    """Malformed and oversized references never start the configured adapter."""
+    from nodetool.worker import provider_handler
+
+    marker = tmp_path / "started"
+    adapter = tmp_path / "adapter.py"
+    adapter.write_text(f"import pathlib; pathlib.Path({str(marker)!r}).write_text('yes')\n")
+    monkeypatch.setenv("NODETOOL_PROVIDER_ADAPTER_COMMAND_EXTERNAL", f"{sys.executable} {adapter}")
+    monkeypatch.setenv("NODETOOL_PROVIDER_ADAPTER_CAPABILITIES_EXTERNAL", "reference_to_video")
+
+    async def progress(_request_id, _data):
+        return None
+
+    with pytest.raises(ValueError, match="must be arrays"):
+        await provider_handler._handle_adapter_media(
+            "provider.reference_to_video",
+            {"provider": "external", "reference_images": b"not-array", "reference_videos": []},
+            "malformed-arrays", {}, progress,
+        )
+    with pytest.raises(ValueError, match="non-empty image"):
+        await provider_handler._handle_adapter_media(
+            "provider.reference_to_video",
+            {"provider": "external", "reference_images": ["not-binary"], "reference_videos": []},
+            "non-binary", {}, progress,
+        )
+    monkeypatch.setenv("NODETOOL_PROVIDER_ADAPTER_CAPABILITIES_EXTERNAL", "image_to_video")
+    with pytest.raises(ValueError, match="does not support reference_to_video"):
+        await provider_handler._handle_adapter_media(
+            "provider.reference_to_video",
+            {"provider": "external", "reference_images": [], "reference_videos": []},
+            "unsupported-capability", {}, progress,
+        )
+    monkeypatch.setenv("NODETOOL_PROVIDER_ADAPTER_CAPABILITIES_EXTERNAL", "reference_to_video")
+
+    with pytest.raises(ValueError, match="at least one"):
+        await provider_handler._handle_adapter_media(
+            "provider.reference_to_video",
+            {"provider": "external", "reference_images": [], "reference_videos": []},
+            "empty", {}, progress,
+        )
+    with pytest.raises(ValueError, match="non-empty image"):
+        await provider_handler._handle_adapter_media(
+            "provider.reference_to_video",
+            {"provider": "external", "reference_images": [b""], "reference_videos": []},
+            "empty-buffer", {}, progress,
+        )
+    with pytest.raises(ValueError, match="unsupported image media format"):
+        await provider_handler._handle_adapter_media(
+            "provider.reference_to_video",
+            {"provider": "external", "reference_images": [b"unknown"], "reference_videos": []},
+            "unknown-format", {}, progress,
+        )
+    with pytest.raises(ValueError, match="unsupported image media format"):
+        await provider_handler._handle_adapter_media(
+            "provider.reference_to_video",
+            {"provider": "external", "reference_images": [bytes.fromhex("1a45dfa3")], "reference_videos": []},
+            "wrong-kind-image", {}, progress,
+        )
+    with pytest.raises(ValueError, match="unsupported video media format"):
+        await provider_handler._handle_adapter_media(
+            "provider.reference_to_video",
+            {"provider": "external", "reference_images": [], "reference_videos": [bytes.fromhex("89504e470d0a1a0a")]},
+            "wrong-kind-video", {}, progress,
+        )
+    with pytest.raises(ValueError, match="unsupported video media format"):
+        await provider_handler._handle_adapter_media(
+            "provider.reference_to_video",
+            {"provider": "external", "reference_images": [], "reference_videos": [b"....ftypavif"]},
+            "avif-video", {}, progress,
+        )
+    with pytest.raises(ValueError, match="maximum"):
+        monkeypatch.setattr(provider_handler, "_REFERENCE_INPUT_LIMIT", 4)
+        await provider_handler._handle_adapter_media(
+            "provider.reference_to_video",
+            {"provider": "external", "reference_images": [b"12345"], "reference_videos": []},
+            "too-large", {}, progress,
+        )
+    assert not marker.exists()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_reference_cancel_during_staging_removes_files(monkeypatch, tmp_path):
+    """Cancellation observed after an input write prevents adapter startup."""
+    from nodetool.worker import provider_handler
+
+    marker = tmp_path / "started"
+    adapter = tmp_path / "adapter.py"
+    adapter.write_text(f"import pathlib; pathlib.Path({str(marker)!r}).write_text('yes')\n")
+    monkeypatch.setenv("NODETOOL_PROVIDER_ADAPTER_COMMAND_EXTERNAL", f"{sys.executable} {adapter}")
+    monkeypatch.setenv("NODETOOL_PROVIDER_ADAPTER_CAPABILITIES_EXTERNAL", "reference_to_video")
+    original_to_thread = asyncio.to_thread
+    flags: dict[str, asyncio.Event] = {}
+    staged_paths: list[Path] = []
+
+    async def staged_to_thread(func, *args):
+        result = await original_to_thread(func, *args)
+        if isinstance(getattr(func, "__self__", None), Path):
+            staged_paths.append(func.__self__)
+        if flags.get("during-stage") is not None:
+            flags["during-stage"].set()
+        return result
+
+    monkeypatch.setattr(provider_handler.asyncio, "to_thread", staged_to_thread)
+    flags["during-stage"] = asyncio.Event()
+    with pytest.raises(RuntimeError, match="cancelled"):
+        await provider_handler._handle_adapter_media(
+            "provider.reference_to_video",
+            {"provider": "external", "reference_images": [bytes.fromhex("89504e470d0a1a0a696d616765")], "reference_videos": []},
+            "during-stage", flags, lambda *_args: None,
+        )
+    assert not marker.exists()
+    assert "during-stage" not in flags
+    assert staged_paths
+    assert all(not path.exists() for path in staged_paths)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_reference_adapter_failure_cleans_staged_files(monkeypatch, tmp_path):
+    from nodetool.worker import provider_handler
+    path_file = tmp_path / "path"
+    adapter = tmp_path / "failing.py"
+    adapter.write_text("""import json, pathlib, sys
+request = json.loads(sys.stdin.readline())
+pathlib.Path(sys.argv[1]).write_text(request[\"reference_image_paths\"][0])
+raise SystemExit(3)
+""")
+    monkeypatch.setenv("NODETOOL_PROVIDER_ADAPTER_COMMAND_EXTERNAL", f"{sys.executable} {adapter} {path_file}")
+    monkeypatch.setenv("NODETOOL_PROVIDER_ADAPTER_CAPABILITIES_EXTERNAL", "reference_to_video")
+    with pytest.raises(RuntimeError, match="Provider adapter failed"):
+        await provider_handler._handle_adapter_media(
+            "provider.reference_to_video",
+            {"provider": "external", "reference_images": [bytes.fromhex("89504e470d0a1a0a696d616765")], "reference_videos": []},
+            "adapter-failure", {}, lambda *_args: None,
+        )
+    assert path_file.exists()
+    assert not Path(path_file.read_text()).exists()

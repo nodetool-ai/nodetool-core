@@ -168,6 +168,7 @@ Input blobs are uploaded to ComfyUI and spliced into the workflow wherever a `"b
 | 3 | `comfy.*` ComfyUI proxy, `comfy.event` frame type, `comfy` capability block in `worker.status` |
 | 4 | Optional execution identity fields, `job.start`/`job.end` run boundaries, `models.evict`, and node VRAM requirements |
 | 5 | Optional `chunked-v1` result blob transfer with integrity checks, image-configured `models.prepare` adapters, and download activity telemetry |
+| 6 | `provider.reference_to_video` command-adapter requests with staged reference media and ordered image/video path lists |
 
 The TS bridge declares the minimum version it can speak; a worker reporting a lower `protocol_version` in `discover`/`worker.status` is rejected.
 

@@ -33,6 +33,8 @@ History:
       ordered offset, declared byte count, and SHA-256 integrity check.
       Added image-configured models.prepare adapters. Unknown download totals
       use zero while progress can carry backend-specific activity telemetry.
+  6 - Added provider.reference_to_video command-adapter requests with staged
+      reference media and ordered image/video path lists.
 """
 
-BRIDGE_PROTOCOL_VERSION = 5
+BRIDGE_PROTOCOL_VERSION = 6
