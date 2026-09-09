@@ -8,7 +8,36 @@ import pytest
 import pytest_asyncio
 import websockets
 
+from nodetool.worker.provider_handler import _text_to_audio_kwargs
 from nodetool.worker.server import WorkerServer, start_server
+
+
+def test_text_to_audio_bridge_envelope_is_normalized():
+    """Camel-case bridge params become provider-compatible keyword arguments."""
+    context = object()
+    assert _text_to_audio_kwargs(
+        {
+            "params": {
+                "prompt": "cinematic score",
+                "model": "music-model",
+                "lyrics": "hello",
+                "durationSeconds": 12,
+                "guidanceScale": 3.5,
+                "numInferenceSteps": 20,
+                "seed": 7,
+            }
+        },
+        context,
+    ) == {
+        "prompt": "cinematic score",
+        "model": "music-model",
+        "lyrics": "hello",
+        "audio_duration": 12,
+        "guidance_scale": 3.5,
+        "num_inference_steps": 20,
+        "seed": 7,
+        "context": context,
+    }
 
 
 @pytest_asyncio.fixture(loop_scope="function")
@@ -185,7 +214,7 @@ print(json.dumps({"type": "result", "data": data}), flush=True)
         ("provider.text_to_audio", "text_to_audio", "audio", {}),
         (
             "provider.tts_encoded",
-            "text_to_speech",
+            "text_to_speech_encoded",
             "audio",
             {"params": {"referenceAudio": b"reference-audio"}},
         ),

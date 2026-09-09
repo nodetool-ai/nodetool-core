@@ -641,7 +641,9 @@ async def _handle_adapter_media(
         raise ValueError(f"Provider adapter is unavailable: {provider_id}")
     adapter_operation = operation.removeprefix("provider.")
     capability = (
-        "text_to_speech" if adapter_operation == "tts_encoded" else adapter_operation
+        "text_to_speech_encoded"
+        if adapter_operation == "tts_encoded"
+        else adapter_operation
     )
     if capability not in _adapter_capabilities(provider_id):
         raise ValueError(f"Provider {provider_id} does not support {capability}")
@@ -690,26 +692,37 @@ async def _handle_adapter_media(
         return {"blobs": {output_key: await asyncio.to_thread(path.read_bytes)}}
 
 
+def _text_to_audio_kwargs(data: dict[str, Any], context: Any) -> dict[str, Any]:
+    """Normalize legacy top-level and bridge-style nested music arguments."""
+    params = data.get("params")
+    source = params if isinstance(params, dict) else data
+    kwargs: dict[str, Any] = {
+        "prompt": source["prompt"],
+        "model": source["model"],
+        "context": context,
+    }
+    optional_fields = {
+        "lyrics": ("lyrics",),
+        "audio_duration": ("audio_duration", "durationSeconds"),
+        "guidance_scale": ("guidance_scale", "guidanceScale"),
+        "num_inference_steps": ("num_inference_steps", "numInferenceSteps"),
+        "seed": ("seed",),
+    }
+    for target, aliases in optional_fields.items():
+        for alias in aliases:
+            if alias in source:
+                kwargs[target] = source[alias]
+                break
+    return kwargs
+
+
 async def _handle_text_to_audio(data: dict) -> dict:
     """Handle provider.text_to_audio."""
     from nodetool.worker.context_stub import WorkerContext
 
     provider = _get_provider(data["provider"], data.get("secrets", {}))
     ctx = WorkerContext(secrets=data.get("secrets", {}))
-    kwargs: dict[str, Any] = {
-        "prompt": data["prompt"],
-        "model": data["model"],
-        "context": ctx,
-    }
-    for key in (
-        "lyrics",
-        "audio_duration",
-        "guidance_scale",
-        "num_inference_steps",
-        "seed",
-    ):
-        if key in data:
-            kwargs[key] = data[key]
+    kwargs = _text_to_audio_kwargs(data, ctx)
 
     audio_ref = await provider.text_to_audio(**kwargs)
     return {"blobs": {"audio": await _extract_media_bytes(ctx, audio_ref)}}
