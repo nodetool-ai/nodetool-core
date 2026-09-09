@@ -3,6 +3,7 @@ from typing import Any, Iterator, List, Tuple
 
 import pytest
 
+from nodetool.runtime.resources import ResourceScope
 from nodetool.types.api_graph import Edge
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.graph import Graph
@@ -13,6 +14,55 @@ mp3_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test.mp3")
 
 def _make_context(env: dict | None = None) -> ProcessingContext:
     return ProcessingContext(environment=env or {})
+
+
+@pytest.mark.asyncio
+async def test_memory_api_clears_by_pattern_and_reports_types() -> None:
+    context = ProcessingContext()
+    async with ResourceScope():
+        context._memory_set("memory://image-1", object())
+        context._memory_set("download://image-1", b"payload")
+
+        assert context.get_memory_stats() == {
+            "total_objects": 2,
+            "types": {"object": 1, "bytes": 1},
+        }
+        assert context.clear_memory("memory://*") == 1
+        assert context.get_memory_stats() == {
+            "total_objects": 1,
+            "types": {"bytes": 1},
+        }
+
+
+@pytest.mark.asyncio
+async def test_memory_api_nested_scopes_share_cleanup() -> None:
+    context = ProcessingContext()
+    async with ResourceScope():
+        context._memory_set("memory://outer", "outer")
+        async with ResourceScope():
+            context._memory_set("memory://inner", "inner")
+            assert context.clear_memory("memory://inner") == 1
+            assert context.get_memory_stats()["total_objects"] == 1
+        assert context.get_memory_stats()["total_objects"] == 1
+        assert context.clear_memory() == 1
+        assert context.get_memory_stats() == {"total_objects": 0, "types": {}}
+
+
+@pytest.mark.asyncio
+async def test_memory_stats_exclude_expired_entries() -> None:
+    context = ProcessingContext()
+    async with ResourceScope() as scope:
+        scope.get_memory_uri_cache().set("memory://expired", object(), ttl=-1)
+        assert context.get_memory_stats() == {"total_objects": 0, "types": {}}
+
+
+@pytest.mark.asyncio
+async def test_cleanup_clears_memory_cache() -> None:
+    context = ProcessingContext()
+    async with ResourceScope():
+        context._memory_set("memory://cleanup", object())
+        await context.cleanup()
+        assert context.get_memory_stats() == {"total_objects": 0, "types": {}}
 
 
 def test_get_system_font_path_env_points_to_file(tmp_path):
@@ -161,5 +211,3 @@ class DummyInputNode(BaseNode):
 
     async def process(self, context: Any) -> dict[str, Any]:
         return {"output": self.value}
-
-

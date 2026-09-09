@@ -96,7 +96,7 @@ def _covered(name: str, sources: dict[str, str], overridden: set[str], seen: tup
     if name in seen or name not in sources:
         return False
     calls = set(re.findall(r"self\.([a-z_0-9]+)\(", sources[name]))
-    return any(_covered(call, sources, overridden, seen + (name,)) for call in calls if call in sources)
+    return any(_covered(call, sources, overridden, (*seen, name)) for call in calls if call in sources)
 
 
 def test_every_producer_is_overridden_or_delegates_to_one():

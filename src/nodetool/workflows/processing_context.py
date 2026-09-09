@@ -960,42 +960,14 @@ class ProcessingContext:
         except Exception as e:
             log.debug(f"Failed to get from URI cache: {e}")
 
-        # 🛡️ SSRF protection: block private/restricted hosts and resolve via a
-        # guarded resolver, mirroring asset_storage.download_http_uri. Redirects
-        # are followed manually so each hop's hostname is re-validated — aiohttp's
-        # automatic redirects (and the connector's IP-literal short-circuit) would
-        # otherwise let a redirect to an IP literal such as http://169.254.169.254/
-        # bypass the SSRF check.
-        from urllib.parse import urljoin, urlparse
+        from nodetool.io.http_fetch import HTTPRedirectError, HTTPTooManyRedirects, fetch_http_bytes
 
-        import aiohttp
-
-        from nodetool.utils.network import SSRFProtectResolver, is_ip_private
-
-        def _block_private(target: str) -> None:
-            host = urlparse(target).hostname
-            if host and is_ip_private(host):
-                raise ValueError(f"Access to private/restricted IP blocked: {host}")
-
-        max_redirects = 5
-        current_url = url
-        connector = aiohttp.TCPConnector(resolver=SSRFProtectResolver())
-        async with aiohttp.ClientSession(connector=connector) as session:
-            for _ in range(max_redirects + 1):
-                _block_private(current_url)
-                async with session.get(current_url, allow_redirects=False) as response:
-                    if response.status in (301, 302, 303, 307, 308):
-                        location = response.headers.get("Location")
-                        if not location:
-                            response.raise_for_status()
-                            raise ValueError(f"Redirect with no Location header: {current_url}")
-                        current_url = urljoin(current_url, location)
-                        continue
-                    response.raise_for_status()
-                    content = await response.read()
-                    break
-            else:
-                raise ValueError(f"Too many redirects while fetching: {url}")
+        try:
+            content = (await fetch_http_bytes(url)).data
+        except HTTPRedirectError as err:
+            raise ValueError(f"Redirect with no Location header: {err.url}") from err
+        except HTTPTooManyRedirects as err:
+            raise ValueError(f"Too many redirects while fetching: {url}") from err
 
         # Store downloaded bytes in URI cache for 5 minutes
         with suppress(Exception):
@@ -2625,15 +2597,26 @@ class ProcessingContext:
 
         return resolve_workspace_path(self.workspace_dir, path)
 
-    def clear_memory(self, pattern: str | None = None):
+    def clear_memory(self, pattern: str | None = None) -> int:
         """
         Clear memory objects, optionally matching a pattern.
 
         Args:
             pattern (str | None): Optional pattern to match memory keys.
-                                If None, clears all memory.
+                                Shell-style wildcards are supported. If None,
+                                clears all memory.
+
+        Returns:
+            Number of cache entries removed. Nested resource scopes share the
+            parent cache, so an explicit clear affects that shared cache.
         """
-        pass
+        from nodetool.workflows.memory_utils import clear_memory_uri_cache
+
+        # ResourceScope deliberately shares its memory URI cache with nested
+        # scopes.  Therefore a clear from a nested context affects every
+        # context participating in that shared scope, with pattern matching
+        # applied to the complete cache key (for example, ``memory://*``).
+        return clear_memory_uri_cache(pattern=pattern)
 
     def get_memory_stats(self) -> dict[str, int | dict[str, int]]:
         """
@@ -2642,9 +2625,13 @@ class ProcessingContext:
         Returns:
             dict: Statistics including total objects and breakdown by type.
         """
-        # Node cache interface does not expose iteration over items.
-        # Return an empty summary to avoid leaking implementation details.
-        return {"total_objects": 0, "types": {}}
+        from nodetool.workflows.memory_utils import get_memory_uri_cache_stats
+
+        stats = get_memory_uri_cache_stats(include_types=True)
+        return {
+            "total_objects": stats["count"],
+            "types": stats["types"],
+        }
 
     async def cleanup(self):
         """

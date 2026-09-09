@@ -5,16 +5,15 @@ from io import BytesIO
 from typing import IO, cast
 from urllib.parse import urlparse
 
-import aiohttp
 import numpy as np
 import PIL.Image
 
+from nodetool.io.http_fetch import fetch_http_bytes
 from nodetool.media.image.image_utils import (
     numpy_to_pil_image,
     pil_to_png_bytes,
 )
 from nodetool.runtime.resources import require_scope
-from nodetool.utils.network import SSRFProtectResolver, is_ip_private
 
 log = logging.getLogger(__name__)
 
@@ -118,17 +117,6 @@ def _fetch_file_uri(uri: str, workspace_dir: str | None = None) -> tuple[str, by
     return mime_type, data
 
 
-def _validate_uri_host(uri: str) -> None:
-    """Raise if the URI's hostname resolves to a private/restricted IP.
-
-    Also guards against redirect targets that use an IP literal to bypass the
-    connector's SSRF resolver.
-    """
-    parsed = urlparse(uri)
-    if parsed.hostname and is_ip_private(parsed.hostname):
-        raise ValueError(f"Access to private/restricted IP blocked: {parsed.hostname}")
-
-
 async def _fetch_http_uri_async(uri: str) -> tuple[str, bytes]:
     """Fetch content from an HTTP/HTTPS URL. Local storage URLs are handled by the caller.
 
@@ -137,38 +125,15 @@ async def _fetch_http_uri_async(uri: str) -> tuple[str, bytes]:
     IP-literal short-circuit) would otherwise let a redirect to an IP literal
     such as ``http://169.254.169.254/`` bypass the SSRF check.
     """
-    from urllib.parse import urljoin
+    result = await fetch_http_bytes(uri)
+    mime_type: str | None = None
+    if result.content_type:
+        mime_type = result.content_type.split(";", 1)[0]
+    if not mime_type:
+        import mimetypes
 
-    max_redirects = 5
-    current_uri = uri
-    connector = aiohttp.TCPConnector(resolver=SSRFProtectResolver())
-    async with aiohttp.ClientSession(connector=connector) as session:
-        for _ in range(max_redirects + 1):
-            _validate_uri_host(current_uri)
-            async with session.get(current_uri, allow_redirects=False) as response:
-                if response.status in (301, 302, 303, 307, 308):
-                    location = response.headers.get("Location")
-                    if not location:
-                        raise ValueError(f"Redirect response without Location header from {current_uri}")
-                    # Resolve relative redirects against the current URL.
-                    current_uri = urljoin(current_uri, location)
-                    continue
-
-                response.raise_for_status()
-                data = await response.read()
-                content_type = response.headers.get("Content-Type")
-                mime_type: str | None = None
-                if content_type:
-                    mime_type = content_type.split(";", 1)[0]
-                if not mime_type:
-                    import mimetypes
-
-                    mime_type, _ = mimetypes.guess_type(current_uri)
-                if not mime_type:
-                    mime_type = "application/octet-stream"
-                return mime_type, data
-
-    raise ValueError(f"Too many redirects while fetching {uri}")
+        mime_type, _ = mimetypes.guess_type(result.final_url)
+    return mime_type or "application/octet-stream", result.data
 
 
 def _is_local_storage_url(uri: str) -> bool:

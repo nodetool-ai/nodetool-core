@@ -13,13 +13,13 @@ import logging
 import os
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
-from urllib.parse import unquote, urljoin, urlparse
+from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname
 
 import aiohttp
 
+from nodetool.io.http_fetch import HTTPRedirectError, HTTPTooManyRedirects, fetch_http_bytes
 from nodetool.metadata.types import AssetRef
-from nodetool.utils.network import SSRFProtectResolver, is_ip_private
 
 if TYPE_CHECKING:
     from nodetool.workflows.base_node import BaseNode
@@ -302,31 +302,14 @@ async def download_http_uri(uri: str, path: str) -> BytesIO | None:
         BytesIO containing the downloaded data, or None if download failed
     """
     try:
-        max_redirects = 5
-        current_uri = uri
-        connector = aiohttp.TCPConnector(resolver=SSRFProtectResolver())
-        async with aiohttp.ClientSession(connector=connector) as session:
-            for _ in range(max_redirects + 1):
-                parsed = urlparse(current_uri)
-                if parsed.hostname and is_ip_private(parsed.hostname):
-                    logger.warning("Access to private/restricted IP blocked: %s at %s", parsed.hostname, path)
-                    return None
-
-                async with session.get(current_uri, allow_redirects=False) as response:
-                    if response.status in (301, 302, 303, 307, 308):
-                        location = response.headers.get("Location")
-                        if not location:
-                            logger.warning("Redirect without Location header for URL %s at %s", current_uri, path)
-                            return None
-                        current_uri = urljoin(current_uri, location)
-                        continue
-
-                    response.raise_for_status()
-                    data = await response.read()
-                    return BytesIO(data)
-
-            logger.warning("Too many redirects while downloading URL %s at %s", uri, path)
-            return None
+        result = await fetch_http_bytes(uri)
+        return BytesIO(result.data)
+    except HTTPRedirectError as err:
+        logger.warning("Redirect without Location header for URL %s at %s", err.url, path)
+        return None
+    except HTTPTooManyRedirects:
+        logger.warning("Too many redirects while downloading URL %s at %s", uri, path)
+        return None
     except (aiohttp.ClientError, ValueError) as err:
         logger.warning("Failed to download asset from URL %s at %s: %s", uri, path, err)
         return None

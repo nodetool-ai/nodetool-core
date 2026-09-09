@@ -72,7 +72,7 @@ Python Worker (this repo)
 
 ## Worker Protocol
 
-The worker speaks a msgpack message protocol to the TS server (bridge protocol **v3**, `nodetool.worker.BRIDGE_PROTOCOL_VERSION`). Two transports carry the same messages:
+The worker speaks a msgpack message protocol to the TS server (bridge protocol **v5**, `nodetool.worker.BRIDGE_PROTOCOL_VERSION`). Two transports carry the same messages:
 
 - **WebSocket** (default): `python -m nodetool.worker --host 0.0.0.0 --port 7777`. Each message is one binary msgpack frame. On startup the worker prints `NODETOOL_WORKER_PORT=<port>` to stdout (the only thing on stdout). If `NODETOOL_WORKER_TOKEN` is set, the opening handshake must carry `Authorization: Bearer <token>` (constant-time compare, rejected with 401 before any frame); unset means open, for local/dev use.
 - **stdio** (`--stdio`): same msgpack payloads with 4-byte big-endian length-prefixed framing over stdin/stdout, for parent processes that spawn the worker directly.
@@ -166,6 +166,8 @@ Input blobs are uploaded to ComfyUI and spliced into the workflow wherever a `"b
 | 1 | Initial protocol: `discover`/`execute`/`cancel` + `provider.*`, msgpack framing |
 | 2 | `models.*` HuggingFace cache management |
 | 3 | `comfy.*` ComfyUI proxy, `comfy.event` frame type, `comfy` capability block in `worker.status` |
+| 4 | Optional execution identity fields, `job.start`/`job.end` run boundaries, `models.evict`, and node VRAM requirements |
+| 5 | Optional `chunked-v1` result blob transfer with integrity checks, image-configured `models.prepare` adapters, and download activity telemetry |
 
 The TS bridge declares the minimum version it can speak; a worker reporting a lower `protocol_version` in `discover`/`worker.status` is rejected.
 

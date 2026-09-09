@@ -10,6 +10,7 @@ import numpy as np
 import PIL.Image
 import pytest
 
+from nodetool.io.http_fetch import HTTPFetchResult
 from nodetool.io.media_fetch import (
     _extract_storage_key_from_url,
     _fetch_file_uri,
@@ -84,6 +85,7 @@ class TestParseDataUri:
 
 
 import mimetypes
+
 
 class TestFetchFileUri:
     """Test _fetch_file_uri function."""
@@ -374,6 +376,19 @@ class TestFetchUriBytesAndMimeAsync:
 
         with pytest.raises(ValueError, match="Unsupported URI scheme"):
             await fetch_uri_bytes_and_mime_async(uri)
+
+    @patch("nodetool.io.media_fetch.fetch_http_bytes")
+    async def test_http_mime_fallback_uses_final_redirect_url(self, mock_fetch: Mock) -> None:
+        mock_fetch.return_value = HTTPFetchResult(
+            data=b"file content",
+            final_url="https://example.com/file.png",
+            content_type=None,
+        )
+
+        mime, result = await fetch_uri_bytes_and_mime_async("https://example.com/start")
+
+        assert mime == "image/png"
+        assert result == b"file content"
 
 @pytest.mark.asyncio
 async def test_ssrf_mitigation_blocks_private_ips() -> None:

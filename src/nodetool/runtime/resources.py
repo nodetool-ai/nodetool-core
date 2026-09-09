@@ -5,8 +5,9 @@ Resource scope management for per-execution isolation.
 from __future__ import annotations
 
 import contextvars
+import fnmatch
 import time
-from typing import Any, Optional
+from typing import Any, Optional, TypedDict
 
 import httpx
 
@@ -14,6 +15,15 @@ from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
+
+
+class MemoryUriCacheStats(TypedDict):
+    count: int
+    types: dict[str, int]
+
+
+class MemoryUriCacheCount(TypedDict):
+    count: int
 
 _current_scope: contextvars.ContextVar[Optional[ResourceScope]] = contextvars.ContextVar(
     "_current_scope", default=None
@@ -54,8 +64,39 @@ class _MemoryUriCache:
     def delete(self, key: str) -> None:
         self._store.pop(key, None)
 
-    def clear(self) -> None:
-        self._store.clear()
+    def clear(self, pattern: str | None = None) -> int:
+        """Clear entries and return the number removed.
+
+        A pattern uses shell-style wildcards and is matched against the cache
+        key.  Expired entries are discarded as part of the operation.  The
+        cache can be shared by nested resource scopes, so this operation is
+        intentionally scoped to the shared cache object rather than to a
+        particular ``ResourceScope`` instance.
+        """
+        self._purge_expired()
+        if pattern is None:
+            count = len(self._store)
+            self._store.clear()
+            return count
+        keys = [key for key in self._store if fnmatch.fnmatchcase(key, pattern)]
+        for key in keys:
+            del self._store[key]
+        return len(keys)
+
+    def stats(self) -> MemoryUriCacheStats:
+        """Return the live entry count and value-type breakdown."""
+        self._purge_expired()
+        types: dict[str, int] = {}
+        for value, _expires in self._store.values():
+            type_name = type(value).__name__
+            types[type_name] = types.get(type_name, 0) + 1
+        return {"count": len(self._store), "types": types}
+
+    def _purge_expired(self) -> None:
+        now = time.monotonic()
+        for key, (_value, expires) in list(self._store.items()):
+            if now > expires:
+                del self._store[key]
 
 
 class ResourceScope:
@@ -138,6 +179,12 @@ class ResourceScope:
         return self._temp_storage
 
     def get_memory_uri_cache(self) -> _MemoryUriCache:
+        """Return this scope's cache, borrowing the parent's when nested.
+
+        Nested scopes intentionally share the parent cache.  Exiting a nested
+        scope drops only its reference; it does not clear entries owned by the
+        parent scope.
+        """
         if self._memory_uri_cache is None:
             if self._parent is not None:
                 self._memory_uri_cache = self._parent.get_memory_uri_cache()

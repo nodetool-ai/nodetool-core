@@ -42,6 +42,7 @@ if TYPE_CHECKING:
 
 from nodetool.config.logging_config import get_logger
 from nodetool.integrations.huggingface.async_downloader import async_hf_download
+from nodetool.integrations.huggingface.hf_auth import get_hf_token
 from nodetool.integrations.huggingface.hf_fast_cache import HfFastCache
 from nodetool.metadata.types import (
     CLASSNAME_TO_MODEL_TYPE,
@@ -52,7 +53,6 @@ from nodetool.metadata.types import (
     Provider,
     VideoModel,
 )
-from nodetool.security.secret_helper import get_secret
 from nodetool.types.model import UnifiedModel
 
 try:
@@ -217,24 +217,6 @@ class RepoPackagingHint(StrEnum):
     REPO_BUNDLE = "repo_bundle"  # Treat repo as a single unit (diffusers-style)
     PER_FILE = "per_file"  # Present independent model files (gguf, loras, adapters)
     UNKNOWN = "unknown"  # Not enough signal to decide
-
-
-async def get_hf_token(user_id: str | None = None) -> str | None:
-    """
-    Resolve an HF access token from env or per-user secrets.
-
-    This keeps hub calls working for gated models without forcing callers to
-    know where tokens are stored. The lookup is async because secrets may live
-    in a database behind an async provider.
-    """
-
-    token = os.environ.get("HF_TOKEN")
-    if token:
-        return token
-
-    if user_id:
-        return await get_secret("HF_TOKEN", user_id)
-    return None
 
 
 # Fast HF cache view for local snapshot lookups.
@@ -2286,58 +2268,10 @@ async def delete_cached_hf_model(model_id: str) -> bool:
     return True
 
 
-# GGUF_AUTHORS = [
-# "unsloth",
-# "ggml-org",
-# "LiquidAI",
-# "gabriellarson",
-# "openbmb",
-# "zai-org",
-# "vikhyatk",
-# "01-ai",
-# "BAAI",
-# "Lin-Chen",
-# "mtgv",
-# "lm-sys",
-# "NousResearch",
-# ]
-# MLX_AUTHORS = ["mlx-community"]
-
-
-# async def save_gguf_models_to_file() -> None:
-#     models = await get_gguf_language_models_from_authors(
-#         GGUF_AUTHORS, limit=500, sort="downloads", tags="gguf"
-#     )
-#     with open(GGUF_MODELS_FILE, "w") as f:
-#         json.dump(
-#             [model.model_dump() for model in models if model is not None], f, indent=2
-#         )
-
-
-# async def save_mlx_models_to_file() -> None:
-#     models = await get_mlx_language_models_from_authors(
-#         MLX_AUTHORS, limit=1000, sort="downloads", tags="mlx"
-#     )
-#     with open(MLX_MODELS_FILE, "w") as f:
-#         json.dump([model.model_dump() for model in models], f, indent=2)
-
-
-# async def load_gguf_models_from_file() -> List[UnifiedModel]:
-#     async with aiofiles.open(GGUF_MODELS_FILE, "r") as f:
-#         content = await f.read()
-#         return [UnifiedModel(**model) for model in json.loads(content)]
-
-
-# async def load_mlx_models_from_file() -> List[UnifiedModel]:
-#     async with aiofiles.open(MLX_MODELS_FILE, "r") as f:
-#         content = await f.read()
-#         return [UnifiedModel(**model) for model in json.loads(content)]
-
-
 if __name__ == "__main__":
 
     async def main():
-        """Debug helper: list cached image-to-image models containing IP-Adapter."""
+        """Debug helper: list cached Qwen 2.5 VL models."""
         cached = await get_models_by_hf_type("hf.qwen2_5_vl")
         for model in cached:
             print(model.type, model.id)

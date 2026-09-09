@@ -6,10 +6,10 @@ communicates via length-prefixed msgpack over stdin/stdout.
 """
 
 import asyncio
+import os
 import struct
 import subprocess
 import sys
-import os
 
 import msgpack
 
@@ -66,11 +66,8 @@ async def main():
     print("\n--- Test 2: execute (valid node) ---")
     # Find a simple node that doesn't need external deps
     hf_nodes = [n for n in nodes if "constant" in n["node_type"].lower() or "float" in n["node_type"].lower()]
-    if hf_nodes:
-        node_type = hf_nodes[0]["node_type"]
-    else:
-        # Just use any node from the list
-        node_type = nodes[0]["node_type"] if nodes else "nodetool.text.Concat"
+    candidates = hf_nodes or nodes
+    node_type = candidates[0]["node_type"] if candidates else "nodetool.text.Concat"
 
     await send_msg(proc, {
         "type": "execute",
