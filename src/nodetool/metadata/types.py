@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal, Optional, Union
 
 if TYPE_CHECKING:
     import numpy as np
+    import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from nodetool.metadata.type_metadata import TypeMetadata
@@ -1861,7 +1862,7 @@ class DataframeRef(AssetRef):
     data: list[list[Any]] | None = None
 
     @staticmethod
-    def from_pandas(data: Any):
+    def from_pandas(data: "pd.DataFrame"):
         rows = data.values.tolist()
         column_defs = [
             ColumnDef(name=name, data_type=dtype_name(dtype.name))
