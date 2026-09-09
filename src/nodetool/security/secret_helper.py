@@ -54,20 +54,8 @@ async def get_secret_required(key: str, user_id: str) -> str:
     raise ValueError(f"Required secret '{key}' not found, please set it in the settings menu.")
 
 
-def get_secret_sync(key: str, default: Optional[str] = None, user_id: Optional[str] = None) -> Optional[str]:
-    value = os.environ.get(key)
-    if value:
-        return value
-    return default
-
-
 async def get_secrets_batch(keys: list[str], user_id: str) -> dict[str, Optional[str]]:
     result: dict[str, Optional[str]] = {}
     for key in keys:
         result[key] = await get_secret(key, user_id)
     return result
-
-
-async def has_secret(key: str, user_id: str) -> bool:
-    value = await get_secret(key, user_id)
-    return value is not None

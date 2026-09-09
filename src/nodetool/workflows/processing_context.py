@@ -25,7 +25,6 @@ if TYPE_CHECKING:
     import pandas as pd
     import PIL.Image
     import PIL.ImageOps
-    from chromadb.api import ClientAPI
     from pydub import AudioSegment
     from sklearn.base import BaseEstimator  # type: ignore
 
@@ -41,9 +40,6 @@ from typing import IO, Any, AsyncGenerator, Callable
 
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-
-# NOTE: ChromaDB imports are done lazily in get_chroma_client() to avoid
-# heavy initialization of chromadb/langchain during CLI startup
 from nodetool.io.uri_utils import create_file_uri as _create_file_uri
 from nodetool.media.common.media_constants import (
     DEFAULT_AUDIO_SAMPLE_RATE,
@@ -170,32 +166,12 @@ def _numpy_to_pil_image_util(arr: np.ndarray):
     return numpy_to_pil_image(arr)
 
 
-def _export_to_video_bytes(
-    video_frames,
-    fps: int = 10,
-    quality: float = 5.0,
-    bitrate: int | None = None,
-    macro_block_size: int | None = 16,
-):
-    from nodetool.media.video.video_utils import export_to_video_bytes as _exporter
-
-    return _exporter(
-        video_frames,
-        fps=fps,
-        quality=quality,
-        bitrate=bitrate,
-        macro_block_size=macro_block_size,
-    )
-
-
 def create_file_uri(path: str) -> str:
     """
     Compatibility wrapper delegating to nodetool.io.uri_utils.create_file_uri.
     """
     return _create_file_uri(path)
 
-
-## AUDIO_CODEC and DEFAULT_AUDIO_SAMPLE_RATE imported from media_constants
 
 HTTP_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -300,7 +276,6 @@ class ProcessingContext:
         encode_assets_as_base64: bool = False,
         upload_assets_to_s3: bool = False,
         asset_output_mode: AssetOutputMode | None = None,
-        chroma_client: ClientAPI | None = None,
         workspace_dir: str | None = None,
         http_client: httpx.AsyncClient | None = None,
         tool_bridge: Any | None = None,
@@ -330,7 +305,6 @@ class ProcessingContext:
                 self.asset_output_mode = AssetOutputMode.PYTHON
         else:
             self.asset_output_mode = asset_output_mode
-        self.chroma_client = chroma_client
         # HTTP client is now managed by ResourceScope to ensure correct event loop binding
         # Store passed client only as fallback if no scope is available
         if http_client is not None:
@@ -986,42 +960,14 @@ class ProcessingContext:
         except Exception as e:
             log.debug(f"Failed to get from URI cache: {e}")
 
-        # 🛡️ SSRF protection: block private/restricted hosts and resolve via a
-        # guarded resolver, mirroring asset_storage.download_http_uri. Redirects
-        # are followed manually so each hop's hostname is re-validated — aiohttp's
-        # automatic redirects (and the connector's IP-literal short-circuit) would
-        # otherwise let a redirect to an IP literal such as http://169.254.169.254/
-        # bypass the SSRF check.
-        from urllib.parse import urljoin, urlparse
+        from nodetool.io.http_fetch import HTTPRedirectError, HTTPTooManyRedirects, fetch_http_bytes
 
-        import aiohttp
-
-        from nodetool.utils.network import SSRFProtectResolver, is_ip_private
-
-        def _block_private(target: str) -> None:
-            host = urlparse(target).hostname
-            if host and is_ip_private(host):
-                raise ValueError(f"Access to private/restricted IP blocked: {host}")
-
-        max_redirects = 5
-        current_url = url
-        connector = aiohttp.TCPConnector(resolver=SSRFProtectResolver())
-        async with aiohttp.ClientSession(connector=connector) as session:
-            for _ in range(max_redirects + 1):
-                _block_private(current_url)
-                async with session.get(current_url, allow_redirects=False) as response:
-                    if response.status in (301, 302, 303, 307, 308):
-                        location = response.headers.get("Location")
-                        if not location:
-                            response.raise_for_status()
-                            raise ValueError(f"Redirect with no Location header: {current_url}")
-                        current_url = urljoin(current_url, location)
-                        continue
-                    response.raise_for_status()
-                    content = await response.read()
-                    break
-            else:
-                raise ValueError(f"Too many redirects while fetching: {url}")
+        try:
+            content = (await fetch_http_bytes(url)).data
+        except HTTPRedirectError as err:
+            raise ValueError(f"Redirect with no Location header: {err.url}") from err
+        except HTTPTooManyRedirects as err:
+            raise ValueError(f"Too many redirects while fetching: {url}") from err
 
         # Store downloaded bytes in URI cache for 5 minutes
         with suppress(Exception):
@@ -1550,7 +1496,7 @@ class ProcessingContext:
         elif data.dtype in (np.float32, np.float64):
             # Convert float to int16 range using 32768.0 for proper scaling
             # This ensures -1.0 maps to -32768 and values close to 1.0 map to 32767
-            data_int16 = (data * data.dtype.type(32768.0)).clip(-32768, 32767).astype(np.int16)
+            data_int16 = (np.asarray(data, dtype=np.float32) * np.float32(32768.0)).clip(-32768, 32767).astype(np.int16)
             data_bytes = data_int16.tobytes()
             sample_width = 2
             format_str = "pcm_s16le"
@@ -1649,7 +1595,7 @@ class ProcessingContext:
         elif dtype == "float64" and samples.dtype == np.int16:
             samples = samples.astype(np.float64) / 32768.0
         elif dtype == "int16" and samples.dtype in (np.float32, np.float64):
-            samples = (samples * samples.dtype.type(32768.0)).clip(-32768, 32767).astype(np.int16)
+            samples = (np.asarray(samples, dtype=np.float32) * np.float32(32768.0)).clip(-32768, 32767).astype(np.int16)
         elif dtype != str(samples.dtype):
             samples = samples.astype(dtype)
 
@@ -2651,15 +2597,26 @@ class ProcessingContext:
 
         return resolve_workspace_path(self.workspace_dir, path)
 
-    def clear_memory(self, pattern: str | None = None):
+    def clear_memory(self, pattern: str | None = None) -> int:
         """
         Clear memory objects, optionally matching a pattern.
 
         Args:
             pattern (str | None): Optional pattern to match memory keys.
-                                If None, clears all memory.
+                                Shell-style wildcards are supported. If None,
+                                clears all memory.
+
+        Returns:
+            Number of cache entries removed. Nested resource scopes share the
+            parent cache, so an explicit clear affects that shared cache.
         """
-        pass
+        from nodetool.workflows.memory_utils import clear_memory_uri_cache
+
+        # ResourceScope deliberately shares its memory URI cache with nested
+        # scopes.  Therefore a clear from a nested context affects every
+        # context participating in that shared scope, with pattern matching
+        # applied to the complete cache key (for example, ``memory://*``).
+        return clear_memory_uri_cache(pattern=pattern)
 
     def get_memory_stats(self) -> dict[str, int | dict[str, int]]:
         """
@@ -2668,9 +2625,13 @@ class ProcessingContext:
         Returns:
             dict: Statistics including total objects and breakdown by type.
         """
-        # Node cache interface does not expose iteration over items.
-        # Return an empty summary to avoid leaking implementation details.
-        return {"total_objects": 0, "types": {}}
+        from nodetool.workflows.memory_utils import get_memory_uri_cache_stats
+
+        stats = get_memory_uri_cache_stats(include_types=True)
+        return {
+            "total_objects": stats["count"],
+            "types": stats["types"],
+        }
 
     async def cleanup(self):
         """

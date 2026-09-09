@@ -16,11 +16,11 @@ Cloud/API providers (OpenAI, Anthropic, Gemini, Ollama, etc.) are implemented in
 ```
 src/nodetool/
 ├── config/            # Environment, logging, settings
-├── integrations/      # HuggingFace models, vector stores
+├── integrations/      # HuggingFace models
 ├── io/                # URI utilities, media fetch
 ├── media/             # Audio, image, video processing helpers
 ├── metadata/          # Type definitions, node metadata, tool_types
-├── ml/                # Model management, TTS/ASR/image model lists
+├── ml/                # Model management
 ├── package_metadata/  # Package metadata JSON (nodetool-core.json)
 ├── package_tools/     # Package registry scanning (nodetool-pkg CLI)
 ├── providers/         # Provider base classes, registry
@@ -57,6 +57,9 @@ The following were moved to the TypeScript server and deleted from Python:
 - `cli.py`, `cli_migrations.py`
 - Workflow orchestration: `workflow_runner.py`, `actor.py`, `job_execution.py`, `run_workflow.py`, `checkpoint_manager.py`, `state_manager.py`, etc.
 - Cloud provider implementations: `openai_provider.py`, `anthropic_provider.py`, `gemini_provider.py`, `ollama_provider.py`, etc.
+- Vector stores: `integrations/vectorstores/chroma/` — the TS `packages/vectorstore/` carries `chroma-client.ts` and `embedding.ts`
+- Secret encryption at rest: `security/crypto.py`, `security/master_key.py` — the worker now
+  reads secrets from the environment only (`security/secret_helper.py`)
 
 ## Development Setup
 
@@ -131,7 +134,6 @@ Storage: `create_asset`, `download_asset`, `asset_storage_url`
 | `HF_TOKEN` | HuggingFace token | - |
 | `DB_PATH` | SQLite database path | `~/.config/nodetool/nodetool.sqlite3` |
 | `FFMPEG_PATH` | Path to ffmpeg | `ffmpeg` |
-| `SECRETS_MASTER_KEY` | Master key for encrypted secrets | auto-generated |
 | `COMFYUI_URL` | ComfyUI server proxied by the worker's `comfy.*` messages | `http://127.0.0.1:8188` |
 | `COMFY_MODELS_DIR` | Model tree for `comfy.models.*` (RunPod network volume) | `/workspace/models` |
 
@@ -141,8 +143,8 @@ Tests are in `tests/` mirroring `src/` structure. Key test directories:
 
 - `tests/worker/` — Worker subprocess tests
 - `tests/workflows/` — Node execution, processing context, graph tests
-- `tests/security/` — Crypto, secret helper tests
-- `tests/integrations/` — HuggingFace model detection, safetensors, vector stores
+- `tests/security/` — Secret helper tests
+- `tests/integrations/` — HuggingFace model detection, safetensors
 - `tests/storage/` — Storage backend tests
 
 Note: `tests/io/test_media_fetch.py` has a pre-existing mock recursion timeout — skip with `--ignore=tests/io/test_media_fetch.py` if needed.

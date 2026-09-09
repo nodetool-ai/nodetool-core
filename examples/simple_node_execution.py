@@ -3,10 +3,11 @@
 import asyncio
 import tempfile
 
+from nodetool.workflows.test_nodes import Add, Multiply
+
 from nodetool.config.logging_config import get_logger
 from nodetool.runtime.resources import ResourceScope
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.test_nodes import Add, Multiply
 
 logger = get_logger(__name__)
 

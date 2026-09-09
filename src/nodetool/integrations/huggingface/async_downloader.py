@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import urljoin, urlparse
 
+import aiofiles
 import httpx
 
 from nodetool.config.logging_config import get_logger
@@ -327,9 +328,7 @@ async def hf_head_metadata(
                 break
             current_url = target
         else:
-            raise RuntimeError(
-                f"Too many redirects (>{_MAX_METADATA_REDIRECTS}) resolving metadata for url={url!r}"
-            )
+            raise RuntimeError(f"Too many redirects (>{_MAX_METADATA_REDIRECTS}) resolving metadata for url={url!r}")
     except httpx.HTTPStatusError as e:
         if e.response.status_code in (401, 403):
             raise PermissionError(
@@ -464,14 +463,14 @@ async def _download_with_resume(
                 resp.raise_for_status()
 
                 mode = "ab" if resume_from > 0 else "wb"
-                with tmp.open(mode) as f:
+                async with aiofiles.open(tmp, mode) as f:
                     async for chunk in resp.aiter_bytes(chunk_size):
                         if cancel_event and cancel_event.is_set():
                             log.debug(f"Download cancelled for {url}")
                             raise asyncio.CancelledError("Download cancelled")
                         if not chunk:
                             continue
-                        f.write(chunk)
+                        await f.write(chunk)
                         if progress_callback:
                             progress_callback(len(chunk), expected_size)
 
@@ -586,9 +585,7 @@ async def async_hf_download(
         # question actually being asked (does this *name* escape?) without
         # consulting the filesystem.
         snapshot_root_resolved = snapshot_root.resolve()
-        if not Path(
-            os.path.normpath(snapshot_root_resolved / safe_filename)
-        ).is_relative_to(snapshot_root_resolved):
+        if not Path(os.path.normpath(snapshot_root_resolved / safe_filename)).is_relative_to(snapshot_root_resolved):
             raise ValueError(f"Filename escapes snapshot directory: {filename!r}")
         blob_path = blobs_dir / safe_etag
 

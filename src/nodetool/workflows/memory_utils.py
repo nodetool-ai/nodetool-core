@@ -65,10 +65,14 @@ import traceback
 from collections import defaultdict
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Literal, cast, overload
 
 import psutil
 
 from nodetool.config.logging_config import get_logger
+
+if TYPE_CHECKING:
+    from nodetool.runtime.resources import MemoryUriCacheCount, MemoryUriCacheStats
 
 log = get_logger(__name__)
 
@@ -157,12 +161,21 @@ def run_gc(label: str = "", log_before_after: bool = True) -> float:
     return freed_mb
 
 
-def get_memory_uri_cache_stats() -> dict[str, int]:
+@overload
+def get_memory_uri_cache_stats(include_types: Literal[False] = False) -> MemoryUriCacheCount: ...
+
+
+@overload
+def get_memory_uri_cache_stats(include_types: Literal[True]) -> MemoryUriCacheStats: ...
+
+
+def get_memory_uri_cache_stats(include_types: bool = False) -> MemoryUriCacheStats | MemoryUriCacheCount:
     """
     Get stats about the memory URI cache.
 
     Returns:
-        Dictionary with cache statistics.
+        A count-only dictionary by default. When ``include_types`` is true,
+        also includes a breakdown keyed by value type.
     """
     try:
         from nodetool.runtime.resources import maybe_scope
@@ -170,20 +183,24 @@ def get_memory_uri_cache_stats() -> dict[str, int]:
         scope = maybe_scope()
         if scope:
             cache = scope.get_memory_uri_cache()
-            if cache and hasattr(cache, "_store"):
-                count = len(cache._store)
-                return {"count": count}
+            stats = cache.stats()
+            if include_types:
+                return stats
+            return cast("MemoryUriCacheCount", {"count": stats["count"]})
     except Exception:
         pass
-    return {"count": 0}
+    if include_types:
+        return cast("MemoryUriCacheStats", {"count": 0, "types": {}})
+    return cast("MemoryUriCacheCount", {"count": 0})
 
 
-def clear_memory_uri_cache(log_stats: bool = True) -> int:
+def clear_memory_uri_cache(log_stats: bool = True, pattern: str | None = None) -> int:
     """
     Clear the memory URI cache to free up RAM.
 
     Args:
-        log_stats: Whether to log cache stats before clearing.
+        log_stats: Whether to log the number of entries cleared.
+        pattern: Optional shell-style wildcard matched against cache keys.
 
     Returns:
         Number of items cleared from cache.
@@ -195,15 +212,12 @@ def clear_memory_uri_cache(log_stats: bool = True) -> int:
         if scope:
             cache = scope.get_memory_uri_cache()
             if cache:
-                count = 0
-                if hasattr(cache, "_store"):
-                    count = len(cache._store)
-                if log_stats:
-                    log.info(f"[MEMORY CACHE] Clearing {count} items from memory URI cache")
-
                 # cache.clear() is synchronous - no async wrapper needed
-                cache.clear()
-                return count
+                removed = cache.clear() if pattern is None else cache.clear(pattern)
+                if log_stats:
+                    suffix = f" matching {pattern!r}" if pattern is not None else ""
+                    log.info(f"[MEMORY CACHE] Cleared {removed} items{suffix} from memory URI cache")
+                return removed
     except Exception as e:
         log.debug(f"Failed to clear memory URI cache: {e}")
     return 0

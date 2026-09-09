@@ -9,11 +9,17 @@ so the same code path serves both the WebSocket and stdio workers.
 
 import asyncio
 import hashlib
+import json
 import os
+import re
+import shlex
+import signal
 import sys
+import tempfile
 import traceback
 from collections import OrderedDict
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from nodetool.config.logging_config import get_logger
@@ -27,6 +33,11 @@ log = get_logger(__name__)
 PROVIDER_CACHE_MAX_SIZE = max(1, int(os.environ.get("NODETOOL_PROVIDER_CACHE_SIZE", "4")))
 _provider_cache: "OrderedDict[tuple[str, str], Any]" = OrderedDict()
 _providers_imported = False
+
+_ADAPTER_PROVIDER_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
+_ADAPTER_COMMAND_PREFIX = "NODETOOL_PROVIDER_ADAPTER_COMMAND_"
+_ADAPTER_STDERR_LIMIT = 32 * 1024
+_ADAPTER_LINE_LIMIT = 1024 * 1024
 
 
 def _hash_secrets(secrets: dict[str, str]) -> str:
@@ -103,6 +114,173 @@ def _get_provider(provider_id: str, secrets: dict[str, str]) -> Any:
     return instance
 
 
+def _adapter_suffix(provider_id: str) -> str:
+    return provider_id.upper().replace("-", "_")
+
+
+def _adapter_command_env(provider_id: str) -> str:
+    return f"{_ADAPTER_COMMAND_PREFIX}{_adapter_suffix(provider_id)}"
+
+
+def _adapter_provider_ids() -> list[str]:
+    """Return command-backed providers configured by the worker image."""
+    providers: list[str] = []
+    for name, value in os.environ.items():
+        if not name.startswith(_ADAPTER_COMMAND_PREFIX) or not value.strip():
+            continue
+        provider_id = name[len(_ADAPTER_COMMAND_PREFIX) :].lower()
+        if _ADAPTER_PROVIDER_RE.fullmatch(provider_id):
+            providers.append(provider_id)
+    return sorted(set(providers))
+
+
+def _adapter_capabilities(provider_id: str) -> list[str]:
+    raw = os.environ.get(
+        f"NODETOOL_PROVIDER_ADAPTER_CAPABILITIES_{_adapter_suffix(provider_id)}", ""
+    )
+    return sorted({item.strip() for item in raw.split(",") if item.strip()})
+
+
+def _adapter_display_name(provider_id: str) -> str:
+    return os.environ.get(
+        f"NODETOOL_PROVIDER_ADAPTER_DISPLAY_NAME_{_adapter_suffix(provider_id)}",
+        provider_id,
+    ).strip() or provider_id
+
+
+async def _terminate_adapter(process: asyncio.subprocess.Process) -> None:
+    """Terminate an adapter and its subprocess tree."""
+    if process.returncode is not None:
+        return
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+    else:
+        process.terminate()
+    try:
+        await asyncio.wait_for(process.wait(), timeout=5)
+    except TimeoutError:
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            process.kill()
+        await process.wait()
+
+
+async def _read_adapter_stderr(stream: asyncio.StreamReader | None) -> str:
+    if stream is None:
+        return ""
+    kept = bytearray()
+    while chunk := await stream.read(4096):
+        kept.extend(chunk)
+        if len(kept) > _ADAPTER_STDERR_LIMIT:
+            del kept[: len(kept) - _ADAPTER_STDERR_LIMIT]
+    return kept.decode("utf-8", "replace").strip()
+
+
+async def _run_provider_adapter(
+    provider_id: str,
+    payload: dict[str, Any],
+    request_id: str | None,
+    cancel_flags: dict[str, asyncio.Event],
+    send_progress: Any,
+) -> dict[str, Any]:
+    """Run one image-owned provider operation over a JSON-lines subprocess API.
+
+    The authenticated caller selects only an advertised provider and operation;
+    the executable itself always comes from worker environment configuration.
+    Adapters may emit any number of ``progress`` records followed by exactly one
+    ``result`` record. Binary media crosses the boundary through temporary input
+    files and an adapter-owned output path, keeping JSON small and WanGP in its
+    dependency-isolated interpreter.
+    """
+    command_text = os.environ.get(_adapter_command_env(provider_id), "").strip()
+    command = shlex.split(command_text)
+    if not command:
+        raise ValueError(f"Provider adapter is unavailable: {provider_id}")
+
+    cancel_event = asyncio.Event()
+    if request_id:
+        cancel_flags[request_id] = cancel_event
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=os.name == "posix",
+    )
+    stderr_task = asyncio.create_task(_read_adapter_stderr(process.stderr))
+    result: dict[str, Any] | None = None
+    try:
+        if process.stdin is None or process.stdout is None:
+            raise RuntimeError("Provider adapter pipes are unavailable")
+        process.stdin.write(json.dumps(payload).encode("utf-8") + b"\n")
+        await process.stdin.drain()
+        process.stdin.close()
+
+        while True:
+            line_task = asyncio.create_task(process.stdout.readline())
+            cancel_task = asyncio.create_task(cancel_event.wait())
+            done, pending = await asyncio.wait(
+                {line_task, cancel_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            if cancel_task in done and cancel_task.result():
+                await _terminate_adapter(process)
+                raise RuntimeError("Provider operation cancelled")
+
+            line = line_task.result()
+            if not line:
+                break
+            if len(line) > _ADAPTER_LINE_LIMIT:
+                raise ValueError("Provider adapter emitted an oversized line")
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError("Provider adapter emitted invalid JSON") from exc
+            if not isinstance(event, dict):
+                raise ValueError("Provider adapter event must be a JSON object")
+            event_type = event.get("type")
+            event_data = event.get("data", {})
+            if not isinstance(event_data, dict):
+                raise ValueError("Provider adapter event data must be a JSON object")
+            if event_type == "progress":
+                await send_progress(request_id, event_data)
+            elif event_type == "result":
+                if result is not None:
+                    raise ValueError("Provider adapter emitted multiple results")
+                result = event_data
+            elif event_type == "error":
+                raise RuntimeError(str(event_data.get("error") or "Provider adapter failed"))
+            else:
+                raise ValueError(f"Provider adapter emitted unknown event type: {event_type!r}")
+
+        returncode = await process.wait()
+        stderr = await stderr_task
+        if returncode != 0:
+            detail = stderr.splitlines()[-1] if stderr else f"exit status {returncode}"
+            raise RuntimeError(f"Provider adapter failed: {detail}")
+        if result is None:
+            raise RuntimeError("Provider adapter exited without a result")
+        return result
+    except BaseException:
+        await _terminate_adapter(process)
+        if not stderr_task.done():
+            stderr_task.cancel()
+        await asyncio.gather(stderr_task, return_exceptions=True)
+        raise
+    finally:
+        if request_id:
+            cancel_flags.pop(request_id, None)
+
+
 def _tts_kwargs(data: dict[str, Any]) -> dict[str, Any]:
     """Build the public TTS provider arguments from a bridge request."""
     result: dict[str, Any] = {
@@ -171,6 +349,16 @@ def get_available_providers() -> list[dict[str, Any]]:
                     "display_name": "Hugging Face Local" if pid == "huggingface" else "MLX",
                 }
             )
+    for provider_id in _adapter_provider_ids():
+        result.append(
+            {
+                "id": provider_id,
+                "capabilities": _adapter_capabilities(provider_id),
+                "required_secrets": [],
+                "access": "in_process",
+                "display_name": _adapter_display_name(provider_id),
+            }
+        )
     return result
 
 
@@ -275,8 +463,33 @@ def _serialize_content_part(part: Any) -> dict[str, Any]:
     return {"type": "text", "text": str(part)}
 
 
-async def _handle_models(data: dict) -> dict:
+async def _handle_models(
+    data: dict,
+    request_id: str | None = None,
+    cancel_flags: dict[str, asyncio.Event] | None = None,
+    send_progress: Any = None,
+) -> dict:
     """Handle provider.models — return available models for a provider."""
+    provider_id = data["provider"]
+    if provider_id in _adapter_provider_ids():
+        if cancel_flags is None or send_progress is None:
+            raise RuntimeError("Provider adapter context is unavailable")
+        result = await _run_provider_adapter(
+            provider_id,
+            {
+                "operation": "models",
+                "provider": provider_id,
+                "model_type": data.get("model_type", "language"),
+            },
+            request_id,
+            cancel_flags,
+            send_progress,
+        )
+        models = result.get("models", [])
+        if not isinstance(models, list):
+            raise ValueError("Provider adapter models result must contain a list")
+        return {"models": models}
+
     provider = _get_provider(data["provider"], data.get("secrets", {}))
     model_type = data.get("model_type", "language")
 
@@ -386,6 +599,57 @@ async def _handle_text_to_video(data: dict) -> dict:
     return {"blobs": {"video": await _extract_media_bytes(ctx, video_ref)}}
 
 
+async def _handle_adapter_video(
+    operation: str,
+    data: dict[str, Any],
+    request_id: str | None,
+    cancel_flags: dict[str, asyncio.Event],
+    send_progress: Any,
+) -> dict[str, Any]:
+    """Run command-backed text/image-to-video and return encoded bytes."""
+    provider_id = str(data.get("provider") or "")
+    if provider_id not in _adapter_provider_ids():
+        raise ValueError(f"Provider adapter is unavailable: {provider_id}")
+    capability = operation.removeprefix("provider.")
+    if capability not in _adapter_capabilities(provider_id):
+        raise ValueError(f"Provider {provider_id} does not support {capability}")
+
+    with tempfile.TemporaryDirectory(prefix="nodetool-provider-") as temp_dir:
+        payload: dict[str, Any] = {
+            "operation": capability,
+            "provider": provider_id,
+            "params": data.get("params", {}),
+        }
+        if capability == "image_to_video":
+            image_data = data.get("image", b"")
+            if not isinstance(image_data, (bytes, bytearray)) or not image_data:
+                raise ValueError("provider.image_to_video requires image bytes")
+            encoded = bytes(image_data)
+            suffix = ".png"
+            if encoded.startswith(b"\xff\xd8\xff"):
+                suffix = ".jpg"
+            elif encoded.startswith(b"RIFF") and encoded[8:12] == b"WEBP":
+                suffix = ".webp"
+            image_path = Path(temp_dir) / f"input-image{suffix}"
+            await asyncio.to_thread(image_path.write_bytes, encoded)
+            payload["image_path"] = str(image_path)
+
+        result = await _run_provider_adapter(
+            provider_id,
+            payload,
+            request_id,
+            cancel_flags,
+            send_progress,
+        )
+        output_path = result.get("path")
+        if not isinstance(output_path, str) or not output_path:
+            raise ValueError("Provider adapter result must contain an output path")
+        path = Path(output_path)
+        if not path.is_file():
+            raise FileNotFoundError(f"Provider adapter output does not exist: {path}")
+        return {"blobs": {"video": await asyncio.to_thread(path.read_bytes)}}
+
+
 async def _handle_text_to_audio(data: dict) -> dict:
     """Handle provider.text_to_audio."""
     from nodetool.worker.context_stub import WorkerContext
@@ -455,6 +719,42 @@ async def handle_provider_message(
     """Handle a provider.* message via any transport exposing ``send_msg``."""
 
     async def send_result(rid: str | None, d: dict) -> None:
+        blobs = d.get("blobs")
+        if data.get("blob_transfer") == "chunked-v1" and isinstance(blobs, dict):
+            chunk_size = 4 * 1024 * 1024
+            for name, blob in blobs.items():
+                if not isinstance(name, str) or not isinstance(blob, bytes):
+                    raise TypeError("Provider result blobs must map string names to bytes")
+                await transport.send_msg(
+                    {
+                        "type": "blob.start",
+                        "request_id": rid,
+                        "data": {"name": name, "size": len(blob)},
+                    }
+                )
+                digest = hashlib.sha256()
+                for offset in range(0, len(blob), chunk_size):
+                    chunk = blob[offset : offset + chunk_size]
+                    digest.update(chunk)
+                    await transport.send_msg(
+                        {
+                            "type": "blob.chunk",
+                            "request_id": rid,
+                            "data": {"name": name, "offset": offset, "bytes": chunk},
+                        }
+                    )
+                await transport.send_msg(
+                    {
+                        "type": "blob.end",
+                        "request_id": rid,
+                        "data": {
+                            "name": name,
+                            "size": len(blob),
+                            "sha256": digest.hexdigest(),
+                        },
+                    }
+                )
+            d = {**d, "blobs": {}}
         await transport.send_msg({"type": "result", "request_id": rid, "data": d})
 
     async def send_error(rid: str | None, error: str, tb: str | None = None) -> None:
@@ -468,13 +768,18 @@ async def handle_provider_message(
     async def send_chunk(rid: str | None, d: dict) -> None:
         await transport.send_msg({"type": "chunk", "request_id": rid, "data": d})
 
+    async def send_progress(rid: str | None, d: dict) -> None:
+        await transport.send_msg({"type": "progress", "request_id": rid, "data": d})
+
     try:
         if msg_type == "provider.list":
             providers = get_available_providers()
             await send_result(request_id, {"providers": providers})
 
         elif msg_type == "provider.models":
-            result = await _handle_models(data)
+            result = await _handle_models(
+                data, request_id, cancel_flags, send_progress
+            )
             await send_result(request_id, result)
 
         elif msg_type == "provider.generate":
@@ -535,7 +840,18 @@ async def handle_provider_message(
             await send_result(request_id, result)
 
         elif msg_type == "provider.text_to_video":
-            result = await _handle_text_to_video(data)
+            if data.get("provider") in _adapter_provider_ids():
+                result = await _handle_adapter_video(
+                    msg_type, data, request_id, cancel_flags, send_progress
+                )
+            else:
+                result = await _handle_text_to_video(data)
+            await send_result(request_id, result)
+
+        elif msg_type == "provider.image_to_video":
+            result = await _handle_adapter_video(
+                msg_type, data, request_id, cancel_flags, send_progress
+            )
             await send_result(request_id, result)
 
         elif msg_type == "provider.text_to_audio":

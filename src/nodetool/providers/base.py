@@ -400,18 +400,20 @@ class BaseProvider:
         | ImageModel
         | TTSModel
         | ASRModel
+        | AudioModel
         | VideoModel
         | EmbeddingModel
         | Model3DModel
     ]:
         """Get a list of all available models for this provider.
 
-        Returns language, image, TTS, ASR, video, embedding, and 3D models combined. Use get_available_language_models(),
+        Returns language, image, TTS, ASR, audio, video, embedding, and 3D models combined. Use get_available_language_models(),
         get_available_image_models(), get_available_tts_models(), get_available_asr_models(),
-        get_available_video_models(), get_available_embedding_models(), or get_available_3d_models() to filter to specific model types.
+        get_available_audio_models(), get_available_video_models(), get_available_embedding_models(),
+        or get_available_3d_models() to filter to specific model types.
 
         Returns:
-            List containing LanguageModel, ImageModel, TTSModel, ASRModel, VideoModel, EmbeddingModel, and Model3DModel instances
+            List containing LanguageModel, ImageModel, TTSModel, ASRModel, AudioModel, VideoModel, EmbeddingModel, and Model3DModel instances
 
         Raises:
             Exception: If model discovery fails (should be caught and return empty list)
@@ -420,10 +422,11 @@ class BaseProvider:
         image_models = await self.get_available_image_models()
         tts_models = await self.get_available_tts_models()
         asr_models = await self.get_available_asr_models()
+        audio_models = await self.get_available_audio_models()
         video_models = await self.get_available_video_models()
         embedding_models = await self.get_available_embedding_models()
         model_3d_models = await self.get_available_3d_models()
-        return language_models + image_models + tts_models + asr_models + video_models + embedding_models + model_3d_models  # type: ignore
+        return language_models + image_models + tts_models + asr_models + audio_models + video_models + embedding_models + model_3d_models  # type: ignore
 
     def is_context_length_error(self, error: Exception) -> bool:
         """Return True if the given error indicates a context window overflow.

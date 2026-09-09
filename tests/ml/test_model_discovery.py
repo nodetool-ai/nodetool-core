@@ -12,7 +12,7 @@ from typing import List
 
 import pytest
 
-from nodetool.metadata.types import ImageModel, LanguageModel, Provider
+from nodetool.metadata.types import AudioModel, ImageModel, LanguageModel, Provider
 from nodetool.providers.base import BaseProvider
 
 
@@ -129,6 +129,20 @@ async def test_multimodal_provider_get_available_models_returns_both():
 
     assert language_count == 2
     assert image_count == 2
+
+
+class MockAudioProvider(BaseProvider):
+    async def get_available_audio_models(self) -> list[AudioModel]:
+        return [AudioModel(id="mock-audio", name="Mock Audio", provider=Provider.Empty)]
+
+
+@pytest.mark.asyncio
+async def test_get_available_models_includes_audio_models():
+    models = await MockAudioProvider().get_available_models()
+
+    assert len(models) == 1
+    assert isinstance(models[0], AudioModel)
+    assert models[0].id == "mock-audio"
 
 
 @pytest.mark.asyncio
