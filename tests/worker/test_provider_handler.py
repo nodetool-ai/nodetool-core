@@ -1,6 +1,8 @@
 """Tests for the provider bridge handler."""
 
 import asyncio
+import sys
+
 import msgpack
 import pytest
 import pytest_asyncio
@@ -72,3 +74,146 @@ async def test_provider_models_invalid_provider(server):
         resp = msgpack.unpackb(raw, raw=False)
         assert resp["type"] == "error"
         assert resp["request_id"] == "pm-1"
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_command_backed_video_provider(server, monkeypatch, tmp_path):
+    """An image-owned interpreter can expose models and video generation."""
+    adapter = tmp_path / "provider_adapter.py"
+    output = tmp_path / "generated.mp4"
+    adapter.write_text(
+        """
+import json
+import pathlib
+import sys
+
+request = json.loads(sys.stdin.readline())
+operation = request["operation"]
+if operation == "models":
+    data = {"models": [{"id": "demo", "name": "Demo", "provider": "external"}]}
+else:
+    if operation == "image_to_video":
+        assert pathlib.Path(request["image_path"]).read_bytes() == b"image-data"
+    print(json.dumps({"type": "progress", "data": {"progress": 50}}), flush=True)
+    path = pathlib.Path(sys.argv[1])
+    path.write_bytes(b"video-data")
+    data = {"path": str(path)}
+print(json.dumps({"type": "result", "data": data}), flush=True)
+""".strip()
+        + "\n"
+    )
+    monkeypatch.setenv(
+        "NODETOOL_PROVIDER_ADAPTER_COMMAND_EXTERNAL",
+        f"{sys.executable} {adapter} {output}",
+    )
+    monkeypatch.setenv(
+        "NODETOOL_PROVIDER_ADAPTER_CAPABILITIES_EXTERNAL",
+        "text_to_video,image_to_video",
+    )
+    monkeypatch.setenv("NODETOOL_PROVIDER_ADAPTER_DISPLAY_NAME_EXTERNAL", "External Video")
+
+    host, port = server
+    async with websockets.connect(f"ws://{host}:{port}") as ws:
+        await ws.send(
+            msgpack.packb(
+                {"type": "provider.list", "request_id": "list", "data": {}}
+            )
+        )
+        listed = msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)
+        external = next(p for p in listed["data"]["providers"] if p["id"] == "external")
+        assert external == {
+            "id": "external",
+            "capabilities": ["image_to_video", "text_to_video"],
+            "required_secrets": [],
+            "access": "in_process",
+            "display_name": "External Video",
+        }
+
+        await ws.send(
+            msgpack.packb(
+                {
+                    "type": "provider.models",
+                    "request_id": "models",
+                    "data": {"provider": "external", "model_type": "video"},
+                }
+            )
+        )
+        models = msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)
+        assert models["data"]["models"][0]["id"] == "demo"
+
+        await ws.send(
+            msgpack.packb(
+                {
+                    "type": "provider.image_to_video",
+                    "request_id": "video",
+                    "data": {
+                        "provider": "external",
+                        "image": b"image-data",
+                        "params": {"model": "demo", "prompt": "move"},
+                        "blob_transfer": "chunked-v1",
+                    },
+                }
+            )
+        )
+        progress = msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)
+        blob_start = msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)
+        blob_chunk = msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)
+        blob_end = msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)
+        result = msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)
+        assert progress["type"] == "progress"
+        assert progress["data"] == {"progress": 50}
+        assert blob_start["type"] == "blob.start"
+        assert blob_start["data"] == {"name": "video", "size": 10}
+        assert blob_chunk["type"] == "blob.chunk"
+        assert blob_chunk["data"]["bytes"] == b"video-data"
+        assert blob_end["type"] == "blob.end"
+        assert result["type"] == "result"
+        assert result["data"]["blobs"] == {}
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_command_backed_provider_cancel_stops_adapter(server, monkeypatch, tmp_path):
+    adapter = tmp_path / "slow_provider.py"
+    adapter.write_text(
+        """
+import json
+import sys
+import time
+
+json.loads(sys.stdin.readline())
+print(json.dumps({"type": "progress", "data": {"progress": 1}}), flush=True)
+time.sleep(30)
+""".strip()
+        + "\n"
+    )
+    monkeypatch.setenv(
+        "NODETOOL_PROVIDER_ADAPTER_COMMAND_EXTERNAL", f"{sys.executable} {adapter}"
+    )
+    monkeypatch.setenv(
+        "NODETOOL_PROVIDER_ADAPTER_CAPABILITIES_EXTERNAL", "text_to_video"
+    )
+
+    host, port = server
+    async with websockets.connect(f"ws://{host}:{port}") as ws:
+        await ws.send(
+            msgpack.packb(
+                {
+                    "type": "provider.text_to_video",
+                    "request_id": "cancel-me",
+                    "data": {
+                        "provider": "external",
+                        "params": {"model": "demo", "prompt": "move"},
+                    },
+                }
+            )
+        )
+        progress = msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)
+        assert progress["type"] == "progress"
+        await ws.send(
+            msgpack.packb(
+                {"type": "cancel", "request_id": "cancel-me", "data": {}}
+            )
+        )
+        error = msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)
+        assert error["type"] == "error"
+        assert error["data"]["error"] == "Provider operation cancelled"
