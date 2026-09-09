@@ -8,7 +8,36 @@ import pytest
 import pytest_asyncio
 import websockets
 
+from nodetool.worker.provider_handler import _text_to_audio_kwargs
 from nodetool.worker.server import WorkerServer, start_server
+
+
+def test_text_to_audio_bridge_envelope_is_normalized():
+    """Camel-case bridge params become provider-compatible keyword arguments."""
+    context = object()
+    assert _text_to_audio_kwargs(
+        {
+            "params": {
+                "prompt": "cinematic score",
+                "model": "music-model",
+                "lyrics": "hello",
+                "durationSeconds": 12,
+                "guidanceScale": 3.5,
+                "numInferenceSteps": 20,
+                "seed": 7,
+            }
+        },
+        context,
+    ) == {
+        "prompt": "cinematic score",
+        "model": "music-model",
+        "lyrics": "hello",
+        "audio_duration": 12,
+        "guidance_scale": 3.5,
+        "num_inference_steps": 20,
+        "seed": 7,
+        "context": context,
+    }
 
 
 @pytest_asyncio.fixture(loop_scope="function")
@@ -33,7 +62,8 @@ async def test_provider_list(server):
             "request_id": "pl-1",
             "data": {},
         }))
-        raw = await asyncio.wait_for(ws.recv(), timeout=5)
+        # First provider discovery imports optional ML stacks on cold CI hosts.
+        raw = await asyncio.wait_for(ws.recv(), timeout=10)
         resp = msgpack.unpackb(raw, raw=False)
         assert resp["type"] == "result"
         assert resp["request_id"] == "pl-1"
@@ -169,6 +199,100 @@ print(json.dumps({"type": "result", "data": data}), flush=True)
         assert blob_end["type"] == "blob.end"
         assert result["type"] == "result"
         assert result["data"]["blobs"] == {}
+
+
+@pytest.mark.parametrize(
+    ("message_type", "capability", "blob_name", "extra_data"),
+    [
+        ("provider.text_to_image", "text_to_image", "image", {}),
+        (
+            "provider.image_to_image",
+            "image_to_image",
+            "image",
+            {"image": b"image-data"},
+        ),
+        ("provider.text_to_audio", "text_to_audio", "audio", {}),
+        (
+            "provider.tts_encoded",
+            "text_to_speech_encoded",
+            "audio",
+            {"params": {"referenceAudio": b"reference-audio"}},
+        ),
+    ],
+)
+@pytest.mark.asyncio(loop_scope="function")
+async def test_command_backed_provider_media_operations(
+    server,
+    monkeypatch,
+    tmp_path,
+    message_type,
+    capability,
+    blob_name,
+    extra_data,
+):
+    """External adapters can return image and encoded audio files."""
+    adapter = tmp_path / "media_provider.py"
+    output = tmp_path / "generated.bin"
+    adapter.write_text(
+        """
+import json
+import pathlib
+import sys
+
+request = json.loads(sys.stdin.readline())
+if request["operation"].startswith("image_to_"):
+    assert pathlib.Path(request["image_path"]).read_bytes() == b"image-data"
+if request["operation"] == "tts_encoded":
+    assert pathlib.Path(request["reference_audio_path"]).read_bytes() == b"reference-audio"
+    assert "referenceAudio" not in request["params"]
+path = pathlib.Path(sys.argv[1])
+path.write_bytes(request["operation"].encode())
+print(json.dumps({"type": "result", "data": {"path": str(path)}}), flush=True)
+""".strip()
+        + "\n"
+    )
+    monkeypatch.setenv(
+        "NODETOOL_PROVIDER_ADAPTER_COMMAND_EXTERNAL",
+        f"{sys.executable} {adapter} {output}",
+    )
+    monkeypatch.setenv(
+        "NODETOOL_PROVIDER_ADAPTER_CAPABILITIES_EXTERNAL", capability
+    )
+
+    data = {
+        "provider": "external",
+        "params": {"model": "demo", "prompt": "test"},
+        "blob_transfer": "chunked-v1",
+        **extra_data,
+    }
+    if "params" in extra_data:
+        data["params"] = {
+            "model": "demo",
+            "text": "hello",
+            **extra_data["params"],
+        }
+
+    host, port = server
+    async with websockets.connect(f"ws://{host}:{port}") as ws:
+        await ws.send(
+            msgpack.packb(
+                {
+                    "type": message_type,
+                    "request_id": "media",
+                    "data": data,
+                }
+            )
+        )
+        frames = []
+        while not frames or frames[-1]["type"] != "result":
+            frames.append(
+                msgpack.unpackb(await asyncio.wait_for(ws.recv(), 5), raw=False)
+            )
+
+    start = next(frame for frame in frames if frame["type"] == "blob.start")
+    chunk = next(frame for frame in frames if frame["type"] == "blob.chunk")
+    assert start["data"]["name"] == blob_name
+    assert chunk["data"]["bytes"] == message_type.removeprefix("provider.").encode()
 
 
 @pytest.mark.asyncio(loop_scope="function")

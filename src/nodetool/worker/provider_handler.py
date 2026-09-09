@@ -497,6 +497,7 @@ async def _handle_models(
         "language": "get_available_language_models",
         "image": "get_available_image_models",
         "tts": "get_available_tts_models",
+        "music": "get_available_audio_models",
         "asr": "get_available_asr_models",
         "video": "get_available_video_models",
         "embedding": "get_available_embedding_models",
@@ -599,40 +600,73 @@ async def _handle_text_to_video(data: dict) -> dict:
     return {"blobs": {"video": await _extract_media_bytes(ctx, video_ref)}}
 
 
-async def _handle_adapter_video(
+def _encoded_media_suffix(data: bytes, kind: str) -> str:
+    """Choose a useful extension for adapter-owned temporary input files."""
+    if kind == "image":
+        if data.startswith(b"\xff\xd8\xff"):
+            return ".jpg"
+        if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+            return ".webp"
+        return ".png"
+    if data.startswith(b"RIFF") and data[8:12] == b"WAVE":
+        return ".wav"
+    if data.startswith(b"fLaC"):
+        return ".flac"
+    if data.startswith(b"OggS"):
+        return ".ogg"
+    return ".mp3"
+
+
+async def _stage_adapter_input(
+    temp_dir: str, data: object, kind: str
+) -> str:
+    if not isinstance(data, (bytes, bytearray)) or not data:
+        raise ValueError(f"Provider adapter requires non-empty {kind} bytes")
+    encoded = bytes(data)
+    path = Path(temp_dir) / f"input-{kind}{_encoded_media_suffix(encoded, kind)}"
+    await asyncio.to_thread(path.write_bytes, encoded)
+    return str(path)
+
+
+async def _handle_adapter_media(
     operation: str,
     data: dict[str, Any],
     request_id: str | None,
     cancel_flags: dict[str, asyncio.Event],
     send_progress: Any,
 ) -> dict[str, Any]:
-    """Run command-backed text/image-to-video and return encoded bytes."""
+    """Run a command-backed media operation and return its encoded file."""
     provider_id = str(data.get("provider") or "")
     if provider_id not in _adapter_provider_ids():
         raise ValueError(f"Provider adapter is unavailable: {provider_id}")
-    capability = operation.removeprefix("provider.")
+    adapter_operation = operation.removeprefix("provider.")
+    capability = (
+        "text_to_speech_encoded"
+        if adapter_operation == "tts_encoded"
+        else adapter_operation
+    )
     if capability not in _adapter_capabilities(provider_id):
         raise ValueError(f"Provider {provider_id} does not support {capability}")
 
     with tempfile.TemporaryDirectory(prefix="nodetool-provider-") as temp_dir:
         payload: dict[str, Any] = {
-            "operation": capability,
+            "operation": adapter_operation,
             "provider": provider_id,
-            "params": data.get("params", {}),
+            "params": dict(data.get("params", {})),
         }
-        if capability == "image_to_video":
-            image_data = data.get("image", b"")
-            if not isinstance(image_data, (bytes, bytearray)) or not image_data:
-                raise ValueError("provider.image_to_video requires image bytes")
-            encoded = bytes(image_data)
-            suffix = ".png"
-            if encoded.startswith(b"\xff\xd8\xff"):
-                suffix = ".jpg"
-            elif encoded.startswith(b"RIFF") and encoded[8:12] == b"WEBP":
-                suffix = ".webp"
-            image_path = Path(temp_dir) / f"input-image{suffix}"
-            await asyncio.to_thread(image_path.write_bytes, encoded)
-            payload["image_path"] = str(image_path)
+        if adapter_operation in {"image_to_image", "image_to_video"}:
+            payload["image_path"] = await _stage_adapter_input(
+                temp_dir, data.get("image", b""), "image"
+            )
+        if adapter_operation == "tts_encoded":
+            params = payload["params"]
+            reference_audio = params.pop(
+                "referenceAudio", params.pop("reference_audio", None)
+            )
+            if reference_audio is not None:
+                payload["reference_audio_path"] = await _stage_adapter_input(
+                    temp_dir, reference_audio, "audio"
+                )
 
         result = await _run_provider_adapter(
             provider_id,
@@ -647,7 +681,39 @@ async def _handle_adapter_video(
         path = Path(output_path)
         if not path.is_file():
             raise FileNotFoundError(f"Provider adapter output does not exist: {path}")
-        return {"blobs": {"video": await asyncio.to_thread(path.read_bytes)}}
+        output_key = {
+            "text_to_image": "image",
+            "image_to_image": "image",
+            "text_to_video": "video",
+            "image_to_video": "video",
+            "text_to_audio": "audio",
+            "tts_encoded": "audio",
+        }[adapter_operation]
+        return {"blobs": {output_key: await asyncio.to_thread(path.read_bytes)}}
+
+
+def _text_to_audio_kwargs(data: dict[str, Any], context: Any) -> dict[str, Any]:
+    """Normalize legacy top-level and bridge-style nested music arguments."""
+    params = data.get("params")
+    source = params if isinstance(params, dict) else data
+    kwargs: dict[str, Any] = {
+        "prompt": source["prompt"],
+        "model": source["model"],
+        "context": context,
+    }
+    optional_fields = {
+        "lyrics": ("lyrics",),
+        "audio_duration": ("audio_duration", "durationSeconds"),
+        "guidance_scale": ("guidance_scale", "guidanceScale"),
+        "num_inference_steps": ("num_inference_steps", "numInferenceSteps"),
+        "seed": ("seed",),
+    }
+    for target, aliases in optional_fields.items():
+        for alias in aliases:
+            if alias in source:
+                kwargs[target] = source[alias]
+                break
+    return kwargs
 
 
 async def _handle_text_to_audio(data: dict) -> dict:
@@ -656,20 +722,7 @@ async def _handle_text_to_audio(data: dict) -> dict:
 
     provider = _get_provider(data["provider"], data.get("secrets", {}))
     ctx = WorkerContext(secrets=data.get("secrets", {}))
-    kwargs: dict[str, Any] = {
-        "prompt": data["prompt"],
-        "model": data["model"],
-        "context": ctx,
-    }
-    for key in (
-        "lyrics",
-        "audio_duration",
-        "guidance_scale",
-        "num_inference_steps",
-        "seed",
-    ):
-        if key in data:
-            kwargs[key] = data[key]
+    kwargs = _text_to_audio_kwargs(data, ctx)
 
     audio_ref = await provider.text_to_audio(**kwargs)
     return {"blobs": {"audio": await _extract_media_bytes(ctx, audio_ref)}}
@@ -832,16 +885,26 @@ async def handle_provider_message(
                     cancel_flags.pop(request_id, None)
 
         elif msg_type == "provider.text_to_image":
-            result = await _handle_text_to_image(data)
+            if data.get("provider") in _adapter_provider_ids():
+                result = await _handle_adapter_media(
+                    msg_type, data, request_id, cancel_flags, send_progress
+                )
+            else:
+                result = await _handle_text_to_image(data)
             await send_result(request_id, result)
 
         elif msg_type == "provider.image_to_image":
-            result = await _handle_image_to_image(data)
+            if data.get("provider") in _adapter_provider_ids():
+                result = await _handle_adapter_media(
+                    msg_type, data, request_id, cancel_flags, send_progress
+                )
+            else:
+                result = await _handle_image_to_image(data)
             await send_result(request_id, result)
 
         elif msg_type == "provider.text_to_video":
             if data.get("provider") in _adapter_provider_ids():
-                result = await _handle_adapter_video(
+                result = await _handle_adapter_media(
                     msg_type, data, request_id, cancel_flags, send_progress
                 )
             else:
@@ -849,13 +912,24 @@ async def handle_provider_message(
             await send_result(request_id, result)
 
         elif msg_type == "provider.image_to_video":
-            result = await _handle_adapter_video(
+            result = await _handle_adapter_media(
                 msg_type, data, request_id, cancel_flags, send_progress
             )
             await send_result(request_id, result)
 
         elif msg_type == "provider.text_to_audio":
-            result = await _handle_text_to_audio(data)
+            if data.get("provider") in _adapter_provider_ids():
+                result = await _handle_adapter_media(
+                    msg_type, data, request_id, cancel_flags, send_progress
+                )
+            else:
+                result = await _handle_text_to_audio(data)
+            await send_result(request_id, result)
+
+        elif msg_type == "provider.tts_encoded":
+            result = await _handle_adapter_media(
+                msg_type, data, request_id, cancel_flags, send_progress
+            )
             await send_result(request_id, result)
 
         elif msg_type == "provider.tts":
