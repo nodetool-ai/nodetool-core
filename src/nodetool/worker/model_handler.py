@@ -18,7 +18,11 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import json
 import os
+import re
+import shlex
+import signal
 import traceback
 from typing import Any, Callable
 
@@ -28,6 +32,209 @@ from nodetool.integrations.huggingface.huggingface_models import (
     get_hf_token,
     read_cached_hf_models,
 )
+
+_MODEL_BACKEND_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
+_ADAPTER_STDERR_LIMIT = 32 * 1024
+
+
+def _prepare_command_env(backend: str) -> str:
+    return f"NODETOOL_MODEL_PREPARE_COMMAND_{backend.upper().replace('-', '_')}"
+
+
+def get_model_prepare_backends() -> list[str]:
+    """Return image-provided model preparation backends.
+
+    A backend is enabled only by a worker-side command. The authenticated peer
+    selects an advertised id; it can never supply or alter the executable.
+    """
+    prefix = "NODETOOL_MODEL_PREPARE_COMMAND_"
+    backends: list[str] = []
+    for name, value in os.environ.items():
+        if not name.startswith(prefix) or not value.strip():
+            continue
+        backend = name[len(prefix) :].lower()
+        if _MODEL_BACKEND_RE.fullmatch(backend):
+            backends.append(backend)
+    return sorted(set(backends))
+
+
+def _prepare_progress_frame(data: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
+    """Normalize an adapter update to the existing download progress shape."""
+    status = update.get("status")
+    if status not in {"start", "progress", "completed", "error", "cancelled"}:
+        raise ValueError(f"Model preparation adapter returned invalid status: {status!r}")
+
+    frame = dict(update)
+    frame.update(
+        {
+            "status": status,
+            "repo_id": str(data.get("repo_id") or f"{data['backend']}:{data['model_type']}"),
+            "path": None,
+            "model_type": str(data["model_type"]),
+            "downloaded_bytes": max(0, int(update.get("downloaded_bytes") or 0)),
+            # Zero is the established wire representation for an unknown total.
+            "total_bytes": max(0, int(update.get("total_bytes") or 0)),
+            "downloaded_files": max(0, int(update.get("downloaded_files") or 0)),
+            "total_files": max(0, int(update.get("total_files") or 0)),
+        }
+    )
+    current = update.get("current_files")
+    frame["current_files"] = (
+        [str(path) for path in current if isinstance(path, str)]
+        if isinstance(current, list)
+        else []
+    )
+    return frame
+
+
+async def _terminate_adapter(process: asyncio.subprocess.Process) -> None:
+    if process.returncode is not None:
+        return
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+    else:
+        process.terminate()
+    try:
+        await asyncio.wait_for(process.wait(), timeout=5)
+    except TimeoutError:
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            process.kill()
+        await process.wait()
+
+
+async def _read_adapter_stderr(stream: asyncio.StreamReader | None) -> str:
+    if stream is None:
+        return ""
+    kept = bytearray()
+    while chunk := await stream.read(4096):
+        kept.extend(chunk)
+        if len(kept) > _ADAPTER_STDERR_LIMIT:
+            del kept[: len(kept) - _ADAPTER_STDERR_LIMIT]
+    return kept.decode("utf-8", "replace").strip()
+
+
+async def _handle_prepare(
+    data: dict[str, Any],
+    request_id: str | None,
+    cancel_flags: dict[str, asyncio.Event],
+    send_progress: Callable,
+    send_result: Callable,
+) -> None:
+    """Run an image-owned model adapter and relay its JSON-lines progress."""
+    backend = data.get("backend")
+    model_type = data.get("model_type")
+    if not isinstance(backend, str) or not _MODEL_BACKEND_RE.fullmatch(backend):
+        raise ValueError("models.prepare requires a valid backend")
+    if not isinstance(model_type, str) or not model_type.strip():
+        raise ValueError("models.prepare requires model_type")
+
+    command_text = os.environ.get(_prepare_command_env(backend), "").strip()
+    if not command_text:
+        raise ValueError(f"Model preparation backend is unavailable: {backend}")
+    command = shlex.split(command_text)
+    if not command:
+        raise ValueError(f"Model preparation backend has an empty command: {backend}")
+
+    cancel_event = asyncio.Event()
+    if request_id:
+        cancel_flags[request_id] = cancel_event
+
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=os.name == "posix",
+    )
+    stderr_task = asyncio.create_task(_read_adapter_stderr(process.stderr))
+    last_frame = _prepare_progress_frame(data, {"status": "start"})
+    await send_progress(request_id, last_frame)
+
+    try:
+        if process.stdin is None or process.stdout is None:
+            raise RuntimeError("Model preparation adapter pipes are unavailable")
+        payload = {
+            "backend": backend,
+            "model_type": model_type.strip(),
+            "repo_id": last_frame["repo_id"],
+        }
+        token = _request_token(data)
+        if token:
+            payload["token"] = token
+        process.stdin.write(json.dumps(payload).encode("utf-8") + b"\n")
+        await process.stdin.drain()
+        process.stdin.close()
+
+        while True:
+            line_task = asyncio.create_task(process.stdout.readline())
+            cancel_task = asyncio.create_task(cancel_event.wait())
+            done, pending = await asyncio.wait(
+                {line_task, cancel_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+
+            if cancel_task in done and cancel_task.result():
+                await _terminate_adapter(process)
+                last_frame = _prepare_progress_frame(
+                    data,
+                    {
+                        **last_frame,
+                        "status": "cancelled",
+                        "current_files": [],
+                        "message": "Model preparation cancelled",
+                    },
+                )
+                await send_progress(request_id, last_frame)
+                await send_result(
+                    request_id,
+                    {"repo_id": last_frame["repo_id"], "status": "cancelled"},
+                )
+                return
+
+            line = line_task.result()
+            if not line:
+                break
+            if len(line) > 1024 * 1024:
+                raise ValueError("Model preparation adapter emitted an oversized progress line")
+            try:
+                update = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError("Model preparation adapter emitted invalid JSON") from exc
+            if not isinstance(update, dict):
+                raise ValueError("Model preparation adapter progress must be a JSON object")
+            last_frame = _prepare_progress_frame(data, update)
+            await send_progress(request_id, last_frame)
+
+        returncode = await process.wait()
+        stderr = await stderr_task
+        if returncode != 0:
+            detail = stderr.splitlines()[-1] if stderr else f"exit status {returncode}"
+            raise RuntimeError(f"Model preparation adapter failed: {detail}")
+        if last_frame["status"] != "completed":
+            raise RuntimeError("Model preparation adapter exited without completing")
+        await send_result(
+            request_id,
+            {"repo_id": last_frame["repo_id"], "status": "completed"},
+        )
+    except BaseException:
+        await _terminate_adapter(process)
+        if not stderr_task.done():
+            stderr_task.cancel()
+        await asyncio.gather(stderr_task, return_exceptions=True)
+        raise
+    finally:
+        if request_id:
+            cancel_flags.pop(request_id, None)
 
 
 async def _list_repo_files(repo_id: str, token: str | None = None):
@@ -382,6 +589,9 @@ async def handle_models_message(
 
         elif msg_type == "models.download":
             await _handle_download(data, request_id, cancel_flags, send_progress, send_result)
+
+        elif msg_type == "models.prepare":
+            await _handle_prepare(data, request_id, cancel_flags, send_progress, send_result)
 
         elif msg_type == "models.delete":
             deleted = await delete_cached_hf_model(data["repo_id"])

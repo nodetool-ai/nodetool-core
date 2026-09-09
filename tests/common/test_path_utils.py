@@ -12,7 +12,7 @@ from nodetool.io.path_utils import resolve_workspace_path
 class TestPathUtils(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
-        self.workspace_dir = tempfile.mkdtemp()
+        self.workspace_dir = os.path.realpath(tempfile.mkdtemp())
         # Create some test files
         self.test_file = os.path.join(self.workspace_dir, "test.txt")
         with open(self.test_file, "w") as f:

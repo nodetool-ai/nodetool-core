@@ -28,6 +28,11 @@ History:
       identity keys are extra dict entries a pre-v4 worker ignores, and
       the new message types are capability-gated on the JS side — so the
       floor (`MIN_BRIDGE_PROTOCOL_VERSION` = 1) does not move.
+  5 - Added the optional `chunked-v1` execute-result blob transfer. Large
+      blobs travel as bounded blob.start/blob.chunk/blob.end frames with an
+      ordered offset, declared byte count, and SHA-256 integrity check.
+      Added image-configured models.prepare adapters. Unknown download totals
+      use zero while progress can carry backend-specific activity telemetry.
 """
 
-BRIDGE_PROTOCOL_VERSION = 4
+BRIDGE_PROTOCOL_VERSION = 5

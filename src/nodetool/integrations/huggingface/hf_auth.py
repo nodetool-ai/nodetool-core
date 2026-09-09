@@ -13,6 +13,16 @@ log = get_logger(__name__)
 
 
 async def get_hf_token(user_id: str | None = None) -> str | None:
+    """Resolve the live environment token, then the per-user secret fallback.
+
+    Checking the environment on every call lets workers rotate ``HF_TOKEN``
+    without invalidating the secret helper's cache. The fallback remains
+    available for callers that provide a user id and have no live env token.
+    """
+    token = os.environ.get("HF_TOKEN")
+    if token:
+        return token
+
     if user_id:
         try:
             token = await get_secret("HF_TOKEN", user_id)
@@ -20,9 +30,5 @@ async def get_hf_token(user_id: str | None = None) -> str | None:
                 return token
         except Exception as e:
             log.debug(f"get_hf_token: Error getting HF_TOKEN secret: {e}")
-
-    token = os.environ.get("HF_TOKEN")
-    if token:
-        return token
 
     return None

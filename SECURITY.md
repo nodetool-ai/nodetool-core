@@ -64,21 +64,9 @@ Use this checklist when deploying NodeTool to production environments.
 
 ### 3. Secrets Management
 
-- [ ] **Generate and secure master key**
-  - Generate: `python -c "from nodetool.security.crypto import SecretCrypto; print(SecretCrypto.generate_master_key())"`
-  - Store in AWS Secrets Manager for multi-instance deployments
-  - Or set via `SECRETS_MASTER_KEY` environment variable
-- [ ] **Configure AWS Secrets Manager** (recommended for production)
-  ```bash
-  python -m nodetool.security.aws_secrets_util generate \
-    --secret-name nodetool-master-key \
-    --region us-east-1
-  export AWS_SECRETS_MASTER_KEY_NAME=nodetool-master-key
-  ```
-- [ ] **Backup master key securely** - Loss of master key means all encrypted secrets are unrecoverable
 - [ ] **Never commit secrets to version control**
   - Use `.env.*.local` files (gitignored) for local secrets
-  - Use environment variables or secrets managers in production
+  - Use environment variables or your deployment platform's secrets manager in production
 
 ### 4. API Keys & External Services
 
@@ -185,11 +173,6 @@ LOG_LEVEL=INFO
 AUTH_PROVIDER=supabase
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-service-key
-
-# Secrets encryption
-SECRETS_MASTER_KEY=<generated-master-key>
-# OR use AWS Secrets Manager:
-# AWS_SECRETS_MASTER_KEY_NAME=nodetool-master-key
 
 # Database (PostgreSQL recommended)
 POSTGRES_DB=nodetool

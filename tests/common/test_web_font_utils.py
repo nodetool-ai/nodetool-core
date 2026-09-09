@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nodetool.media.image import web_font_utils
 from nodetool.media.image.web_font_utils import (
     GOOGLE_FONTS_CATALOG,
     WEIGHT_MAP,
@@ -20,6 +21,15 @@ from nodetool.media.image.web_font_utils import (
     get_web_font_path,
     list_cached_fonts,
 )
+
+
+@pytest.fixture(autouse=True)
+def isolated_font_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exercise cache creation and deletion without touching the user's fonts."""
+    monkeypatch.setattr(web_font_utils, "_FONT_CACHE_DIR", None)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "cache"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
 
 
 class TestCacheFilename:

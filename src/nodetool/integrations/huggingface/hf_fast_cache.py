@@ -279,7 +279,7 @@ class HfFastCache:
             Optional[str]: Absolute path to the repo directory under the cache
             root, or ``None`` if the repo is not present.
         """
-        state = await self._ensure_repo_state(repo_id, repo_type, create_if_missing=False)
+        state = await self._ensure_repo_state(repo_id, repo_type)
         return str(state.repo_dir) if state is not None else None
 
     async def active_snapshot_dir(self, repo_id: str, repo_type: Optional[str] = None) -> Optional[str]:
@@ -344,7 +344,6 @@ class HfFastCache:
         self,
         repo_id: str,
         repo_type: Optional[str],
-        create_if_missing: bool = True,
     ) -> Optional[_RepoState]:
         """Load or refresh cached state for a repo.
 
@@ -359,13 +358,9 @@ class HfFastCache:
         Args:
             repo_id: Repository identifier such as ``"owner/name"``.
             repo_type: Optional repository type hint.
-            create_if_missing: When ``False``, returns ``None`` if the repo is
-                not already tracked or present on disk.
-
         Returns:
             Optional[_RepoState]: The current state object for the repo, or
-            ``None`` if the repo is not present and ``create_if_missing`` is
-            ``False``.
+            ``None`` if the repo is not present.
         """
         key_candidates = _candidate_repo_keys(repo_id, repo_type)
 
