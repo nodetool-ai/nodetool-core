@@ -66,3 +66,7 @@
 ## 2024-05-18 - Avoid OOM and Precision Loss when scaling arrays
 **Learning:** Using standard Python float literals (e.g. `32768.0`) when scaling `np.float32` arrays causes implicit conversion to `np.float64`, consuming double the memory and slowing down execution unnecessarily.
 **Action:** Always scale numpy float arrays using constants properly casted to `np.float32` (e.g. `np.float32(32768.0)`) or the array's exact native type (`array.dtype.type(32768.0)`) and use `np.asarray(data, dtype=np.float32)` instead of `.astype(np.float32)` to avoid float16 overflow issues during clipping operations.
+
+## 2024-05-18 - Optimize list comprehension in loop checks
+**Learning:** Evaluating a list comprehension dynamically inside a `for` loop (e.g. `if i not in [e.targetHandle for e in input_edges]`) recreates the entire list on every single loop iteration, resulting in O(K * N) time complexity.
+**Action:** Always extract the target collection outside the loop and use a set comprehension instead (e.g. `target_handles = {e.targetHandle for e in input_edges}`) to prevent redundant list allocations and achieve O(1) membership lookups.
