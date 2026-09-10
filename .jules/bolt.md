@@ -70,3 +70,6 @@
 ## 2024-05-18 - Optimize list comprehension in loop checks
 **Learning:** Evaluating a list comprehension dynamically inside a `for` loop (e.g. `if i not in [e.targetHandle for e in input_edges]`) recreates the entire list on every single loop iteration, resulting in O(K * N) time complexity.
 **Action:** Always extract the target collection outside the loop and use a set comprehension instead (e.g. `target_handles = {e.targetHandle for e in input_edges}`) to prevent redundant list allocations and achieve O(1) membership lookups.
+## 2026-10-24 - Optimize membership checks using set literals
+**Learning:** Using list or tuple literals (e.g., `x in ["a", "b", "c"]`) for membership tests forces Python to either iterate linearly or reconstruct the object at runtime. Python's compiler optimizes set literals (e.g., `x in {"a", "b", "c"}`) into a `frozenset` at compile time, reducing lookup complexity to O(1) and preventing unnecessary runtime overhead.
+**Action:** Always use set literals for static membership checks in Python to maximize performance.
