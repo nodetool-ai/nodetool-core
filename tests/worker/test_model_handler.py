@@ -13,11 +13,11 @@ from nodetool.worker import BRIDGE_PROTOCOL_VERSION
 from nodetool.worker.server import WorkerServer, start_server
 
 
-def test_protocol_version_is_5():
+def test_protocol_version_is_6():
     # Lockstep with `BRIDGE_PROTOCOL_VERSION` in the JS repo's
-    # packages/protocol/src/bridge-protocol.ts. v5 added negotiated chunked
-    # execute-result blobs with size and digest verification.
-    assert BRIDGE_PROTOCOL_VERSION == 5
+    # packages/protocol/src/bridge-protocol.ts. v6 adds reference-to-video
+    # adapter requests while retaining negotiated chunked result blobs.
+    assert BRIDGE_PROTOCOL_VERSION == 6
 
 
 @pytest_asyncio.fixture(loop_scope="function")
