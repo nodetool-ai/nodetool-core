@@ -56,10 +56,21 @@ def _reference_media_suffix(data: bytes, kind: str) -> str | None:
     if kind == "video":
         if data.startswith(b"\x1a\x45\xdf\xa3"):
             return ".webm"
-        if len(data) >= 12 and data[4:8] == b"ftyp" and data[8:12] in {
-            b"isom", b"iso2", b"mp41", b"mp42", b"avc1", b"mp4v", b"M4V "
-        }:
-            return ".mp4"
+        if len(data) >= 12 and data[4:8] == b"ftyp":
+            brand = data[8:12]
+            if brand in {
+                b"isom",
+                b"iso2",
+                b"iso5",
+                b"iso6",
+                b"mp41",
+                b"mp42",
+                b"avc1",
+                b"mp4v",
+                b"M4V ",
+                b"qt  ",
+            }:
+                return ".mov" if brand == b"qt  " else ".mp4"
         return None
     return None
 
@@ -159,17 +170,18 @@ def _adapter_provider_ids() -> list[str]:
 
 
 def _adapter_capabilities(provider_id: str) -> list[str]:
-    raw = os.environ.get(
-        f"NODETOOL_PROVIDER_ADAPTER_CAPABILITIES_{_adapter_suffix(provider_id)}", ""
-    )
+    raw = os.environ.get(f"NODETOOL_PROVIDER_ADAPTER_CAPABILITIES_{_adapter_suffix(provider_id)}", "")
     return sorted({item.strip() for item in raw.split(",") if item.strip()})
 
 
 def _adapter_display_name(provider_id: str) -> str:
-    return os.environ.get(
-        f"NODETOOL_PROVIDER_ADAPTER_DISPLAY_NAME_{_adapter_suffix(provider_id)}",
-        provider_id,
-    ).strip() or provider_id
+    return (
+        os.environ.get(
+            f"NODETOOL_PROVIDER_ADAPTER_DISPLAY_NAME_{_adapter_suffix(provider_id)}",
+            provider_id,
+        ).strip()
+        or provider_id
+    )
 
 
 async def _terminate_adapter(process: asyncio.subprocess.Process) -> None:
@@ -254,9 +266,7 @@ async def _run_provider_adapter(
         while True:
             line_task = asyncio.create_task(process.stdout.readline())
             cancel_task = asyncio.create_task(cancel_event.wait())
-            done, pending = await asyncio.wait(
-                {line_task, cancel_task}, return_when=asyncio.FIRST_COMPLETED
-            )
+            done, pending = await asyncio.wait({line_task, cancel_task}, return_when=asyncio.FIRST_COMPLETED)
             for task in pending:
                 task.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
@@ -645,9 +655,7 @@ def _encoded_media_suffix(data: bytes, kind: str) -> str:
     return ".mp3"
 
 
-async def _stage_adapter_input(
-    temp_dir: str, data: object, kind: str
-) -> str:
+async def _stage_adapter_input(temp_dir: str, data: object, kind: str) -> str:
     if not isinstance(data, (bytes, bytearray)) or not data:
         raise ValueError(f"Provider adapter requires non-empty {kind} bytes")
     encoded = bytes(data)
@@ -668,11 +676,7 @@ async def _handle_adapter_media(
     if provider_id not in _adapter_provider_ids():
         raise ValueError(f"Provider adapter is unavailable: {provider_id}")
     adapter_operation = operation.removeprefix("provider.")
-    capability = (
-        "text_to_speech_encoded"
-        if adapter_operation == "tts_encoded"
-        else adapter_operation
-    )
+    capability = "text_to_speech_encoded" if adapter_operation == "tts_encoded" else adapter_operation
     if capability not in _adapter_capabilities(provider_id):
         raise ValueError(f"Provider {provider_id} does not support {capability}")
 
@@ -687,9 +691,7 @@ async def _handle_adapter_media(
                 "params": dict(data.get("params", {})),
             }
             if adapter_operation in {"image_to_image", "image_to_video"}:
-                payload["image_path"] = await _stage_adapter_input(
-                    temp_dir, data.get("image", b""), "image"
-                )
+                payload["image_path"] = await _stage_adapter_input(temp_dir, data.get("image", b""), "image")
             elif adapter_operation == "reference_to_video":
                 image_values = data.get("reference_images", [])
                 video_values = data.get("reference_videos", [])
@@ -706,8 +708,7 @@ async def _handle_adapter_media(
                 total = sum(len(encoded) for _, encoded in values)
                 if total > _REFERENCE_INPUT_LIMIT:
                     raise ValueError(
-                        f"provider.reference_to_video input is {total} bytes; "
-                        f"maximum is {_REFERENCE_INPUT_LIMIT} bytes"
+                        f"provider.reference_to_video input is {total} bytes; maximum is {_REFERENCE_INPUT_LIMIT} bytes"
                     )
                 image_paths: list[str] = []
                 video_paths: list[str] = []
@@ -716,13 +717,8 @@ async def _handle_adapter_media(
                         raise RuntimeError("Provider operation cancelled")
                     suffix = _reference_media_suffix(encoded, kind)
                     if suffix is None:
-                        raise ValueError(
-                            f"provider.reference_to_video received unsupported "
-                            f"{kind} media format"
-                        )
-                    path = Path(temp_dir) / (
-                        f"reference-{kind}-{index}{suffix}"
-                    )
+                        raise ValueError(f"provider.reference_to_video received unsupported {kind} media format")
+                    path = Path(temp_dir) / (f"reference-{kind}-{index}{suffix}")
                     await asyncio.to_thread(path.write_bytes, encoded)
                     if kind == "image":
                         image_paths.append(str(path))
@@ -897,9 +893,7 @@ async def handle_provider_message(
             await send_result(request_id, {"providers": providers})
 
         elif msg_type == "provider.models":
-            result = await _handle_models(
-                data, request_id, cancel_flags, send_progress
-            )
+            result = await _handle_models(data, request_id, cancel_flags, send_progress)
             await send_result(request_id, result)
 
         elif msg_type == "provider.generate":
@@ -953,50 +947,38 @@ async def handle_provider_message(
 
         elif msg_type == "provider.text_to_image":
             if data.get("provider") in _adapter_provider_ids():
-                result = await _handle_adapter_media(
-                    msg_type, data, request_id, cancel_flags, send_progress
-                )
+                result = await _handle_adapter_media(msg_type, data, request_id, cancel_flags, send_progress)
             else:
                 result = await _handle_text_to_image(data)
             await send_result(request_id, result)
 
         elif msg_type == "provider.image_to_image":
             if data.get("provider") in _adapter_provider_ids():
-                result = await _handle_adapter_media(
-                    msg_type, data, request_id, cancel_flags, send_progress
-                )
+                result = await _handle_adapter_media(msg_type, data, request_id, cancel_flags, send_progress)
             else:
                 result = await _handle_image_to_image(data)
             await send_result(request_id, result)
 
         elif msg_type == "provider.text_to_video":
             if data.get("provider") in _adapter_provider_ids():
-                result = await _handle_adapter_media(
-                    msg_type, data, request_id, cancel_flags, send_progress
-                )
+                result = await _handle_adapter_media(msg_type, data, request_id, cancel_flags, send_progress)
             else:
                 result = await _handle_text_to_video(data)
             await send_result(request_id, result)
 
         elif msg_type in ("provider.image_to_video", "provider.reference_to_video"):
-            result = await _handle_adapter_media(
-                msg_type, data, request_id, cancel_flags, send_progress
-            )
+            result = await _handle_adapter_media(msg_type, data, request_id, cancel_flags, send_progress)
             await send_result(request_id, result)
 
         elif msg_type == "provider.text_to_audio":
             if data.get("provider") in _adapter_provider_ids():
-                result = await _handle_adapter_media(
-                    msg_type, data, request_id, cancel_flags, send_progress
-                )
+                result = await _handle_adapter_media(msg_type, data, request_id, cancel_flags, send_progress)
             else:
                 result = await _handle_text_to_audio(data)
             await send_result(request_id, result)
 
         elif msg_type == "provider.tts_encoded":
-            result = await _handle_adapter_media(
-                msg_type, data, request_id, cancel_flags, send_progress
-            )
+            result = await _handle_adapter_media(msg_type, data, request_id, cancel_flags, send_progress)
             await send_result(request_id, result)
 
         elif msg_type == "provider.tts":
