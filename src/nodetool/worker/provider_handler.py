@@ -712,12 +712,18 @@ async def _handle_adapter_media(
                     )
                 image_paths: list[str] = []
                 video_paths: list[str] = []
-                for index, (kind, encoded) in enumerate(values):
+                # Keep numbering local to each role list. Adapters can rely on
+                # reference-image-0 and reference-video-0 being the first
+                # item in their respective ordered arrays.
+                role_indexes = {"image": 0, "video": 0}
+                for kind, encoded in values:
                     if cancel_event.is_set():
                         raise RuntimeError("Provider operation cancelled")
                     suffix = _reference_media_suffix(encoded, kind)
                     if suffix is None:
                         raise ValueError(f"provider.reference_to_video received unsupported {kind} media format")
+                    index = role_indexes[kind]
+                    role_indexes[kind] += 1
                     path = Path(temp_dir) / (f"reference-{kind}-{index}{suffix}")
                     await asyncio.to_thread(path.write_bytes, encoded)
                     if kind == "image":

@@ -380,6 +380,7 @@ assert pathlib.Path(videos[0]).read_bytes()[:12] == bytes.fromhex("0000002066747
 assert pathlib.Path(images[0]).suffix == ".png"
 assert pathlib.Path(images[1]).suffix == ".jpg"
 assert pathlib.Path(videos[0]).suffix == ".mp4"
+assert pathlib.Path(videos[0]).name == "reference-video-0.mp4"
 print(json.dumps({"type": "progress", "data": {"progress": 50}}), flush=True)
 pathlib.Path(sys.argv[2]).write_text(json.dumps(images + videos))
 path = pathlib.Path(sys.argv[1])
