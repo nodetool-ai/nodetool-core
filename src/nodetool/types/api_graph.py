@@ -106,12 +106,12 @@ def get_input_schema(graph: Graph) -> dict[str, Any]:
                     "type": "boolean",
                     "default": node.data.get("value", False),
                 }
-            elif input_type in [
+            elif input_type in {
                 "ImageInput",
                 "VideoInput",
                 "AudioInput",
                 "DocumentInput",
-            ]:
+            }:
                 node_schema = {
                     "type": "object",
                     "properties": {
