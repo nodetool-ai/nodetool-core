@@ -301,7 +301,9 @@ def tensor_from_array(array: np.ndarray) -> Any:
 
 def tensor_from_pil(image: Image.Image) -> Any:
     """Create a tensor from a PIL image."""
-    return tensor_from_array(np.array(image))
+    # ⚡ Bolt Optimization: Use np.asarray() instead of np.array() to avoid
+    # unnecessary memory allocations and inefficient byte-copying from PIL Images.
+    return tensor_from_array(np.asarray(image))
 
 
 def tensor_to_image_array(tensor: Any) -> np.ndarray:
