@@ -1,5 +1,15 @@
-## Proposed Plan
-1. **Target the SSRF/Credential Leakage Vulnerability**: In `src/nodetool/workflows/processing_context.py` inside `_http_request_with_retries`, `aiohttp` follows manual redirects safely checking `is_ip_private` using `_validate_http_target`. However, it leaks `Authorization` headers to the redirected domains.
-2. **Implement Security Fix**: Modify `_http_request_with_retries` in `src/nodetool/workflows/processing_context.py` to drop the `Authorization` header when a redirect leads to a different domain. Use `urllib.parse.urlparse` to compare hostnames.
-3. **Pre-commit Checks**: Run `pre_commit_instructions` and format, lint, and test.
-4. **Submit**: Create PR.
+1. **Optimize `tensor_from_pil` in `src/nodetool/workflows/torch_support.py`**
+   - The current implementation is: `return tensor_from_array(np.array(image))`
+   - As per the memory `2026-05-12 - [np.array vs np.asarray for PIL Images]`, using `np.array(image)` creates a deep copy of the PIL Image, causing unnecessary memory allocation and performance penalties.
+   - Using `np.asarray(image)` creates a read-only view, which avoids unnecessary byte-copying.
+   - Because `tensor_from_array` already handles making the array contiguous and writable if needed (`if not array.flags.c_contiguous or not array.flags.writeable: array = np.ascontiguousarray(array) if not array.flags.c_contiguous else array.copy()`), passing a read-only view from `np.asarray` is perfectly safe and will avoid a double-copy when the array is already contiguous.
+   - Use `replace_with_git_merge_diff` to change `np.array(image)` to `np.asarray(image)`.
+
+2. **Run pre-commit checks**
+   - Run tests and linting to ensure no regressions are introduced.
+
+3. **Complete pre-commit steps to ensure proper testing, verification, review, and reflection are done.**
+   - Run pre commit steps hook to ensure the code meets standards.
+
+4. **Submit PR**
+   - Create PR using the `submit` tool with proper Bolt title and description.

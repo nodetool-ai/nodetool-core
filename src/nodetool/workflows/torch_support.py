@@ -301,7 +301,7 @@ def tensor_from_array(array: np.ndarray) -> Any:
 
 def tensor_from_pil(image: Image.Image) -> Any:
     """Create a tensor from a PIL image."""
-    return tensor_from_array(np.array(image))
+    return tensor_from_array(np.asarray(image))
 
 
 def tensor_to_image_array(tensor: Any) -> np.ndarray:
