@@ -452,7 +452,7 @@ class ProcessingContext:
 
                 current_url = new_url
 
-                if response.status_code in (301, 302, 303) and current_method.upper() not in ("GET", "HEAD"):
+                if response.status_code in {301, 302, 303} and current_method.upper() not in {"GET", "HEAD"}:
                     current_method = "GET"
                     for body_key in ("content", "data", "files", "json"):
                         kwargs.pop(body_key, None)
@@ -1574,7 +1574,7 @@ class ProcessingContext:
 
         # Convert to target dtype if needed
         if samples.dtype == np.int32:
-            if dtype in ("float32", "float64"):
+            if dtype in {"float32", "float64"}:
                 samples = samples.astype(dtype) / np.dtype(dtype).type(2147483648.0)
             elif dtype == "int16":
                 samples = (samples // 65536).astype(np.int16)

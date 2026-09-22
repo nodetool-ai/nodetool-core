@@ -128,7 +128,7 @@ def pil_image_to_base64_jpeg(image: PIL.Image.Image, max_size: tuple[int, int] =
     from io import BytesIO
 
     # Convert to RGB if needed (removes alpha channel)
-    if image.mode in ("RGBA", "LA") or (image.mode == "P" and "transparency" in image.info):
+    if image.mode in {"RGBA", "LA"} or (image.mode == "P" and "transparency" in image.info):
         background = PIL.Image.new("RGB", image.size, (255, 255, 255))
         background.paste(image, mask=image.split()[3] if image.mode == "RGBA" else None)
         image = background
