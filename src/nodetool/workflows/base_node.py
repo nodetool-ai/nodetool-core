@@ -2055,11 +2055,8 @@ class BaseNode(BaseModel):
         Raises:
             ValueError: If any input is missing or invalid.
         """
-        missing_inputs = []
         target_handles = {e.targetHandle for e in input_edges}
-        for i in self.required_inputs():
-            if i not in target_handles:
-                missing_inputs.append(i)
+        missing_inputs = [i for i in self.required_inputs() if i not in target_handles]
         if missing_inputs:
             return [f"Missing inputs: {', '.join(missing_inputs)}"]
         else:
