@@ -248,7 +248,7 @@ async def _fetch_asset_uri_async(uri: str) -> tuple[str, bytes]:
     storage = scope.get_asset_storage()
 
     # Try common extensions
-    for ext in ["png", "jpg", "jpeg", "webp", "mp3", "wav", "mp4", "bin"]:
+    for ext in ("png", "jpg", "jpeg", "webp", "mp3", "wav", "mp4", "bin"):
         key = f"{asset_id}.{ext}"
         if await storage.file_exists(key):
             stream = BytesIO()
