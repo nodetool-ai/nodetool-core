@@ -443,7 +443,9 @@ class ProcessingContext:
                 new_url = urljoin(current_url, location)
 
                 # Strip sensitive headers on cross-origin redirect
-                if urlparse(current_url).hostname != urlparse(new_url).hostname:
+                parsed_current = urlparse(current_url)
+                parsed_new = urlparse(new_url)
+                if (parsed_current.scheme, parsed_current.netloc) != (parsed_new.scheme, parsed_new.netloc):
                     if "headers" in kwargs and isinstance(kwargs["headers"], dict):
                         kwargs["headers"] = {
                             k: v for k, v in kwargs["headers"].items()

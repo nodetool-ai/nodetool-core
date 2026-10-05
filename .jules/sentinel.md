@@ -65,3 +65,8 @@
 **Vulnerability:** Model downloads allowed automatic redirects via `aiohttp.ClientSession(allow_redirects=True)`, which bypassed the SSRF checks for IP literals (e.g., DNS rebinding or redirecting to localhost).
 **Learning:** `aiohttp` bypasses custom resolvers for IP literals, so automatic redirects can bypass `SSRFProtectResolver` protections. Cross-origin redirects can also leak sensitive headers like `Authorization`.
 **Prevention:** Disable automatic redirects (`allow_redirects=False`), manually validate the hostname against `is_ip_private()` at each redirect hop, and explicitly strip sensitive headers when crossing origins.
+
+## 2024-05-27 - Cross-Origin Redirect Authorization Leaks
+**Vulnerability:** HTTP clients following redirects were checking only the `hostname` to determine if a redirect was cross-origin before stripping sensitive headers (e.g., `Authorization`). This could lead to leaking authorization tokens if the redirect targeted a different port on the same hostname (e.g., `http://example.com` -> `http://example.com:8080`).
+**Learning:** Comparing just the `hostname` from `urlparse` is insufficient for defining an origin boundary according to RFC 6454. An origin consists of the scheme, host, and port.
+**Prevention:** Always compare both the `scheme` and `netloc` (which includes both hostname and port) when validating if a redirect remains on the same origin.

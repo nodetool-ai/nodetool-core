@@ -698,7 +698,8 @@ async def _open_model_source(
             if not location:
                 raise ComfyError(f"Redirect response without Location header from {current_url}")
             current_url = urljoin(current_url, location)
-            if urlparse(current_url).hostname != parsed.hostname:
+            parsed_current = urlparse(current_url)
+            if (parsed_current.scheme, parsed_current.netloc) != (parsed.scheme, parsed.netloc):
                 headers.pop("Authorization", None)
             continue
 
