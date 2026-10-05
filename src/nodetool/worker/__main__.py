@@ -58,13 +58,15 @@ async def run(args):
 
     # Load node metadata
     print("Loading node packages...", file=sys.stderr)
-    nodes_metadata = load_nodes(resolved_namespaces)
+    load_errors: list[dict[str, Any]] = []
+    nodes_metadata = load_nodes(resolved_namespaces, load_errors)
     print(f"Loaded {len(nodes_metadata)} nodes", file=sys.stderr)
 
     # Set up server
     worker = WorkerServer()
     worker.set_nodes_metadata(nodes_metadata)
     worker.set_namespaces(resolved_namespaces)
+    worker.set_load_errors(load_errors)
 
     async def handle_execute(
         data: dict,

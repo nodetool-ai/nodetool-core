@@ -166,3 +166,24 @@ def test_node_to_metadata_recommended_models_empty_for_plain_node():
         assert node_to_metadata(PlainNode)["recommended_models"] == []
     finally:
         del NODE_BY_TYPE["test_ns.PlainNode"]
+
+
+def test_load_nodes_reports_submodule_import_errors(tmp_path, monkeypatch):
+    pkg = tmp_path / "nodetool" / "nodes" / "brokenns"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("")
+    (pkg / "broken.py").write_text("import nodetool.nodes.lib.missing_module\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    import nodetool.nodes
+
+    monkeypatch.setattr(nodetool.nodes, "__path__", [*nodetool.nodes.__path__, str(tmp_path / "nodetool" / "nodes")])
+
+    load_errors: list[dict] = []
+    nodes = load_nodes(namespaces=["brokenns"], load_errors=load_errors)
+
+    assert nodes == []
+    assert len(load_errors) == 1
+    assert load_errors[0]["module"] == "nodetool.nodes.brokenns.broken"
+    assert load_errors[0]["phase"] == "import"
+    assert load_errors[0]["error_type"] == "ModuleNotFoundError"
+    assert "nodetool.nodes.lib" in load_errors[0]["error"]

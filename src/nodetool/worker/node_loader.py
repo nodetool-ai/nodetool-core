@@ -238,17 +238,32 @@ def _extract_outputs(node_class: type[BaseNode]) -> list[dict]:
         return [{"name": "output", "type": {"type": "any"}}]
 
 
-def _import_node_packages(namespaces: list[str]) -> None:
-    """Import node packages so their classes register in NODE_BY_TYPE."""
+def _load_error(module: str, phase: str, error: BaseException) -> dict[str, Any]:
+    return {
+        "module": module,
+        "phase": phase,
+        "error_type": type(error).__name__,
+        "error": str(error),
+    }
+
+
+def _import_node_packages(namespaces: list[str]) -> list[dict[str, Any]]:
+    """Import node packages so their classes register in NODE_BY_TYPE.
+
+    Returns one load error per module that failed to import, so the worker
+    can report them in ``discover`` and ``worker.status``.
+    """
     import importlib
     import pkgutil
 
+    errors: list[dict[str, Any]] = []
     for ns in namespaces:
         module_name = f"nodetool.nodes.{ns}"
         try:
             pkg = importlib.import_module(module_name)
-        except ImportError:
-            print(f"Warning: could not import {module_name}", file=sys.stderr)
+        except ImportError as e:
+            print(f"Warning: could not import {module_name}: {e}", file=sys.stderr)
+            errors.append(_load_error(module_name, "import", e))
             continue
         # Walk submodules to trigger registration
         for _importer, modname, _ispkg in pkgutil.walk_packages(
@@ -258,6 +273,8 @@ def _import_node_packages(namespaces: list[str]) -> None:
                 importlib.import_module(modname)
             except Exception as e:
                 print(f"Warning: failed to import {modname}: {e}", file=sys.stderr)
+                errors.append(_load_error(modname, "import", e))
+    return errors
 
 
 def resolve_namespaces(
@@ -281,11 +298,16 @@ def resolve_namespaces(
 
 def load_nodes(
     namespaces: list[str] | None = None,
+    load_errors: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Load all registered nodes filtered by namespace allowlist."""
+    """Load all registered nodes filtered by namespace allowlist.
+
+    When ``load_errors`` is given, modules that failed to import and nodes whose
+    metadata could not be extracted are appended to it.
+    """
     namespaces = resolve_namespaces(namespaces)
 
-    _import_node_packages(namespaces)
+    errors = _import_node_packages(namespaces)
 
     result = []
     for node_type, node_class in NODE_BY_TYPE.items():
@@ -295,4 +317,7 @@ def load_nodes(
                 result.append(node_to_metadata(node_class))
             except Exception as e:
                 print(f"Warning: failed to extract metadata for {node_type}: {e}", file=sys.stderr)
+                errors.append(_load_error(node_class.__module__, "metadata", e))
+    if load_errors is not None:
+        load_errors.extend(errors)
     return result
