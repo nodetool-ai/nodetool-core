@@ -228,12 +228,14 @@ async def run_stdio_worker(namespaces: list[str] | None = None) -> None:
     resolved_namespaces = resolve_namespaces(namespaces)
 
     print("Loading node packages...", file=sys.stderr)
-    nodes_metadata = load_nodes(resolved_namespaces)
+    load_errors: list[dict[str, Any]] = []
+    nodes_metadata = load_nodes(resolved_namespaces, load_errors)
     print(f"Loaded {len(nodes_metadata)} nodes", file=sys.stderr)
 
     server = StdioWorkerServer()
     server.set_nodes_metadata(nodes_metadata)
     server.set_namespaces(resolved_namespaces)
+    server.set_load_errors(load_errors)
 
     async def handle_execute(
         data: dict,
