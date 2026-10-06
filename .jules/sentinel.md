@@ -70,3 +70,8 @@
 **Vulnerability:** HTTP clients following redirects were checking only the `hostname` to determine if a redirect was cross-origin before stripping sensitive headers (e.g., `Authorization`). This could lead to leaking authorization tokens if the redirect targeted a different port on the same hostname (e.g., `http://example.com` -> `http://example.com:8080`).
 **Learning:** Comparing just the `hostname` from `urlparse` is insufficient for defining an origin boundary according to RFC 6454. An origin consists of the scheme, host, and port.
 **Prevention:** Always compare both the `scheme` and `netloc` (which includes both hostname and port) when validating if a redirect remains on the same origin.
+## 2026-10-06 - [HIGH] Fix Authorization header leak in HTTP redirects
+
+**Vulnerability:** In `async_downloader.py`, `orig_host == target_host` used only `urlparse(url).netloc` to determine if a redirect was on the same origin.
+**Learning:** Comparing just the `netloc` from `urlparse` is insufficient for defining an origin boundary. An origin consists of the scheme, host, and port. If a redirect targets a different scheme on the same netloc, sending the `Authorization` token could leak credentials over an insecure connection or to an unexpected origin boundary.
+**Prevention:** Always compare both the scheme and netloc (which includes both hostname and port) via a helper like `_same_origin` when validating if a redirect remains on the same origin.

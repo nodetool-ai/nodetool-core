@@ -613,9 +613,7 @@ async def async_hf_download(
         blobs_dir.mkdir(parents=True, exist_ok=True)
 
         # 4) For the actual data, only send Authorization if host matches
-        orig_host = urlparse(meta.original_url).netloc
-        target_host = urlparse(meta.url).netloc
-        token_for_data = token_str if orig_host == target_host else None
+        token_for_data = token_str if _same_origin(meta.original_url, meta.url) else None
 
         # 5) Download to blob path (with resume)
         await _download_with_resume(
