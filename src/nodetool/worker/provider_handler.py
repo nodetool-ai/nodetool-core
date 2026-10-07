@@ -799,11 +799,14 @@ async def _handle_text_to_audio(data: dict) -> dict:
 
 async def _handle_asr(data: dict) -> dict:
     """Handle provider.asr — automatic speech recognition."""
+    from nodetool.worker.context_stub import WorkerContext
+
     provider = _get_provider(data["provider"], data.get("secrets", {}))
 
     kwargs: dict[str, Any] = {
         "audio": data.get("audio", b""),
         "model": data["model"],
+        "context": WorkerContext(secrets=data.get("secrets", {})),
     }
     for key in ("language", "prompt", "temperature", "word_timestamps"):
         if key in data:
@@ -993,7 +996,12 @@ async def handle_provider_message(
                 cancel_flags[request_id] = cancel_event
             try:
                 provider = _get_provider(data["provider"], data.get("secrets", {}))
-                kwargs_tts = _tts_kwargs(data)
+                from nodetool.worker.context_stub import WorkerContext
+
+                kwargs_tts = {
+                    **_tts_kwargs(data),
+                    "context": WorkerContext(secrets=data.get("secrets", {})),
+                }
                 async for audio_chunk in provider.text_to_speech(**kwargs_tts):
                     if cancel_event.is_set():
                         break
