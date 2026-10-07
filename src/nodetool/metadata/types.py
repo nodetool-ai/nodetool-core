@@ -804,6 +804,8 @@ class ModelArtifactRef(BaseModel):
     repo_id: str
     revision: str | None = None
     path: str | None = None
+    # The files the adapter loads, when it needs only part of the repository.
+    allow_patterns: list[str] | None = None
 
 
 class ModelAdapterInfo(BaseModel):

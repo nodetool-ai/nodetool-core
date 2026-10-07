@@ -12,7 +12,7 @@ import uuid
 from io import BytesIO
 from typing import IO, TYPE_CHECKING, Any
 
-from nodetool.metadata.types import AudioRef, ImageRef, Model3DRef, VideoRef
+from nodetool.metadata.types import AssetRef, AudioRef, ImageRef, Model3DRef, VideoRef
 from nodetool.workflows.processing_context import ProcessingContext, _read_buffer
 
 if TYPE_CHECKING:
@@ -219,6 +219,20 @@ class WorkerContext(ProcessingContext):
         # `parent_id` has no field on the ref — it addresses a folder in the
         # asset store, which a worker does not have — so it stays dropped.
         return Model3DRef(uri=f"blob://{blob_key}", format=format, metadata=metadata)
+
+    async def asset_to_io(self, asset_ref: AssetRef) -> IO[bytes]:
+        # The factories above return blob:// refs, but the base context only
+        # resolves memory://, inline data and http(s) URLs. Without this a node
+        # could not read back a ref it had just made: blob:// fell through to
+        # the download path and raised NonHttpUrlClientError.
+        uri = getattr(asset_ref, "uri", None)
+        if uri and uri.startswith("blob://"):
+            key = uri[len("blob://") :]
+            data = self._output_blobs.get(key)
+            if data is None:
+                raise ValueError(f"Blob '{key}' is not in this worker context")
+            return BytesIO(data)
+        return await super().asset_to_io(asset_ref)
 
     def get_output_blobs(self) -> dict[str, bytes]:
         return dict(self._output_blobs)
