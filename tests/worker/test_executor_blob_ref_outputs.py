@@ -18,7 +18,7 @@ Host half: nodetool-ai/nodetool#5189. Neither half works alone.
 """
 
 import asyncio
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, TypedDict
 
 import pytest
 from pydantic import Field
@@ -51,11 +51,15 @@ class Model3DNode(BaseNode):
 class Model3DNamedNode(BaseNode):
     """Return a named-output dict mixing a blob-backed ref with a scalar."""
 
+    class OutputType(TypedDict):
+        model: Model3DRef
+        note: str
+
     @classmethod
     def get_node_type(cls) -> str:
         return "test.Model3DNamedNode"
 
-    async def process(self, context: ProcessingContext) -> dict[str, Any]:
+    async def process(self, context: ProcessingContext) -> OutputType:
         model = await context.model3d_from_bytes(GLB, name="mesh", format="glb")
         return {"model": model, "note": "built"}
 

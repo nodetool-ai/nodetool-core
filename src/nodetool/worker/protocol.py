@@ -81,6 +81,13 @@ class WorkerProtocolServer:
     ) -> None:
         self._execute_handler = handler
 
+    def cancel_requests(self, request_ids: list[str]) -> None:
+        """Set the cancel flag of each in-flight request that has one."""
+        for request_id in request_ids:
+            cancel_event = self._cancel_flags.get(request_id)
+            if cancel_event is not None:
+                cancel_event.set()
+
     async def dispatch(self, msg: dict[str, Any], transport: WorkerTransport) -> None:
         msg_type = msg.get("type")
         raw_request_id = msg.get("request_id")

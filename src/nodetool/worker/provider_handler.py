@@ -9,6 +9,7 @@ so the same code path serves both the WebSocket and stdio workers.
 
 import asyncio
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -20,7 +21,7 @@ import traceback
 from collections import OrderedDict
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from nodetool.config.logging_config import get_logger
 
@@ -253,6 +254,10 @@ async def _run_provider_adapter(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         start_new_session=os.name == "posix",
+        # The asyncio default (64 KiB) would make readline() fail with an
+        # opaque "Separator is not found" error before the 1 MiB line check
+        # below could run.
+        limit=_ADAPTER_LINE_LIMIT * 2,
     )
     stderr_task = asyncio.create_task(_read_adapter_stderr(process.stderr))
     result: dict[str, Any] | None = None
@@ -274,7 +279,10 @@ async def _run_provider_adapter(
                 await _terminate_adapter(process)
                 raise RuntimeError("Provider operation cancelled")
 
-            line = line_task.result()
+            try:
+                line = line_task.result()
+            except ValueError as exc:
+                raise ValueError("Provider adapter emitted an oversized line") from exc
             if not line:
                 break
             if len(line) > _ADAPTER_LINE_LIMIT:
@@ -319,6 +327,91 @@ async def _run_provider_adapter(
             cancel_flags.pop(request_id, None)
 
 
+def _drop_none(values: dict[str, Any]) -> dict[str, Any]:
+    """Drop keys whose value is None.
+
+    msgpackr encodes an omitted TS option (``undefined``) as an explicit nil,
+    which decodes to None. Forwarded as a keyword argument, that None would
+    replace the provider's own default.
+    """
+    return {key: value for key, value in values.items() if value is not None}
+
+
+def _pick(data: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
+    """The non-None values of ``keys`` present in ``data``."""
+    return _drop_none({key: data[key] for key in keys if key in data})
+
+
+def _deserialize_tools(raw_tools: Any) -> list[Any]:
+    """Convert wire tool definitions into ``Tool`` objects.
+
+    The TS side sends ``ProviderTool`` maps (``name``, ``description``,
+    ``inputSchema``). Providers call ``tool.tool_param()`` and read
+    ``tool.name``, which a plain dict does not have.
+    """
+    from nodetool.metadata.tool_types import Tool
+
+    tools: list[Any] = []
+    for raw in raw_tools or []:
+        if isinstance(raw, Tool):
+            tools.append(raw)
+            continue
+        if not isinstance(raw, dict) or not isinstance(raw.get("name"), str):
+            log.warning("Dropping malformed tool definition from the bridge")
+            continue
+        tool = Tool()
+        tool.name = raw["name"]
+        tool.description = raw.get("description") or ""
+        schema = raw.get("inputSchema", raw.get("input_schema", raw.get("parameters")))
+        tool.input_schema = schema if isinstance(schema, dict) else {"type": "object", "properties": {}}
+        tools.append(tool)
+    return tools
+
+
+def _llm_kwargs(data: dict[str, Any]) -> dict[str, Any]:
+    """Optional generation arguments for provider.generate / provider.stream."""
+    kwargs = _pick(data, ("max_tokens", "temperature", "top_p", "response_format"))
+    tools = _deserialize_tools(data.get("tools"))
+    if tools:
+        kwargs["tools"] = tools
+    return kwargs
+
+
+_CAMEL_RE = re.compile(r"(?<!^)(?=[A-Z])")
+
+
+def _bridge_params(data: dict[str, Any]) -> dict[str, Any]:
+    """The media parameters of a bridge request as snake_case, without Nones.
+
+    The TS bridge sends ``{provider, params, secrets}`` with camelCase keys
+    (``negativePrompt``, ``numInferenceSteps``) and ``model`` as a bare id.
+    Older callers sent the parameters at the top level.
+    """
+    params = data.get("params")
+    if not isinstance(params, dict):
+        params = {k: v for k, v in data.items() if k not in ("provider", "secrets", "image", "blob_transfer")}
+    return _drop_none({_CAMEL_RE.sub("_", key).lower(): value for key, value in params.items()})
+
+
+def _model_ref(model: Any, provider_id: str) -> Any:
+    """Turn a bare model id into the ``{id, provider}`` shape the typed params take."""
+    if not isinstance(model, str):
+        return model
+    from nodetool.metadata.types import Provider
+
+    ref: dict[str, Any] = {"id": model}
+    if provider_id in {p.value for p in Provider}:
+        ref["provider"] = provider_id
+    return ref
+
+
+def _typed_params(params_cls: type, data: dict[str, Any]) -> Any:
+    params = _bridge_params(data)
+    if "model" in params:
+        params["model"] = _model_ref(params["model"], str(data.get("provider") or ""))
+    return params_cls.model_validate(params)
+
+
 def _tts_kwargs(data: dict[str, Any]) -> dict[str, Any]:
     """Build the public TTS provider arguments from a bridge request."""
     result: dict[str, Any] = {
@@ -333,7 +426,7 @@ def _tts_kwargs(data: dict[str, Any]) -> dict[str, Any]:
         "language",
         "instructions",
     ):
-        if key in data:
+        if data.get(key) is not None:
             result[key] = data[key]
     return result
 
@@ -554,46 +647,87 @@ async def _handle_models(
     return {"models": [m.model_dump() if hasattr(m, "model_dump") else m.__dict__ for m in models]}
 
 
+async def _run_cancellable(
+    request_id: str | None,
+    cancel_flags: dict[str, asyncio.Event],
+    make: Callable[[asyncio.Event], Awaitable[Any]],
+) -> Any:
+    """Run an in-process provider call that a ``cancel`` frame can stop.
+
+    Registers a cancel flag for ``request_id`` and hands the event to ``make``
+    so the call's WorkerContext reports ``is_cancelled``. A cancel, or the
+    dispatch task itself being cancelled, cancels the call's task instead of
+    waiting for it to finish.
+    """
+    cancel_event = asyncio.Event()
+    if request_id:
+        cancel_flags[request_id] = cancel_event
+    work = asyncio.ensure_future(make(cancel_event))
+    waiter = asyncio.ensure_future(cancel_event.wait())
+    try:
+        await asyncio.wait({work, waiter}, return_when=asyncio.FIRST_COMPLETED)
+        if work.done():
+            return work.result()
+        raise RuntimeError("Provider operation cancelled")
+    finally:
+        waiter.cancel()
+        if not work.done():
+            cancel_event.set()
+            work.cancel()
+        await asyncio.gather(work, waiter, return_exceptions=True)
+        if request_id and cancel_flags.get(request_id) is cancel_event:
+            cancel_flags.pop(request_id, None)
+
+
+def _worker_context(data: dict[str, Any], cancel_event: asyncio.Event | None) -> Any:
+    from nodetool.worker.context_stub import WorkerContext
+
+    return WorkerContext(secrets=data.get("secrets", {}), cancel_event=cancel_event)
+
+
 async def _handle_generate(data: dict) -> dict:
     """Handle provider.generate — single message generation."""
     provider = _get_provider(data["provider"], data.get("secrets", {}))
     messages = _deserialize_messages(data["messages"])
-    model = data["model"]
-
-    kwargs: dict[str, Any] = {}
-    for key in ("max_tokens", "temperature", "top_p", "response_format"):
-        if key in data:
-            kwargs[key] = data[key]
-
-    tools = data.get("tools")
-    if tools:
-        kwargs["tools"] = tools
 
     result_msg = await provider.generate_message(
         messages=messages,
-        model=model,
-        **kwargs,
+        model=data["model"],
+        **_llm_kwargs(data),
     )
     return {"message": _serialize_message(result_msg)}
 
 
-async def _handle_text_to_image(data: dict) -> dict:
+async def _media_bytes(ctx: Any, result: Any) -> bytes:
+    """Encoded bytes of a provider media result: raw bytes or a ref."""
+    if isinstance(result, (bytes, bytearray)):
+        return bytes(result)
+    return await _extract_media_bytes(ctx, result)
+
+
+async def _handle_text_to_image(data: dict, cancel_event: asyncio.Event | None = None) -> dict:
     """Handle provider.text_to_image."""
+    from nodetool.providers.types import TextToImageParams
+
     provider = _get_provider(data["provider"], data.get("secrets", {}))
-    params = data.get("params", {})
+    params = _typed_params(TextToImageParams, data)
+    ctx = _worker_context(data, cancel_event)
 
-    image_bytes = await provider.text_to_image(params)
-    return {"blobs": {"image": image_bytes}}
+    result = await provider.text_to_image(params, context=ctx)
+    return {"blobs": {"image": await _media_bytes(ctx, result)}}
 
 
-async def _handle_image_to_image(data: dict) -> dict:
+async def _handle_image_to_image(data: dict, cancel_event: asyncio.Event | None = None) -> dict:
     """Handle provider.image_to_image."""
+    from nodetool.providers.types import ImageToImageParams
+
     provider = _get_provider(data["provider"], data.get("secrets", {}))
     image_data = data.get("image", b"")
-    params = data.get("params", {})
+    params = _typed_params(ImageToImageParams, data)
+    ctx = _worker_context(data, cancel_event)
 
-    result_bytes = await provider.image_to_image(image_data, params)
-    return {"blobs": {"image": result_bytes}}
+    result = await provider.image_to_image(image_data, params, context=ctx)
+    return {"blobs": {"image": await _media_bytes(ctx, result)}}
 
 
 async def _extract_media_bytes(ctx: Any, ref: Any) -> bytes:
@@ -604,38 +738,54 @@ async def _extract_media_bytes(ctx: Any, ref: Any) -> bytes:
     """
     get_blobs = getattr(ctx, "get_output_blobs", None)
     blobs = get_blobs() if callable(get_blobs) else {}
+    uri = getattr(ref, "uri", None)
+    if isinstance(uri, str) and uri.startswith("blob://") and uri[len("blob://") :] in blobs:
+        return blobs[uri[len("blob://") :]]
     if blobs:
         return next(iter(blobs.values()))
     return await ctx.asset_to_bytes(ref)
 
 
-async def _handle_text_to_video(data: dict) -> dict:
-    """Handle provider.text_to_video."""
-    from nodetool.worker.context_stub import WorkerContext
+_TEXT_TO_VIDEO_FIELDS = (
+    "negative_prompt",
+    "num_frames",
+    "guidance_scale",
+    "num_inference_steps",
+    "height",
+    "width",
+    "fps",
+    "seed",
+    "max_sequence_length",
+    "aspect_ratio",
+    "resolution",
+)
+
+
+async def _handle_text_to_video(data: dict, cancel_event: asyncio.Event | None = None) -> dict:
+    """Handle provider.text_to_video.
+
+    ``BaseProvider.text_to_video`` takes a ``TextToVideoParams`` object. The
+    HuggingFace local provider takes flat keyword arguments instead, so the
+    call shape follows the provider's signature.
+    """
+    from nodetool.providers.types import TextToVideoParams
 
     provider = _get_provider(data["provider"], data.get("secrets", {}))
-    ctx = WorkerContext(secrets=data.get("secrets", {}))
-    kwargs: dict[str, Any] = {
-        "prompt": data["prompt"],
-        "model": data["model"],
-        "context": ctx,
-    }
-    for key in (
-        "negative_prompt",
-        "num_frames",
-        "guidance_scale",
-        "num_inference_steps",
-        "height",
-        "width",
-        "fps",
-        "seed",
-        "max_sequence_length",
-    ):
-        if key in data:
-            kwargs[key] = data[key]
-
-    video_ref = await provider.text_to_video(**kwargs)
-    return {"blobs": {"video": await _extract_media_bytes(ctx, video_ref)}}
+    ctx = _worker_context(data, cancel_event)
+    signature = inspect.signature(provider.text_to_video).parameters
+    if "params" in signature:
+        result = await provider.text_to_video(_typed_params(TextToVideoParams, data), context=ctx)
+    else:
+        params = _bridge_params(data)
+        model = params.get("model")
+        if isinstance(model, dict):
+            model = model.get("id")
+        kwargs: dict[str, Any] = {"prompt": params["prompt"], "model": model, "context": ctx}
+        for key in _TEXT_TO_VIDEO_FIELDS:
+            if key in params and key in signature:
+                kwargs[key] = params[key]
+        result = await provider.text_to_video(**kwargs)
+    return {"blobs": {"video": await _media_bytes(ctx, result)}}
 
 
 def _encoded_media_suffix(data: bytes, kind: str) -> str:
@@ -662,6 +812,55 @@ async def _stage_adapter_input(temp_dir: str, data: object, kind: str) -> str:
     path = Path(temp_dir) / f"input-{kind}{_encoded_media_suffix(encoded, kind)}"
     await asyncio.to_thread(path.write_bytes, encoded)
     return str(path)
+
+
+_adapter_media_locks: dict[tuple[int, str], asyncio.Lock] = {}
+
+
+def _adapter_media_lock(provider_id: str) -> asyncio.Lock:
+    """One media run at a time per adapter.
+
+    Each adapter run starts its own runtime and loads its own weights, so two
+    concurrent requests would load two pipelines onto one GPU. Keyed by loop
+    as well, because an asyncio.Lock is bound to the loop that first awaits it.
+    """
+    key = (id(asyncio.get_running_loop()), provider_id)
+    lock = _adapter_media_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _adapter_media_locks[key] = lock
+    return lock
+
+
+async def _acquire_unless_cancelled(lock: asyncio.Lock, cancel_event: asyncio.Event) -> None:
+    acquire = asyncio.ensure_future(lock.acquire())
+    waiter = asyncio.ensure_future(cancel_event.wait())
+    try:
+        await asyncio.wait({acquire, waiter}, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        waiter.cancel()
+        if not acquire.done():
+            acquire.cancel()
+        await asyncio.gather(acquire, waiter, return_exceptions=True)
+    if cancel_event.is_set():
+        if acquire.done() and not acquire.cancelled() and acquire.exception() is None:
+            lock.release()
+        raise RuntimeError("Provider operation cancelled")
+
+
+async def _read_adapter_output(path: Path) -> bytes:
+    """Read an adapter's output file, then delete it.
+
+    The adapter writes into its own output directory and nothing else ever
+    removes the file, so a long-running worker would fill its disk.
+    """
+    try:
+        return await asyncio.to_thread(path.read_bytes)
+    finally:
+        try:
+            await asyncio.to_thread(path.unlink, True)
+        except OSError as exc:
+            log.warning("Could not delete provider adapter output %s: %s", path, exc)
 
 
 async def _handle_adapter_media(
@@ -739,7 +938,12 @@ async def _handle_adapter_media(
                     payload["reference_audio_path"] = await _stage_adapter_input(temp_dir, reference_audio, "audio")
             if cancel_event.is_set():
                 raise RuntimeError("Provider operation cancelled")
-            result = await _run_provider_adapter(provider_id, payload, request_id, cancel_flags, send_progress)
+            lock = _adapter_media_lock(provider_id)
+            await _acquire_unless_cancelled(lock, cancel_event)
+            try:
+                result = await _run_provider_adapter(provider_id, payload, request_id, cancel_flags, send_progress)
+            finally:
+                lock.release()
             output_path = result.get("path")
             if not isinstance(output_path, str) or not output_path:
                 raise ValueError("Provider adapter result must contain an output path")
@@ -755,7 +959,7 @@ async def _handle_adapter_media(
                 "text_to_audio": "audio",
                 "tts_encoded": "audio",
             }[adapter_operation]
-            return {"blobs": {output_key: await asyncio.to_thread(path.read_bytes)}}
+            return {"blobs": {output_key: await _read_adapter_output(path)}}
     finally:
         if request_id and cancel_flags.get(request_id) is cancel_event:
             cancel_flags.pop(request_id, None)
@@ -779,38 +983,32 @@ def _text_to_audio_kwargs(data: dict[str, Any], context: Any) -> dict[str, Any]:
     }
     for target, aliases in optional_fields.items():
         for alias in aliases:
-            if alias in source:
+            if source.get(alias) is not None:
                 kwargs[target] = source[alias]
                 break
     return kwargs
 
 
-async def _handle_text_to_audio(data: dict) -> dict:
+async def _handle_text_to_audio(data: dict, cancel_event: asyncio.Event | None = None) -> dict:
     """Handle provider.text_to_audio."""
-    from nodetool.worker.context_stub import WorkerContext
-
     provider = _get_provider(data["provider"], data.get("secrets", {}))
-    ctx = WorkerContext(secrets=data.get("secrets", {}))
+    ctx = _worker_context(data, cancel_event)
     kwargs = _text_to_audio_kwargs(data, ctx)
 
     audio_ref = await provider.text_to_audio(**kwargs)
     return {"blobs": {"audio": await _extract_media_bytes(ctx, audio_ref)}}
 
 
-async def _handle_asr(data: dict) -> dict:
+async def _handle_asr(data: dict, cancel_event: asyncio.Event | None = None) -> dict:
     """Handle provider.asr — automatic speech recognition."""
-    from nodetool.worker.context_stub import WorkerContext
-
     provider = _get_provider(data["provider"], data.get("secrets", {}))
 
     kwargs: dict[str, Any] = {
         "audio": data.get("audio", b""),
         "model": data["model"],
-        "context": WorkerContext(secrets=data.get("secrets", {})),
+        "context": _worker_context(data, cancel_event),
+        **_pick(data, ("language", "prompt", "temperature", "word_timestamps")),
     }
-    for key in ("language", "prompt", "temperature", "word_timestamps"):
-        if key in data:
-            kwargs[key] = data[key]
 
     result = await provider.automatic_speech_recognition(**kwargs)
     # Provider may return str (legacy) or dict with text + chunks
@@ -826,9 +1024,42 @@ async def _handle_embedding(data: dict) -> dict:
     result = await provider.generate_embedding(
         text=data["text"],
         model=data["model"],
-        dimensions=data.get("dimensions"),
+        **_pick(data, ("dimensions",)),
     )
     return {"embeddings": result}
+
+
+async def _iter_until_cancelled(gen: Any, cancel_event: asyncio.Event) -> Any:
+    """Yield from a provider's async generator until ``cancel_event`` is set.
+
+    Waiting for the next item races the cancel event, so a cancel during a
+    long prefill takes effect at once. The provider generator is always
+    closed, which runs its cleanup (e.g. stopping a background generation
+    thread) instead of leaving it suspended.
+    """
+    try:
+        while not cancel_event.is_set():
+            next_item = asyncio.ensure_future(gen.__anext__())
+            waiter = asyncio.ensure_future(cancel_event.wait())
+            try:
+                await asyncio.wait({next_item, waiter}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                waiter.cancel()
+                if not next_item.done():
+                    next_item.cancel()
+                await asyncio.gather(next_item, waiter, return_exceptions=True)
+            if next_item.cancelled():
+                return
+            try:
+                item = next_item.result()
+            except StopAsyncIteration:
+                return
+            yield item
+    finally:
+        try:
+            await gen.aclose()
+        except Exception as exc:  # pragma: no cover — cleanup is best-effort
+            log.debug("Error closing provider generator: %s", exc)
 
 
 # ── Provider message dispatch ─────────────────────────────────────────────
@@ -906,7 +1137,7 @@ async def handle_provider_message(
             await send_result(request_id, result)
 
         elif msg_type == "provider.generate":
-            result = await _handle_generate(data)
+            result = await _run_cancellable(request_id, cancel_flags, lambda _ev: _handle_generate(data))
             await send_result(request_id, result)
 
         elif msg_type == "provider.stream":
@@ -916,20 +1147,13 @@ async def handle_provider_message(
             try:
                 provider = _get_provider(data["provider"], data.get("secrets", {}))
                 messages = _deserialize_messages(data["messages"])
-                model = data["model"]
-                kwargs: dict[str, Any] = {}
-                for key in ("max_tokens", "temperature", "top_p", "response_format"):
-                    if key in data:
-                        kwargs[key] = data[key]
-                tools = data.get("tools")
-                if tools:
-                    kwargs["tools"] = tools
 
                 from nodetool.metadata.types import ToolCall
 
-                async for item in provider.generate_messages(messages=messages, model=model, **kwargs):
-                    if cancel_event.is_set():
-                        break
+                async for item in _iter_until_cancelled(
+                    provider.generate_messages(messages=messages, model=data["model"], **_llm_kwargs(data)),
+                    cancel_event,
+                ):
                     if isinstance(item, ToolCall):
                         await send_chunk(
                             request_id,
@@ -958,21 +1182,27 @@ async def handle_provider_message(
             if data.get("provider") in _adapter_provider_ids():
                 result = await _handle_adapter_media(msg_type, data, request_id, cancel_flags, send_progress)
             else:
-                result = await _handle_text_to_image(data)
+                result = await _run_cancellable(
+                    request_id, cancel_flags, lambda ev: _handle_text_to_image(data, ev)
+                )
             await send_result(request_id, result)
 
         elif msg_type == "provider.image_to_image":
             if data.get("provider") in _adapter_provider_ids():
                 result = await _handle_adapter_media(msg_type, data, request_id, cancel_flags, send_progress)
             else:
-                result = await _handle_image_to_image(data)
+                result = await _run_cancellable(
+                    request_id, cancel_flags, lambda ev: _handle_image_to_image(data, ev)
+                )
             await send_result(request_id, result)
 
         elif msg_type == "provider.text_to_video":
             if data.get("provider") in _adapter_provider_ids():
                 result = await _handle_adapter_media(msg_type, data, request_id, cancel_flags, send_progress)
             else:
-                result = await _handle_text_to_video(data)
+                result = await _run_cancellable(
+                    request_id, cancel_flags, lambda ev: _handle_text_to_video(data, ev)
+                )
             await send_result(request_id, result)
 
         elif msg_type in ("provider.image_to_video", "provider.reference_to_video"):
@@ -983,7 +1213,9 @@ async def handle_provider_message(
             if data.get("provider") in _adapter_provider_ids():
                 result = await _handle_adapter_media(msg_type, data, request_id, cancel_flags, send_progress)
             else:
-                result = await _handle_text_to_audio(data)
+                result = await _run_cancellable(
+                    request_id, cancel_flags, lambda ev: _handle_text_to_audio(data, ev)
+                )
             await send_result(request_id, result)
 
         elif msg_type == "provider.tts_encoded":
@@ -996,15 +1228,11 @@ async def handle_provider_message(
                 cancel_flags[request_id] = cancel_event
             try:
                 provider = _get_provider(data["provider"], data.get("secrets", {}))
-                from nodetool.worker.context_stub import WorkerContext
-
                 kwargs_tts = {
                     **_tts_kwargs(data),
-                    "context": WorkerContext(secrets=data.get("secrets", {})),
+                    "context": _worker_context(data, cancel_event),
                 }
-                async for audio_chunk in provider.text_to_speech(**kwargs_tts):
-                    if cancel_event.is_set():
-                        break
+                async for audio_chunk in _iter_until_cancelled(provider.text_to_speech(**kwargs_tts), cancel_event):
                     await send_chunk(request_id, {"blobs": {"audio": audio_chunk.tobytes()}})
                 await send_result(request_id, {"done": True})
             finally:
@@ -1012,11 +1240,11 @@ async def handle_provider_message(
                     cancel_flags.pop(request_id, None)
 
         elif msg_type == "provider.asr":
-            result = await _handle_asr(data)
+            result = await _run_cancellable(request_id, cancel_flags, lambda ev: _handle_asr(data, ev))
             await send_result(request_id, result)
 
         elif msg_type == "provider.embedding":
-            result = await _handle_embedding(data)
+            result = await _run_cancellable(request_id, cancel_flags, lambda _ev: _handle_embedding(data))
             await send_result(request_id, result)
 
         else:

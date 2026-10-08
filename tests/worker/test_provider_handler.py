@@ -228,6 +228,9 @@ print(json.dumps({"type": "result", "data": data}), flush=True)
         assert blob_end["type"] == "blob.end"
         assert result["type"] == "result"
         assert result["data"]["blobs"] == {}
+    # The adapter writes into its own output directory; the worker deletes
+    # the file once it has the bytes, or a long-running worker fills its disk.
+    assert not output.exists()
 
 
 @pytest.mark.parametrize(

@@ -175,7 +175,7 @@ class JobRegistry:
             log.debug("job.end for unknown job %s (reason=%s) — no-op", job_id, reason)
             return []
 
-        node_ids = sorted(state.node_ids)
+        node_ids = cls._exclusive_node_ids(state)
         log.info(
             "Job %s ended (reason=%s, workflow=%s): retiring %d node(s)",
             job_id,
@@ -230,10 +230,10 @@ class JobRegistry:
             for job_id, state in cls._jobs.items()
             if job_id != exclude and (now - state.last_activity) > ttl
         ]
-        for job_id in expired:
-            state = cls._jobs.pop(job_id, None)
-            if state is None:  # pragma: no cover — defensive
-                continue
+        # Pop every expired job before releasing, so a node id shared only by
+        # expired jobs is not held back by one of them.
+        states = [(job_id, cls._jobs.pop(job_id)) for job_id in expired]
+        for job_id, state in states:
             log.warning(
                 "Job %s had no activity for %.0fs and is presumed abandoned "
                 "(no job.end arrived); releasing %d node(s)",
@@ -241,12 +241,28 @@ class JobRegistry:
                 now - state.last_activity,
                 len(state.node_ids),
             )
-            cls._release(sorted(state.node_ids))
+        released = sorted(set().union(*(cls._exclusive_node_ids(state) for _, state in states)))
+        cls._release(released)
         return expired
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    @classmethod
+    def _exclusive_node_ids(cls, state: JobState) -> list[str]:
+        """Node ids of a closed job that no open job also uses.
+
+        Graph node ids are only unique within a workflow, and the model cache
+        is keyed by them. Two concurrent runs of one workflow share ids, so
+        releasing a shared id when the first run ends would evict a model the
+        second run still uses. The shared id is released when the last run
+        that executed it ends. Call after ``state`` is removed from ``_jobs``.
+        """
+        in_use: set[str] = set()
+        for other in cls._jobs.values():
+            in_use |= other.node_ids
+        return sorted(state.node_ids - in_use)
 
     @staticmethod
     def _release(node_ids: list[str]) -> None:

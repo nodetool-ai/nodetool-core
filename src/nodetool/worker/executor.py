@@ -10,6 +10,8 @@ from collections.abc import AsyncGenerator
 from types import UnionType
 from typing import Any, Awaitable, Callable, Union, get_args, get_origin
 
+from pydantic import BaseModel
+
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     AssetRef,
@@ -383,7 +385,7 @@ async def execute_node(
                     outputs, blobs = _extract_named_outputs(result, ctx)
                 else:
                     result = await node.process(ctx)
-                    outputs, blobs = _extract_outputs(result, ctx)
+                    outputs, blobs = _extract_outputs(result, ctx, node)
                 return {"outputs": outputs, "blobs": blobs}
             finally:
                 if node is not None:
@@ -462,59 +464,111 @@ async def execute_node_stream(
                 pass
 
 
+def _declares_named_outputs(node: BaseNode | None) -> bool | None:
+    """Whether ``node`` returns a mapping of output slot names.
+
+    Mirrors ``BaseNode.convert_output``: a node with dynamic outputs, or whose
+    return type is a TypedDict or an ``OutputType`` mapping, returns one value
+    per slot. Any other return type is a single ``output`` slot, so a plain
+    ``dict[str, float]`` result is that slot's value and must not be split.
+    ``None`` means the node has no return annotation and the caller falls back
+    to the shape heuristic.
+    """
+    if node is None:
+        return None
+    if node._supports_dynamic_outputs or (node._is_dynamic and node._dynamic_outputs):
+        return True
+    return_type = node.return_type()
+    if return_type is None:
+        return None
+    if isinstance(return_type, dict):
+        return True
+    if not getattr(return_type, "__annotations__", None):
+        return False
+    return not (isinstance(return_type, type) and issubclass(return_type, BaseModel))
+
+
+def _blob_key(value: Any) -> str | None:
+    if isinstance(value, ASSET_REF_TYPES) and value.uri and value.uri.startswith("blob://"):
+        return value.uri[len("blob://") :]
+    return None
+
+
+def _inline_nested_blobs(serialized: Any, output_blobs: dict[str, bytes], is_root: bool = True) -> Any:
+    """Inline the bytes of every nested ``blob://`` ref into its ``data`` field.
+
+    The host pairs blobs with output slots by name, so only a ref that is
+    itself a slot value can travel in the blobs map. A ref inside a list, a
+    dict or another ref's fields (``Model3DRef.texture_files``) has no slot
+    name; its ``blob://`` uri would be unresolvable on the host. Such refs
+    carry their bytes inline instead, with the uri cleared, which the host
+    already reads as a media ref with inline data. ``is_root`` skips the slot
+    value itself, whose bytes go through the blobs map.
+    """
+    if isinstance(serialized, dict):
+        out = {k: _inline_nested_blobs(v, output_blobs, False) for k, v in serialized.items()}
+        uri = out.get("uri")
+        if not is_root and isinstance(uri, str) and uri.startswith("blob://"):
+            data = output_blobs.get(uri[len("blob://") :])
+            if data is not None:
+                out["data"] = data
+                out["uri"] = ""
+        return out
+    if isinstance(serialized, list):
+        return [_inline_nested_blobs(item, output_blobs, False) for item in serialized]
+    return serialized
+
+
+def _extract_slot(
+    name: str,
+    value: Any,
+    output_blobs: dict[str, bytes],
+    outputs: dict[str, Any],
+    blobs: dict[str, bytes],
+) -> None:
+    """Serialize one slot value into ``outputs`` and its top-level blob into ``blobs``."""
+    blob_key = _blob_key(value)
+    if blob_key is not None and blob_key in output_blobs:
+        blobs[name] = output_blobs[blob_key]
+    # The ref is emitted next to its bytes: it carries the asset's metadata
+    # (VideoRef.duration/format, Model3DRef.format/texture_files) and the host
+    # pairs the two by slot name. A ref whose blob is missing is still emitted,
+    # rather than the output vanishing from the frame entirely.
+    # _serialize_asset_ref strips raw `data` at any depth, so this does not
+    # duplicate the payload.
+    outputs[name] = _inline_nested_blobs(_serialize_value(value), output_blobs)
+
+
 def _extract_outputs(
     result: Any,
     ctx: WorkerContext,
+    node: BaseNode | None = None,
 ) -> tuple[dict[str, Any], dict[str, bytes]]:
-    """Split a node's return value into scalar outputs and binary blobs.
+    """Split a node's return value into output slots and their binary blobs.
 
-    Single-output nodes always get their result wrapped as {"output": value}.
-    Only nodes returning a dict with AssetRef blob values need special handling.
+    A dict result is split into one slot per key only when the node declares
+    named outputs (see ``_declares_named_outputs``). Otherwise the result is
+    the single ``output`` slot. Blobs are keyed by slot name. Blobs of nested
+    refs travel inline (see ``_inline_nested_blobs``).
     """
     output_blobs = ctx.get_output_blobs()
-
-    if isinstance(result, ASSET_REF_TYPES) and result.uri and result.uri.startswith("blob://"):
-        blob_key = result.uri[len("blob://") :]
-        # Emit the ref as well as its bytes. The bytes travel in the blobs map,
-        # but everything else about the asset lives only on the ref —
-        # VideoRef.duration/format, Model3DRef.format/material_file/
-        # texture_files — and the host pairs the two by output name. Dropping
-        # the ref here is why that metadata never left the worker.
-        #
-        # Sending both does not duplicate the payload: _serialize_asset_ref
-        # strips every raw-bytes `data` field, at any depth.
-        return {"output": _serialize_value(result)}, {"output": output_blobs.get(blob_key, b"")}
-
-    # Check if result is a dict with blob values that need extraction
-    if isinstance(result, dict):
-        has_blobs = any(
-            isinstance(v, ASSET_REF_TYPES) and v.uri and v.uri.startswith("blob://") for v in result.values()
+    named = _declares_named_outputs(node)
+    if named is None:
+        # No return annotation to go by: a dict with several keys and no
+        # "output" key, or one holding a blob-backed ref, is taken as named.
+        named = isinstance(result, dict) and (
+            (len(result) > 1 and "output" not in result)
+            or any(_blob_key(v) is not None for v in result.values())
         )
-        if has_blobs:
-            # Multi-output with blobs: each key is a separate output slot
-            outputs = {}
-            blobs = {}
-            for key, value in result.items():
-                if isinstance(value, ASSET_REF_TYPES) and value.uri and value.uri.startswith("blob://"):
-                    blob_key = value.uri[len("blob://") :]
-                    if blob_key in output_blobs:
-                        blobs[key] = output_blobs[blob_key]
-                # Not an `else`: the ref carries the asset's metadata and is
-                # emitted alongside its bytes (see the single-output case
-                # above). A ref whose blob is missing is still emitted, rather
-                # than the output vanishing from the frame entirely.
-                outputs[key] = _serialize_value(value)
-            return outputs, blobs
 
-    # Multi-output dict: if result is a dict with named output keys
-    # (not a plain data dict), split into separate output handles.
-    # A dict with an "output" key is a single-output wrapper — don't split.
-    if isinstance(result, dict) and len(result) > 1 and "output" not in result:
-        outputs = {key: _serialize_value(value) for key, value in result.items()}
-        return outputs, output_blobs
-
-    # Default: single output slot named "output"
-    return {"output": _serialize_value(result)}, output_blobs
+    outputs: dict[str, Any] = {}
+    blobs: dict[str, bytes] = {}
+    if named and isinstance(result, dict):
+        for key, value in result.items():
+            _extract_slot(key, value, output_blobs, outputs, blobs)
+    else:
+        _extract_slot("output", result, output_blobs, outputs, blobs)
+    return outputs, blobs
 
 
 async def _collect_streaming_outputs(
@@ -581,17 +635,8 @@ def _extract_named_outputs(
     output_blobs = ctx.take_output_blobs() if drain else ctx.get_output_blobs()
     outputs: dict[str, Any] = {}
     blobs: dict[str, bytes] = {}
-
     for key, value in result.items():
-        if isinstance(value, ASSET_REF_TYPES) and value.uri and value.uri.startswith("blob://"):
-            blob_key = value.uri[len("blob://") :]
-            if blob_key in output_blobs:
-                blobs[key] = output_blobs[blob_key]
-            # Falls through: the ref is emitted next to its bytes, for the same
-            # reason as the batch path in _extract_outputs.
-
-        outputs[key] = _serialize_value(value)
-
+        _extract_slot(key, value, output_blobs, outputs, blobs)
     return outputs, blobs
 
 
