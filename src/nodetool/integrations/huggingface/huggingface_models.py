@@ -1992,6 +1992,8 @@ _VIDEO_PIPELINE_CLASS_NAMES = {
     "Kandinsky5T2VPipeline",
     "Kandinsky5I2VPipeline",
     "HunyuanVideoPipeline",
+    "HunyuanVideo15Pipeline",
+    "HunyuanVideo15ImageToVideoPipeline",
     "MochiPipeline",
     "StableVideoDiffusionPipeline",
 }
