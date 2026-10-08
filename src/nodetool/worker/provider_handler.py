@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from nodetool.config.logging_config import get_logger
+from nodetool.ml.core.model_manager import ModelManager
 
 log = get_logger(__name__)
 
@@ -1072,7 +1073,22 @@ async def handle_provider_message(
     transport: Any,  # WorkerTransport (exposes async send_msg)
     cancel_flags: dict[str, asyncio.Event],
 ) -> None:
-    """Handle a provider.* message via any transport exposing ``send_msg``."""
+    """Handle a provider.* message via any transport exposing ``send_msg``.
+
+    Runs inside ``ModelManager.execution_scope`` so models a provider call
+    loads are pinned against VRAM reclaim by concurrent node executions.
+    """
+    with ModelManager.execution_scope():
+        await _dispatch_provider_message(msg_type, request_id, data, transport, cancel_flags)
+
+
+async def _dispatch_provider_message(
+    msg_type: str,
+    request_id: str | None,
+    data: dict[str, Any],
+    transport: Any,
+    cancel_flags: dict[str, asyncio.Event],
+) -> None:
 
     async def send_result(rid: str | None, d: dict) -> None:
         blobs = d.get("blobs")
@@ -1182,27 +1198,21 @@ async def handle_provider_message(
             if data.get("provider") in _adapter_provider_ids():
                 result = await _handle_adapter_media(msg_type, data, request_id, cancel_flags, send_progress)
             else:
-                result = await _run_cancellable(
-                    request_id, cancel_flags, lambda ev: _handle_text_to_image(data, ev)
-                )
+                result = await _run_cancellable(request_id, cancel_flags, lambda ev: _handle_text_to_image(data, ev))
             await send_result(request_id, result)
 
         elif msg_type == "provider.image_to_image":
             if data.get("provider") in _adapter_provider_ids():
                 result = await _handle_adapter_media(msg_type, data, request_id, cancel_flags, send_progress)
             else:
-                result = await _run_cancellable(
-                    request_id, cancel_flags, lambda ev: _handle_image_to_image(data, ev)
-                )
+                result = await _run_cancellable(request_id, cancel_flags, lambda ev: _handle_image_to_image(data, ev))
             await send_result(request_id, result)
 
         elif msg_type == "provider.text_to_video":
             if data.get("provider") in _adapter_provider_ids():
                 result = await _handle_adapter_media(msg_type, data, request_id, cancel_flags, send_progress)
             else:
-                result = await _run_cancellable(
-                    request_id, cancel_flags, lambda ev: _handle_text_to_video(data, ev)
-                )
+                result = await _run_cancellable(request_id, cancel_flags, lambda ev: _handle_text_to_video(data, ev))
             await send_result(request_id, result)
 
         elif msg_type in ("provider.image_to_video", "provider.reference_to_video"):
@@ -1213,9 +1223,7 @@ async def handle_provider_message(
             if data.get("provider") in _adapter_provider_ids():
                 result = await _handle_adapter_media(msg_type, data, request_id, cancel_flags, send_progress)
             else:
-                result = await _run_cancellable(
-                    request_id, cancel_flags, lambda ev: _handle_text_to_audio(data, ev)
-                )
+                result = await _run_cancellable(request_id, cancel_flags, lambda ev: _handle_text_to_audio(data, ev))
             await send_result(request_id, result)
 
         elif msg_type == "provider.tts_encoded":
