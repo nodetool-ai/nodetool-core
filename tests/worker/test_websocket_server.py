@@ -264,3 +264,66 @@ async def test_concurrent_requests_preserve_request_id_correlation(configured_se
             seen[resp["request_id"]] = resp["data"]["outputs"]["output"]
 
         assert seen == {"c-1": "one", "c-2": "two"}
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_disconnect_cancels_in_flight_execution():
+    """B13: closing the socket must stop orphaned work, not wait for it."""
+    worker = WorkerServer()
+    started = asyncio.Event()
+    observed: dict[str, Any] = {}
+
+    async def handle_execute(data, cancel_event, _progress, _chunk, _update=None) -> dict:
+        observed["event"] = cancel_event
+        started.set()
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            observed["cancelled"] = True
+            raise
+        return {"outputs": {}, "blobs": {}}
+
+    worker.set_execute_handler(handle_execute)
+    host, port, stop_event, task = await start_server(host="127.0.0.1", port=0, worker=worker)
+    try:
+        async with websockets.connect(f"ws://{host}:{port}") as ws:
+            await ws.send(_pack({"type": "execute", "request_id": "slow", "data": {}}))
+            await asyncio.wait_for(started.wait(), 5)
+        for _ in range(100):
+            if observed.get("cancelled"):
+                break
+            await asyncio.sleep(0.05)
+        assert observed.get("cancelled") is True
+        assert observed["event"].is_set()
+    finally:
+        stop_event.set()
+        await task
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_oversized_outgoing_frame_fails_only_its_request(monkeypatch):
+    """B12: an oversized result answers with an error frame; the socket stays up."""
+    import nodetool.worker.server as server_module
+
+    monkeypatch.setattr(server_module, "MAX_BRIDGE_FRAME_SIZE", 1024)
+    worker = WorkerServer()
+
+    async def handle_execute(data, _cancel, _progress, _chunk, _update=None) -> dict:
+        return {"outputs": {"output": "x" * data["size"]}, "blobs": {}}
+
+    worker.set_execute_handler(handle_execute)
+    host, port, stop_event, task = await start_server(host="127.0.0.1", port=0, worker=worker)
+    try:
+        async with websockets.connect(f"ws://{host}:{port}") as ws:
+            await ws.send(_pack({"type": "execute", "request_id": "big", "data": {"size": 4096}}))
+            error = await _recv(ws)
+            assert error["type"] == "error"
+            assert error["request_id"] == "big"
+            assert "exceeds max size" in error["data"]["error"]
+            await ws.send(_pack({"type": "execute", "request_id": "small", "data": {"size": 4}}))
+            result = await _recv(ws)
+            assert result["type"] == "result"
+            assert result["data"]["outputs"]["output"] == "xxxx"
+    finally:
+        stop_event.set()
+        await task

@@ -10,7 +10,7 @@ from websockets.exceptions import ConnectionClosed
 
 from nodetool.worker.executor import msgpack_default
 from nodetool.worker.msgpack_codec import decode_message
-from nodetool.worker.protocol import WorkerProtocolServer
+from nodetool.worker.protocol import MAX_BRIDGE_FRAME_SIZE, WorkerProtocolServer
 from nodetool.worker.stdio_server import salvage_request_id
 from nodetool.worker.worker_auth import make_process_request
 
@@ -31,6 +31,12 @@ class WebSocketTransport:
     async def send_msg(self, msg: dict[str, Any]) -> None:
         """Encode and send a dict as msgpack (thread-safe)."""
         data = cast("bytes", msgpack.packb(msg, default=msgpack_default, datetime=True))
+        # The TS side closes the whole socket (1009) on a frame above its
+        # maxPayload, which would fail every in-flight request on this worker.
+        # Raising here fails only the request that produced the frame: its
+        # handler answers with a small error frame instead (parity with stdio).
+        if len(data) > MAX_BRIDGE_FRAME_SIZE:
+            raise ValueError(f"Outgoing bridge frame exceeds max size ({len(data)} > {MAX_BRIDGE_FRAME_SIZE})")
         async with self._write_lock:
             await self._ws.send(data)
 
@@ -67,7 +73,7 @@ class WorkerServer:
 
     async def handle_connection(self, websocket: ServerConnection) -> None:
         transport = WebSocketTransport(websocket)
-        tasks: set[asyncio.Task] = set()
+        tasks: dict[asyncio.Task, str | None] = {}
 
         async def send_frame_error(request_id: str | None, error: str) -> None:
             log.warning("worker websocket: %s", error)
@@ -94,14 +100,22 @@ class WorkerServer:
                     await send_frame_error(None, f"Expected a msgpack map, got {type(msg).__name__}")
                     continue
                 task = asyncio.create_task(self._protocol.dispatch(msg, transport))
-                tasks.add(task)
-                task.add_done_callback(tasks.discard)
+                request_id = msg.get("request_id")
+                tasks[task] = request_id if isinstance(request_id, str) else None
+                task.add_done_callback(lambda t: tasks.pop(t, None))
         except ConnectionClosed:
             pass
         finally:
-            # Wait for in-flight tasks to finish
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
+            # Nobody is left to receive these results. Signal each request's
+            # cancel flag so cooperative work (nodes polling is_cancelled,
+            # adapter subprocesses) stops, then cancel the tasks rather than
+            # letting orphaned GPU work run to completion.
+            pending = dict(tasks)
+            if pending:
+                self._protocol.cancel_requests([rid for rid in pending.values() if rid])
+                for task in pending:
+                    task.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
 
 
 async def start_server(

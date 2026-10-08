@@ -791,3 +791,27 @@ async def test_evict_skips_models_a_concurrent_execution_is_using():
 
     assert result["evicted"] == []
     assert "busy" in ModelManager._models
+
+
+@pytest.mark.asyncio
+async def test_job_end_keeps_models_of_a_concurrent_run_with_the_same_node_ids():
+    """B14: two runs of one workflow share graph node ids.
+
+    Ending run A must not evict the model run B still holds under the same
+    node id. It is released when B, the last run using it, ends.
+    """
+    for job_id in ("run-a", "run-b"):
+        await execute_node(
+            node_type="test.ModelLoadingNode",
+            fields={"model_name": "shared-weights"},
+            secrets={},
+            input_blobs={},
+            node_id="n1",
+            job_id=job_id,
+        )
+
+    assert JobRegistry.end("run-a") == []
+    assert ModelManager.get_model("shared-weights") is not None
+
+    assert JobRegistry.end("run-b") == ["n1"]
+    assert ModelManager.get_model("shared-weights") is None
