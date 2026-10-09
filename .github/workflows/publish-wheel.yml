@@ -87,10 +87,8 @@ jobs:
           pip install --upgrade pip
           pip install build hatchling twine
 
-      - name: Download build helper
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/nodetool-ai/nodetool-core/main/build.py -o build.py
-
+      # build.py comes from the tagged checkout above, so a release is built by
+      # the helper as it was at that tag, not by whatever main has now.
       - name: Build wheel
         run: |
           echo "🏗️ Building wheel for ${{ env.PACKAGE_NAME }}"
@@ -107,6 +105,7 @@ jobs:
           path: |
             dist/*.whl
             dist/*.whl.metadata
+            dist/*.tar.gz
           retention-days: 30
 
   create-release:
@@ -144,6 +143,7 @@ jobs:
           files: |
             dist/*.whl
             dist/*.whl.metadata
+            dist/*.tar.gz
           draft: false
           prerelease: ${{ needs.validate.outputs.is-prerelease }}
           generate_release_notes: false
@@ -194,13 +194,22 @@ jobs:
         with:
           ref: ${{ needs.validate.outputs.tag-name }}
 
+      # Publish the files build-wheel produced, the same ones attached to the
+      # GitHub Release, instead of rebuilding them here.
+      - name: Download distributions
+        uses: actions/download-artifact@v8
+        with:
+          name: wheel-${{ env.PACKAGE_NAME }}-${{ needs.validate.outputs.version }}
+          path: dist/
+
+      # The PEP 658 sidecar is for the release assets. twine rejects it.
+      - name: Drop metadata sidecars
+        run: rm -f dist/*.whl.metadata
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.11"
-
-      - name: Build sdist + wheel
-        run: uv build
 
       - name: Validate distributions
         run: uvx twine check dist/*
@@ -226,13 +235,14 @@ jobs:
         with:
           ref: ${{ needs.validate.outputs.tag-name }}
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+      - name: Download distributions
+        uses: actions/download-artifact@v8
         with:
-          python-version: "3.11"
+          name: wheel-${{ env.PACKAGE_NAME }}-${{ needs.validate.outputs.version }}
+          path: dist/
 
-      - name: Build sdist + wheel
-        run: uv build
+      - name: Drop metadata sidecars
+        run: rm -f dist/*.whl.metadata
 
       - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1

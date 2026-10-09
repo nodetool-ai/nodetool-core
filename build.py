@@ -109,7 +109,9 @@ def cmd_build_wheel(args: argparse.Namespace) -> None:
 
     # Run PEP 517 build in a safe CWD to avoid importing this script as 'build'
     safe_cwd = project_dir.parent if project_dir.parent != project_dir else Path("/")
-    _run([sys.executable, "-m", "build", "--wheel", str(project_dir)], cwd=safe_cwd)
+    # sdist and wheel come from this one build, so the GitHub Release and PyPI
+    # receive the same files.
+    _run([sys.executable, "-m", "build", "--sdist", "--wheel", str(project_dir)], cwd=safe_cwd)
     wheel = _find_latest_wheel(dist_dir)
     _echo(f"✅ Built wheel: {wheel.name}")
 
@@ -156,15 +158,12 @@ def cmd_release_notes(args: argparse.Namespace) -> None:
         f"- **Python**: `{python_requires}`\n\n"
         f"### 📥 Installation\n"
         "```bash\n"
-        "# From NodeTool registry\n"
-        "pip install --index-url https://nodetool-ai.github.io/nodetool-registry/simple/ "
-        f"{package_name}\n\n"
+        "# From PyPI\n"
+        f"pip install {package_name}=={version}\n\n"
         "# Direct from release\n"
         f"pip install {server_url}/{repository}/releases/download/{tag}/"
-        f"{package_name}-{version}-py3-none-any.whl\n"
+        f"{package_name.replace('-', '_')}-{version}-py3-none-any.whl\n"
         "```\n\n"
-        "### 🔗 Dependencies\n"
-        "- `nodetool-core>=0.6.0,<0.7.0`\n\n"
         f"---\n*This release was automatically generated from tag `{tag}`*\n"
     )
     release_notes_path.write_text(content, encoding="utf-8")
@@ -248,8 +247,7 @@ def cmd_summary(args: argparse.Namespace) -> None:
         f.write(f"**Release URL**: {server_url}/{repository}/releases/tag/{tag}\n\n")
         f.write("### 📦 Installation\n")
         f.write("```bash\n")
-        f.write("pip install --index-url https://nodetool-ai.github.io/nodetool-registry/simple/ ")
-        f.write(f"{package_name}\n")
+        f.write(f"pip install {package_name}=={version}\n")
         f.write("```\n")
     _echo(f"📝 Wrote summary to {summary_path}")
 
