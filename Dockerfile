@@ -144,25 +144,25 @@ FROM ${WORKER_BASE} AS runtime
 # Installed here, after nodetool-huggingface, because the wheel needs torch
 # already present.
 #
-# The wheel is a CUDA extension, so it is pinned to one exact build: the URL
-# names cu12.8 + torch2.9 + cp311 + linux_x86_64, and it must keep matching the
-# torch this image installs. This pin is not caution for its own sake — an
-# unpinned torchaudio resolved to a CUDA 13 build against a cu128 torch and
-# shipped an image where every HuggingFace node failed at execute time (see the
-# guard below). Bumping torch means picking the matching nunchaku wheel in the
-# same change.
+# The wheel is a CUDA extension built against one exact torch and CUDA pair,
+# so it must match the torch this image installs. nodetool-huggingface now
+# requires torch 2.14, and nunchaku 1.2.1 (the newest release) ships wheels
+# for torch 2.8 to 2.10 only. The image therefore skips nunchaku by default,
+# and the SVDQuant nodes report how to install it. Set NUNCHAKU_WHEEL to a
+# release wheel that matches the image's torch, CUDA and Python once upstream
+# publishes one:
+#   https://github.com/nunchaku-ai/nunchaku/releases
+# The PyPI package named "nunchaku" is an unrelated project; never install it.
 #
-# The org is nunchaku-ai; it was renamed from nunchaku-tech, and a URL naming
-# the old org still redirects but should not be written fresh.
-#
-# Cost: 362 MB installed.
-ARG NUNCHAKU_VERSION=1.2.1
-ARG NUNCHAKU_WHEEL=https://github.com/nunchaku-ai/nunchaku/releases/download/v${NUNCHAKU_VERSION}/nunchaku-${NUNCHAKU_VERSION}%2Bcu12.8torch2.9-cp311-cp311-linux_x86_64.whl
+# Cost when installed: about 362 MB.
+ARG NUNCHAKU_WHEEL=
 
-RUN uv pip install \
-        --python $VIRTUAL_ENV \
-        --index-url https://pypi.org/simple \
-        "${NUNCHAKU_WHEEL}" && \
+RUN if [ -n "${NUNCHAKU_WHEEL}" ]; then \
+        uv pip install \
+            --python $VIRTUAL_ENV \
+            --index-url https://pypi.org/simple \
+            "${NUNCHAKU_WHEEL}"; \
+    fi && \
     rm -rf /root/.cache/uv /root/.cache/pip /tmp/* /var/tmp/*
 
 # Fail the build if the torch stack cannot import.
@@ -179,14 +179,17 @@ RUN uv pip install \
 # The import is the whole check: the .so loads against torch's CUDA runtime, or
 # it does not.
 #
-# nunchaku belongs in the same guard: its .so is built against one exact torch
-# and CUDA pair, and importing it on a CPU-only machine with no driver succeeds,
-# so a mismatch shows up here rather than on a rented GPU.
+# nunchaku, when installed, belongs in the same guard: its .so is built
+# against one exact torch and CUDA pair, and importing it on a CPU-only machine
+# with no driver succeeds, so a mismatch shows up here rather than on a rented
+# GPU.
 RUN python -c "\
-import importlib.metadata as md; \
-import torch, torchvision, torchaudio, nunchaku; \
+import importlib.metadata as md, importlib.util; \
+import torch, torchvision, torchaudio; \
 print('torch', torch.__version__, 'torchvision', torchvision.__version__, 'torchaudio', torchaudio.__version__); \
-print('nunchaku', md.version('nunchaku'))"
+has_nunchaku = importlib.util.find_spec('nunchaku') is not None; \
+has_nunchaku and __import__('nunchaku'); \
+print('nunchaku', md.version('nunchaku') if has_nunchaku else 'not installed')"
 
 # Expose the worker's WebSocket port. 22 is opened only when the pod is
 # provisioned with a public key (see docker/worker-entrypoint.sh).
