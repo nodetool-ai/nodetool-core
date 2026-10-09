@@ -7,7 +7,7 @@ Guidance for coding agents and contributors working in this repository.
 
 nodetool-core is a **Python library and node runner** for the NodeTool platform. The TypeScript server handles HTTP API, WebSocket, database, auth, agents, chat, storage, deploy, and workflow orchestration. Python remains for two roles:
 
-1. **Node runner subprocess** — TS spawns `python -m nodetool.worker`, connects via WebSocket+MessagePack for `discover`/`execute`/`cancel`/`provider.*`/`models.*`/`comfy.*` (the `comfy.*` messages proxy a co-located ComfyUI server — see `docs/comfy-proxy.md`)
+1. **Node runner subprocess** — TS spawns `python -m nodetool.worker --stdio` and exchanges MessagePack messages over stdin/stdout (or connects over WebSocket to a remote worker named by `NODETOOL_WORKER_URL`) for `discover`/`execute`/`cancel`/`provider.*`/`models.*`/`comfy.*` (the `comfy.*` messages proxy a co-located ComfyUI server — see `docs/comfy-proxy.md`)
 2. **Node system and type definitions** — `BaseNode`, `ProcessingContext`, metadata types, used by all Python node packages
 
 Cloud/API providers (OpenAI, Anthropic, Gemini, Ollama, etc.) are implemented in the TS server. Python only has local-compute providers (HuggingFace local, MLX) registered via external packages.
@@ -30,7 +30,7 @@ src/nodetool/
 ├── storage/           # Abstract storage, memory/file/S3 backends
 ├── types/             # API graph types, prediction types
 ├── utils/             # Misc utilities
-├── worker/            # Worker subprocess (WebSocket server, executor)
+├── worker/            # Worker subprocess (stdio and WebSocket servers, executor)
 └── workflows/         # Node execution core (see below)
 ```
 
@@ -135,7 +135,7 @@ Storage: `create_asset`, `download_asset`, `asset_storage_url`
 
 ### Provider Infrastructure
 
-`providers/base.py` has `BaseProvider`, `register_provider`, `get_registered_provider`. External packages (nodetool-mlx, nodetool-huggingface) register local-compute providers. `LOCAL_PROVIDER_MODULES` lists their modules. `import_provider_module` skips a pack that is not installed and logs any other import failure with the module name. The worker's `provider_handler.py` exposes the providers to TS via WebSocket.
+`providers/base.py` has `BaseProvider`, `register_provider`, `get_registered_provider`. External packages (nodetool-mlx, nodetool-huggingface) register local-compute providers. `LOCAL_PROVIDER_MODULES` lists their modules. `import_provider_module` skips a pack that is not installed and logs any other import failure with the module name. The worker's `provider_handler.py` exposes the providers to TS over the worker connection.
 
 ### Node Discovery
 

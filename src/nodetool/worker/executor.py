@@ -583,7 +583,7 @@ async def _collect_streaming_outputs(
 ) -> dict[str, Any]:
     """Collect the final value emitted for each slot from a streaming node."""
     outputs: dict[str, Any] = {}
-    async for item in node.gen_process(ctx):
+    async for item in _TORCH_SUPPORT.stream_with_gpu(ctx, node):
         # Cooperative cancellation between chunks: a cancel request must not
         # wait for the whole stream to finish before taking effect.
         ctx.raise_if_cancelled()
@@ -609,7 +609,7 @@ async def _stream_streaming_outputs(
     Only non-``None`` values feed the aggregated final result.
     """
     outputs: dict[str, Any] = {}
-    async for item in node.gen_process(ctx):
+    async for item in _TORCH_SUPPORT.stream_with_gpu(ctx, node):
         ctx.raise_if_cancelled()
         if not isinstance(item, dict):
             raise TypeError("Streaming worker nodes must yield dictionaries mapping output names to values.")

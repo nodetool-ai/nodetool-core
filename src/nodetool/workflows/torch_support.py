@@ -12,7 +12,7 @@ import os
 import random
 import re
 from contextlib import contextmanager, suppress
-from typing import TYPE_CHECKING, Any, Generator
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Generator
 
 import numpy as np
 
@@ -164,6 +164,24 @@ def resolve_torch_device(explicit_device: str | None = None) -> str:
     return "cpu"
 
 
+def cuda_device_index() -> int | None:
+    """Index of the CUDA device nodes run on, or None when CUDA is unavailable.
+
+    ``cuda:<index>`` from :func:`resolve_torch_device` names it. Otherwise it is
+    torch's current device. VRAM telemetry and OOM reclaim must measure this
+    device, not GPU 0.
+    """
+    if not is_cuda_available():
+        return None
+    device = resolve_torch_device()
+    if device.startswith("cuda:"):
+        return int(device.split(":", 1)[1])
+    try:
+        return int(torch.cuda.current_device())
+    except (RuntimeError, AttributeError):
+        return 0
+
+
 def is_gpu_oom_exception(exc: BaseException) -> bool:
     """True for a CUDA or MPS out-of-memory error."""
     if not TORCH_AVAILABLE or torch is None:
@@ -210,6 +228,10 @@ class BaseTorchSupport:
     ) -> Any:
         return await node.process(context)
 
+    async def stream_with_gpu(self, context: ProcessingContext, node: BaseNode) -> AsyncGenerator[Any, None]:
+        async for item in node.gen_process(context):
+            yield item
+
     def is_cuda_oom_exception(self, exc: Exception) -> bool:
         return False
 
@@ -223,18 +245,20 @@ class TorchWorkflowSupport(BaseTorchSupport):
     def get_available_vram(self) -> int:
         if not is_cuda_available():
             return 0
+        index = cuda_device_index()
         try:
-            props = torch.cuda.get_device_properties(0)
-            return props.total_memory - torch.cuda.memory_allocated(0)
+            props = torch.cuda.get_device_properties(index)
+            return props.total_memory - torch.cuda.memory_allocated(index)
         except (RuntimeError, AttributeError):
             return 0
 
     def log_vram_usage(self, runner: WorkflowRunner, message: str = "") -> None:
         if not is_cuda_available():
             return
+        index = cuda_device_index()
         try:
-            torch.cuda.synchronize()
-            vram = torch.cuda.memory_allocated(0) / 1024 / 1024 / 1024
+            torch.cuda.synchronize(index)
+            vram = torch.cuda.memory_allocated(index) / 1024 / 1024 / 1024
             log.info(f"{message} VRAM: {vram:.2f} GB")
         except (RuntimeError, AttributeError):
             # CUDA not available or not compiled, skip logging
@@ -282,78 +306,118 @@ class TorchWorkflowSupport(BaseTorchSupport):
                 )
                 raise
 
-            log.error(
-                "VRAM OOM error for node %s (%s): %s",
-                node.get_title(),
-                node._id,
-                exc,
-            )
             retries += 1
-
-            # Release the frames of the failed forward pass *before* reclaiming.
-            # The message is already logged above; everything below only needs
-            # the exception object itself, which stays re-raisable.
-            _release_exception(exc)
-
-            if is_cuda_available():
-                try:
-                    torch.cuda.synchronize()
-                    vram_before_cleanup = self.get_available_vram()
-                    log.error(
-                        "VRAM before cleanup: %.2f GB",
-                        vram_before_cleanup / (1024**3),
-                    )
-
-                    snapshot = ModelManager.get_vram_snapshot()
-                    target_free = None
-                    if snapshot is not None:
-                        target_free = max(4.0, snapshot.total_gb * 0.3)
-
-                    ModelManager.free_vram_if_needed(
-                        reason=(f"CUDA OOM for node {node.get_title()} ({node._id})"),
-                        required_free_gb=target_free,
-                        aggressive=retries >= self.max_retries,
-                    )
-                    gc.collect()
-
-                    self.empty_cuda_cache()
-                    with suppress(RuntimeError, AttributeError):
-                        torch.cuda.ipc_collect()
-                        torch.cuda.synchronize()
-                    vram_after_cleanup = self.get_available_vram()
-                    log.error(
-                        "VRAM after cleanup: %.2f GB",
-                        vram_after_cleanup / (1024**3),
-                    )
-                except (RuntimeError, AttributeError):
-                    # CUDA not available or not compiled, skip cleanup
-                    pass
-            elif _is_mps_available():
-                gc.collect()
-                with suppress(RuntimeError, AttributeError):
-                    torch.mps.empty_cache()
-
-            if retries >= self.max_retries:
-                log.error(
-                    "Max retries (%d) reached for OOM error on node %s. Raising error.",
-                    self.max_retries,
-                    node.get_title(),
-                )
-                raise
-
-            delay = min(
-                self.base_delay * (2 ** (retries - 1)) + random.uniform(0, 1),
-                self.max_delay,
-            )
-            log.warning(
-                "VRAM OOM encountered for node %s. Retrying in %.2f seconds. (Attempt %d/%d)",
-                node._id,
-                delay,
-                retries,
-                self.max_retries,
-            )
-            await asyncio.sleep(delay)
+            await self._recover_from_oom(node, exc, retries)
             return await self.process_with_gpu(runner, context, node, retries, disable_grad=disable_grad)
+
+    async def stream_with_gpu(self, context: ProcessingContext, node: BaseNode) -> AsyncGenerator[Any, None]:
+        """Iterate ``node.gen_process`` and retry it after a GPU OOM.
+
+        Only an OOM raised before the first item is retried. Once an item has
+        been yielded the caller may already have sent it on, and running the
+        generator again would emit it twice, so a later OOM propagates.
+        """
+        retries = 0
+        while True:
+            emitted = False
+            try:
+                async for item in node.gen_process(context):
+                    emitted = True
+                    yield item
+                return
+            except Exception as exc:
+                if emitted or not self.is_cuda_oom_exception(exc):
+                    raise
+                retries += 1
+                await self._recover_from_oom(node, exc, retries)
+
+    async def _recover_from_oom(self, node: BaseNode, exc: BaseException, retries: int) -> None:
+        """Free GPU memory after attempt ``retries`` hit an OOM, then wait.
+
+        Raises ``exc`` once ``max_retries`` attempts have failed. The memory is
+        freed either way, so the next node does not inherit it.
+        """
+        log.error(
+            "VRAM OOM error for node %s (%s): %s",
+            node.get_title(),
+            node._id,
+            exc,
+        )
+        # Release the frames of the failed forward pass *before* reclaiming.
+        # The message is already logged above; everything below only needs
+        # the exception object itself, which stays re-raisable.
+        _release_exception(exc)
+
+        # The cleanup before the last retry is the strongest: it drops every
+        # cached model no executing node is using, so that retry is not just
+        # a repeat of the attempt that failed.
+        aggressive = retries >= self.max_retries - 1
+        reason = f"GPU OOM for node {node.get_title()} ({node._id})"
+
+        if is_cuda_available():
+            index = cuda_device_index()
+            try:
+                torch.cuda.synchronize(index)
+                vram_before_cleanup = self.get_available_vram()
+                log.error(
+                    "VRAM before cleanup: %.2f GB",
+                    vram_before_cleanup / (1024**3),
+                )
+
+                snapshot = ModelManager.get_vram_snapshot()
+                target_free = None
+                if snapshot is not None:
+                    target_free = max(4.0, snapshot.total_gb * 0.3)
+
+                ModelManager.free_vram_if_needed(
+                    reason=reason,
+                    required_free_gb=target_free,
+                )
+                if aggressive:
+                    ModelManager.evict_models(spare_current_scope=True)
+                gc.collect()
+
+                self.empty_cuda_cache()
+                with suppress(RuntimeError, AttributeError):
+                    torch.cuda.ipc_collect()
+                    torch.cuda.synchronize(index)
+                vram_after_cleanup = self.get_available_vram()
+                log.error(
+                    "VRAM after cleanup: %.2f GB",
+                    vram_after_cleanup / (1024**3),
+                )
+            except (RuntimeError, AttributeError):
+                # CUDA not available or not compiled, skip cleanup
+                pass
+        elif _is_mps_available():
+            # Unified memory: moving a model to the CPU frees nothing, so
+            # drop every cached model no executing node is using, then
+            # return the freed blocks to the system.
+            ModelManager.evict_models(spare_current_scope=True)
+            gc.collect()
+            with suppress(RuntimeError, AttributeError):
+                torch.mps.empty_cache()
+
+        if retries >= self.max_retries:
+            log.error(
+                "Max retries (%d) reached for OOM error on node %s. Raising error.",
+                self.max_retries,
+                node.get_title(),
+            )
+            raise exc
+
+        delay = min(
+            self.base_delay * (2 ** (retries - 1)) + random.uniform(0, 1),
+            self.max_delay,
+        )
+        log.warning(
+            "VRAM OOM encountered for node %s. Retrying in %.2f seconds. (Attempt %d/%d)",
+            node._id,
+            delay,
+            retries,
+            self.max_retries,
+        )
+        await asyncio.sleep(delay)
 
     def is_cuda_oom_exception(self, exc: Exception) -> bool:
         """True for a CUDA or MPS out-of-memory error (name kept for callers)."""

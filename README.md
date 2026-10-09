@@ -14,7 +14,7 @@ ______________________________________________________________________
 ## What's Here
 
 - **Node system** — `BaseNode`, `ProcessingContext`, type metadata
-- **Worker subprocess** — `python -m nodetool.worker` communicates with the TS server via WebSocket+MessagePack
+- **Worker subprocess** — `python -m nodetool.worker` exchanges MessagePack messages with the TS server, over stdio when the server spawns it locally (`--stdio`) and over WebSocket for a remote worker (`NODETOOL_WORKER_URL`)
 - **Provider infrastructure** — Base classes and registry for local-compute providers
 - **Media processing** — Image, audio, video conversion utilities
 - **Storage** — Abstract storage backends (memory, file, S3)
@@ -69,7 +69,7 @@ TS Server (Fastify)
     ├── Workflow orchestration (DAG scheduling)
     ├── Cloud providers (OpenAI, Anthropic, Gemini, ...)
     └── Spawns Python worker subprocess
-            ↕ WebSocket + MessagePack
+            ↕ MessagePack over stdio (local) or WebSocket (remote)
 Python Worker (this repo)
     ├── Node discovery & execution
     ├── Local providers (HuggingFace, MLX)
@@ -81,7 +81,7 @@ Python Worker (this repo)
 The worker speaks a msgpack message protocol to the TS server (bridge protocol **v6**, `nodetool.worker.BRIDGE_PROTOCOL_VERSION`). Two transports carry the same messages:
 
 - **WebSocket** (default): `python -m nodetool.worker --host 0.0.0.0 --port 8787`. Without `--port` the worker binds a free port (`NODETOOL_WORKER_PORT`, default `0`). Do not use 7777, the NodeTool server's own default port. Each message is one binary msgpack frame. On startup the worker prints `NODETOOL_WORKER_PORT=<port>` to stdout (the only thing on stdout). If `NODETOOL_WORKER_TOKEN` is set, the opening handshake must carry `Authorization: Bearer <token>` (constant-time compare, rejected with 401 before any frame); unset means open, for local/dev use.
-- **stdio** (`--stdio`): same msgpack payloads with 4-byte big-endian length-prefixed framing over stdin/stdout, for parent processes that spawn the worker directly.
+- **stdio** (`--stdio`): same msgpack payloads with 4-byte big-endian length-prefixed framing over stdin/stdout, for parent processes that spawn the worker directly. The NodeTool server uses it for its local worker and uses WebSocket only when `NODETOOL_WORKER_URL` names a remote one.
 
 Frames are capped at 256 MiB by default (`NODETOOL_BRIDGE_MAX_FRAME_SIZE`). Unknown msgpack extension types decode to `None` rather than erroring. Binary data (images, audio, model files) travels as native msgpack `bin` values — there is no base64.
 

@@ -11,6 +11,7 @@ import aiofiles
 import httpx
 
 from nodetool.config.logging_config import get_logger
+from nodetool.integrations.huggingface.hf_fast_cache import get_default_hf_cache_dir
 
 log = get_logger(__name__)
 
@@ -175,28 +176,8 @@ def _resolve_hf_token(token: str | bool | None) -> Optional[str]:
 
 
 def _hf_cache_root() -> Path:
-    """
-    Cache root resolution, mirroring huggingface_hub:
-
-      - HF_HUB_CACHE (preferred)
-      - HUGGINGFACE_HUB_CACHE (deprecated)
-      - HF_HOME/hub
-      - XDG_CACHE_HOME/huggingface/hub
-      - ~/.cache/huggingface/hub
-    """
-    cache = os.getenv("HF_HUB_CACHE") or os.getenv("HUGGINGFACE_HUB_CACHE")
-    if cache:
-        return Path(cache).expanduser()
-
-    hf_home = os.getenv("HF_HOME")
-    if hf_home:
-        return Path(hf_home).expanduser() / "hub"
-
-    xdg = os.getenv("XDG_CACHE_HOME")
-    if xdg:
-        return Path(xdg) / "huggingface" / "hub"
-
-    return Path.home() / ".cache" / "huggingface" / "hub"
+    """Cache root, resolved as ``huggingface_hub`` does (see ``get_default_hf_cache_dir``)."""
+    return get_default_hf_cache_dir()
 
 
 _COMMIT_HASH_RE = re.compile(r"^[0-9a-f]{40}$")

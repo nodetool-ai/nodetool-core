@@ -281,7 +281,7 @@ def fake_cuda(monkeypatch):
     torch_stub = ModuleType("torch")
     cuda_stub = SimpleNamespace(
         is_available=lambda: True,
-        synchronize=lambda: None,
+        synchronize=lambda device=None: None,
         empty_cache=lambda: None,
     )
     torch_stub.cuda = cuda_stub  # type: ignore[attr-defined]

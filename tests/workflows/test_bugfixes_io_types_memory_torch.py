@@ -209,7 +209,7 @@ async def test_oom_cleanup_runs_after_the_traceback_is_released(monkeypatch):
         ts,
         "torch",
         SimpleNamespace(
-            cuda=SimpleNamespace(synchronize=lambda: None, ipc_collect=lambda: None),
+            cuda=SimpleNamespace(synchronize=lambda device=None: None, ipc_collect=lambda: None),
             no_grad=nullcontext,
         ),
     )

@@ -5,5 +5,5 @@
   "description": "Nodetool Core is the core library for Nodetool, providing the necessary functionality for building and running AI workflows.",
   "name": "nodetool-core",
   "repo_id": "nodetool-ai/nodetool-core",
-  "version": "0.8.1"
+  "version": "0.8.2"
 }

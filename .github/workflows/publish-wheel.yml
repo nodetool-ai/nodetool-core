@@ -68,6 +68,28 @@ jobs:
           echo "🏷️ Tag: $TAG_NAME"
           echo "🔄 Prerelease: $IS_PRERELEASE"
 
+      # The release bump must re-lock and regenerate the package metadata, or
+      # CI (`uv sync --locked`) fails and the wheel ships a stale version.
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.get-version.outputs.tag-name }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check lock and package metadata match the version
+        run: |
+          uv lock --check
+          VERSION="${{ steps.get-version.outputs.version }}"
+          META_VERSION=$(python3 -c "import json; print(json.load(open('src/nodetool/package_metadata/nodetool-core.json'))['version'])")
+          if [ "$META_VERSION" != "$VERSION" ]; then
+            echo "❌ package_metadata/nodetool-core.json has $META_VERSION, expected $VERSION. Run: uv run nodetool-pkg scan --write"
+            exit 1
+          fi
+
   build-wheel:
     needs: validate
     runs-on: ubuntu-latest

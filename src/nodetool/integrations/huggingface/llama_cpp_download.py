@@ -6,8 +6,8 @@ using llama.cpp's flat file naming convention:
 - {org}_{repo}_{filename}.gguf.etag
 - manifest={org}={repo}={tag}.json
 
-Cache directories by platform:
-- Linux: ~/.cache/llama.cpp/
+Cache directory: ``$LLAMA_CACHE`` when set, else by platform:
+- Linux: $XDG_CACHE_HOME/llama.cpp/ (fallback ~/.cache/llama.cpp/)
 - macOS: ~/Library/Caches/llama.cpp/
 - Windows: %LOCALAPPDATA%/llama.cpp/
 """
@@ -27,15 +27,29 @@ import httpx
 from nodetool.config.logging_config import get_logger
 
 
+def _env_value(name: str) -> str | None:
+    value = os.environ.get(name, "").strip()
+    return value or None
+
+
 def get_llama_cpp_cache_dir() -> str:
-    """Return the llama.cpp native cache directory."""
+    """Return the llama.cpp native cache directory.
+
+    Matches llama.cpp's ``fs_get_cache_directory`` and the TypeScript
+    server's ``getLlamaCppCacheDir``, so both put GGUF files in one place.
+    Blank values count as unset.
+    """
+    override = _env_value("LLAMA_CACHE")
+    if override:
+        return os.path.expanduser(override)
     if sys.platform == "darwin":
         return os.path.expanduser("~/Library/Caches/llama.cpp")
-    elif sys.platform == "win32":
-        local_app_data = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+    if sys.platform == "win32":
+        local_app_data = _env_value("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
         return os.path.join(local_app_data, "llama.cpp")
-    else:
-        return os.path.expanduser("~/.cache/llama.cpp")
+    xdg_cache = _env_value("XDG_CACHE_HOME")
+    base = os.path.expanduser(xdg_cache) if xdg_cache else os.path.expanduser("~/.cache")
+    return os.path.join(base, "llama.cpp")
 
 
 if TYPE_CHECKING:
