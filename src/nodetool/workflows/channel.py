@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Generic, TypeVar, overload
+from typing import Any, AsyncIterator, Generic, TypeVar, cast, overload
 
 from nodetool.config.logging_config import get_logger
 
@@ -150,7 +150,7 @@ class Channel(Generic[T]):
                 if item is _STOP_SIGNAL:
                     break
                 # Type narrowing: item is T since we've excluded the sentinel object above
-                yield item  # type: ignore[misc]
+                yield cast("T", item)
         finally:
             async with self._lock:
                 self._subscribers.pop(subscriber_id, None)

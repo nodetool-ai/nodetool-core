@@ -150,7 +150,7 @@ class Property(BaseModel):
                     default = field.default_factory()  # type: ignore[call-arg]
                 except TypeError:
                     # Pydantic also supports factories taking the validated data.
-                    default = field.default_factory({})  # type: ignore[call-arg]
+                    default = field.default_factory({})  # type: ignore[call-arg]  # ty: ignore[too-many-positional-arguments]
             elif field.default is not PydanticUndefined:
                 default = field.default
 
