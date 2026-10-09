@@ -57,7 +57,7 @@ def install_stdio_stdout_guard() -> None:
     """Redirect fd 1 (stdout) to stderr; keep a dup fd for the msgpack protocol only.
 
     Python ``print()`` and C extensions that write to stdout (fd 1) — including tqdm,
-    safetensors, and torch/nunchaku native code — would corrupt the length-prefixed
+    safetensors, and torch native code — would corrupt the length-prefixed
     msgpack stream on the stdout pipe.  We dup the original stdout pipe before
     redirecting fd 1 to stderr, then write bridge frames only through the dup.
     """

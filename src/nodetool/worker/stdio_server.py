@@ -267,7 +267,7 @@ async def run_stdio_worker(namespaces: list[str] | None = None) -> None:
     # Warm-import heavy ML modules on the MAIN thread before the event loop
     # starts dispatching work. Importing these from a worker thread (via
     # asyncio.to_thread / run_in_executor) hangs indefinitely on Windows for
-    # diffusers + nunchaku Flux. Paying ~30s once at startup is far better
+    # diffusers Flux. Paying ~30s once at startup is far better
     # than a per-job hang. Must happen AFTER readiness signal but BEFORE
     # server.run() so the first execute() finds the module cached.
     if "huggingface" in resolved_namespaces:

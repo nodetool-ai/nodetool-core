@@ -10,10 +10,9 @@ file with "No ETag received from Hugging Face".
 Observed on `cross-encoder/ms-marco-MiniLM-L-6-v2` (renamed to `...-L6-v2`),
 on two repos that are a shipped node's own default model
 (`runwayml/stable-diffusion-v1-5`, `bosonai/higgs-audio-v2-generation-3B-base`),
-and across the whole SVDQuant path: the `nunchaku-tech` org was renamed to
-`nunchaku-ai`, so every quantized FLUX and Qwen repo NodeTool names fails here.
+and on every repo of an org that was renamed.
 
-A renamed LFS file is the hard shape, and it is the one nunchaku hits. The
+A renamed LFS file is the hard shape, and it is the one a renamed org hits. The
 rename hop is same-origin, but the hop that carries the metadata redirects OFF
 huggingface.co to the CDN, and the CDN's own ETag is a different hash than the
 `x-linked-etag` the cache layout is keyed on. The resolution must follow the
@@ -38,20 +37,20 @@ COMMIT = "233902d25c440f23af6f7d6e94d2946bac0bee0a"
 ETAG = "cf6d51fc9b1a671c35e92d6bd009880937aaa12d"
 CDN = "https://us.aws.cdn.hf.co/xet-bridge-us/deadbeef/cafe?Expires=1&Signature=x"
 
-# The real nunchaku chain, captured with curl. The org rename sends hop 1
+# A real renamed-org chain, captured with curl. The org rename sends hop 1
 # same-origin with no ETag; hop 2 carries the metadata and points at the CDN.
-NUNCHAKU_OLD = (
-    "https://huggingface.co/nunchaku-tech/nunchaku-qwen-image/resolve/main/"
-    "svdq-int4_r32-qwen-image.safetensors"
+RENAMED_OLD = (
+    "https://huggingface.co/old-org/large-model/resolve/main/"
+    "model.safetensors"
 )
-NUNCHAKU_NEW = (
-    "/nunchaku-ai/nunchaku-qwen-image/resolve/main/svdq-int4_r32-qwen-image.safetensors"
+RENAMED_NEW = (
+    "/new-org/large-model/resolve/main/model.safetensors"
 )
-NUNCHAKU_LINKED_ETAG = "1af39f56749fd11862daa50d58b79688025b4e14f75c342d361bd0aa7d6836c8"
-NUNCHAKU_CDN_ETAG = "951f176349dd9fb6534121957c2017cf14cffec494f8ea2a3c5ff2bfbf24386d"
-NUNCHAKU_COMMIT = "4d9f4f667ea571ab172e0ee29ac2c27b82a41a6b"
-NUNCHAKU_SIZE = 11521979944
-NUNCHAKU_CDN = (
+RENAMED_LINKED_ETAG = "1af39f56749fd11862daa50d58b79688025b4e14f75c342d361bd0aa7d6836c8"
+RENAMED_CDN_ETAG = "951f176349dd9fb6534121957c2017cf14cffec494f8ea2a3c5ff2bfbf24386d"
+RENAMED_COMMIT = "4d9f4f667ea571ab172e0ee29ac2c27b82a41a6b"
+RENAMED_SIZE = 11521979944
+RENAMED_CDN = (
     "https://us.aws.cdn.hf.co/xet-bridge-us/689d9bf926fe49e8ad685a63/"
     "951f176349dd9fb6534121957c2017cf14cffec494f8ea2a3c5ff2bfbf24386d?user_id=public"
 )
@@ -262,7 +261,7 @@ async def test_unauthorized_on_a_later_hop_still_raises_permission_error():
 
 @pytest.mark.asyncio
 async def test_renamed_lfs_repo_stops_on_the_hop_that_leaves_huggingface():
-    """The nunchaku case: a renamed org whose file is a 10 GB LFS blob.
+    """A renamed org whose file is a 10 GB LFS blob.
 
     Hop 1 is the org rename, same-origin, no ETag — follow it. Hop 2 carries
     x-linked-etag and redirects to the CDN — take it and stop. Never request
@@ -276,30 +275,30 @@ async def test_renamed_lfs_repo_stops_on_the_hop_that_leaves_huggingface():
         hosts.append(request.url.host)
         if request.url.host != "huggingface.co":
             raise AssertionError(f"followed the CDN hand-off to {request.url.host}")
-        if request.url.path.startswith("/nunchaku-tech/"):
-            return httpx.Response(307, headers={"Location": NUNCHAKU_NEW})
+        if request.url.path.startswith("/old-org/"):
+            return httpx.Response(307, headers={"Location": RENAMED_NEW})
         return httpx.Response(
             302,
             headers={
-                "Location": NUNCHAKU_CDN,
-                "X-Linked-Etag": f'"{NUNCHAKU_LINKED_ETAG}"',
-                "X-Linked-Size": str(NUNCHAKU_SIZE),
-                "X-Repo-Commit": NUNCHAKU_COMMIT,
+                "Location": RENAMED_CDN,
+                "X-Linked-Etag": f'"{RENAMED_LINKED_ETAG}"',
+                "X-Linked-Size": str(RENAMED_SIZE),
+                "X-Repo-Commit": RENAMED_COMMIT,
                 "Accept-Ranges": "bytes",
             },
         )
 
     async with _client(handler) as client:
-        meta = await hf_head_metadata(client, NUNCHAKU_OLD)
+        meta = await hf_head_metadata(client, RENAMED_OLD)
 
     assert hosts == ["huggingface.co", "huggingface.co"]
-    assert meta.etag == NUNCHAKU_LINKED_ETAG
-    assert meta.etag != NUNCHAKU_CDN_ETAG
-    assert meta.commit_hash == NUNCHAKU_COMMIT
-    assert meta.size == NUNCHAKU_SIZE
+    assert meta.etag == RENAMED_LINKED_ETAG
+    assert meta.etag != RENAMED_CDN_ETAG
+    assert meta.commit_hash == RENAMED_COMMIT
+    assert meta.size == RENAMED_SIZE
     assert meta.accept_ranges is True
     # The download itself goes to the CDN; only the metadata stays on the Hub.
-    assert meta.url == NUNCHAKU_CDN
+    assert meta.url == RENAMED_CDN
 
 
 @pytest.mark.asyncio
@@ -309,19 +308,19 @@ async def test_renamed_lfs_repo_sends_the_token_only_to_the_hub():
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append((request.url.host, request.headers.get("Authorization")))
-        if request.url.path.startswith("/nunchaku-tech/"):
-            return httpx.Response(307, headers={"Location": NUNCHAKU_NEW})
+        if request.url.path.startswith("/old-org/"):
+            return httpx.Response(307, headers={"Location": RENAMED_NEW})
         return httpx.Response(
             302,
             headers={
-                "Location": NUNCHAKU_CDN,
-                "X-Linked-Etag": f'"{NUNCHAKU_LINKED_ETAG}"',
-                "X-Repo-Commit": NUNCHAKU_COMMIT,
+                "Location": RENAMED_CDN,
+                "X-Linked-Etag": f'"{RENAMED_LINKED_ETAG}"',
+                "X-Repo-Commit": RENAMED_COMMIT,
             },
         )
 
     async with _client(handler) as client:
-        await hf_head_metadata(client, NUNCHAKU_OLD, token="hf_secret")
+        await hf_head_metadata(client, RENAMED_OLD, token="hf_secret")
 
     assert seen == [
         ("huggingface.co", "Bearer hf_secret"),

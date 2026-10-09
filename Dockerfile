@@ -136,35 +136,6 @@ RUN uv pip install \
 
 FROM ${WORKER_BASE} AS runtime
 
-# SVDQuant (nunchaku) runtime for the quantized FLUX and Qwen nodes. Without
-# it every one of them fails with "The SVDQuant nunchaku runtime is required
-# for this operation but is not installed", and a rented worker has no way to
-# add it.
-#
-# Installed here, after nodetool-huggingface, because the wheel needs torch
-# already present.
-#
-# The wheel is a CUDA extension built against one exact torch and CUDA pair,
-# so it must match the torch this image installs. nodetool-huggingface now
-# requires torch 2.14, and nunchaku 1.2.1 (the newest release) ships wheels
-# for torch 2.8 to 2.10 only. The image therefore skips nunchaku by default,
-# and the SVDQuant nodes report how to install it. Set NUNCHAKU_WHEEL to a
-# release wheel that matches the image's torch, CUDA and Python once upstream
-# publishes one:
-#   https://github.com/nunchaku-ai/nunchaku/releases
-# The PyPI package named "nunchaku" is an unrelated project; never install it.
-#
-# Cost when installed: about 362 MB.
-ARG NUNCHAKU_WHEEL=
-
-RUN if [ -n "${NUNCHAKU_WHEEL}" ]; then \
-        uv pip install \
-            --python $VIRTUAL_ENV \
-            --index-url https://pypi.org/simple \
-            "${NUNCHAKU_WHEEL}"; \
-    fi && \
-    rm -rf /root/.cache/uv /root/.cache/pip /tmp/* /var/tmp/*
-
 # Fail the build if the torch stack cannot import.
 #
 # torchvision and torchaudio ship CUDA-variant wheels that must match torch's.
@@ -178,18 +149,9 @@ RUN if [ -n "${NUNCHAKU_WHEEL}" ]; then \
 # This runs at build time on a CPU-only builder, so it must not touch a GPU.
 # The import is the whole check: the .so loads against torch's CUDA runtime, or
 # it does not.
-#
-# nunchaku, when installed, belongs in the same guard: its .so is built
-# against one exact torch and CUDA pair, and importing it on a CPU-only machine
-# with no driver succeeds, so a mismatch shows up here rather than on a rented
-# GPU.
 RUN python -c "\
-import importlib.metadata as md, importlib.util; \
 import torch, torchvision, torchaudio; \
-print('torch', torch.__version__, 'torchvision', torchvision.__version__, 'torchaudio', torchaudio.__version__); \
-has_nunchaku = importlib.util.find_spec('nunchaku') is not None; \
-has_nunchaku and __import__('nunchaku'); \
-print('nunchaku', md.version('nunchaku') if has_nunchaku else 'not installed')"
+print('torch', torch.__version__, 'torchvision', torchvision.__version__, 'torchaudio', torchaudio.__version__)"
 
 # Expose the worker's WebSocket port. 22 is opened only when the pod is
 # provisioned with a public key (see docker/worker-entrypoint.sh).
