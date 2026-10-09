@@ -1,5 +1,6 @@
-# NOTE: Use 'uv sync --group dev' instead of pip install -r requirements-dev.txt
-# This file is kept for backward compatibility
+# NOTE: Use 'pip install -e ".[dev]"' (or 'uv sync --extra dev') instead.
+# pyproject.toml's dev extra is the source of truth; this file is kept for
+# backward compatibility and is not used by CI.
 
 # Testing
 pytest>=9.0.3
