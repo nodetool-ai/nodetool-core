@@ -13,29 +13,41 @@ requires-python = ">=3.11"
 dependencies = [
 
     # Core — worker subprocess communication
-    "pydantic>=2.11.2",
-    "msgpack>=1.1.0",
-    "websockets>=14.1",
-    "httpx>=0.27.2",
-    "aiohttp>=3.13.1",
+    "pydantic>=2.14.0",
+    "msgpack>=1.2.3",
+    "websockets>=17.2",
+    # httpx 1.0 pre-releases drop AsyncClient, which the model download path uses.
+    "httpx>=0.28.1,<1",
+    "aiohttp>=3.14.4",
     "brotli>=1.2.0",
-    "pycares<5",
+    "pycares>=4.11.0,<5",
 
     # Node execution utilities
-    "python-dotenv>=1.2.2",
-    "pyyaml>=6.0.2",
-    "psutil>=6.1.0",
-    "tqdm>=4.67.0",
+    "python-dotenv>=1.2.4",
+    "pyyaml>=6.0.2",  # paddlex (ocr extra) pins pyyaml==6.0.2
+    "psutil>=7.2.2",
+    "tqdm>=4.70.1",
 
     # Media processing (used by nodes via ProcessingContext)
-    "pillow < 13.0.0",
-    "numpy>=2.0.0,<2.5",
+    "pillow>=12.3.0,<13",
+    # Floor stays at 2.3 because paddlex (ocr extra) caps numpy<2.4. No upper cap:
+    # numpy 2.5 installs where Python and the other packs allow it.
+    "numpy>=2.3.5",
 
     # HuggingFace integration (used by HF nodes)
-    "huggingface_hub>=0.35.3",
-    "hf_xet>=0.0.1",
-    "hf_transfer",
-    "aiofiles>=24.1.0",
+    # diffusers 0.41 and mflux 0.22 both require huggingface_hub<2, so the packs
+    # cannot co-install with hub 2.x. Keep core on the same range they test.
+    "huggingface_hub>=1.33.0,<2",
+    "hf_xet>=1.7.0",
+    "hf_transfer>=0.1.9",
+    "aiofiles>=25.1.0",
+
+    # Imported by core modules (ProcessingContext audio helpers,
+    # media.audio.audio_helpers, integrations.huggingface.safetensors_inspector)
+    "pydub>=0.25.1",
+    # pydub imports the stdlib audioop module, which Python 3.13 removed.
+    "audioop-lts>=0.2.2; python_version >= '3.13'",
+    "safetensors>=0.8.0",
 ]
 
 [project.scripts]
@@ -44,60 +56,61 @@ nodetool-pkg = "nodetool.package_tools.__main__:main"
 [project.optional-dependencies]
 # Document processing nodes
 documents = [
-    "html2text",
-    "markitdown",
-    "PyMuPDF>=1.25.2",
-    "pymupdf4llm>=0.0.27",
-    "jinja2==3.1.6",
-    "pypandoc>=1.14.0",
-    "python-docx==1.2.0",
-    "pdfplumber>=0.11.4",
-    "openpyxl>=3.1.3",
+    "html2text>=2025.4.15",
+    "markitdown>=0.1.8",
+    "PyMuPDF>=1.28.2",
+    "pymupdf4llm>=1.28.2",
+    "jinja2>=3.1.6",
+    "pypandoc>=1.17",
+    "python-docx>=1.2.0",
+    "pdfplumber>=0.11.10",
+    "openpyxl>=3.1.5",
 ]
 # OCR nodes
 ocr = [
-    "paddleocr>=3.2.0",
-    "paddlepaddle",
+    "paddleocr>=3.7.0",
+    "paddlepaddle>=3.3.1",
     "pytesseract>=0.3.13",
 ]
 # Data visualization nodes
 viz = [
-    "matplotlib==3.11.1",
+    "matplotlib>=3.11.2",
     "seaborn>=0.13.2",
 ]
 # Audio processing
+# Kept so existing `nodetool-core[audio]` installs still resolve. pydub is a
+# base dependency now.
 audio = [
     "pydub>=0.25.1",
 ]
 # Video processing (opencv, imageio)
 video = [
-    "opencv-python-headless>=4.11.0.86",
-    "imageio>=2.37.0",
+    "opencv-python-headless>=5.0.0.93",
+    "imageio>=2.38.1",
     "imageio-ffmpeg>=0.6.0",
     "ffmpeg-python>=0.2.0",
 ]
 # Data processing (pandas, joblib, etc.)
 data = [
-    "pandas>=2.2.3",
-    "joblib",
+    "pandas>=3.0.6",
+    "joblib>=1.6.0",
     "ftfy>=6.3.1",
-    "networkx>=3.4.2",
-    "tiktoken",
+    "networkx>=3.6.1",  # 3.7 requires Python 3.12
+    "tiktoken>=0.14.0",
 ]
 dev = [
-    "pytest>=9.0.3",
-    "pytest-asyncio>=0.24.0",
-    "pytest-cov>=7.0.0",
-    "pytest-timeout>=2.3.1",
-    "pytest-xdist>=3.6.0",
-    "aioresponses>=0.7.8",
-    "safetensors>=0.4.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "pytest-timeout>=2.4.0",
+    "pytest-xdist>=3.8.0",
+    "aioresponses>=0.7.9",
     # Validates the worker's emitted bridge frames against the JS repo's
     # generated dist/bridge-frames.schema.json contract.
-    "jsonschema>=4.23.0",
-    "mypy>=1.0.0",
-    "ruff==0.16.6",
-    "ty>=0.0.7",
+    "jsonschema>=4.26.0",
+    "mypy>=2.4.0",
+    "ruff==0.16.10",
+    "ty>=0.0.85",
 ]
 
 [tool.hatch.metadata]
@@ -225,5 +238,5 @@ reportShadowedImports = "none"
 
 [dependency-groups]
 dev = [
-    "basedpyright>=1.37.1",
+    "basedpyright>=1.40.2",
 ]
