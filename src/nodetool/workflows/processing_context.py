@@ -85,6 +85,7 @@ from nodetool.workflows.torch_support import (
     TORCH_AVAILABLE,
     detach_tensors_recursively,
     is_torch_tensor,
+    resolve_torch_device,
     tensor_from_pil,
     tensor_to_image_array,
     torch_tensor_to_metadata,
@@ -181,36 +182,8 @@ HTTP_HEADERS = {
 
 
 def _resolve_default_device(explicit_device: str | None = None) -> str:
-    """
-    Pick the default execution device for workflows.
-
-    Prefers Apple Metal (MPS) when available so that HuggingFace workloads run on
-    the GPU by default, otherwise falls back to CUDA (if available) or CPU.
-
-    Always resolves to a concrete device name — "cpu" is the final fallback — so
-    callers such as ``BaseNode.move_to_device(device: str)`` never see ``None``.
-    """
-    if explicit_device:
-        return explicit_device
-
-    try:
-        import torch  # type: ignore
-
-        if hasattr(torch, "backends") and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            return "mps"
-
-        if hasattr(torch, "cuda"):
-            try:
-                if torch.cuda.is_available():
-                    return "cuda"
-            except (RuntimeError, AttributeError):
-                # CUDA not compiled in or other runtime issue
-                pass
-    except Exception:
-        # torch may be unavailable during installation or CPU-only deployments
-        pass
-
-    return "cpu"
+    """Pick the execution device. See ``torch_support.resolve_torch_device``."""
+    return resolve_torch_device(explicit_device)
 
 
 class AssetOutputMode(StrEnum):
