@@ -50,29 +50,31 @@ import aiofiles.os
 
 
 def get_default_hf_cache_dir() -> Path:
-    """Return the default Hugging Face Hub cache directory.
+    """Return the Hugging Face Hub cache directory.
 
-    The directory is resolved without importing ``huggingface_hub`` so this
-    function is safe to call in lightweight environments and early in process
-    startup.
+    Resolves the variables in the order ``huggingface_hub.constants`` does, so
+    cache reads agree with downloads, but reads them at call time and without
+    importing ``huggingface_hub``. The TypeScript server's ``getHfHubCacheDir``
+    uses the same order.
 
     Resolution order:
-      1. ``$HF_HUB_CACHE`` if set.
-      2. ``$HF_HOME/hub`` if set.
-      3. ``~/.cache/huggingface/hub`` as a final fallback.
+      1. ``$HF_HUB_CACHE``
+      2. ``$HUGGINGFACE_HUB_CACHE`` (legacy name)
+      3. ``$HF_HOME/hub``
+      4. ``$XDG_CACHE_HOME/huggingface/hub``
+      5. ``~/.cache/huggingface/hub``
 
-    Returns:
-        Path: Absolute path to the cache directory.
+    Blank values count as unset. ``~`` and ``$VAR`` references are expanded.
     """
-    env_cache = os.getenv("HF_HUB_CACHE")
-    if env_cache:
-        return Path(env_cache).expanduser()
+    cache = os.getenv("HF_HUB_CACHE") or os.getenv("HUGGINGFACE_HUB_CACHE")
+    if cache:
+        return Path(os.path.expandvars(os.path.expanduser(cache)))
 
     hf_home = os.getenv("HF_HOME")
-    if hf_home:
-        return Path(hf_home).expanduser() / "hub"
-
-    return Path.home() / ".cache" / "huggingface" / "hub"
+    if not hf_home:
+        xdg = os.getenv("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+        hf_home = os.path.join(xdg, "huggingface")
+    return Path(os.path.expandvars(os.path.expanduser(hf_home))) / "hub"
 
 
 class _SimpleCache:

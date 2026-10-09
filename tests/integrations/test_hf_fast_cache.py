@@ -29,6 +29,53 @@ def test_get_default_hf_cache_dir_uses_hf_home(monkeypatch, tmp_path):
     assert resolved == hf_home / "hub"
 
 
+_HF_CACHE_VARS = ("HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE", "HF_HOME", "XDG_CACHE_HOME")
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {},
+        {"XDG_CACHE_HOME": "/xdg"},
+        {"HUGGINGFACE_HUB_CACHE": "/legacy", "HF_HOME": "/home-hf"},
+        {"HF_HUB_CACHE": "/hub", "HUGGINGFACE_HUB_CACHE": "/legacy"},
+        {"HF_HOME": "/home-hf", "XDG_CACHE_HOME": "/xdg"},
+        {"HF_HOME": "~/hf"},
+    ],
+)
+def test_get_default_hf_cache_dir_matches_huggingface_hub(monkeypatch, env):
+    """The cache root must agree with huggingface_hub, which performs the downloads."""
+    import subprocess
+    import sys
+
+    child_env = {k: v for k, v in os.environ.items() if k not in _HF_CACHE_VARS}
+    child_env.update(env)
+    hub_cache = subprocess.run(
+        [sys.executable, "-c", "from huggingface_hub import constants; print(constants.HF_HUB_CACHE)"],
+        env=child_env,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+    for name in _HF_CACHE_VARS:
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+
+    assert get_default_hf_cache_dir() == Path(hub_cache)
+
+
+def test_downloader_and_fast_cache_share_cache_root(monkeypatch):
+    from nodetool.integrations.huggingface.async_downloader import _hf_cache_root
+
+    for name in _HF_CACHE_VARS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("XDG_CACHE_HOME", "/xdg")
+
+    assert _hf_cache_root() == get_default_hf_cache_dir() == Path("/xdg/huggingface/hub")
+
+
 @pytest.mark.asyncio
 async def test_hf_fast_cache_resolves_repo_and_files(tmp_path):
     """HfFastCache should resolve repo root, snapshot dir, and files for a simple repo."""

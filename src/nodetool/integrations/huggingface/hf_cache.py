@@ -8,11 +8,12 @@ including cache existence checks, file filtering, and repository size calculatio
 import os
 from fnmatch import fnmatch
 
-from huggingface_hub import HfApi, constants
+from huggingface_hub import HfApi
 from huggingface_hub.hf_api import RepoFile
 
 from nodetool.config.logging_config import get_logger
 from nodetool.integrations.huggingface.hf_auth import get_hf_token
+from nodetool.integrations.huggingface.hf_fast_cache import get_default_hf_cache_dir
 
 log = get_logger(__name__)
 
@@ -28,7 +29,7 @@ def has_cached_files(repo_id: str) -> bool:
     Returns:
         `bool`: `True` if any files from the repo exist in cache, `False` otherwise.
     """
-    cache_dir = constants.HF_HUB_CACHE
+    cache_dir = get_default_hf_cache_dir()
 
     object_id = repo_id.replace("/", "--")
     repo_cache = os.path.join(cache_dir, f"models--{object_id}")
