@@ -113,18 +113,16 @@ def _ensure_providers_imported() -> None:
         return
     _providers_imported = True
 
-    # Try importing local-only providers
-    for module_name in [
-        "nodetool.mlx.mlx_provider",
-        "nodetool.huggingface.huggingface_local_provider",
-    ]:
-        try:
-            __import__(module_name)
-            print(f"Loaded provider module: {module_name}", file=sys.stderr)
-        except ImportError:
-            pass
-        except Exception as e:
-            print(f"Warning: failed to import {module_name}: {e}", file=sys.stderr)
+    from nodetool.providers.base import LOCAL_PROVIDER_MODULES, import_provider_module
+
+    for module_name in LOCAL_PROVIDER_MODULES:
+        error = import_provider_module(module_name)
+        if error is not None:
+            print(
+                f"Warning: provider module {module_name} is installed but failed to import: "
+                f"{type(error).__name__}: {error}",
+                file=sys.stderr,
+            )
 
 
 def _get_provider(provider_id: str, secrets: dict[str, str]) -> Any:
