@@ -700,6 +700,7 @@ class ModelManager:
         *,
         node_ids: list[str] | None = None,
         target_vram_gb: float | None = None,
+        spare_current_scope: bool = False,
     ) -> tuple[list[str], float]:
         """Drop loaded model weights on explicit request.
 
@@ -714,6 +715,9 @@ class ModelManager:
             target_vram_gb: Stop once this much has been reclaimed, instead of
                 dropping every loaded weight. Coldest models go first, so a
                 partial eviction keeps the hot ones resident.
+            spare_current_scope: Also keep the models the calling execution
+                scope is using. The OOM retry sets it, because the node it
+                retries still holds those models.
 
         Returns:
             ``(evicted_keys, freed_gb)``. ``freed_gb`` is a best-effort
@@ -754,7 +758,7 @@ class ModelManager:
             # An explicit request owns its own scope's models, but a model
             # another in-flight node is using is off limits — dropping it
             # mid-inference is a correctness bug, not a memory win.
-            if cls.is_model_in_use(key, include_current_scope=False):
+            if cls.is_model_in_use(key, include_current_scope=spare_current_scope):
                 logger.debug("Skipping in-use model during eviction: %s", key)
                 continue
 
@@ -1221,24 +1225,25 @@ class ModelManager:
                     logger.debug("Torch available but CUDA unavailable and NVML fallback failed to provide stats.")
                 return fallback
 
-            torch.cuda.synchronize()
+            index = cls._cuda_index()
+            torch.cuda.synchronize(index)
 
             available_gb: float
             total_gb: float
 
             try:
-                free_bytes, total_bytes = torch.cuda.mem_get_info()  # type: ignore[attr-defined]
+                free_bytes, total_bytes = torch.cuda.mem_get_info(index)  # type: ignore[attr-defined]
                 available_gb = float(free_bytes) / (1024**3)
                 total_gb = float(total_bytes) / (1024**3)
             except Exception:
-                props = torch.cuda.get_device_properties(0)  # type: ignore[attr-defined]
+                props = torch.cuda.get_device_properties(index)  # type: ignore[attr-defined]
                 total_gb = float(props.total_memory) / (1024**3)
-                allocated_bytes = float(torch.cuda.memory_allocated(0))  # type: ignore[attr-defined]
+                allocated_bytes = float(torch.cuda.memory_allocated(index))  # type: ignore[attr-defined]
                 available_gb = max(total_gb - allocated_bytes / (1024**3), 0.0)
 
-            allocated_gb = float(torch.cuda.memory_allocated(0)) / (1024**3)  # type: ignore[attr-defined]
+            allocated_gb = float(torch.cuda.memory_allocated(index)) / (1024**3)  # type: ignore[attr-defined]
             try:
-                reserved_gb = float(torch.cuda.memory_reserved(0)) / (1024**3)  # type: ignore[attr-defined]
+                reserved_gb = float(torch.cuda.memory_reserved(index)) / (1024**3)  # type: ignore[attr-defined]
             except Exception:
                 reserved_gb = allocated_gb
             reclaimable_gb = max(reserved_gb - allocated_gb, 0.0)
@@ -1284,7 +1289,7 @@ class ModelManager:
             if not hasattr(torch, "cuda") or not torch.cuda.is_available():  # type: ignore[attr-defined]
                 return None
 
-            free_bytes, total_bytes = torch.cuda.mem_get_info()  # type: ignore[attr-defined]
+            free_bytes, total_bytes = torch.cuda.mem_get_info(cls._cuda_index())  # type: ignore[attr-defined]
             available_gb = float(free_bytes) / (1024**3)
             total_gb = float(total_bytes) / (1024**3)
             used_percent = ((total_gb - available_gb) / total_gb) * 100.0 if total_gb > 0 else 0.0
@@ -1349,6 +1354,13 @@ class ModelManager:
         return device.startswith("cuda")
 
     @staticmethod
+    def _cuda_index() -> int | None:
+        """The CUDA device nodes run on (``NODETOOL_TORCH_DEVICE=cuda:<n>``)."""
+        from nodetool.workflows.torch_support import cuda_device_index
+
+        return cuda_device_index()
+
+    @staticmethod
     def _try_empty_cuda_cache() -> None:
         try:  # pragma: no cover - optional dependency
             import torch  # type: ignore
@@ -1359,7 +1371,7 @@ class ModelManager:
             return
 
         with suppress(Exception):
-            torch.cuda.synchronize()
+            torch.cuda.synchronize(ModelManager._cuda_index())
             gc.collect()
             torch.cuda.empty_cache()
             torch.cuda.ipc_collect()
