@@ -91,18 +91,22 @@ ENV PATH=$VIRTUAL_ENV/bin:$PATH
 # Release image (default target): both packages come from PyPI, so nothing from
 # the build context is needed and the layer caches on the version args alone.
 #
-#   docker build --build-arg NODETOOL_VERSION=0.7.2 --build-arg HF_VERSION=0.7.2 .
+#   docker build --build-arg NODETOOL_VERSION=<x.y.z> --build-arg HF_VERSION=<x.y.z> .
+#
+# An empty version installs the latest release on PyPI. The version args have
+# no default release number because a hard-coded one goes stale; CI
+# (docker.yml) always passes exact versions.
 FROM base AS final
 
-ARG NODETOOL_VERSION=0.7.1
-ARG HF_VERSION=0.7.1
+ARG NODETOOL_VERSION=
+ARG HF_VERSION=
 
 # Install nodetool-core and nodetool-huggingface from PyPI.
 RUN uv pip install \
         --python $VIRTUAL_ENV \
         --index-url https://pypi.org/simple \
-        "nodetool-core==${NODETOOL_VERSION}" \
-        "nodetool-huggingface==${HF_VERSION}" && \
+        "nodetool-core${NODETOOL_VERSION:+==${NODETOOL_VERSION}}" \
+        "nodetool-huggingface${HF_VERSION:+==${HF_VERSION}}" && \
     rm -rf /root/.cache/uv /root/.cache/pip /tmp/* /var/tmp/*
 
 
@@ -111,7 +115,8 @@ RUN uv pip install \
 # be imaged. nodetool-huggingface still comes from PyPI.
 FROM base AS dev
 
-ARG HF_VERSION=0.7.1
+# Empty installs the latest nodetool-huggingface release on PyPI.
+ARG HF_VERSION=
 
 # nodetool-huggingface first, then the local source — nodetool-huggingface
 # depends on nodetool-core, so installing it second guarantees the build
@@ -121,7 +126,7 @@ COPY . /src
 RUN uv pip install \
         --python $VIRTUAL_ENV \
         --index-url https://pypi.org/simple \
-        "nodetool-huggingface==${HF_VERSION}" && \
+        "nodetool-huggingface${HF_VERSION:+==${HF_VERSION}}" && \
     uv pip install \
         --python $VIRTUAL_ENV \
         --index-url https://pypi.org/simple \
