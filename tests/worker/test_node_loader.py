@@ -187,3 +187,27 @@ def test_load_nodes_reports_submodule_import_errors(tmp_path, monkeypatch):
     assert load_errors[0]["phase"] == "import"
     assert load_errors[0]["error_type"] == "ModuleNotFoundError"
     assert "nodetool.nodes.lib" in load_errors[0]["error"]
+
+
+def test_discover_namespaces_unions_entry_points_and_directory_scan(tmp_path, monkeypatch):
+    """A pack that declares an entry point must not hide packs that only ship a
+    nodetool/nodes/<namespace> directory."""
+    from importlib.metadata import EntryPoint
+
+    scanned = tmp_path / "pkg_scan" / "nodetool" / "nodes" / "wan2gp"
+    scanned.mkdir(parents=True)
+    monkeypatch.syspath_prepend(str(tmp_path / "pkg_scan"))
+
+    declared = [
+        EntryPoint(name="huggingface", value="huggingface", group="nodetool.namespaces"),
+        EntryPoint(name="mlx", value=" mlx , extra_ns ", group="nodetool.namespaces"),
+    ]
+    monkeypatch.setattr(
+        "importlib.metadata.entry_points",
+        lambda group=None: declared if group == "nodetool.namespaces" else [],
+    )
+
+    namespaces = _discover_namespaces()
+
+    assert {"huggingface", "mlx", "extra_ns", "wan2gp"} <= set(namespaces)
+    assert namespaces == sorted(namespaces)
