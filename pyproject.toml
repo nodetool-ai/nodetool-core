@@ -50,6 +50,10 @@ dependencies = [
     "safetensors>=0.8.0",
 ]
 
+[project.urls]
+Homepage = "https://nodetool.ai"
+Repository = "https://github.com/nodetool-ai/nodetool-core"
+
 [project.scripts]
 nodetool-pkg = "nodetool.package_tools.__main__:main"
 

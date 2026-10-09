@@ -35,6 +35,11 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --all-extras --dev
 
+      - name: Verify generated package metadata
+        run: |
+          uv run nodetool-pkg scan --write
+          git diff --exit-code -- src/nodetool/package_metadata/nodetool-core.json
+
       - name: Run tests
         run: |
           uv run pytest -n auto -v \
