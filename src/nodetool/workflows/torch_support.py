@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import gc
+import os
 import random
+import re
 from contextlib import contextmanager, suppress
 from typing import TYPE_CHECKING, Any, Generator
 
@@ -74,6 +76,111 @@ def is_cuda_available() -> bool:
         return False
 
 
+TORCH_DEVICE_ENV = "NODETOOL_TORCH_DEVICE"
+_DEVICE_OVERRIDE_PATTERN = re.compile(r"^(cpu|mps|cuda)(?::(\d+))?$")
+_warned_device_overrides: set[str] = set()
+
+
+def _warn_device_override_once(value: str, reason: str) -> None:
+    if value in _warned_device_overrides:
+        return
+    _warned_device_overrides.add(value)
+    log.warning(
+        "Ignoring %s=%r: %s. Selecting the device automatically.",
+        TORCH_DEVICE_ENV,
+        value,
+        reason,
+    )
+
+
+def _is_mps_available() -> bool:
+    if not TORCH_AVAILABLE or torch is None:
+        return False
+    try:
+        return bool(torch.backends.mps.is_available())
+    except (RuntimeError, AttributeError):
+        return False
+
+
+def _override_problem(kind: str, index: str | None) -> str | None:
+    """Explain why a parsed override cannot be used here, or None if it can."""
+    if kind == "cpu":
+        return "cpu takes no index" if index is not None else None
+    if kind == "mps":
+        if index is not None:
+            return "mps takes no index"
+        return None if _is_mps_available() else "MPS is not available"
+    if not is_cuda_available():
+        return "CUDA is not available"
+    if index is not None:
+        try:
+            count = int(torch.cuda.device_count())
+        except (RuntimeError, AttributeError):
+            count = 0
+        if int(index) >= count:
+            return f"only {count} CUDA device(s) are visible"
+    return None
+
+
+def _device_from_override(value: str) -> str | None:
+    """Validate a ``NODETOOL_TORCH_DEVICE`` value against the installed torch.
+
+    Returns the device string, or None (after a one-time warning) when the value
+    is malformed or names a device this machine does not have.
+    """
+    match = _DEVICE_OVERRIDE_PATTERN.match(value)
+    if match is None:
+        _warn_device_override_once(value, "expected cpu, mps, cuda or cuda:<index>")
+        return None
+    problem = _override_problem(match.group(1), match.group(2))
+    if problem is not None:
+        _warn_device_override_once(value, problem)
+        return None
+    return value
+
+
+def resolve_torch_device(explicit_device: str | None = None) -> str:
+    """Pick the torch device for node execution.
+
+    Order: an explicit device from the caller, then ``NODETOOL_TORCH_DEVICE``
+    (``cpu``, ``mps``, ``cuda`` or ``cuda:<index>``), then automatic selection:
+    MPS, then CUDA, then CPU. An override naming an unavailable device logs a
+    warning once and falls back to automatic selection. Always returns a
+    concrete device name, so ``BaseNode.move_to_device`` never sees ``None``.
+    """
+    if explicit_device:
+        return explicit_device
+
+    override = os.environ.get(TORCH_DEVICE_ENV, "").strip().lower()
+    if override:
+        device = _device_from_override(override)
+        if device is not None:
+            return device
+
+    if _is_mps_available():
+        return "mps"
+    if is_cuda_available():
+        return "cuda"
+    return "cpu"
+
+
+def is_gpu_oom_exception(exc: BaseException) -> bool:
+    """True for a CUDA or MPS out-of-memory error."""
+    if not TORCH_AVAILABLE or torch is None:
+        return False
+    oom_types = tuple(
+        t
+        for t in (
+            getattr(torch, "OutOfMemoryError", None),
+            getattr(getattr(torch, "cuda", None), "OutOfMemoryError", None),
+        )
+        if isinstance(t, type)
+    )
+    if oom_types and isinstance(exc, oom_types):
+        return True
+    return isinstance(exc, RuntimeError) and "MPS backend out of memory" in str(exc)
+
+
 class BaseTorchSupport:
     """Interface describing torch specific hooks used by ``WorkflowRunner``."""
 
@@ -98,6 +205,8 @@ class BaseTorchSupport:
         context: ProcessingContext,
         node: BaseNode,
         retries: int = 0,
+        *,
+        disable_grad: bool = True,
     ) -> Any:
         return await node.process(context)
 
@@ -148,9 +257,18 @@ class TorchWorkflowSupport(BaseTorchSupport):
         context: ProcessingContext,
         node: BaseNode,
         retries: int = 0,
+        *,
+        disable_grad: bool = True,
     ) -> Any:
+        """Run ``node.process`` and retry after reclaiming memory on a GPU OOM.
+
+        ``disable_grad=False`` leaves torch's grad mode alone. The worker passes
+        it because grad mode is thread-local: two nodes awaiting inside
+        ``torch.no_grad()`` on one event loop restore each other's saved state
+        out of order and can leave grad disabled for the whole thread.
+        """
         try:
-            if node._requires_grad:
+            if node._requires_grad or not disable_grad:
                 return await node.process(context)
             with torch.no_grad():
                 return await node.process(context)
@@ -210,6 +328,10 @@ class TorchWorkflowSupport(BaseTorchSupport):
                 except (RuntimeError, AttributeError):
                     # CUDA not available or not compiled, skip cleanup
                     pass
+            elif _is_mps_available():
+                gc.collect()
+                with suppress(RuntimeError, AttributeError):
+                    torch.mps.empty_cache()
 
             if retries >= self.max_retries:
                 log.error(
@@ -231,17 +353,11 @@ class TorchWorkflowSupport(BaseTorchSupport):
                 self.max_retries,
             )
             await asyncio.sleep(delay)
-            return await self.process_with_gpu(runner, context, node, retries)
+            return await self.process_with_gpu(runner, context, node, retries, disable_grad=disable_grad)
 
     def is_cuda_oom_exception(self, exc: Exception) -> bool:
-        if not TORCH_AVAILABLE or torch is None:
-            return False
-        try:
-            if not is_cuda_available():
-                return False
-            return isinstance(exc, torch.cuda.OutOfMemoryError)
-        except (RuntimeError, AttributeError):
-            return False
+        """True for a CUDA or MPS out-of-memory error (name kept for callers)."""
+        return is_gpu_oom_exception(exc)
 
     def empty_cuda_cache(self) -> None:
         if is_cuda_available():

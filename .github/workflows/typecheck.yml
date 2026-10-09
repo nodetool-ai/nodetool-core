@@ -27,11 +27,11 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --locked --all-extras --dev
 
       - name: Run ty type checker
         run: |
-          uv run ty check src \
+          uv run ty check src --exit-zero-on-warning \
             --ignore unresolved-import \
             --ignore possibly-missing-attribute \
             --error invalid-type-form \

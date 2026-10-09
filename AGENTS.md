@@ -1,210 +1,180 @@
-# Repository Guidelines
+# nodetool-core — Agent Guide
 
-## Project Structure & Module Organization
+Guidance for coding agents and contributors working in this repository.
+`CLAUDE.md` only includes this file.
 
-- Source: `src/nodetool/` (e.g., `agents/`, `api/`, `chat/`, `common/`, `dsl/`, `workflows/`).
-- Tests: `tests/` mirrors the source layout (e.g., `tests/agents`, `tests/api`).
-- Docs: See [docs.nodetool.ai](https://docs.nodetool.ai) for comprehensive documentation.
-- Examples: `examples/` directory contains code examples.
-- Packaging: Hatch project (`pyproject.toml`), console entry `nodetool`.
+## What This Repository Is
 
-## Build, Test, and Development Commands
+nodetool-core is a **Python library and node runner** for the NodeTool platform. The TypeScript server handles HTTP API, WebSocket, database, auth, agents, chat, storage, deploy, and workflow orchestration. Python remains for two roles:
 
-### ⚠️ Python Environment (IMPORTANT)
+1. **Node runner subprocess** — TS spawns `python -m nodetool.worker`, connects via WebSocket+MessagePack for `discover`/`execute`/`cancel`/`provider.*`/`models.*`/`comfy.*` (the `comfy.*` messages proxy a co-located ComfyUI server — see `docs/comfy-proxy.md`)
+2. **Node system and type definitions** — `BaseNode`, `ProcessingContext`, metadata types, used by all Python node packages
 
-**Local Development:** Use the conda `nodetool` environment. Do not use system Python.
+Cloud/API providers (OpenAI, Anthropic, Gemini, Ollama, etc.) are implemented in the TS server. Python only has local-compute providers (HuggingFace local, MLX) registered via external packages.
+
+## Code Organization
+
+```
+src/nodetool/
+├── config/            # Environment, logging, settings
+├── integrations/      # HuggingFace models
+├── io/                # URI utilities, media fetch
+├── media/             # Audio, image, video processing helpers
+├── metadata/          # Type definitions, node metadata, tool_types
+├── ml/                # Model management
+├── package_metadata/  # Package metadata JSON (nodetool-core.json)
+├── package_tools/     # Package registry scanning (nodetool-pkg CLI)
+├── providers/         # Provider base classes, registry
+├── runtime/           # ResourceScope, DB connection pools
+├── security/          # Secret helper (secrets come from the environment)
+├── storage/           # Abstract storage, memory/file/S3 backends
+├── types/             # API graph types, prediction types
+├── utils/             # Misc utilities
+├── worker/            # Worker subprocess (WebSocket server, executor)
+└── workflows/         # Node execution core (see below)
+```
+
+### workflows/ — Node Execution Core
+
+These files support node execution. There is no workflow runner or orchestration — that's in TS.
+
+- `base_node.py` — `BaseNode` class, all nodes inherit from this
+- `processing_context.py` — `ProcessingContext` for node execution (media helpers, secrets, asset storage)
+- `types.py` — `Chunk`, `NodeProgress`, `NodeUpdate`, etc.
+- `graph.py` — Graph representation (nodes + edges)
+- `inbox.py`, `channel.py` — Message passing between nodes
+- `memory_utils.py` — GPU/CPU memory tracking, garbage collection
+- `processing_offload.py` — Thread offloading for CPU-bound work
+- `torch_support.py` — PyTorch device management
+- `property.py` — Node property descriptors
+- `asset_storage.py` — Asset ref utilities (content type, auto-save)
+- `io.py` — Node input/output helpers
+
+### What Was Removed
+
+The following were moved to the TypeScript server and deleted from Python:
+
+- `api/`, `chat/`, `agents/`, `messaging/`, `tools/`, `deploy/`, `proxy/`, `system/`, `ui/`, `html/`, `gateway/`, `indexing/`, `migrations/`, `code_runners/`, `observability/`
+- `cli.py`, `cli_migrations.py`
+- Workflow orchestration: `workflow_runner.py`, `actor.py`, `job_execution.py`, `run_workflow.py`, `checkpoint_manager.py`, `state_manager.py`, etc.
+- Cloud provider implementations: `openai_provider.py`, `anthropic_provider.py`, `gemini_provider.py`, `ollama_provider.py`, etc.
+- Vector stores: `integrations/vectorstores/chroma/` — the TS `packages/vectorstore/` carries `chroma-client.ts` and `embedding.ts`
+- Secret encryption at rest: `security/crypto.py`, `security/master_key.py` — the worker now
+  reads secrets from the environment only (`security/secret_helper.py`)
+
+## Development Setup
+
+Install into the conda env named `nodetool`. The TypeScript server's Python
+bridge (`packages/runtime/src/python-stdio-bridge.ts` in the nodetool repo)
+uses `NODETOOL_PYTHON` when set. Otherwise it uses the active `CONDA_PREFIX`
+when that env is named `nodetool`, then looks for `envs/nodetool` under
+`~/miniconda3` or `~/anaconda3` and the desktop app's managed env. A project
+`.venv` is never found automatically.
 
 ```bash
-# Option 1: Activate the environment first
+conda create -n nodetool python=3.11 pandoc ffmpeg -c conda-forge
 conda activate nodetool
-python -m pytest tests/...
-
-# Option 2: Use conda run (preferred for scripts/agents)
-conda run -n nodetool python -m pytest tests/...
+uv pip install -e ".[dev]"   # uv pip targets the active conda env
 ```
 
-**GitHub CI / Copilot Agent:** Uses standard Python 3.11 with pip. Dependencies are pre-installed via `.github/workflows/copilot-setup-steps.yml`. Run commands directly:
+Node packs go into the same env, for example
+`uv pip install -e ../nodetool-huggingface`. To run the worker from another
+interpreter, start the server with `NODETOOL_PYTHON=/path/to/python`.
+
+`uv sync`, `uv run` and the `make` targets use a separate project `.venv`
+pinned by `uv.lock`. CI runs `uv sync --locked --all-extras --dev`, so run
+`uv lock` and commit `uv.lock` whenever `pyproject.toml` dependencies change.
+Do not point `uv sync` at the conda env (`UV_PROJECT_ENVIRONMENT`): it removes
+packages that are not in the lock, including installed node packs.
+
+## Common Commands
+
+Run these in the activated `nodetool` env:
 
 ```bash
-pytest -v
-pip install -e .
+pytest -q                              # all tests
+pytest tests/path/to/test_file.py      # one file
+ruff check .                           # lint
+ruff format .                          # format
+nodetool-pkg scan --write              # regenerate src/nodetool/package_metadata/nodetool-core.json
 ```
 
-### Commands
+CI checks that `nodetool-pkg scan --write` leaves the metadata file unchanged.
+Run it after changing the version or `[project]` metadata.
 
-- Install dependencies: `uv sync --all-extras --dev`
-- Run tests: `make test` (quick) or `make test-verbose` (verbose)
-- Run specific tests: `pytest tests/path/to/test_file.py`
-- Test with coverage: `pytest --cov=src`
-- Lint: `make lint` or `uv run ruff check .`
-- Type check: `make typecheck` or `uv run ty check src`
+## Key Patterns
 
-### Validating Changes
-
-Before submitting or committing changes, always run these validation steps:
-
-1. **Run linting:** `make lint` or `uv run ruff check .` - Fix any issues reported
-2. **Run tests:** `make test` or `uv run pytest -n auto -q` - Ensure all tests pass
-3. **Type checking:** `make typecheck` or `uv run ty check src` - Check for type errors
-
-Example workflow:
-```bash
-make lint   # Fix linting issues
-make test   # Run quick tests
-make typecheck  # Type check
-```
-
-## Coding Style & Naming Conventions
-
-- Language: Python 3.11, type hints required for new/changed code.
-- Formatting: Black style; keep imports and whitespace tidy; prefer f‑strings.
-- Linting: Ruff for quick rules; Flake8/Mypy/Pylint configs exist for CI parity.
-- Names: `snake_case` for files/functions, `PascalCase` for classes, `SCREAMING_SNAKE_CASE` for constants.
-- Modules: keep public APIs under `src/nodetool/...` with small, focused modules.
-
-## Testing Guidelines
-
-- Framework: pytest; locate tests under `tests/` with structure mirroring `src/`.
-- Naming: files `test_*.py`, functions `test_*`, classes `Test*` (no `__init__`).
-- Running: `pytest -q` for quick checks; add fixtures in `tests/conftest.py`.
-- Scope: include unit tests for logic and lightweight integration tests for I/O and async paths.
-- Environment: Tests automatically use `ENV=test` with in-memory storage and `/tmp/nodetool_test.db`.
-- Debugging: Use `pytest -v` for verbose output, enable debug logging for workflows.
-
-## Commit & Pull Request Guidelines
-
-- Commits: follow Conventional Commits (`feat:`, `fix:`, `refactor:`, etc.); keep messages imperative and scoped.
-- PRs: include a clear description, linked issues, and screenshots/logs if UI/CLI behavior changes.
-- Checks: ensure `make lint`, `make test`, and `make typecheck` pass locally; update documentation at docs.nodetool.ai when APIs change.
-
-## Security & Configuration Tips
-
-- Do not commit secrets; use environment-specific `.env` files with `.local` overrides for actual secrets.
-- The system uses a layered configuration approach: defaults → base `.env` → environment-specific → local overrides →
-  environment variables → YAML settings.
-- Prefer async I/O where supported (many subsystems are async) and avoid blocking calls in hot paths.
-
-## Environment Configuration
-
-### Environment Files Structure
-
-- `.env.example` - Template with all configuration options (committed)
-- `.env.development` - Development defaults (committed, no secrets)
-- `.env.test` - Test environment configuration (committed)
-- `.env.production` - Production template (committed, no secrets)
-- `.env.*.local` - Local overrides with actual API keys (gitignored)
-
-### Key Environment Variables by Category
-
-#### Core Configuration
-
-- `ENV` - Environment name (`development`, `test`, `production`)
-- `DEBUG` - Enable debug mode
-- `LOG_LEVEL` - Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`)
-- `REMOTE_AUTH` - Enable remote authentication (`0`/`1`)
-
-#### AI Providers & APIs
-
-- `OPENAI_API_KEY` - OpenAI API key for GPT models, DALL-E
-- `ANTHROPIC_API_KEY` - Anthropic API key for Claude models
-- `GEMINI_API_KEY` - Google Gemini API key
-- `HF_TOKEN` - Hugging Face token for gated models
-- `REPLICATE_API_TOKEN` - Replicate API token
-- `ELEVENLABS_API_KEY` - ElevenLabs text-to-speech API key
-- `FAL_API_KEY` - FAL.ai serverless AI infrastructure key
-- `AIME_USER` / `AIME_API_KEY` - Aime service credentials
-
-#### Database & Storage
-
-- `DB_PATH` - SQLite database path (default: `~/.config/nodetool/nodetool.sqlite3`)
-- `POSTGRES_*` - PostgreSQL connection parameters
-- `SUPABASE_URL` / `SUPABASE_KEY` - Supabase configuration
-- `ASSET_BUCKET` / `ASSET_TEMP_BUCKET` - S3 storage buckets
-- `S3_*` - S3 configuration (access keys, endpoint, region)
-
-#### Vector Database & AI Services
-
-- `CHROMA_PATH` - ChromaDB storage path (default: `~/.local/share/nodetool/chroma`)
-- `CHROMA_URL` / `CHROMA_TOKEN` - Remote ChromaDB configuration
-- `OLLAMA_API_URL` - Ollama API endpoint (default: `http://127.0.0.1:11434`)
-
-#### External Integrations
-
-- `GOOGLE_MAIL_USER` / `GOOGLE_APP_PASSWORD` - Gmail integration
-- `SERPAPI_API_KEY` - SerpAPI for web scraping
-- `DATA_FOR_SEO_*` - DataForSEO credentials
-- `BROWSER_URL` - Browser automation endpoint
-
-#### System & Media Processing
-
-- `FFMPEG_PATH` / `FFPROBE_PATH` - Media processing tools
-- `FONT_PATH` - Font directory for text rendering
-- `COMFY_FOLDER` - ComfyUI integration folder
-
-#### Deployment & Monitoring
-
-- `NODETOOL_API_URL` - NodeTool API base URL
-- `RUNPOD_API_KEY` - RunPod cloud deployment
-- `SENTRY_DSN` - Error tracking
-- `MEMCACHE_HOST` / `MEMCACHE_PORT` - Caching
-
-### Setup Example
-
-```bash
-# Copy template and add your secrets
-cp .env.example .env.development.local
-
-# Edit with your API keys
-vim .env.development.local
-```
-
-### Adding New Environment Variables
-
-When adding new environment variables, use the `register_setting()` function in `src/nodetool/config/settings.py`:
+### Python Node Development
 
 ```python
-register_setting(
-    package_name="nodetool",
-    env_var="YOUR_NEW_VAR",
-    group="YourGroup",
-    description="Description of what this variable does",
-    is_secret=True,  # True for API keys, False for config
-)
+from nodetool.workflows.base_node import BaseNode
+from nodetool.workflows.processing_context import ProcessingContext
+
+class MyNode(BaseNode):
+    """
+    Brief description
+    tags, keywords, for, search
+    """
+    input_field: str = ""
+
+    async def process(self, context: ProcessingContext) -> str:
+        return self.input_field.upper()
 ```
 
-## Architecture Overview
+### ProcessingContext Methods Available to Nodes
 
-### Core Components
+Media conversion: `image_to_pil`, `image_from_pil`, `image_from_bytes`, `image_from_tensor`, `audio_from_numpy`, `audio_to_numpy`, `video_from_frames`, `video_from_numpy`, `text_from_str`, `asset_to_io`, `asset_to_bytes`, `dataframe_to_pandas`, `dataframe_from_pandas`
 
-- **Workflow System** (`src/nodetool/workflows/`) - DAG-based workflow execution
-- **Agent System** (`src/nodetool/agents/`) - LLM task planning and execution
-- **Chat System** (`src/nodetool/chat/`) - AI provider integrations
-- **Storage System** (`src/nodetool/storage/`) - Multi-backend data persistence
-- **API Layer** (`src/nodetool/api/`) - FastAPI server with WebSocket support
-- **Models Layer** (`src/nodetool/models/`) - Database adapters and schemas
+Secrets: `get_secret`, `get_secret_required`
 
-### Key Design Patterns
+Communication: `post_message`, `has_messages`, `pop_message_async`
 
-- **Dependency Injection** - Components receive dependencies through constructors
-- **Asynchronous Processing** - Heavy use of asyncio for non-blocking operations
-- **Factory Pattern** - Provider factories create appropriate implementations
-- **Strategy Pattern** - Different backends implement common interfaces
-- **Observer Pattern** - WebSocket updates for real-time progress tracking
+Properties: `device` (torch device), `is_cancelled`, `user_id`, `workflow_id`
 
-## Development Workflows
+Storage: `create_asset`, `download_asset`, `asset_storage_url`
 
-### Workflow Development
+### Provider Infrastructure
 
-1. Define nodes with clear inputs, outputs, and properties
-1. Create graphs connecting nodes by data dependencies
-1. Use WorkflowRunner to execute graphs
-1. Monitor execution via WebSocket updates
-1. Debug with verbose logging (`logging.basicConfig(level=logging.DEBUG)`)
+`providers/base.py` has `BaseProvider`, `register_provider`, `get_registered_provider`. External packages (nodetool-mlx, nodetool-huggingface) register local-compute providers. `LOCAL_PROVIDER_MODULES` lists their modules. `import_provider_module` skips a pack that is not installed and logs any other import failure with the module name. The worker's `provider_handler.py` exposes the providers to TS via WebSocket.
 
-### Agent Development
+### Node Discovery
 
-1. Define objectives and available tools
-1. Create Agent instances with appropriate providers
-1. Monitor planning and execution in workspace directory
-1. Review outputs and refine tool usage
-1. Test with different models and configurations
+`worker/node_loader.py` loads the union of two sources: entry points in group
+`nodetool.namespaces` (each value is a comma-separated list of namespace names,
+such as `huggingface`) and the subdirectories of every `nodetool/nodes` path on
+`sys.path`.
+
+### Tool Type
+
+`metadata/tool_types.py` has the `Tool` class used by provider function-calling interfaces. Relocated from the deleted `agents/tools/base.py`.
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ENV` | Environment name | `development` |
+| `LOG_LEVEL` | Logging level | `INFO` |
+| `HF_TOKEN` | HuggingFace token | - |
+| `DB_PATH` | SQLite database path | `~/.local/share/nodetool/nodetool.sqlite3` on Linux and macOS, `%APPDATA%\nodetool\nodetool.sqlite3` on Windows |
+| `NODETOOL_WORKER_HOST` / `NODETOOL_WORKER_PORT` | WebSocket worker bind address | `127.0.0.1` / `0` (any free port) |
+| `NODETOOL_WORKER_TOKEN` | Bearer token required by the WebSocket worker | unset (no auth) |
+| `NODETOOL_TORCH_DEVICE` | Force the torch device: `cpu`, `mps`, `cuda` or `cuda:<index>`. An unavailable device logs a warning and falls back to automatic selection | automatic: MPS, then CUDA, then CPU |
+| `PYTORCH_ENABLE_MPS_FALLBACK` | Run ops without an MPS kernel on the CPU. Set by `nodetool.worker` when unset | `1` |
+| `COMFYUI_URL` | ComfyUI server proxied by the worker's `comfy.*` messages | `http://127.0.0.1:8188` |
+| `COMFY_MODELS_DIR` | Model tree for `comfy.models.*` (RunPod network volume) | `/workspace/models` |
+
+## Testing
+
+Tests are in `tests/` mirroring `src/` structure. Key test directories:
+
+- `tests/worker/` — Worker subprocess tests
+- `tests/workflows/` — Node execution, processing context, graph tests
+- `tests/security/` — Secret helper tests
+- `tests/integrations/` — HuggingFace model detection, safetensors
+- `tests/storage/` — Storage backend tests
+
+## Commits and Pull Requests
+
+Use Conventional Commits (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`,
+`chore:`) with imperative, scoped messages. Before committing, run
+`ruff check .` and `pytest -q`, and `make typecheck` when you change types.

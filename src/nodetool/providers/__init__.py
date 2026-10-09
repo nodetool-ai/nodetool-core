@@ -9,7 +9,6 @@ in the TypeScript server.
 
 import asyncio
 import threading
-import traceback
 from typing import Optional
 
 from nodetool.config.env_guard import RUNNING_PYTEST
@@ -19,10 +18,12 @@ from nodetool.metadata.types import Provider as ProviderEnum
 # Base provider class and testing utilities
 from nodetool.providers.base import (
     _PROVIDER_REGISTRY,
+    LOCAL_PROVIDER_MODULES,
     BaseProvider,
     MockProvider,
     ProviderCapability,
     get_registered_provider,
+    import_provider_module,
     register_provider,
 )
 from nodetool.security.secret_helper import get_secret, get_secrets_batch
@@ -42,37 +43,11 @@ def import_providers():
 
     # Import Python-only providers (local compute)
     # Cloud/API providers are handled by the TypeScript server.
-
-    if RUNNING_PYTEST:
-        log.debug("Skipping MLX/FAL provider import under pytest")
-    else:
-        try:
-            import nodetool.fal.fal_provider  # type: ignore
-
-            log.debug("FAL provider imported successfully")
-        except ImportError as e:
-            log.debug(f"FAL provider not available: {e}")
-        except Exception as e:
-            traceback.print_exc()
-            log.warning(f"Unexpected error importing FAL provider: {e}")
-
-        try:
-            import nodetool.mlx.mlx_provider  # type: ignore
-
-            log.debug("MLX provider imported successfully")
-        except ImportError as e:
-            log.debug(f"MLX provider not available: {e}")
-        except Exception as e:
-            log.warning(f"Unexpected error importing MLX provider: {e}")
-
-    try:
-        import nodetool.huggingface.huggingface_local_provider  # type: ignore
-
-        log.debug("HuggingFace local provider imported successfully")
-    except ImportError as e:
-        log.debug(f"HuggingFace local provider not available: {e}")
-    except Exception as e:
-        log.warning(f"Unexpected error importing HuggingFace local provider: {e}")
+    for module_name in LOCAL_PROVIDER_MODULES:
+        if RUNNING_PYTEST and module_name == "nodetool.mlx.mlx_provider":
+            log.debug("Skipping MLX provider import under pytest")
+            continue
+        import_provider_module(module_name)
 
 
 # Provider instance cache, keyed by (provider type, user id) so one user's

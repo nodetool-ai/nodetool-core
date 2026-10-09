@@ -70,7 +70,6 @@ SINGLE_FILE_DIFFUSION_EXTENSIONS = (
     ".bin",
     ".pt",
     ".pth",
-    ".svdq",
 )
 
 log = get_logger(__name__)
@@ -81,7 +80,6 @@ HF_DEFAULT_FILE_PATTERNS = [
     "*.ckpt",
     "*.gguf",
     "*.bin",
-    "*.svdq",
 ]
 
 # Extra globs for torch weights common in control/adapters.
@@ -98,21 +96,17 @@ KNOWN_REPO_PATTERNS = {
     ],
     "flux_kontext": [
         "black-forest-labs/FLUX.1-Kontext-dev",
-        "nunchaku-tech/nunchaku-flux-kontext",
     ],
     "flux_canny": [
         "black-forest-labs/FLUX.1-Canny-dev",
-        "nunchaku-tech/nunchaku-flux.1-canny-dev",
     ],
     "flux_depth": [
         "black-forest-labs/FLUX.1-Depth-dev",
-        "nunchaku-tech/nunchaku-flux.1-depth-dev",
     ],
     "flux_vae": ["ffxvs/vae-flux"],
     "qwen_image": [
         "Comfy-Org/Qwen-Image_ComfyUI",
         "city96/Qwen-Image-gguf",
-        "nunchaku-tech/nunchaku-qwen-image",
     ],
     "qwen_image_edit": ["Comfy-Org/Qwen-Image-Edit_ComfyUI"],
     "sd35": ["Comfy-Org/stable-diffusion-3.5-fp8"],
@@ -179,10 +173,10 @@ HF_TYPE_KEYWORD_MATCHERS: dict[str, list[str]] = {
     "hf.stable_diffusion_3": ["sd3", "stable-diffusion-3"],
     "hf.flux": ["flux"],
     "hf.flux_fp8": ["flux", "fp8"],
-    "hf.flux_kontext": ["flux", "kontext", "nunchaku"],
-    "hf.flux_canny": ["flux", "canny", "nunchaku"],
-    "hf.flux_depth": ["flux", "depth", "nunchaku"],
-    "hf.qwen_image": ["qwen", "nunchaku"],
+    "hf.flux_kontext": ["flux", "kontext"],
+    "hf.flux_canny": ["flux", "canny"],
+    "hf.flux_depth": ["flux", "depth"],
+    "hf.qwen_image": ["qwen"],
     "hf.qwen_image_edit": ["qwen"],
     "hf.qwen_vl": ["vl", "text_encoder", "text-encoder", "qwen"],
     "hf.controlnet": ["control"],
@@ -332,7 +326,6 @@ _WEIGHT_EXTENSIONS = (
     ".gguf",
     ".ggml",
     ".onnx",
-    ".svdq",
 )
 _INDEX_FILENAMES = {
     "model.safetensors.index.json",
@@ -353,7 +346,6 @@ _QUANT_MARKERS = (
     "q5",
     "q6",
     "q8",
-    "svdq",
 )
 _ADAPTER_MARKERS = (
     "lora",
@@ -1005,7 +997,6 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
         "repo_pattern": [
             *KNOWN_REPO_PATTERNS["flux_kontext"],
-            "*nunchaku*flux*",
             "*flux*kontext*",
         ],
     },
@@ -1013,7 +1004,6 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
         "repo_pattern": [
             *KNOWN_REPO_PATTERNS["flux_canny"],
-            "*nunchaku*flux*canny*",
             "*flux*canny*",
         ],
     },
@@ -1021,7 +1011,6 @@ HF_SEARCH_TYPE_CONFIG: dict[str, dict[str, list[str] | str]] = {
         "filename_pattern": HF_DEFAULT_FILE_PATTERNS,
         "repo_pattern": [
             *KNOWN_REPO_PATTERNS["flux_depth"],
-            "*nunchaku*flux*depth*",
             "*flux*depth*",
         ],
     },
@@ -1892,43 +1881,24 @@ async def get_mlx_language_models_from_hf_cache() -> list[LanguageModel]:
     return list(result.values())
 
 
-def _is_component_only_repo(repo_id: str) -> bool:
-    """
-    Check if a repo is a component-only repo that can't be used as a standalone pipeline.
-
-    These repos contain model components (transformers, text encoders) that need to be
-    combined with base models and aren't usable as standalone image generation models.
-
-    Examples:
-    - nunchaku-tech/nunchaku-flux.1-schnell (Nunchaku FLUX transformer)
-    - nunchaku-tech/nunchaku-t5 (T5 encoder for Nunchaku)
-    """
-    repo_lower = repo_id.lower()
-    # Nunchaku repos are component-only (transformers, T5 encoders)
-    return "nunchaku" in repo_lower
-
-
 async def _get_diffusion_models_from_hf_cache(task: str) -> list[ImageModel]:
     """
     Shared helper to discover cached diffusion models for a specific task.
 
     Returns:
-    - For component-only repos (like Nunchaku): only individual component files
-    - For normal repos with single-file checkpoints: repo entry + file entries
-    - For normal multi-file repos: just the repo entry
+    - For repos with single-file checkpoints: repo entry + file entries
+    - For multi-file repos: just the repo entry
     """
     result: dict[str, ImageModel] = {}
     async for repo_id, _repo_dir, snapshot_dir, file_list in iter_cached_model_files():
         if not file_list:
             continue
-        # Check if this is a component-only repo (e.g., Nunchaku transformers)
-        is_component_only = _is_component_only_repo(repo_id)
         has_diffusion_artifacts = await _repo_has_diffusion_artifacts(
             repo_id, snapshot_dir, file_list
         )
 
-        # Skip non-component repos that don't have diffusion artifacts
-        if not is_component_only and not has_diffusion_artifacts:
+        # Skip repos that don't have diffusion artifacts
+        if not has_diffusion_artifacts:
             continue
 
         # Add individual single-file checkpoints
@@ -1947,10 +1917,10 @@ async def _get_diffusion_models_from_hf_cache(task: str) -> list[ImageModel]:
             )
             added_single_file = True
 
-        # Add repo-level entry for non-component repos
+        # Add a repo-level entry
         # - If they have single-file checkpoints, add as companion entry
         # - If they're multi-file repos with diffusion artifacts, add as the main entry
-        if not is_component_only and (added_single_file or has_diffusion_artifacts):
+        if added_single_file or has_diffusion_artifacts:
             result.setdefault(
                 repo_id,
                 ImageModel(

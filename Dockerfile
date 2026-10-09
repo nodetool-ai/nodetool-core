@@ -91,18 +91,22 @@ ENV PATH=$VIRTUAL_ENV/bin:$PATH
 # Release image (default target): both packages come from PyPI, so nothing from
 # the build context is needed and the layer caches on the version args alone.
 #
-#   docker build --build-arg NODETOOL_VERSION=0.7.2 --build-arg HF_VERSION=0.7.2 .
+#   docker build --build-arg NODETOOL_VERSION=<x.y.z> --build-arg HF_VERSION=<x.y.z> .
+#
+# An empty version installs the latest release on PyPI. The version args have
+# no default release number because a hard-coded one goes stale; CI
+# (docker.yml) always passes exact versions.
 FROM base AS final
 
-ARG NODETOOL_VERSION=0.7.1
-ARG HF_VERSION=0.7.1
+ARG NODETOOL_VERSION=
+ARG HF_VERSION=
 
 # Install nodetool-core and nodetool-huggingface from PyPI.
 RUN uv pip install \
         --python $VIRTUAL_ENV \
         --index-url https://pypi.org/simple \
-        "nodetool-core==${NODETOOL_VERSION}" \
-        "nodetool-huggingface==${HF_VERSION}" && \
+        "nodetool-core${NODETOOL_VERSION:+==${NODETOOL_VERSION}}" \
+        "nodetool-huggingface${HF_VERSION:+==${HF_VERSION}}" && \
     rm -rf /root/.cache/uv /root/.cache/pip /tmp/* /var/tmp/*
 
 
@@ -111,7 +115,8 @@ RUN uv pip install \
 # be imaged. nodetool-huggingface still comes from PyPI.
 FROM base AS dev
 
-ARG HF_VERSION=0.7.1
+# Empty installs the latest nodetool-huggingface release on PyPI.
+ARG HF_VERSION=
 
 # nodetool-huggingface first, then the local source — nodetool-huggingface
 # depends on nodetool-core, so installing it second guarantees the build
@@ -121,7 +126,7 @@ COPY . /src
 RUN uv pip install \
         --python $VIRTUAL_ENV \
         --index-url https://pypi.org/simple \
-        "nodetool-huggingface==${HF_VERSION}" && \
+        "nodetool-huggingface${HF_VERSION:+==${HF_VERSION}}" && \
     uv pip install \
         --python $VIRTUAL_ENV \
         --index-url https://pypi.org/simple \
@@ -130,35 +135,6 @@ RUN uv pip install \
 
 
 FROM ${WORKER_BASE} AS runtime
-
-# SVDQuant (nunchaku) runtime for the quantized FLUX and Qwen nodes. Without
-# it every one of them fails with "The SVDQuant nunchaku runtime is required
-# for this operation but is not installed", and a rented worker has no way to
-# add it.
-#
-# Installed here, after nodetool-huggingface, because the wheel needs torch
-# already present.
-#
-# The wheel is a CUDA extension, so it is pinned to one exact build: the URL
-# names cu12.8 + torch2.9 + cp311 + linux_x86_64, and it must keep matching the
-# torch this image installs. This pin is not caution for its own sake — an
-# unpinned torchaudio resolved to a CUDA 13 build against a cu128 torch and
-# shipped an image where every HuggingFace node failed at execute time (see the
-# guard below). Bumping torch means picking the matching nunchaku wheel in the
-# same change.
-#
-# The org is nunchaku-ai; it was renamed from nunchaku-tech, and a URL naming
-# the old org still redirects but should not be written fresh.
-#
-# Cost: 362 MB installed.
-ARG NUNCHAKU_VERSION=1.2.1
-ARG NUNCHAKU_WHEEL=https://github.com/nunchaku-ai/nunchaku/releases/download/v${NUNCHAKU_VERSION}/nunchaku-${NUNCHAKU_VERSION}%2Bcu12.8torch2.9-cp311-cp311-linux_x86_64.whl
-
-RUN uv pip install \
-        --python $VIRTUAL_ENV \
-        --index-url https://pypi.org/simple \
-        "${NUNCHAKU_WHEEL}" && \
-    rm -rf /root/.cache/uv /root/.cache/pip /tmp/* /var/tmp/*
 
 # Fail the build if the torch stack cannot import.
 #
@@ -173,15 +149,9 @@ RUN uv pip install \
 # This runs at build time on a CPU-only builder, so it must not touch a GPU.
 # The import is the whole check: the .so loads against torch's CUDA runtime, or
 # it does not.
-#
-# nunchaku belongs in the same guard: its .so is built against one exact torch
-# and CUDA pair, and importing it on a CPU-only machine with no driver succeeds,
-# so a mismatch shows up here rather than on a rented GPU.
 RUN python -c "\
-import importlib.metadata as md; \
-import torch, torchvision, torchaudio, nunchaku; \
-print('torch', torch.__version__, 'torchvision', torchvision.__version__, 'torchaudio', torchaudio.__version__); \
-print('nunchaku', md.version('nunchaku'))"
+import torch, torchvision, torchaudio; \
+print('torch', torch.__version__, 'torchvision', torchvision.__version__, 'torchaudio', torchaudio.__version__)"
 
 # Expose the worker's WebSocket port. 22 is opened only when the pod is
 # provisioned with a public key (see docker/worker-entrypoint.sh).

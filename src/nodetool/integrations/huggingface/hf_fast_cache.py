@@ -718,15 +718,3 @@ def _changed(now: Optional[float], old: Optional[float]) -> bool:
         return True
     return now != old
 
-
-if __name__ == "__main__":
-
-    async def main():
-        cache = HfFastCache()
-        exists = await cache.exists(
-            "nunchaku-tech/nunchaku-flux.1-schnell",
-            "svdq-int4_r32-flux.1-schnell.safetensors",
-        )
-        print(exists)
-
-    asyncio.run(main())

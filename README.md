@@ -17,24 +17,30 @@ ______________________________________________________________________
 - **Worker subprocess** — `python -m nodetool.worker` communicates with the TS server via WebSocket+MessagePack
 - **Provider infrastructure** — Base classes and registry for local-compute providers
 - **Media processing** — Image, audio, video conversion utilities
-- **DSL** — Graph construction and code generation helpers
-- **Models** — Database models (Asset, Job, Secret, etc.)
 - **Storage** — Abstract storage backends (memory, file, S3)
 
 ## Quick Start
 
+Install into a conda env named `nodetool`. The NodeTool server looks for a
+Python interpreter in this order: `NODETOOL_PYTHON`, the active conda env when
+it is named `nodetool`, then the usual `envs/nodetool` locations and the
+desktop app's managed env. It does not find a project `.venv`.
+
 ```bash
-# Install
 conda create -n nodetool python=3.11 pandoc ffmpeg -c conda-forge
 conda activate nodetool
-uv sync
+uv pip install -e ".[dev]"   # or: pip install -e ".[dev]"
 
 # Run tests
-uv run pytest -q
+pytest -q
 
-# Start worker (normally spawned by TS server)
+# Start a worker by hand (the TS server normally spawns it)
 python -m nodetool.worker
 ```
+
+Install node packs into the same env, for example
+`uv pip install nodetool-huggingface`. To use a different interpreter, start
+the server with `NODETOOL_PYTHON=/path/to/python`.
 
 ## Writing Nodes
 
@@ -72,9 +78,9 @@ Python Worker (this repo)
 
 ## Worker Protocol
 
-The worker speaks a msgpack message protocol to the TS server (bridge protocol **v5**, `nodetool.worker.BRIDGE_PROTOCOL_VERSION`). Two transports carry the same messages:
+The worker speaks a msgpack message protocol to the TS server (bridge protocol **v6**, `nodetool.worker.BRIDGE_PROTOCOL_VERSION`). Two transports carry the same messages:
 
-- **WebSocket** (default): `python -m nodetool.worker --host 0.0.0.0 --port 7777`. Each message is one binary msgpack frame. On startup the worker prints `NODETOOL_WORKER_PORT=<port>` to stdout (the only thing on stdout). If `NODETOOL_WORKER_TOKEN` is set, the opening handshake must carry `Authorization: Bearer <token>` (constant-time compare, rejected with 401 before any frame); unset means open, for local/dev use.
+- **WebSocket** (default): `python -m nodetool.worker --host 0.0.0.0 --port 8787`. Without `--port` the worker binds a free port (`NODETOOL_WORKER_PORT`, default `0`). Do not use 7777, the NodeTool server's own default port. Each message is one binary msgpack frame. On startup the worker prints `NODETOOL_WORKER_PORT=<port>` to stdout (the only thing on stdout). If `NODETOOL_WORKER_TOKEN` is set, the opening handshake must carry `Authorization: Bearer <token>` (constant-time compare, rejected with 401 before any frame); unset means open, for local/dev use.
 - **stdio** (`--stdio`): same msgpack payloads with 4-byte big-endian length-prefixed framing over stdin/stdout, for parent processes that spawn the worker directly.
 
 Frames are capped at 256 MiB by default (`NODETOOL_BRIDGE_MAX_FRAME_SIZE`). Unknown msgpack extension types decode to `None` rather than erroring. Binary data (images, audio, model files) travels as native msgpack `bin` values — there is no base64.
@@ -175,25 +181,25 @@ The TS bridge declares the minimum version it can speak; a worker reporting a lo
 ## External Node Packages
 
 - **nodetool-huggingface** — HuggingFace model integrations + local provider
-- **nodetool-mlx** — Apple Silicon optimized nodes + MLX provider
-- **nodetool-replicate** — Replicate API integrations
-- **nodetool-fal** — FAL AI service integrations
-- **nodetool-elevenlabs** — ElevenLabs audio generation
-- **nodetool-apple** — Apple platform integrations
+- **nodetool-mlx** — Apple Silicon optimized nodes + MLX provider (macOS on Apple Silicon only)
+- **nodetool-wan2gp** — Wan2GP video generation through a Wan2GP server
+
+Replicate, FAL and ElevenLabs integrations are TypeScript packs in the
+[NodeTool](https://github.com/nodetool-ai/nodetool) repository.
 
 ## Development
 
+Use the `nodetool` env from the quick start:
+
 ```bash
-# Setup
-conda activate nodetool
-uv sync --group dev
-
-# Run tests
-uv run pytest -q
-
-# Lint
-uv run ruff check .
+pytest -q          # tests
+ruff check .       # lint
+make typecheck     # ty type check (uses uv run)
 ```
+
+`uv sync`, `uv run` and the `make` targets use a separate `.venv` pinned by
+`uv.lock`, as CI does (`uv sync --locked --all-extras --dev`). After changing
+dependencies in `pyproject.toml`, run `uv lock` and commit `uv.lock`.
 
 ## License
 
@@ -202,4 +208,4 @@ uv run ruff check .
 ## Learn More
 
 - [NodeTool Website](https://nodetool.ai)
-- [Discord Community](https://discord.gg/nodetool)
+- [Discord Community](https://discord.gg/WmQTWZRcYE)

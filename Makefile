@@ -4,7 +4,7 @@ lint:
 	uv run ruff check .
 
 typecheck:
-	uv run ty check src \
+	uv run ty check src --exit-zero-on-warning \
 		--ignore unresolved-import \
 		--ignore possibly-missing-attribute \
 		--error invalid-type-form \

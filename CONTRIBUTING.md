@@ -17,31 +17,28 @@ contributing to the project.
 
 1. Clone your fork of the repository
 
-1. Install development dependencies:
+1. Install development dependencies into a conda env named `nodetool`, which
+   the NodeTool server finds without extra configuration:
 
    ```bash
-   # Using conda + uv (recommended)
    conda create -n nodetool python=3.11 pandoc ffmpeg -c conda-forge
    conda activate nodetool
-   uv sync --all-extras --dev
-
-   # Or using pip only
-   pip install .
-   pip install -r requirements-dev.txt
+   uv pip install -e ".[dev]"   # or: pip install -e ".[dev]"
    ```
 
-   This will install the package in development mode and install all development dependencies.
+   This installs the package in editable mode with pytest, ruff and the other
+   development tools. The `make` targets run through `uv run`, which uses a
+   separate `.venv` pinned by `uv.lock`, the same setup CI uses.
 
-1. Set up environment configuration:
+1. Set up environment configuration (optional). The worker reads secrets such
+   as `HF_TOKEN` from the environment:
 
    ```bash
    cp .env.example .env.development.local
-   # Edit .env.development.local with your API keys
+   # Edit .env.development.local
    ```
 
    **Important:** Never commit `.env.*.local` files - they contain actual secrets and are gitignored.
-
-   For a complete list of environment variables, see `.env.example` or the main README.md.
 
 1. Install pre-commit hooks (optional):
 
@@ -54,7 +51,7 @@ contributing to the project.
 This project uses:
 
 - **Ruff** for linting and formatting (replaces Black + Flake8)
-- **basedpyright** (via `ty` CLI) for type checking
+- **ty** for type checking (`make typecheck`)
 
 You can run all style checks with:
 
@@ -93,6 +90,16 @@ Run specific tests:
 ```bash
 pytest tests/path/to/test_file.py
 ```
+
+## Dependencies
+
+After changing dependencies in `pyproject.toml`, run `uv lock` and commit
+`uv.lock`. CI installs with `uv sync --locked` and fails on a stale lock.
+
+After changing the version or `[project]` metadata, run
+`nodetool-pkg scan --write` and commit
+`src/nodetool/package_metadata/nodetool-core.json`. CI fails when the file
+is out of date.
 
 ## Type Checking
 

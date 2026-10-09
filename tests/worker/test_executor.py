@@ -93,7 +93,7 @@ class MultiChunkStreamingNode(BaseNode):
 
     async def gen_process(
         self, context: ProcessingContext
-    ) -> AsyncGenerator[dict[str, str | None | Chunk], None]:
+    ) -> AsyncGenerator[dict[str, str | Chunk | None], None]:
         accumulated = ""
         for index in range(3):
             token = f"tok{index}"

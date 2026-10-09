@@ -7,6 +7,7 @@ and other AI capabilities. Providers declare their capabilities at runtime.
 """
 
 import datetime
+import importlib
 import json
 from enum import Enum, StrEnum
 from typing import (
@@ -114,6 +115,51 @@ def get_registered_provider(
     if provider_cls is None:
         raise ValueError(f"Provider {provider} is not installed")
     return provider_cls, kwargs
+
+
+# Provider modules shipped by local-compute packs. Each registers itself with
+# @register_provider when imported.
+LOCAL_PROVIDER_MODULES: tuple[str, ...] = (
+    "nodetool.mlx.mlx_provider",
+    "nodetool.huggingface.huggingface_local_provider",
+)
+
+
+def _is_pack_absent(module_name: str, error: ImportError) -> bool:
+    """True when ``error`` only says the pack providing ``module_name`` is not installed.
+
+    The pack is absent when the missing module is ``module_name`` itself or one
+    of its ``nodetool.<pack>`` parents. A missing third-party dependency (torch,
+    mlx, torchcodec) or a broken symbol inside the pack is a real failure.
+    """
+    if not isinstance(error, ModuleNotFoundError) or not error.name:
+        return False
+    parts = module_name.split(".")
+    pack_modules = {".".join(parts[:i]) for i in range(1, len(parts) + 1)} - {"nodetool"}
+    return error.name in pack_modules
+
+
+def import_provider_module(module_name: str) -> BaseException | None:
+    """Import a provider module and report why it failed, if it did.
+
+    Returns None when the module imported or when its pack is not installed.
+    Returns the exception, after logging it with the module name, for any other
+    failure, so a pack that is installed but cannot load is never silently
+    dropped.
+    """
+    try:
+        importlib.import_module(module_name)
+    except ImportError as e:
+        if _is_pack_absent(module_name, e):
+            log.debug("Provider module %s not installed: %s", module_name, e)
+            return None
+        log.warning("Provider module %s is installed but failed to import: %r", module_name, e)
+        return e
+    except Exception as e:
+        log.warning("Provider module %s raised during import: %r", module_name, e)
+        return e
+    log.debug("Loaded provider module %s", module_name)
+    return None
 
 
 class BaseProvider:

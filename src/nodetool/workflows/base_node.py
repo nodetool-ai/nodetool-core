@@ -105,6 +105,7 @@ from typing import (
     Optional,
     TypedDict,
     TypeVar,
+    cast,
     get_args,
     get_origin,
     get_type_hints,
@@ -1824,7 +1825,7 @@ class BaseNode(BaseModel):
             or None if no return type is specified.
         """
         if hasattr(cls, "OutputType"):
-            return cls.OutputType  # type: ignore[return-value]
+            return cast("type | None", cls.OutputType)
 
         if cls.gen_process is not BaseNode.gen_process:
             gen_return = get_return_annotation(cls.gen_process)

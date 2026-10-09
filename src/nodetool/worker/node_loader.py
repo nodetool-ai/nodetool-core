@@ -12,9 +12,12 @@ from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
 def _discover_namespaces() -> list[str]:
     """Auto-discover namespaces from installed nodetool node packages.
 
-    Uses Python entry_points (group='nodetool.namespaces') for discovery.
-    Each entry point value is a comma-separated list of namespaces.
-    Falls back to scanning for nodetool.nodes.* packages.
+    Returns the union of two sources, so a pack is found whether or not it
+    declares an entry point:
+
+    1. Entry points in group ``nodetool.namespaces``. Each value is a
+       comma-separated list of namespace names, such as ``huggingface``.
+    2. Subdirectories of every ``nodetool.nodes`` namespace-package path.
     """
     namespaces: set[str] = set()
 
@@ -32,20 +35,20 @@ def _discover_namespaces() -> list[str]:
         print(f"Warning: entry_points discovery failed: {e}", file=sys.stderr)
 
     # Method 2: scan for nodetool.nodes.* subpackages
-    if not namespaces:
-        try:
-            import importlib
-            nodes_pkg = importlib.import_module("nodetool.nodes")
-            if hasattr(nodes_pkg, "__path__"):
-                for package_path in nodes_pkg.__path__:
-                    path = Path(package_path)
-                    if not path.exists():
-                        continue
-                    for child in path.iterdir():
-                        if child.is_dir() and not child.name.startswith("_"):
-                            namespaces.add(child.name)
-        except ImportError:
-            pass
+    try:
+        import importlib
+
+        nodes_pkg = importlib.import_module("nodetool.nodes")
+        if hasattr(nodes_pkg, "__path__"):
+            for package_path in nodes_pkg.__path__:
+                path = Path(package_path)
+                if not path.exists():
+                    continue
+                for child in path.iterdir():
+                    if child.is_dir() and not child.name.startswith("_"):
+                        namespaces.add(child.name)
+    except ImportError:
+        pass
 
     return sorted(namespaces)
 

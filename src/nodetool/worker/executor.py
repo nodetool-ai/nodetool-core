@@ -26,6 +26,7 @@ from nodetool.runtime.resources import ResourceScope
 from nodetool.worker.context_stub import WorkerContext
 from nodetool.worker.job_registry import JobRegistry
 from nodetool.workflows.base_node import NODE_BY_TYPE, BaseNode
+from nodetool.workflows.torch_support import build_torch_support
 
 log = get_logger(__name__)
 
@@ -43,6 +44,11 @@ REF_TYPE_BY_CLASS_NAME = {
 # node's lifecycle / process methods are running. 50ms keeps progress feeling
 # real-time without burning CPU on the queue check.
 _PROGRESS_POLL_INTERVAL = 0.05
+
+# Retries a buffered node once after a CUDA or MPS out-of-memory error, after
+# evicting cached models that no running execution has pinned. Streaming nodes
+# are not retried, because their earlier chunks have already been sent.
+_TORCH_SUPPORT = build_torch_support(base_delay=1, max_delay=8, max_retries=2)
 
 
 def _get_asset_ref_type(annotation: Any) -> str:
@@ -384,7 +390,7 @@ async def execute_node(
                         result = await _collect_streaming_outputs(node, ctx)
                     outputs, blobs = _extract_named_outputs(result, ctx)
                 else:
-                    result = await node.process(ctx)
+                    result = await _TORCH_SUPPORT.process_with_gpu(None, ctx, node, disable_grad=False)
                     outputs, blobs = _extract_outputs(result, ctx, node)
                 return {"outputs": outputs, "blobs": blobs}
             finally:

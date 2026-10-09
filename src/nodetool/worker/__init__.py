@@ -37,4 +37,12 @@ History:
       reference media and ordered image/video path lists.
 """
 
+import os
+
+# Let ops without an MPS kernel run on the CPU instead of raising
+# NotImplementedError on Apple Silicon. PyTorch reads this when it initialises,
+# so it is set here, before any worker module imports torch. A value already in
+# the environment wins.
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+
 BRIDGE_PROTOCOL_VERSION = 6
