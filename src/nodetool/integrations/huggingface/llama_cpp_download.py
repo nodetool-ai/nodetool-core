@@ -147,6 +147,9 @@ async def download_llama_cpp_model(
 
     # Manifest path: manifest={org}={repo}={tag}.json
     org, repo = repo_id.split("/", 1) if "/" in repo_id else ("", repo_id)
+    if org:
+        org = _validate_component(org, name="org")
+    repo = _validate_component(repo, name="repo")
     manifest_path = Path(cache_dir) / f"manifest={org}={repo}={tag}.json"
 
     log.info(f"Downloading {repo_id}/{filename} to llama.cpp cache: {output_path}")
