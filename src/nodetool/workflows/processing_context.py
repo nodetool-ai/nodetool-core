@@ -1163,7 +1163,7 @@ class ProcessingContext:
         """
         np = _ensure_numpy()
         image = await self.image_to_pil(image_ref)
-        return await _in_thread(np.array, image)
+        return await _in_thread(np.asarray, image)
 
     async def image_to_tensor(self, image_ref: ImageRef) -> Any:
         """
