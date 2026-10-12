@@ -34,7 +34,7 @@ class HTTPFetchResult:
     content_type: str | None
 
 
-async def fetch_http_bytes(uri: str) -> HTTPFetchResult:
+async def fetch_http_bytes(uri: str, headers: dict[str, str] | None = None) -> HTTPFetchResult:
     """Fetch HTTP bytes with SSRF checks applied to every redirect hop.
 
     Redirects are intentionally handled here instead of by aiohttp so a
@@ -43,15 +43,17 @@ async def fetch_http_bytes(uri: str) -> HTTPFetchResult:
     addresses.
     """
 
+    current_headers = dict(headers) if headers else {}
     current_uri = uri
     connector = aiohttp.TCPConnector(resolver=SSRFProtectResolver())
     async with aiohttp.ClientSession(connector=connector) as session:
         for _ in range(MAX_REDIRECTS + 1):
-            hostname = urlparse(current_uri).hostname
+            parsed = urlparse(current_uri)
+            hostname = parsed.hostname
             if hostname and is_ip_private(hostname):
                 raise ValueError(f"Access to private/restricted IP blocked: {hostname}")
 
-            async with session.get(current_uri, allow_redirects=False) as response:
+            async with session.get(current_uri, headers=current_headers, allow_redirects=False) as response:
                 if response.status in REDIRECT_STATUSES:
                     location = response.headers.get("Location")
                     if not location:
@@ -60,6 +62,11 @@ async def fetch_http_bytes(uri: str) -> HTTPFetchResult:
                             url=current_uri,
                         )
                     current_uri = urljoin(current_uri, location)
+                    parsed_current = urlparse(current_uri)
+                    if (parsed_current.scheme, parsed_current.netloc) != (parsed.scheme, parsed.netloc):
+                        keys_to_remove = [k for k in current_headers if k.lower() == "authorization"]
+                        for k in keys_to_remove:
+                            current_headers.pop(k, None)
                     continue
 
                 response.raise_for_status()
