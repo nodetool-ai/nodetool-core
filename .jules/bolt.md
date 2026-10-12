@@ -73,3 +73,7 @@
 ## 2026-10-24 - Optimize membership checks using set literals
 **Learning:** Using list or tuple literals (e.g., `x in ["a", "b", "c"]`) for membership tests forces Python to either iterate linearly or reconstruct the object at runtime. Python's compiler optimizes set literals (e.g., `x in {"a", "b", "c"}`) into a `frozenset` at compile time, reducing lookup complexity to O(1) and preventing unnecessary runtime overhead.
 **Action:** Always use set literals for static membership checks in Python to maximize performance.
+
+## 2024-05-20 - Optimize dictionary filtering in provider handler
+**Learning:** Filtering a dictionary by creating a new one with a dictionary comprehension (e.g., `{k: v for k, v in d.items() if k not in keys_to_remove}`) requires iterating over all items, which is O(N) where N is the size of the dictionary. When removing a small number of known keys, it is significantly faster to create a shallow copy and `.pop()` the specific keys.
+**Action:** Replace dict comprehension filtering with a shallow copy and a loop calling `.pop(key, None)` when excluding specific keys.
