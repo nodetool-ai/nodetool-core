@@ -37,7 +37,7 @@ class _Session:
     async def __aexit__(self, *args: object) -> None:
         return None
 
-    def get(self, uri: str, *, allow_redirects: bool) -> _Response:
+    def get(self, uri: str, *, allow_redirects: bool, headers: dict[str, str] | None = None) -> _Response:
         assert allow_redirects is False
         self.requested.append(uri)
         return next(self.responses)
