@@ -37,7 +37,7 @@ dependencies = [
     # HuggingFace integration (used by HF nodes)
     # diffusers 0.41 and mflux 0.22 both require huggingface_hub<2, so the packs
     # cannot co-install with hub 2.x. Keep core on the same range they test.
-    "huggingface_hub>=1.33.0,<2",
+    "huggingface_hub>=1.33.0,<3",
     "hf_xet>=1.7.0",
     "hf_transfer>=0.1.9",
     "aiofiles>=25.1.0",
