@@ -73,6 +73,7 @@ ENTRY_POINT = "run_job.py"
 
 #: A bare file name: no separator, no ``..``, no leading dot (jobFileNameSchema).
 _JOB_FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_WIN_DRIVE_RE = re.compile(r"^[a-zA-Z]:")
 
 #: Worker-side wall clock in seconds when the request names no timeout.
 DEFAULT_TIMEOUT = 600.0
@@ -266,8 +267,10 @@ def _check_rel_path(key: str) -> bool:
     """Op blob keys stage as relative paths: no absolute, ``..`` or NUL."""
     if not key or "\x00" in key or "\\" in key or key.endswith("/"):
         return False
+    if key.startswith("/") or _WIN_DRIVE_RE.match(key):
+        return False
     path = Path(key)
-    if path.is_absolute() or key.startswith("/"):
+    if path.is_absolute():
         return False
     return all(seg not in ("", ".", "..") for seg in path.parts)
 

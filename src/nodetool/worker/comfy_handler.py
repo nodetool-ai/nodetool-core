@@ -63,6 +63,7 @@ _HISTORY_RETRIES = 40
 _HISTORY_RETRY_DELAY = 0.25
 
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+_WIN_DRIVE_RE = re.compile(r"^[a-zA-Z]:")
 
 
 def comfy_url() -> str:
@@ -627,6 +628,8 @@ def _validate_relpath(*parts: str) -> Path:
         if not part:
             raise ComfyError("Empty path component")
         candidate = part.replace("\\", "/")
+        if candidate.startswith("/") or _WIN_DRIVE_RE.match(candidate):
+            raise ComfyError(f"Unsafe path component: {part!r}")
         p = Path(candidate)
         if p.is_absolute() or any(seg in ("..", "") for seg in p.parts) or "\x00" in candidate:
             raise ComfyError(f"Unsafe path component: {part!r}")
