@@ -232,7 +232,7 @@ def _joblib_load_from_io(buffer: IO[bytes]) -> Any:
         def find_class(self, module, name):
             # Allow basic types and collections
             if module == "builtins":
-                if name in (
+                if name in {
                     "list",
                     "dict",
                     "set",
@@ -250,15 +250,15 @@ def _joblib_load_from_io(buffer: IO[bytes]) -> Any:
                     "None",
                     "True",
                     "False",
-                ):
+                }:
                     return super().find_class(module, name)
                 raise pickle.UnpicklingError(f"Global '{module}.{name}' is forbidden")
 
-            if module in ("collections", "datetime", "_codecs", "copyreg"):
+            if module in {"collections", "datetime", "_codecs", "copyreg"}:
                 return super().find_class(module, name)
 
             # Allow safe data science libraries
-            if module.split(".")[0] in ("numpy", "pandas", "scipy", "sklearn", "joblib"):
+            if module.split(".")[0] in {"numpy", "pandas", "scipy", "sklearn", "joblib"}:
                 return super().find_class(module, name)
 
             raise pickle.UnpicklingError(f"Global '{module}.{name}' is forbidden")

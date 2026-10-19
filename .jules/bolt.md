@@ -73,3 +73,7 @@
 ## 2026-10-24 - Optimize membership checks using set literals
 **Learning:** Using list or tuple literals (e.g., `x in ["a", "b", "c"]`) for membership tests forces Python to either iterate linearly or reconstruct the object at runtime. Python's compiler optimizes set literals (e.g., `x in {"a", "b", "c"}`) into a `frozenset` at compile time, reducing lookup complexity to O(1) and preventing unnecessary runtime overhead.
 **Action:** Always use set literals for static membership checks in Python to maximize performance.
+
+## 2026-10-25 - Optimize unpickling dynamic membership checks using set literals
+**Learning:** Using tuple literals (e.g., `x in ("a", "b", "c")`) for membership tests forces Python to recreate the object at runtime when dealing with complex or multi-line structures in older Python versions or specific contexts, slowing down hot paths like unpickling. Python's compiler optimizes set literals (e.g., `x in {"a", "b", "c"}`) into a `frozenset` at compile time, reducing lookup complexity to O(1). This is especially impactful in `_joblib_load_from_io` where `find_class` is called thousands of times per unpickled object.
+**Action:** Always use set literals for static membership checks in Python to maximize performance, especially in hot paths like custom unpicklers.
