@@ -66,7 +66,7 @@ def sanitize_memory_uris_for_client(value: Any, _seen: set[int] | None = None) -
                     # No data or asset_id, clear the URI
                     sanitized["uri"] = ""
                 # Recursively sanitize other fields
-                return {k: sanitize_memory_uris_for_client(v, _seen) if k not in ("uri", "data", "asset_id") else v
+                return {k: sanitize_memory_uris_for_client(v, _seen) if k not in {"uri", "data", "asset_id"} else v
                         for k, v in sanitized.items()}
             else:
                 # Recursively sanitize nested values
@@ -78,7 +78,7 @@ def sanitize_memory_uris_for_client(value: Any, _seen: set[int] | None = None) -
         return [sanitize_memory_uris_for_client(item, _seen) for item in value]
     elif isinstance(value, tuple):
         return tuple(sanitize_memory_uris_for_client(item, _seen) for item in value)
-    elif hasattr(value, "model_copy") and hasattr(value, "model_fields"):
+    elif hasattr(value, "model_copy") and hasattr(type(value), "model_fields"):
         # Handle Pydantic models: sanitize an own memory:// uri and recurse into
         # all other fields so nested AssetRefs are sanitized as well.
         if _seen is None:
@@ -99,7 +99,7 @@ def sanitize_memory_uris_for_client(value: Any, _seen: set[int] | None = None) -
                 updates["uri"] = ""
 
         for field_name in type(value).model_fields:
-            if field_name in ("uri", "data", "asset_id"):
+            if field_name in {"uri", "data", "asset_id"}:
                 continue
             field_value = getattr(value, field_name, None)
             sanitized_field = sanitize_memory_uris_for_client(field_value, _seen)
