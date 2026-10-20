@@ -73,3 +73,7 @@
 ## 2026-10-24 - Optimize membership checks using set literals
 **Learning:** Using list or tuple literals (e.g., `x in ["a", "b", "c"]`) for membership tests forces Python to either iterate linearly or reconstruct the object at runtime. Python's compiler optimizes set literals (e.g., `x in {"a", "b", "c"}`) into a `frozenset` at compile time, reducing lookup complexity to O(1) and preventing unnecessary runtime overhead.
 **Action:** Always use set literals for static membership checks in Python to maximize performance.
+
+## 2026-10-24 - Avoid global set mutation for DAG cycle detection
+**Learning:** When using a `seen` set to detect cyclic references during recursive traversal of a Directed Acyclic Graph (DAG) or tree (such as `sanitize_memory_uris_for_client`), changing `_seen | {id(value)}` (which allocates a new set for the current path) to `_seen.add(id(value))` (which mutates a single shared set) will cause incorrect behavior. It turns path-wise cycle detection into global tracking, causing legitimate repeated node visits on different branches to be incorrectly flagged as cycles, skipping their sanitization.
+**Action:** Retain `_seen | {id(value)}` or pass a `.copy()` of the set when passing cycle-detection sets down recursive branches to ensure tracking remains isolated to the current traversal path.
