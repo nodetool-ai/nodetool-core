@@ -700,7 +700,8 @@ async def _open_model_source(
             current_url = urljoin(current_url, location)
             parsed_current = urlparse(current_url)
             if (parsed_current.scheme, parsed_current.netloc) != (parsed.scheme, parsed.netloc):
-                headers.pop("Authorization", None)
+                for k in [k for k in headers if k.lower() == "authorization"]:
+                    headers.pop(k, None)
             continue
 
         if resp.status >= 400:
