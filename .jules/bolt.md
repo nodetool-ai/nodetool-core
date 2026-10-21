@@ -73,3 +73,7 @@
 ## 2026-10-24 - Optimize membership checks using set literals
 **Learning:** Using list or tuple literals (e.g., `x in ["a", "b", "c"]`) for membership tests forces Python to either iterate linearly or reconstruct the object at runtime. Python's compiler optimizes set literals (e.g., `x in {"a", "b", "c"}`) into a `frozenset` at compile time, reducing lookup complexity to O(1) and preventing unnecessary runtime overhead.
 **Action:** Always use set literals for static membership checks in Python to maximize performance.
+
+## 2026-10-25 - Optimize params filtering in provider bridge
+**Learning:** In `src/nodetool/worker/provider_handler.py`, a dictionary comprehension was used to filter out specific keys (`"provider"`, `"secrets"`, `"image"`, `"blob_transfer"`). As learned from previous modifications (e.g., `src/nodetool/workflows/graph.py`), removing a small number of known keys by making a shallow copy and repeatedly calling `.pop(key, None)` is significantly faster (O(1) relative to dictionary size, O(K) where K is keys to remove) than a dictionary comprehension which requires an O(N) iteration over all items.
+**Action:** Replaced dict comprehension filtering in `src/nodetool/worker/provider_handler.py` with `params = data.copy()` and a loop calling `params.pop(k, None)`.
