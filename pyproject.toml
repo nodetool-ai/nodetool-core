@@ -29,7 +29,7 @@ dependencies = [
     "tqdm>=4.70.1",
 
     # Media processing (used by nodes via ProcessingContext)
-    "pillow>=12.3.0,<13",
+    "pillow>=12.3.0,<14",
     # Floor stays at 2.3 because paddlex (ocr extra) caps numpy<2.4. No upper cap:
     # numpy 2.5 installs where Python and the other packs allow it.
     "numpy>=2.3.5",
