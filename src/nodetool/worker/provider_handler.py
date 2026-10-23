@@ -388,7 +388,11 @@ def _bridge_params(data: dict[str, Any]) -> dict[str, Any]:
     """
     params = data.get("params")
     if not isinstance(params, dict):
-        params = {k: v for k, v in data.items() if k not in ("provider", "secrets", "image", "blob_transfer")}
+        params = data.copy()
+        params.pop("provider", None)
+        params.pop("secrets", None)
+        params.pop("image", None)
+        params.pop("blob_transfer", None)
     return _drop_none({_CAMEL_RE.sub("_", key).lower(): value for key, value in params.items()})
 
 
