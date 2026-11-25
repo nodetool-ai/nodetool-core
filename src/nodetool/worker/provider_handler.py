@@ -787,6 +787,16 @@ async def _handle_text_to_video(data: dict, cancel_event: asyncio.Event | None =
     return {"blobs": {"video": await _media_bytes(ctx, result)}}
 
 
+async def _handle_image_to_video(data: dict, cancel_event: asyncio.Event | None = None) -> dict:
+    """Handle provider.image_to_video for an in-process provider."""
+    from nodetool.providers.types import ImageToVideoParams
+
+    provider = _get_provider(data["provider"], data.get("secrets", {}))
+    ctx = _worker_context(data, cancel_event)
+    result = await provider.image_to_video(data.get("image", b""), _typed_params(ImageToVideoParams, data), context=ctx)
+    return {"blobs": {"video": await _media_bytes(ctx, result)}}
+
+
 def _encoded_media_suffix(data: bytes, kind: str) -> str:
     """Choose a useful extension for adapter-owned temporary input files."""
     if kind == "image":
@@ -1213,7 +1223,14 @@ async def _dispatch_provider_message(
                 result = await _run_cancellable(request_id, cancel_flags, lambda ev: _handle_text_to_video(data, ev))
             await send_result(request_id, result)
 
-        elif msg_type in ("provider.image_to_video", "provider.reference_to_video"):
+        elif msg_type == "provider.image_to_video":
+            if data.get("provider") in _adapter_provider_ids():
+                result = await _handle_adapter_media(msg_type, data, request_id, cancel_flags, send_progress)
+            else:
+                result = await _run_cancellable(request_id, cancel_flags, lambda ev: _handle_image_to_video(data, ev))
+            await send_result(request_id, result)
+
+        elif msg_type == "provider.reference_to_video":
             result = await _handle_adapter_media(msg_type, data, request_id, cancel_flags, send_progress)
             await send_result(request_id, result)
 

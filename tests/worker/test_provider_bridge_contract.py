@@ -18,7 +18,7 @@ import pytest
 
 from nodetool.metadata.tool_types import Tool
 from nodetool.metadata.types import Message, VideoRef
-from nodetool.providers.types import ImageToImageParams, TextToImageParams, TextToVideoParams
+from nodetool.providers.types import ImageToImageParams, ImageToVideoParams, TextToImageParams, TextToVideoParams
 from nodetool.worker import provider_handler
 from nodetool.worker.provider_handler import _tts_kwargs, handle_provider_message
 
@@ -274,6 +274,48 @@ async def test_text_to_video_builds_typed_params_for_base_signature(monkeypatch)
     assert instance.params.aspect_ratio == "16:9"
 
 
+class ImageToVideoProvider:
+    def __init__(self) -> None:
+        self.image: bytes = b""
+        self.params: Any = None
+        self.context: Any = None
+
+    async def image_to_video(self, image, params, timeout_s=None, context=None, node_id=None):
+        self.image, self.params, self.context = image, params, context
+        return b"mp4"
+
+
+@pytest.mark.asyncio
+async def test_image_to_video_reaches_an_in_process_provider(monkeypatch):
+    instance = ImageToVideoProvider()
+    monkeypatch.setattr(provider_handler, "_get_provider", lambda *_args: instance)
+    transport = FakeTransport()
+    await handle_provider_message(
+        "provider.image_to_video",
+        "r1",
+        {
+            "provider": "huggingface",
+            "image": b"png",
+            "params": {
+                "model": "Lightricks/LTX-2.5-Diffusers",
+                "prompt": "waves",
+                "numFrames": 121,
+                "endImage": b"end",
+            },
+        },
+        transport,
+        {},
+    )
+    assert transport.sent[-1]["data"] == {"blobs": {"video": b"mp4"}}, transport.sent
+    assert instance.image == b"png"
+    assert isinstance(instance.params, ImageToVideoParams)
+    assert instance.params.model.id == "Lightricks/LTX-2.5-Diffusers"
+    assert instance.params.num_frames == 121
+    # Extra fields such as the end frame ride along for providers that read them.
+    assert instance.params.model_extra == {"end_image": b"end"}
+    assert instance.context is not None
+
+
 ADAPTER = """
 import json, pathlib, sys, time
 request = json.loads(sys.stdin.readline())
@@ -298,9 +340,7 @@ async def test_adapter_runs_are_serialized_and_long_lines_are_read(monkeypatch, 
     adapter = tmp_path / "adapter.py"
     adapter.write_text(ADAPTER)
     marker = tmp_path / "busy"
-    monkeypatch.setenv(
-        "NODETOOL_PROVIDER_ADAPTER_COMMAND_SERIAL", f"{sys.executable} {adapter} {marker} {tmp_path}"
-    )
+    monkeypatch.setenv("NODETOOL_PROVIDER_ADAPTER_COMMAND_SERIAL", f"{sys.executable} {adapter} {marker} {tmp_path}")
     monkeypatch.setenv("NODETOOL_PROVIDER_ADAPTER_CAPABILITIES_SERIAL", "text_to_image")
     transport = FakeTransport()
 
@@ -319,8 +359,6 @@ async def test_adapter_runs_are_serialized_and_long_lines_are_read(monkeypatch, 
     assert not list(tmp_path.glob("*.png"))
 
     # A model list over the 64 KiB asyncio default stream limit.
-    await handle_provider_message(
-        "provider.models", "m", {"provider": "serial", "model_type": "image"}, transport, {}
-    )
+    await handle_provider_message("provider.models", "m", {"provider": "serial", "model_type": "image"}, transport, {})
     assert transport.sent[-1]["type"] == "result", transport.sent[-1]
     assert len(transport.sent[-1]["data"]["models"][0]["id"]) == 200_000
