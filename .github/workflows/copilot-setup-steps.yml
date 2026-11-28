@@ -31,8 +31,11 @@ jobs:
           sudo apt-get install -y ffmpeg libgl1 libglib2.0-0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v5
         with:
+          # The runner's default Python is 3.14, which paddlepaddle has no
+          # wheels for. Use the oldest supported Python, as the wheel build does.
+          python-version: "3.11"
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 

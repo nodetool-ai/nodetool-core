@@ -1129,6 +1129,12 @@ class HFLoraQwenImage(HuggingFaceModel):
     type: Literal["hf.lora_qwen_image"] = "hf.lora_qwen_image"
 
 
+class HFLoraLTX(HuggingFaceModel):
+    """A LoRA for the LTX-2 video models: a character or style LoRA, or an IC-LoRA."""
+
+    type: Literal["hf.lora_ltx"] = "hf.lora_ltx"
+
+
 class HFImageToText(HuggingFaceModel):
     type: Literal["hf.image_to_text"] = "hf.image_to_text"
 
@@ -1311,6 +1317,12 @@ class HFLoraSDXLConfig(BaseType):
     type: Literal["hf.lora_sdxl_config"] = "hf.lora_sdxl_config"
     lora: HFLoraSDXL = Field(default=HFLoraSDXL(), description="The LoRA model to use.")
     strength: float = Field(default=0.5, ge=0.0, le=3.0, description="LoRA strength")
+
+
+class HFLoraLTXConfig(BaseType):
+    type: Literal["hf.lora_ltx_config"] = "hf.lora_ltx_config"
+    lora: HFLoraLTX = Field(default=HFLoraLTX(), description="The LoRA file: a repo and the .safetensors path in it.")
+    strength: float = Field(default=1.0, ge=0.0, le=3.0, description="LoRA strength")
 
 
 CLASSNAME_TO_MODEL_TYPE = {
